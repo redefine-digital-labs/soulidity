@@ -83,7 +83,7 @@ manifest_digest = "F5EE3601B0F0F292A09B1CF6BFF941E8BCD70C7624692070796849E0B7FB3
 deps = { Sui = "Sui_2", WAL = "WAL" }
 
 [pinned.mainnet.animacraft]
-source = { git = "https://github.com/redefine-digital-labs/animacraft.git", subdir = "move/animacraft", rev = "827abcbea3e81ff10bc54c2443deee375878d7d5" }
+source = { git = "https://github.com/redefine-digital-labs/animacraft.git", subdir = "move/animacraft", rev = "632b20b3b9ea35b3fdab8d68f642609eef422a42" }
 use_environment = "mainnet"
 manifest_digest = "D102AD9D5653054ABB17E21F853CF4E888E04AB30025D5DAC19DAF483C2B899B"
 deps = { Sui = "Sui_3" }
@@ -91,7 +91,7 @@ deps = { Sui = "Sui_3" }
 [pinned.mainnet.soulidity]
 source = { root = true }
 use_environment = "mainnet"
-manifest_digest = "4633826009A1DA6FCC9EE8B2E0BCA7638DF36CB36A011292F94620057B8A4B85"
+manifest_digest = "94E8D6EFBDAD17C785AE0D1036009E148366DBC7D6AC48D42A3044AA27A3F2D2"
 deps = { Kiosk = "Kiosk", Walrus = "Walrus", animacraft = "animacraft", stablecoin = "stablecoin", std = "MoveStdlib", sui = "Sui", sui_extensions = "sui_extensions", usdc = "usdc" }
 
 [pinned.mainnet.stablecoin]

@@ -16,6 +16,11 @@ use soulidity::animacraft_soul_binding_v5::AnimacraftSoulBindingProofV5;
 use soulidity::animacraft_output_provenance_v5::AnimacraftOutputProvenanceV5;
 use soulidity::animacraft_output_seal;
 use soulidity::animacraft_provenance::{Self as animacraft_provenance, AnimacraftProvenance};
+use soulidity::appearance_v6::{
+    Self as appearance_v6,
+    GenesisAppearanceV6,
+    SoulAppearanceStateV6,
+};
 use soulidity::content::{Self as content, SoulContent};
 use soulidity::grant::{Self as grant, SoulGrant};
 use soulidity::kind_registry::{Self as kind_registry, KindAdminCap, KindRegistry};
@@ -28,6 +33,7 @@ use soulidity::market::{
     KioskRegistry,
     MarketAdminCap,
     MarketConfig,
+    AnimacraftV6SoulListingSnapshot,
     SoulListing,
     StateConfigEntry,
 };
@@ -6007,4 +6013,387 @@ fun delete_soul_listing_aborts_when_active() {
     // listing.is_active = true here — delete_soul_listing must abort.
     market::delete_soul_listing(listing, scenario.ctx());
     abort 42
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Animacraft composable-assets v6 companion invariants
+// ─────────────────────────────────────────────────────────────────────
+
+fun new_appearance_state_for_testing(
+    scenario: &mut ts::Scenario,
+    profile_mode: u8,
+    loadout_mutable: bool,
+    transfer_safe: bool,
+) {
+    let mut state = soul::create_state(
+        object::id_from_address(@0xa661),
+        MINTER,
+        0,
+        MINTER,
+        object::id_from_address(@0xb661),
+        scenario.ctx(),
+    );
+    let commitment = appearance_v6::new_commitment(
+        object::id_from_address(@0xc661),
+        object::id_from_address(@0xd661),
+        MINTER,
+        b"00000000000000000000000000000000",
+        b"11111111111111111111111111111111",
+        b"22222222222222222222222222222222",
+        b"55555555555555555555555555555555",
+        transfer_safe,
+    );
+    appearance_v6::new_bind_and_publish(
+        &mut state,
+        profile_mode,
+        loadout_mutable,
+        commitment,
+        scenario.ctx(),
+    );
+    soul::set_content_id(
+        &mut state,
+        object::id_from_address(@0xe661),
+    );
+    soul::share_state(state);
+}
+
+fun updated_appearance_commitment(
+    authorizer: address,
+    transfer_safe: bool,
+): appearance_v6::AppearanceCommitmentV6 {
+    appearance_v6::new_commitment(
+        object::id_from_address(@0xc661),
+        object::id_from_address(@0xd661),
+        authorizer,
+        b"33333333333333333333333333333333",
+        b"44444444444444444444444444444444",
+        b"22222222222222222222222222222222",
+        b"55555555555555555555555555555555",
+        transfer_safe,
+    )
+}
+
+#[test]
+fun appearance_v6_freezes_genesis_and_revisions_current_state() {
+    let mut scenario = ts::begin(MINTER);
+    new_appearance_state_for_testing(
+        &mut scenario,
+        appearance_v6::profile_mode_composable(),
+        true,
+        true,
+    );
+
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let mut appearance = ts::take_shared<SoulAppearanceStateV6>(&scenario);
+    let genesis = ts::take_immutable<GenesisAppearanceV6>(&scenario);
+
+    assert!(soul::has_animacraft_appearance_v6(&state), 0);
+    assert!(
+        soul::animacraft_appearance_v6_id(&state)
+            == object::id(&appearance),
+        1,
+    );
+    assert!(appearance_v6::revision(&appearance) == 0, 2);
+    assert!(
+        appearance_v6::genesis_appearance_id(&appearance)
+            == object::id(&genesis),
+        3,
+    );
+    assert!(
+        *appearance_v6::current_loadout_hash(&appearance)
+            == b"11111111111111111111111111111111",
+        4,
+    );
+
+    appearance_v6::apply_authorized_loadout(
+        &state,
+        &mut appearance,
+        0,
+        updated_appearance_commitment(MINTER, true),
+    );
+    assert!(appearance_v6::revision(&appearance) == 1, 5);
+    assert!(
+        *appearance_v6::current_loadout_hash(&appearance)
+            == b"44444444444444444444444444444444",
+        6,
+    );
+    assert!(
+        *appearance_v6::loadout_hash(&genesis)
+            == b"11111111111111111111111111111111",
+        7,
+    );
+
+    ts::return_shared(state);
+    ts::return_shared(appearance);
+    ts::return_immutable(genesis);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::appearance_v6::EFixedAppearance)]
+fun appearance_v6_fixed_profile_rejects_updates() {
+    let mut scenario = ts::begin(MINTER);
+    new_appearance_state_for_testing(
+        &mut scenario,
+        appearance_v6::profile_mode_fixed(),
+        false,
+        true,
+    );
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let mut appearance = ts::take_shared<SoulAppearanceStateV6>(&scenario);
+    appearance_v6::apply_authorized_loadout(
+        &state,
+        &mut appearance,
+        0,
+        updated_appearance_commitment(MINTER, true),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::appearance_v6::ESoulListed)]
+fun appearance_v6_listed_soul_rejects_updates() {
+    let mut scenario = ts::begin(MINTER);
+    new_appearance_state_for_testing(
+        &mut scenario,
+        appearance_v6::profile_mode_composable(),
+        true,
+        true,
+    );
+    scenario.next_tx(MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut appearance = ts::take_shared<SoulAppearanceStateV6>(&scenario);
+    soul::set_listed(&mut state, true);
+    appearance_v6::apply_authorized_loadout(
+        &state,
+        &mut appearance,
+        0,
+        updated_appearance_commitment(MINTER, true),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::appearance_v6::ERevisionMismatch)]
+fun appearance_v6_rejects_stale_revision() {
+    let mut scenario = ts::begin(MINTER);
+    new_appearance_state_for_testing(
+        &mut scenario,
+        appearance_v6::profile_mode_composable(),
+        true,
+        true,
+    );
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let mut appearance = ts::take_shared<SoulAppearanceStateV6>(&scenario);
+    appearance_v6::apply_authorized_loadout(
+        &state,
+        &mut appearance,
+        1,
+        updated_appearance_commitment(MINTER, true),
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::appearance_v6::ETransferUnsafe)]
+fun appearance_v6_wallet_bound_loadout_cannot_be_listed() {
+    let mut scenario = ts::begin(MINTER);
+    new_appearance_state_for_testing(
+        &mut scenario,
+        appearance_v6::profile_mode_composable(),
+        true,
+        false,
+    );
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    let appearance = ts::take_shared<SoulAppearanceStateV6>(&scenario);
+    appearance_v6::assert_transfer_safe_for_listing(&state, &appearance);
+    abort 42
+}
+
+#[test]
+fun appearance_v6_transfer_safe_loadout_syncs_owner_without_revision_change() {
+    let mut scenario = ts::begin(MINTER);
+    new_appearance_state_for_testing(
+        &mut scenario,
+        appearance_v6::profile_mode_composable(),
+        true,
+        true,
+    );
+    scenario.next_tx(MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut appearance = ts::take_shared<SoulAppearanceStateV6>(&scenario);
+    appearance_v6::assert_transfer_safe_for_listing(&state, &appearance);
+    soul::rotate_owner(
+        &mut state,
+        BUYER,
+        object::id_from_address(@0xb662),
+    );
+    appearance_v6::sync_ownership_after_transfer(
+        &state,
+        &mut appearance,
+        0,
+    );
+    assert!(appearance_v6::revision(&appearance) == 0, 0);
+    assert!(appearance_v6::current_authorizer(&appearance) == BUYER, 1);
+    assert!(
+        appearance_v6::ownership_epoch_snapshot(&appearance)
+            == soul::ownership_epoch(&state),
+        2,
+    );
+    ts::return_shared(state);
+    ts::return_shared(appearance);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftV6ListingPathRequired)]
+fun appearance_v6_cannot_enter_legacy_listing_path() {
+    let mut scenario = ts::begin(MINTER);
+    new_appearance_state_for_testing(
+        &mut scenario,
+        appearance_v6::profile_mode_composable(),
+        true,
+        true,
+    );
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    market::assert_legacy_listing_has_no_v6_appearance_for_testing(&state);
+    abort 42
+}
+
+#[test]
+fun appearance_v6_dedicated_listing_pins_and_syncs_transfer_safe_loadout() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let buyer_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, BUYER);
+    retire_legacy_market_for_v2_testing(&mut scenario);
+    let (_state_id, _output_seal_id) = setup_and_mint_animacraft_v5(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+    );
+
+    scenario.next_tx(MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    appearance_v6::new_bind_and_publish(
+        &mut state,
+        appearance_v6::profile_mode_composable(),
+        true,
+        appearance_v6::new_commitment(
+            object::id_from_address(@0xc661),
+            object::id_from_address(@0xd661),
+            MINTER,
+            b"00000000000000000000000000000000",
+            b"11111111111111111111111111111111",
+            b"22222222222222222222222222222222",
+            b"55555555555555555555555555555555",
+            true,
+        ),
+        scenario.ctx(),
+    );
+    ts::return_shared(state);
+    enable_secondary_market_v2_for_testing(&mut scenario);
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let provenance = ts::take_immutable<AnimacraftProvenance>(&scenario);
+    let mut seller_kiosk =
+        ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let seller_cap =
+        ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let appearance = ts::take_shared<SoulAppearanceStateV6>(&scenario);
+    let (listing, snapshot) =
+        market::list_animacraft_v6_soul_fixed_price_for_testing(
+        &config,
+        &registry,
+        &provenance,
+        &mut seller_kiosk,
+        &seller_cap,
+        &mut state,
+        &appearance,
+        SOUL_PRICE,
+        scenario.ctx(),
+    );
+    assert!(
+        market::animacraft_v6_listing_snapshot_appearance_id(&snapshot)
+            == object::id(&appearance),
+        0,
+    );
+    assert!(
+        market::animacraft_v6_listing_snapshot_revision(&snapshot) == 0,
+        1,
+    );
+    assert!(
+        *market::animacraft_v6_listing_snapshot_loadout_hash(&snapshot)
+            == b"11111111111111111111111111111111",
+        2,
+    );
+    market::finalize_soul_listing(listing);
+    market::finalize_animacraft_v6_soul_listing_snapshot(snapshot);
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_immutable(provenance);
+    ts::return_shared(seller_kiosk);
+    ts::return_to_address(MINTER, seller_cap);
+    ts::return_shared(state);
+    ts::return_shared(appearance);
+
+    mint_usdc_to(BUYER, SOUL_PRICE, &mut scenario);
+    scenario.next_tx(BUYER);
+    let config = ts::take_shared<MarketConfigV2>(&scenario);
+    let registry = ts::take_shared<KioskRegistry>(&scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(&scenario);
+    let provenance = ts::take_immutable<AnimacraftProvenance>(&scenario);
+    let mut seller_kiosk =
+        ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let mut buyer_kiosk =
+        ts::take_shared_by_id<Kiosk>(&scenario, buyer_kiosk_id);
+    let buyer_cap =
+        ts::take_from_address<PersonalKioskCap>(&scenario, BUYER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut appearance = ts::take_shared<SoulAppearanceStateV6>(&scenario);
+    let mut listing = ts::take_shared<SoulListing>(&scenario);
+    let mut snapshot =
+        ts::take_shared<AnimacraftV6SoulListingSnapshot>(&scenario);
+    let payment =
+        ts::take_from_address<coin::Coin<USDC>>(&scenario, BUYER);
+    market::buy_animacraft_v6_soul_fixed_price_for_testing(
+        &config,
+        &registry,
+        &soul_policy,
+        &provenance,
+        &mut seller_kiosk,
+        &mut buyer_kiosk,
+        &buyer_cap,
+        &mut state,
+        &mut appearance,
+        &mut listing,
+        &mut snapshot,
+        payment,
+        scenario.ctx(),
+    );
+    assert!(soul::current_owner(&state) == BUYER, 3);
+    assert!(soul::ownership_epoch(&state) == 1, 4);
+    assert!(appearance_v6::revision(&appearance) == 0, 5);
+    assert!(appearance_v6::current_authorizer(&appearance) == BUYER, 6);
+    assert!(appearance_v6::ownership_epoch_snapshot(&appearance) == 1, 7);
+    assert!(
+        !market::animacraft_v6_listing_snapshot_is_active(&snapshot),
+        8,
+    );
+
+    ts::return_shared(config);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_immutable(provenance);
+    ts::return_shared(seller_kiosk);
+    ts::return_shared(buyer_kiosk);
+    ts::return_to_address(BUYER, buyer_cap);
+    ts::return_shared(state);
+    ts::return_shared(appearance);
+    ts::return_shared(listing);
+    ts::return_shared(snapshot);
+    ts::end(scenario);
 }
