@@ -67,6 +67,15 @@ export type MarketErrorName =
   | 'EAnimacraftPurchasePathRequired'
   | 'EAnimacraftRoyaltyTooSmall'
   | 'EAnimacraftListingPathRequired'
+  | 'ELegacyMarketMustBePaused'
+  | 'EPrimaryPausedV2'
+  | 'ESecondaryPausedV2'
+  | 'EAnimacraftV5CommercePathRequired'
+  | 'EAnimacraftV5ProtocolFeeMismatch'
+  | 'EAnimacraftV5MakerRoyaltyMismatch'
+  | 'EAnimacraftV5CreatorRoyaltyTooHigh'
+  | 'EAnimacraftV5ListingMismatch'
+  | 'EAnimacraftV5CreatorRoyaltyMismatch'
 
 export interface MarketErrorEntry {
   readonly name: MarketErrorName
@@ -316,6 +325,51 @@ export const MARKET_ERROR_CATALOG: { readonly [code: number]: MarketErrorEntry }
     name: 'EAnimacraftListingPathRequired',
     summary: 'Animacraft Souls must use the provenance-aware listing path.',
     recoveryHint: 'Refresh the Soul detail page and list it again from Soulidity.',
+  },
+  59: {
+    name: 'ELegacyMarketMustBePaused',
+    summary: 'The legacy market must be paused before it can be retired.',
+    recoveryHint: 'Pause the legacy market first, then retry the one-way retirement transaction.',
+  },
+  60: {
+    name: 'EPrimaryPausedV2',
+    summary: 'Primary Soul issuance is paused in the successor market.',
+    recoveryHint: 'Wait for the protocol operator to enable primary issuance.',
+  },
+  61: {
+    name: 'ESecondaryPausedV2',
+    summary: 'Secondary Soul trading is paused in the successor market.',
+    recoveryHint: 'Wait for the protocol operator to enable secondary trading.',
+  },
+  62: {
+    name: 'EAnimacraftV5CommercePathRequired',
+    summary: 'This Animacraft Soul must use the marketplace path matching its protocol version.',
+    recoveryHint: 'Refresh the Soul and list or buy it through the current Animacraft v5 flow.',
+  },
+  63: {
+    name: 'EAnimacraftV5ProtocolFeeMismatch',
+    summary: 'Soulidity is not configured with the required 2.5% Animacraft v5 protocol fee.',
+    recoveryHint: 'Pause the purchase and ask the protocol operator to verify the active market config.',
+  },
+  64: {
+    name: 'EAnimacraftV5MakerRoyaltyMismatch',
+    summary: 'The immutable Maker-source royalty is outside the supported 0–5% range or 0.5% steps.',
+    recoveryHint: 'Return to the originating Maker version and verify its published royalty snapshot.',
+  },
+  65: {
+    name: 'EAnimacraftV5CreatorRoyaltyTooHigh',
+    summary: 'The Soul creator royalty is outside the supported 0–5% range or 0.5% steps.',
+    recoveryHint: 'Choose a Soul creator royalty from 0% through 5% in 0.5% steps.',
+  },
+  66: {
+    name: 'EAnimacraftV5ListingMismatch',
+    summary: 'This listing was not created by the isolated Animacraft v5 market path.',
+    recoveryHint: 'Cancel or refresh the listing, then create a new Animacraft v5 listing.',
+  },
+  67: {
+    name: 'EAnimacraftV5CreatorRoyaltyMismatch',
+    summary: 'The listing tried to change the Soul creator royalty frozen at the original v5 mint.',
+    recoveryHint: 'Refresh the Soul and use its immutable creator royalty snapshot.',
   },
 }
 

@@ -201,6 +201,10 @@ function Hero({
   const router = useRouter()
   const { requireAuth } = useRequireAuth()
   const listed = soul.listingStatus === 'listed'
+  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+  const v5CollectionBlocked = isAnimacraftV5 && Boolean(soul.collectionOnChainId)
+  const soulCreatorRoyaltyBps =
+    soul.quote?.soulCreatorRoyaltyBps ?? soul.creatorRoyaltyBps
   const sprites = useMemo(() => activeVersions(soul.contentVersions, KIND_SPRITE), [soul.contentVersions])
 
   return (
@@ -354,10 +358,23 @@ function Hero({
               {listed ? (
                 <>
                   <span className="whitespace-nowrap">
-                    {soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}{' '}
+                    {isAnimacraftV5
+                      ? 'Maker-source royalty'
+                      : soul.provenanceKind === 'animacraft'
+                        ? 'Maker royalty'
+                        : 'Creator royalty'}{' '}
                     <b className="text-foreground">{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</b>
                   </span>
-                  {soul.collection && (
+                  {isAnimacraftV5 && (
+                    <>
+                      <span className="text-[var(--text-faint)]">·</span>
+                      <span className="whitespace-nowrap">
+                        Soul creator royalty{' '}
+                        <b className="text-foreground">{(soulCreatorRoyaltyBps / 100).toFixed(2)}%</b>
+                      </span>
+                    </>
+                  )}
+                  {soul.collection && !isAnimacraftV5 && (
                     <>
                       <span className="text-[var(--text-faint)]">·</span>
                       <span className="whitespace-nowrap">
@@ -366,6 +383,10 @@ function Hero({
                     </>
                   )}
                 </>
+              ) : v5CollectionBlocked ? (
+                <span className="text-danger">
+                  Collection-bound Animacraft v5 Soul · secondary listing is blocked.
+                </span>
               ) : (
                 <span>List your Soul on the Soulidity Market when you&apos;re ready to find a new owner.</span>
               )}
@@ -374,15 +395,17 @@ function Hero({
           <div className="sd-listing-actions flex flex-col items-stretch gap-2" style={{ minWidth: 140 }}>
             {role === 'owner' && listed && (
               <>
-                <Button variant="gold" size="sm" onClick={onUpdatePrice}>
-                  Update price
-                </Button>
+                {!v5CollectionBlocked && (
+                  <Button variant="gold" size="sm" onClick={onUpdatePrice}>
+                    Update price
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={onDelist}>
                   Delist
                 </Button>
               </>
             )}
-            {role === 'owner' && !listed && (
+            {role === 'owner' && !listed && !v5CollectionBlocked && (
               <Link
                 href={`/souls/${encodeURIComponent(soul.onChainId)}/sell`}
                 className={buttonStyles({ variant: 'gold', size: 'sm' })}
@@ -390,7 +413,16 @@ function Hero({
                 List Soul
               </Link>
             )}
-            {role !== 'owner' && listed && soul.quote && (
+            {role === 'owner' && !listed && v5CollectionBlocked && (
+              <button
+                type="button"
+                disabled
+                className={buttonStyles({ variant: 'outline', size: 'sm' })}
+              >
+                Listing blocked
+              </button>
+            )}
+            {role !== 'owner' && listed && soul.quote && !v5CollectionBlocked && (
               <button
                 type="button"
                 onClick={() => {
@@ -579,6 +611,10 @@ function Subcard({ children, className = '' }: { children: React.ReactNode; clas
 
 // ── Info panel (object graph + royalties) ────────────────────────────
 function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
+  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+  const soulCreatorRoyaltyBps =
+    soul.quote?.soulCreatorRoyaltyBps ?? soul.creatorRoyaltyBps
+
   return (
     <div className="p-5">
       <PanelHead
@@ -600,12 +636,32 @@ function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
         <Subcard>
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-action-label">Royalties &amp; access</div>
           <KV
-            k={soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}
+            k={
+              isAnimacraftV5
+                ? 'Maker-source royalty'
+                : soul.provenanceKind === 'animacraft'
+                  ? 'Maker royalty'
+                  : 'Creator royalty'
+            }
             v={<span>{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</span>}
           />
+          {isAnimacraftV5 && (
+            <KV
+              k="Soul creator royalty"
+              v={<span>{(soulCreatorRoyaltyBps / 100).toFixed(2)}%</span>}
+            />
+          )}
           <KV
             k="Collection royalty"
-            v={<span>{soul.collection ? `${(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%` : 'None'}</span>}
+            v={
+              <span>
+                {isAnimacraftV5 && soul.collectionOnChainId
+                  ? 'Incompatible · resale blocked'
+                  : soul.collection
+                    ? `${(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%`
+                    : 'None'}
+              </span>
+            }
           />
           <KV k="Grant capacity" v={<span>{soul.activeGrantCount} / {soul.grantCapacity}</span>} />
           <KV k="Sprite versions" v={<span>{activeVersions(soul.contentVersions, KIND_SPRITE).length}</span>} />
@@ -1923,6 +1979,9 @@ function formatExpiresAtMs(value: string | null): string {
 
 // ── Right rail ───────────────────────────────────────────────────────
 function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
+  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+  const soulCreatorRoyaltyBps =
+    soul.quote?.soulCreatorRoyaltyBps ?? soul.creatorRoyaltyBps
   const grantPct =
     soul.grantCapacity > 0 ? Math.min(100, (soul.activeGrantCount / soul.grantCapacity) * 100) : 0
 
@@ -1991,11 +2050,26 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
         <KV k="Skills versions" v={<span>{activeVersions(soul.contentVersions, KIND_SKILL).length}</span>} />
         <KV k="Memory entries" v={<span>{activeVersions(soul.contentVersions, KIND_MEMORY).length}</span>} />
         <KV
-          k={soul.provenanceKind === 'animacraft' ? 'Maker royalty' : 'Creator royalty'}
+          k={
+            isAnimacraftV5
+              ? 'Maker-source royalty'
+              : soul.provenanceKind === 'animacraft'
+                ? 'Maker royalty'
+                : 'Creator royalty'
+          }
           v={<span>{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</span>}
         />
-        {soul.collection && (
+        {isAnimacraftV5 && (
+          <KV
+            k="Soul creator royalty"
+            v={<span>{(soulCreatorRoyaltyBps / 100).toFixed(2)}%</span>}
+          />
+        )}
+        {soul.collection && !isAnimacraftV5 && (
           <KV k="Collection royalty" v={<span>{(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%</span>} />
+        )}
+        {isAnimacraftV5 && soul.collectionOnChainId && (
+          <KV k="Secondary sale" v={<span className="text-danger">Blocked by collection binding</span>} />
         )}
         {role === 'owner' && (
           <div className="mt-3">

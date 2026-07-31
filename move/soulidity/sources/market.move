@@ -6,6 +6,12 @@ use animacraft::animacraft::{
     MakerTreasury,
     OCMaker,
 };
+use animacraft::commerce_v5::{
+    Self as animacraft_commerce_v5,
+    CommerceProtocolConfigV5,
+    CommerceV5SoulMintAuthorization,
+    MakerRootV5,
+};
 use std::string::{Self as string, String};
 use std::type_name;
 use kiosk::kiosk_lock_rule;
@@ -13,7 +19,9 @@ use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use kiosk::personal_kiosk_rule;
 use kiosk::witness_rule;
 use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRight};
+use soulidity::animacraft_soul_binding_v5 as animacraft_soul_binding_v5;
 use soulidity::animacraft_provenance::{Self as animacraft_provenance, AnimacraftProvenance};
+use soulidity::animacraft_output_provenance_v5 as animacraft_output_provenance_v5;
 use soulidity::content::{Self as content, SoulContent};
 use soulidity::grant;
 use soulidity::kind_registry::{Self as kind_registry, KindRegistry};
@@ -33,6 +41,21 @@ use walrus::blob::Blob;
 const MAX_BPS: u16 = 10_000;
 const MAX_U64_AS_U128: u128 = 18446744073709551615;
 const DEFAULT_PLATFORM_FEE_BPS: u16 = 250;
+const ANIMACRAFT_PROTOCOL_VERSION_V4: u64 = 4;
+const ANIMACRAFT_PROTOCOL_VERSION_V5: u64 = 5;
+/// The v5 secondary model settles a listed price as a gross amount. The
+/// protocol fee is fixed at 2.5%; the immutable Animacraft provenance supplies
+/// the Maker-source royalty, while the Soul creator share is selected once at
+/// canonical mint and then frozen in SoulState.
+/// Both rights royalties use 0.5% steps from 0% through 5% and may total 10%.
+/// The fixed 2.5% protocol fee is separate, so the gross-price ceiling is
+/// 12.5% and the seller always receives at least 87.5%.
+const ANIMACRAFT_V5_PROTOCOL_FEE_BPS: u16 = 250;
+const ANIMACRAFT_V5_MAX_SOUL_CREATOR_BPS: u16 = 500;
+const ANIMACRAFT_V5_MAX_MAKER_SOURCE_BPS: u16 = 500;
+const ANIMACRAFT_V5_ROYALTY_STEP_BPS: u16 = 50;
+const ANIMACRAFT_V5_MAX_RIGHTS_POOL_BPS: u16 = 1_000;
+const ANIMACRAFT_V5_MAX_ADD_ON_BPS: u16 = 1_250;
 
 const EInvalidRecipient: u64 = 0;
 const EInvalidPrice: u64 = 1;
@@ -85,8 +108,15 @@ const EAnimacraftListingPathRequired: u64 = 58;
 const ELegacyMarketMustBePaused: u64 = 59;
 const EPrimaryPausedV2: u64 = 60;
 const ESecondaryPausedV2: u64 = 61;
+const EAnimacraftV5CommercePathRequired: u64 = 62;
+const EAnimacraftV5ProtocolFeeMismatch: u64 = 63;
+const EAnimacraftV5MakerRoyaltyMismatch: u64 = 64;
+const EAnimacraftV5CreatorRoyaltyTooHigh: u64 = 65;
+const EAnimacraftV5ListingMismatch: u64 = 66;
+const EAnimacraftV5CreatorRoyaltyMismatch: u64 = 67;
 const VERSION: u64 = 1;
 const MARKET_VERSION_V2: u64 = 2;
+const MARKET_VERSION_ANIMACRAFT_V5: u64 = 5;
 
 public struct MARKET has drop {}
 
@@ -307,6 +337,25 @@ public struct AnimacraftSoulPurchased has copy, drop {
     maker_royalty_bps: u16,
     maker_royalty: u64,
     collection_royalty: u64,
+}
+
+/// Settlement record for the isolated v5 path. Unlike v4, `price` is the
+/// buyer's complete gross payment and `seller_payout` is its residual after
+/// the approved protocol, Soul creator, and Maker-source shares.
+public struct AnimacraftV5SoulPurchased has copy, drop {
+    listing_id: ID,
+    soul_id: ID,
+    provenance_id: ID,
+    seller: address,
+    buyer: address,
+    maker_source_recipient: address,
+    price: u64,
+    seller_payout: u64,
+    protocol_fee: u64,
+    soul_creator_royalty_bps: u16,
+    soul_creator_royalty: u64,
+    maker_source_royalty_bps: u16,
+    maker_source_royalty: u64,
 }
 
 public struct CollectionMintedToKiosk has copy, drop {
@@ -549,6 +598,79 @@ public fun quote_animacraft_soul_purchase_v2(
         maker_royalty_bps,
         collection_royalty_bps,
     )
+}
+
+/// Quote the approved Animacraft v5 secondary distribution. `price` is a
+/// gross listing price, not a seller net price: all recipients are paid from
+/// this one coin. The Maker-source share must come from the immutable
+/// Animacraft provenance/royalty snapshot; it is never selected by the seller.
+public fun quote_animacraft_v5_soul_sale(
+    price: u64,
+    soul_creator_royalty_bps: u16,
+    maker_source_royalty_bps: u16,
+): (u64, u64, u64, u64) {
+    assert!(price > 0, EInvalidPrice);
+    assert_animacraft_v5_royalty_schedule(
+        soul_creator_royalty_bps,
+        maker_source_royalty_bps,
+    );
+
+    let protocol_fee = floor_bps_amount(price, ANIMACRAFT_V5_PROTOCOL_FEE_BPS);
+    let soul_creator_royalty = floor_bps_amount(price, soul_creator_royalty_bps);
+    let maker_source_royalty = floor_bps_amount(price, maker_source_royalty_bps);
+    let seller_payout = price - protocol_fee - soul_creator_royalty - maker_source_royalty;
+    (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty)
+}
+
+/// Quote a v5 resale from the immutable SoulState creator-rate snapshot.
+/// Repeated owners and listings therefore receive exactly the same creator
+/// split for a given gross price and Maker-source rate.
+public fun quote_animacraft_v5_soul_sale_for_state(
+    state: &SoulState,
+    price: u64,
+    maker_source_royalty_bps: u16,
+): (u64, u64, u64, u64) {
+    quote_animacraft_v5_soul_sale(
+        price,
+        soul::creator_royalty_bps(state),
+        maker_source_royalty_bps,
+    )
+}
+
+fun assert_animacraft_v5_royalty_schedule(
+    soul_creator_royalty_bps: u16,
+    maker_source_royalty_bps: u16,
+) {
+    assert!(
+        soul_creator_royalty_bps <= ANIMACRAFT_V5_MAX_SOUL_CREATOR_BPS
+            && soul_creator_royalty_bps % ANIMACRAFT_V5_ROYALTY_STEP_BPS == 0,
+        EAnimacraftV5CreatorRoyaltyTooHigh,
+    );
+    assert!(
+        maker_source_royalty_bps <= ANIMACRAFT_V5_MAX_MAKER_SOURCE_BPS
+            && maker_source_royalty_bps % ANIMACRAFT_V5_ROYALTY_STEP_BPS == 0,
+        EAnimacraftV5MakerRoyaltyMismatch,
+    );
+    let rights_pool_bps = (maker_source_royalty_bps as u64)
+        + (soul_creator_royalty_bps as u64);
+    assert!(
+        rights_pool_bps <= (ANIMACRAFT_V5_MAX_RIGHTS_POOL_BPS as u64),
+        ECombinedFeesTooHigh,
+    );
+    let total_add_on_bps =
+        (ANIMACRAFT_V5_PROTOCOL_FEE_BPS as u64) + rights_pool_bps;
+    assert!(total_add_on_bps <= (ANIMACRAFT_V5_MAX_ADD_ON_BPS as u64), ECombinedFeesTooHigh);
+}
+
+#[test_only]
+public fun assert_animacraft_v5_creator_royalty_snapshot_for_testing(
+    state: &SoulState,
+    supplied_bps: u16,
+) {
+    assert!(
+        supplied_bps == soul::creator_royalty_bps(state),
+        EAnimacraftV5CreatorRoyaltyMismatch,
+    );
 }
 
 fun quote_animacraft_soul_purchase_with_fee_bps(
@@ -1089,14 +1211,16 @@ public fun mint_animacraft_in_personal_kiosk(
         description,
         initial_content,
         initial_state_config,
+        0,
+        ANIMACRAFT_PROTOCOL_VERSION_V4,
         clock,
         ctx,
     )
 }
 
-/// Canonical Animacraft handoff after irreversible legacy-market retirement.
-/// This is the only primary mint entrypoint production clients may use once
-/// the old `MarketAdminCap` has been consumed.
+/// Canonical Animacraft v4-compatible handoff after irreversible
+/// legacy-market retirement. The dedicated v5 entrypoint below adds the
+/// immutable Soul-creator royalty snapshot without changing this ABI.
 public fun mint_animacraft_in_personal_kiosk_v2(
     config: &MarketConfigV2,
     kind_registry_obj: &KindRegistry,
@@ -1124,9 +1248,78 @@ public fun mint_animacraft_in_personal_kiosk_v2(
         description,
         initial_content,
         initial_state_config,
+        0,
+        ANIMACRAFT_PROTOCOL_VERSION_V4,
         clock,
         ctx,
     )
+}
+
+/// Canonical Animacraft commerce-v5 handoff. The authorization has a distinct
+/// non-droppable type and carries the MakerRootV5 creator royalty snapshot;
+/// callers cannot supply or override that value at Soulidity's public ABI.
+public fun mint_animacraft_v5_in_personal_kiosk_v2(
+    config: &MarketConfigV2,
+    kind_registry_obj: &KindRegistry,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    root: &mut MakerRootV5,
+    commerce_protocol_config: &CommerceProtocolConfigV5,
+    authorization: CommerceV5SoulMintAuthorization,
+    description: String,
+    initial_content: vector<InitialContentEntry>,
+    initial_state_config: vector<StateConfigEntry>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): SoulState {
+    assert!(config.primary_enabled, EPrimaryPausedV2);
+    let (
+        canonical_authorization,
+        soul_creator_royalty_bps,
+        output_binding,
+    ) =
+        animacraft_commerce_v5::consume_commerce_v5_soul_mint_authorization(
+            authorization,
+        );
+    let output_seal_id =
+        *animacraft_commerce_v5::complete_output_soul_binding_seal_id_v5(
+            &output_binding,
+        );
+    let mut state = mint_animacraft_in_personal_kiosk_impl(
+        false,
+        config.platform_fee_bps,
+        kind_registry_obj,
+        registry,
+        soul_policy,
+        kiosk_obj,
+        personal_kiosk_cap,
+        canonical_authorization,
+        description,
+        initial_content,
+        initial_state_config,
+        soul_creator_royalty_bps,
+        ANIMACRAFT_PROTOCOL_VERSION_V5,
+        clock,
+        ctx,
+    );
+    let soul_id = soul::soul_id(&state);
+    let binding_proof = animacraft_soul_binding_v5::new();
+    animacraft_commerce_v5::bind_complete_output_to_soul_v5(
+        root,
+        commerce_protocol_config,
+        output_binding,
+        soul_id,
+        binding_proof,
+    );
+    animacraft_output_provenance_v5::new_bind_and_freeze(
+        &mut state,
+        root,
+        output_seal_id,
+        ctx,
+    );
+    state
 }
 
 fun mint_animacraft_in_personal_kiosk_impl(
@@ -1141,6 +1334,8 @@ fun mint_animacraft_in_personal_kiosk_impl(
     description: String,
     initial_content: vector<InitialContentEntry>,
     initial_state_config: vector<StateConfigEntry>,
+    soul_creator_royalty_bps: u16,
+    required_animacraft_version: u64,
     clock: &Clock,
     ctx: &mut TxContext,
 ): SoulState {
@@ -1170,7 +1365,19 @@ fun mint_animacraft_in_personal_kiosk_impl(
         authorized_at_ms,
     ) = animacraft::consume_soul_mint_authorization(authorization);
 
-    assert!(animacraft_version == 4, EAnimacraftProtocolVersion);
+    // The current dependency exposes the canonical v4 type.  Animacraft v5
+    // is intentionally accepted only if it preserves this canonical consume
+    // ABI and reports version 5; its resale path is separately fail-closed.
+    assert!(
+        animacraft_version == ANIMACRAFT_PROTOCOL_VERSION_V4
+            || animacraft_version == ANIMACRAFT_PROTOCOL_VERSION_V5,
+        EAnimacraftProtocolVersion,
+    );
+    assert!(
+        required_animacraft_version == 0
+            || animacraft_version == required_animacraft_version,
+        EAnimacraftProtocolVersion,
+    );
     assert!(payer == ctx.sender(), EAnimacraftPayerMismatch);
     assert!(personal_kiosk::owner(kiosk_obj) == payer, EAnimacraftPayerMismatch);
     assert!(
@@ -1181,6 +1388,16 @@ fun mint_animacraft_in_personal_kiosk_impl(
         maker_treasury_id == animacraft::royalty_policy_treasury_id(&royalty_policy),
         EAnimacraftAuthorizationMismatch,
     );
+    let maker_source_royalty_bps = animacraft::royalty_policy_bps(&royalty_policy);
+    if (animacraft_version == ANIMACRAFT_PROTOCOL_VERSION_V5) {
+        assert_animacraft_v5_royalty_schedule(
+            soul_creator_royalty_bps,
+            maker_source_royalty_bps,
+        );
+    } else {
+        // v4 ABI and settlement semantics remain unchanged.
+        assert!(soul_creator_royalty_bps == 0, EAnimacraftAuthorizationMismatch);
+    };
     let expected_payment_coin_type = payment_coin_type_name<USDC>();
     assert!(
         &mint_payment_coin_type == &expected_payment_coin_type,
@@ -1200,7 +1417,7 @@ fun mint_animacraft_in_personal_kiosk_impl(
         copy image_url,
         initial_content,
         initial_state_config,
-        0,
+        soul_creator_royalty_bps,
         soul::provenance_animacraft(),
         option::some(copy profile_json_blob_id),
         clock,
@@ -1740,6 +1957,7 @@ public fun list_animacraft_soul_fixed_price(
 ): SoulListing {
     assert!(!config.paused, EMarketPaused);
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v4_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::creator_royalty_bps(state) == 0, EAnimacraftAuthorizationMismatch);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
     animacraft_provenance::assert_matches_soul(provenance, state);
@@ -1778,6 +1996,7 @@ public fun list_animacraft_soul_fixed_price_with_collection(
 ): SoulListing {
     assert!(!config.paused, EMarketPaused);
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v4_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::creator_royalty_bps(state) == 0, EAnimacraftAuthorizationMismatch);
     let collection_id = object::id(collection_obj);
     assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
@@ -1817,6 +2036,7 @@ public fun list_animacraft_soul_fixed_price_v2(
 ): SoulListing {
     assert!(config.secondary_enabled, ESecondaryPausedV2);
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v4_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::creator_royalty_bps(state) == 0, EAnimacraftAuthorizationMismatch);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
     animacraft_provenance::assert_matches_soul(provenance, state);
@@ -1853,6 +2073,7 @@ public fun list_animacraft_soul_fixed_price_with_collection_v2(
 ): SoulListing {
     assert!(config.secondary_enabled, ESecondaryPausedV2);
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v4_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::creator_royalty_bps(state) == 0, EAnimacraftAuthorizationMismatch);
     let collection_id = object::id(collection_obj);
     assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
@@ -1876,6 +2097,105 @@ public fun list_animacraft_soul_fixed_price_with_collection_v2(
         collection_royalty_bps,
         ctx,
     )
+}
+
+/// Dedicated gross-price resale listing for Animacraft v5 provenance.  This
+/// deliberately has no collection variant: the approved v5 model reserves a
+/// maximum 10% rights pool plus the separate fixed 2.5% protocol fee, and
+/// therefore cannot be silently expanded by a collection royalty.
+public fun list_animacraft_v5_soul_fixed_price_v2(
+    config: &MarketConfigV2,
+    registry: &KioskRegistry,
+    provenance: &AnimacraftProvenance,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    price: u64,
+    ctx: &mut TxContext,
+): SoulListing {
+    let frozen_creator_royalty_bps = soul::creator_royalty_bps(state);
+    list_animacraft_v5_soul_fixed_price_with_creator_royalty_v2(
+        config,
+        registry,
+        provenance,
+        kiosk_obj,
+        personal_kiosk_cap,
+        state,
+        price,
+        frozen_creator_royalty_bps,
+        ctx,
+    )
+}
+
+/// ABI-compatible v5 listing variant. `soul_creator_royalty_bps` is no longer
+/// seller-configurable: it must equal the immutable value selected when the
+/// Soul was minted. The Maker-source share is independently read from frozen
+/// Animacraft provenance.
+public fun list_animacraft_v5_soul_fixed_price_with_creator_royalty_v2(
+    config: &MarketConfigV2,
+    registry: &KioskRegistry,
+    provenance: &AnimacraftProvenance,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    price: u64,
+    soul_creator_royalty_bps: u16,
+    ctx: &mut TxContext,
+): SoulListing {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
+    assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    animacraft_provenance::assert_matches_soul(provenance, state);
+    assert!(
+        soul_creator_royalty_bps == soul::creator_royalty_bps(state),
+        EAnimacraftV5CreatorRoyaltyMismatch,
+    );
+    let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
+    let (_, _, _, _) = quote_animacraft_v5_soul_sale_for_state(
+        state,
+        price,
+        maker_source_royalty_bps,
+    );
+    assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    assert!(soul::current_owner(state) == ctx.sender(), ESoulOwnerMismatch);
+    assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), ESoulCurrentKioskMismatch);
+
+    let soul_id = soul::soul_id(state);
+    let seller = personal_kiosk::owner(kiosk_obj);
+    let kiosk_id = object::id(kiosk_obj);
+    assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
+    let _soul_ref = kiosk::borrow<Soul>(
+        kiosk_obj,
+        personal_kiosk::borrow(personal_kiosk_cap),
+        soul_id,
+    );
+    let purchase_cap = kiosk::list_with_purchase_cap<Soul>(
+        kiosk_obj,
+        personal_kiosk::borrow(personal_kiosk_cap),
+        soul_id,
+        0,
+        ctx,
+    );
+    let listing = SoulListing {
+        id: object::new(ctx),
+        version: MARKET_VERSION_ANIMACRAFT_V5,
+        soul_id,
+        state_id: object::id(state),
+        seller,
+        seller_kiosk_id: kiosk_id,
+        price,
+        creator: soul::state_creator(state),
+        creator_royalty_bps: soul_creator_royalty_bps,
+        collection_id: option::none(),
+        purchase_cap: option::some(purchase_cap),
+        is_active: true,
+    };
+    let listing_id = object::id(&listing);
+    soul::set_listed(state, true);
+    event::emit(SoulListed { listing_id, soul_id, seller, kiosk_id, price });
+    listing
 }
 
 public fun cancel_soul_listing(
@@ -2204,6 +2524,119 @@ public fun buy_animacraft_soul_fixed_price_with_collection_v2(
         collection::current_holder(collection_obj),
         ctx,
     )
+}
+
+/// Dedicated v5 counterpart to `list_animacraft_v5_soul_fixed_price_v2`.
+/// Payment is exactly the listed gross price; no generic or v4 purchase
+/// function can settle this listing because both provenance and listing
+/// versions are checked before the kiosk purchase cap is consumed.
+public fun buy_animacraft_v5_soul_fixed_price_v2(
+    config: &MarketConfigV2,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    provenance: &AnimacraftProvenance,
+    seller_kiosk: &mut Kiosk,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    listing: &mut SoulListing,
+    payment: Coin<USDC>,
+    ctx: &mut TxContext,
+) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
+    assert!(listing.version == MARKET_VERSION_ANIMACRAFT_V5, EAnimacraftV5ListingMismatch);
+    assert!(listing.collection_id.is_none(), ECollectionMismatch);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
+    assert!(listing.is_active, EInactiveListing);
+    assert!(listing.state_id == object::id(state), EListingStateMismatch);
+    assert!(listing.soul_id == soul::soul_id(state), EListingStateMismatch);
+    assert!(listing.creator == soul::state_creator(state), EListingStateMismatch);
+    assert!(
+        listing.creator_royalty_bps == soul::creator_royalty_bps(state),
+        EAnimacraftV5CreatorRoyaltyMismatch,
+    );
+    assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
+    assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
+    animacraft_provenance::assert_matches_soul(provenance, state);
+
+    let buyer_kiosk_id = object::id(buyer_kiosk);
+    assert_registered_personal_kiosk(
+        registry,
+        ctx.sender(),
+        buyer_kiosk_id,
+        object::id(buyer_personal_kiosk_cap),
+    );
+    let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
+    // v5 source royalties belong to the original Maker author frozen into
+    // immutable provenance at canonical mint. They must not follow a later
+    // Maker operator, Maker transfer, or caller-supplied treasury object.
+    let maker_source_recipient = animacraft_provenance::maker_creator(provenance);
+    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
+        quote_animacraft_v5_soul_sale_for_state(
+            state,
+            listing.price,
+            maker_source_royalty_bps,
+        );
+    assert!(payment.value() == listing.price, EIncorrectPaymentAmount);
+
+    let purchase_cap = take_soul_purchase_cap(listing);
+    let (soul_obj, mut request) = kiosk::purchase_with_cap<Soul>(
+        seller_kiosk,
+        purchase_cap,
+        coin::zero<SUI>(ctx),
+    );
+    assert!(object::id(&soul_obj) == listing.soul_id, EListingSoulMismatch);
+
+    let mut seller_payment = payment;
+    if (protocol_fee > 0) {
+        let fee_payment = coin::split(&mut seller_payment, protocol_fee, ctx);
+        transfer::public_transfer(fee_payment, config.fee_recipient);
+    };
+    if (soul_creator_royalty > 0) {
+        let royalty_payment = coin::split(&mut seller_payment, soul_creator_royalty, ctx);
+        transfer::public_transfer(royalty_payment, listing.creator);
+    };
+    if (maker_source_royalty > 0) {
+        let royalty_payment = coin::split(&mut seller_payment, maker_source_royalty, ctx);
+        transfer::public_transfer(royalty_payment, maker_source_recipient);
+    };
+    transfer::public_transfer(seller_payment, listing.seller);
+
+    grant::invalidate_all_for_owner_rotation(state, ctx.sender(), ctx.sender());
+    soul::rotate_owner(state, ctx.sender(), buyer_kiosk_id);
+    soul::set_listed(state, false);
+    kiosk::lock<Soul>(
+        buyer_kiosk,
+        personal_kiosk::borrow(buyer_personal_kiosk_cap),
+        soul_policy,
+        soul_obj,
+    );
+    kiosk_lock_rule::prove(&mut request, buyer_kiosk);
+    personal_kiosk_rule::prove(buyer_kiosk, &mut request);
+    witness_rule::prove(SoulMarketProof {}, soul_policy, &mut request);
+    transfer_policy::confirm_request(soul_policy, request);
+
+    listing.is_active = false;
+    event::emit(AnimacraftV5SoulPurchased {
+        listing_id: object::id(listing),
+        soul_id: listing.soul_id,
+        provenance_id: animacraft_provenance::provenance_id(provenance),
+        seller: listing.seller,
+        buyer: ctx.sender(),
+        maker_source_recipient,
+        price: listing.price,
+        seller_payout,
+        protocol_fee,
+        soul_creator_royalty_bps: listing.creator_royalty_bps,
+        soul_creator_royalty,
+        maker_source_royalty_bps,
+        maker_source_royalty,
+    });
 }
 
 public fun list_collection_right_fixed_price(
@@ -3298,6 +3731,7 @@ fun buy_animacraft_soul_impl(
     assert!(!market_paused, EMarketPaused);
     assert!(listing.is_active, EInactiveListing);
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v4_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(listing.state_id == object::id(state), EListingStateMismatch);
     assert!(listing.soul_id == soul::soul_id(state), EListingStateMismatch);
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);

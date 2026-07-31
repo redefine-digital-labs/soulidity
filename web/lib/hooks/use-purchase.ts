@@ -5,7 +5,8 @@ import type { SoulAssetDetail } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { assertObjectInputsExist } from '@soulidity/sdk'
 import { buildBuySoulTx } from '@soulidity/sdk'
-import { buildBuyAnimacraftSoulTx } from '@soulidity/sdk'
+import { buildBuyAnimacraftSoulTx, buildBuyAnimacraftV5SoulTx } from '@soulidity/sdk'
+import { quoteAnimacraftV5SoulSale } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -51,11 +52,55 @@ export function usePurchase(soul: SoulAssetDetail | null) {
     try {
       setStatus('building')
       setError(null)
+      if (soul.provenanceKind === 'animacraft' && !soul.animacraftProvenance) {
+        throw new Error('Animacraft provenance is unavailable; purchase is blocked')
+      }
+      const animacraftVersion = soul.animacraftProvenance?.animacraftVersion
+      const isAnimacraftV5 = animacraftVersion === 5
+      if (
+        soul.provenanceKind === 'animacraft'
+        && animacraftVersion !== 4
+        && !isAnimacraftV5
+      ) {
+        throw new Error('This Animacraft provenance version is not supported for secondary purchase')
+      }
+      if (isAnimacraftV5 && soul.collectionOnChainId) {
+        throw new Error('Animacraft v5 Souls cannot be purchased while bound to a collection')
+      }
+      if (
+        isAnimacraftV5
+        && (
+          soul.quote.soulCreatorRoyaltyBps == null
+          || soul.quote.makerRoyaltyBps == null
+          || soul.quote.makerRoyaltyAtomic == null
+        )
+      ) {
+        throw new Error('Animacraft v5 purchase quote is missing its frozen royalty terms')
+      }
+
+      const requiredAtomic = BigInt(soul.quote.totalAtomic)
+      if (isAnimacraftV5) {
+        const grossPriceAtomic = BigInt(soul.quote.priceAtomic)
+        const verifiedQuote = quoteAnimacraftV5SoulSale(grossPriceAtomic, {
+          makerSourceRoyaltyBps: soul.animacraftProvenance!.makerRoyaltyBps,
+          soulCreatorRoyaltyBps: soul.quote.soulCreatorRoyaltyBps!,
+        })
+        if (
+          soul.quote.makerRoyaltyBps !== soul.animacraftProvenance!.makerRoyaltyBps
+          || requiredAtomic !== grossPriceAtomic
+          || soul.quote.collectionRoyaltyAtomic !== '0'
+          || BigInt(soul.quote.platformFeeAtomic) !== verifiedQuote.protocolFeeAtomic
+          || BigInt(soul.quote.creatorRoyaltyAtomic) !== verifiedQuote.soulCreatorRoyaltyAtomic
+          || BigInt(soul.quote.makerRoyaltyAtomic!) !== verifiedQuote.makerSourceRoyaltyAtomic
+        ) {
+          throw new Error('Animacraft v5 purchase quote does not match its on-chain royalty schedule')
+        }
+      }
+
       const authHeaders = await getAuthHeaders()
       const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
       const coinType = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')
       const coins = await suiClient.getCoins({ owner: suiWallet.address, coinType })
-      const requiredAtomic = BigInt(soul.quote.totalAtomic)
       const selectedCoinIds: string[] = []
       let accumulated = 0n
 
@@ -70,9 +115,6 @@ export function usePurchase(soul: SoulAssetDetail | null) {
       if (accumulated < requiredAtomic) {
         throw new Error('Insufficient payment balance')
       }
-      if (soul.provenanceKind === 'animacraft' && !soul.animacraftProvenance) {
-        throw new Error('Animacraft provenance is unavailable; purchase is blocked')
-      }
       await assertObjectInputsExist(suiClient, {
         'Seller kiosk': soul.currentKioskId,
         'Soul state': soul.stateOnChainId,
@@ -81,8 +123,12 @@ export function usePurchase(soul: SoulAssetDetail | null) {
         'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
         'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
         'Animacraft provenance': soul.animacraftProvenance?.objectId ?? null,
-        'Animacraft Maker': soul.animacraftProvenance?.makerId ?? null,
-        'Animacraft Maker treasury': soul.animacraftProvenance?.makerTreasuryId ?? null,
+        'Animacraft Maker': isAnimacraftV5
+          ? null
+          : soul.animacraftProvenance?.makerId ?? null,
+        'Animacraft Maker treasury': isAnimacraftV5
+          ? null
+          : soul.animacraftProvenance?.makerTreasuryId ?? null,
       })
 
       const sharedPurchaseParams = {
@@ -95,14 +141,25 @@ export function usePurchase(soul: SoulAssetDetail | null) {
         buyerKioskId: personalKiosk?.currentKioskId ?? null,
         buyerKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
       }
-      const tx = soul.animacraftProvenance
-        ? buildBuyAnimacraftSoulTx({
+      const tx = isAnimacraftV5
+        ? buildBuyAnimacraftV5SoulTx({
+            sellerKioskId: soul.currentKioskId,
+            stateObjectId: soul.stateOnChainId,
+            listingObjectId: soul.listingObjectOnChainId,
+            provenanceObjectId: soul.animacraftProvenance!.objectId,
+            priceAtomic: requiredAtomic,
+            paymentCoinObjectIds: selectedCoinIds,
+            buyerKioskId: personalKiosk?.currentKioskId ?? null,
+            buyerKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
+          })
+        : soul.animacraftProvenance
+          ? buildBuyAnimacraftSoulTx({
             ...sharedPurchaseParams,
             provenanceObjectId: soul.animacraftProvenance.objectId,
             makerObjectId: soul.animacraftProvenance.makerId,
             makerTreasuryObjectId: soul.animacraftProvenance.makerTreasuryId,
           })
-        : buildBuySoulTx(sharedPurchaseParams)
+          : buildBuySoulTx(sharedPurchaseParams)
 
       setStatus('signing')
       const result = await signAndExecute(tx)

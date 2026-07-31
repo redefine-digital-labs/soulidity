@@ -2,9 +2,19 @@
 module soulidity::protocol_tests;
 
 use animacraft::animacraft::{Self as animacraft, MakerTreasury, OCMaker};
+use animacraft::commerce_v5::{
+    Self as animacraft_commerce_v5,
+    CommerceProtocolConfigV5,
+    CommerceV5SoulMintAuthorization,
+    MakerRootV5,
+};
+use std::hash;
 use std::string::{Self as string, String};
 use kiosk::personal_kiosk::{Self as personal_kiosk, PersonalKioskCap};
 use soulidity::collection::{Self as collection, SoulCollection, SoulCollectionRight};
+use soulidity::animacraft_soul_binding_v5::AnimacraftSoulBindingProofV5;
+use soulidity::animacraft_output_provenance_v5::AnimacraftOutputProvenanceV5;
+use soulidity::animacraft_output_seal;
 use soulidity::animacraft_provenance::{Self as animacraft_provenance, AnimacraftProvenance};
 use soulidity::content::{Self as content, SoulContent};
 use soulidity::grant::{Self as grant, SoulGrant};
@@ -23,7 +33,7 @@ use soulidity::market::{
 };
 use soulidity::paid_access::{Self as paid_access, SoulPaidAccessList};
 use soulidity::soul::{Self as soul, Soul, SoulState};
-use sui::clock::{Self as clock};
+use sui::clock::{Self as clock, Clock};
 use sui::coin;
 use sui::kiosk::{Self as sui_kiosk, Kiosk};
 use sui::test_scenario::{Self as ts};
@@ -610,6 +620,429 @@ fun setup_and_mint_animacraft(
     ts::return_shared(kiosk_obj);
     ts::return_to_address(minter, kiosk_cap);
     state_id
+}
+
+/// Build a real commerce-v5 Complete authorization whose MakerRoot freezes a
+/// 250-bps Soul creator royalty. All setup objects can be destroyed after the
+/// authorization is produced because the value owns the canonical snapshot.
+fun new_animacraft_v5_authorization_for_testing(
+    ctx: &mut TxContext,
+    test_clock: &Clock,
+): (
+    CommerceV5SoulMintAuthorization,
+    MakerRootV5,
+    CommerceProtocolConfigV5,
+    vector<u8>,
+) {
+    let mut creator_profile = animacraft::new_creator_profile(
+        b"Animacraft v5 Creator".to_string(),
+        b"".to_string(),
+        b"".to_string(),
+        ctx.sender(),
+        ctx,
+    );
+    let (mut maker, legacy_treasury, legacy_cap) =
+        animacraft::new_managed_oc_maker<USDC>(
+            &mut creator_profile,
+            b"Authenticated royalty Maker".to_string(),
+            b"".to_string(),
+            b"".to_string(),
+            b"maker-manifest".to_string(),
+            animacraft::license_personal(),
+            300,
+            false,
+            false,
+            true,
+            true,
+            false,
+            0,
+            test_clock,
+            ctx,
+        );
+    animacraft::admin_add_part(
+        &legacy_cap,
+        &mut maker,
+        b"eyes".to_string(),
+        b"Eyes".to_string(),
+        animacraft::part_standard(),
+        0,
+        true,
+        true,
+        test_clock,
+        ctx,
+    );
+    animacraft::admin_add_color(
+        &legacy_cap,
+        &mut maker,
+        b"eyes".to_string(),
+        b"#2db7a3".to_string(),
+        test_clock,
+        ctx,
+    );
+    animacraft::admin_add_item(
+        &legacy_cap,
+        &mut maker,
+        b"eyes".to_string(),
+        b"bright".to_string(),
+        b"Bright".to_string(),
+        b"eyes-blob".to_string(),
+        b"".to_string(),
+        animacraft::item_included(),
+        test_clock,
+        ctx,
+    );
+    animacraft::admin_publish_maker(
+        &legacy_cap,
+        &mut maker,
+        b"maker-manifest".to_string(),
+        test_clock,
+        ctx,
+    );
+
+    let (
+        legacy_protocol_config,
+        legacy_protocol_treasury,
+        mut protocol_admin,
+    ) = animacraft::new_protocol_fee_objects_for_testing<USDC>(false, ctx);
+    let (mut protocol_config, protocol_treasury) =
+        animacraft_commerce_v5::new_commerce_protocol_v5_for_testing<USDC>(
+            &legacy_protocol_config,
+            &mut protocol_admin,
+            ctx,
+        );
+    animacraft_commerce_v5::bind_logical_auxiliary_blob_v5(
+        &mut protocol_config,
+        &protocol_admin,
+        b"canonical-transparent-png".to_string(),
+    );
+    animacraft_commerce_v5::bind_soul_binding_proof_type_v5<
+        AnimacraftSoulBindingProofV5,
+    >(
+        &mut protocol_config,
+        &protocol_admin,
+    );
+    let base_policy = animacraft_commerce_v5::new_completion_policy(
+        animacraft_commerce_v5::policy_unlimited_free(),
+        0,
+        0,
+    );
+    let (
+        mut root,
+        treasury,
+        vault,
+        control_cap,
+    ) = animacraft_commerce_v5::new_migrated_maker_v5_for_testing<USDC>(
+        &mut maker,
+        &legacy_treasury,
+        legacy_cap,
+        &protocol_config,
+        animacraft_commerce_v5::rights_onchain_native(),
+        base_policy,
+        250,
+        500,
+        test_clock,
+        ctx,
+    );
+    animacraft_commerce_v5::update_protocol_enabled_v5(
+        &mut protocol_config,
+        &protocol_admin,
+        true,
+    );
+    animacraft_commerce_v5::register_base_style_v5(
+        &mut root,
+        &control_cap,
+        &maker,
+        b"eyes".to_string(),
+        b"bright".to_string(),
+        b"default".to_string(),
+        ctx,
+    );
+    animacraft_commerce_v5::seal_style_registry_v5(
+        &mut root,
+        &control_cap,
+        ctx,
+    );
+    animacraft_commerce_v5::activate_maker_v5(&mut root, &control_cap, ctx);
+
+    let recipe = vector[animacraft::new_recipe_slot(
+        b"eyes".to_string(),
+        b"bright".to_string(),
+        b"#2db7a3".to_string(),
+        0,
+    )];
+    let styles = vector[animacraft_commerce_v5::new_style_selection_v5(
+        b"eyes".to_string(),
+        b"bright".to_string(),
+        b"default".to_string(),
+    )];
+    let recipe_hash =
+        animacraft_commerce_v5::hash_complete_selection_v5(&recipe, &styles);
+    let output_nonce = hash::sha2_256(b"soulidity-v5-output-nonce");
+    let output_digest = hash::sha2_256(b"soulidity-v5-output-digest");
+    let output_seal_id =
+        animacraft_commerce_v5::derive_complete_output_seal_id_v5(
+            animacraft_commerce_v5::root_id_v5(&root),
+            ctx.sender(),
+            copy recipe_hash,
+            copy output_nonce,
+            copy output_digest,
+        );
+    let authorization = animacraft_commerce_v5::authorize_complete_free_v5(
+        &mut root,
+        &maker,
+        &protocol_config,
+        b"Authenticated v5 Soul".to_string(),
+        b"profile".to_string(),
+        b"image".to_string(),
+        b"https://example.com/image.png".to_string(),
+        copy output_seal_id,
+        output_nonce,
+        output_digest,
+        recipe_hash,
+        recipe,
+        styles,
+        test_clock,
+        ctx,
+    );
+
+    std::unit_test::destroy(creator_profile);
+    std::unit_test::destroy(maker);
+    std::unit_test::destroy(legacy_treasury);
+    std::unit_test::destroy(legacy_protocol_config);
+    std::unit_test::destroy(legacy_protocol_treasury);
+    std::unit_test::destroy(protocol_admin);
+    std::unit_test::destroy(protocol_treasury);
+    std::unit_test::destroy(treasury);
+    std::unit_test::destroy(vault);
+    std::unit_test::destroy(control_cap);
+    (authorization, root, protocol_config, output_seal_id)
+}
+
+/// Mint a real commerce-v5 Soul and share its MakerRoot so Seal approval can
+/// be exercised again after secondary ownership rotation.
+fun setup_and_mint_animacraft_v5(
+    scenario: &mut ts::Scenario,
+    minter: address,
+    minter_kiosk_id: ID,
+): (ID, vector<u8>) {
+    let reqs = spec_blob_requests(spec_invariant_only(), minter);
+    mint_test_blobs_then_advance(scenario, reqs, minter);
+    let initial_content = build_initial_content_from_address(
+        minter,
+        scenario,
+        spec_invariant_only(),
+    );
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let (
+        authorization,
+        mut root,
+        protocol_config,
+        output_seal_id,
+    ) =
+        new_animacraft_v5_authorization_for_testing(
+            scenario.ctx(),
+            &test_clock,
+        );
+
+    let config = ts::take_shared<MarketConfigV2>(scenario);
+    let kind_registry_obj = ts::take_shared<KindRegistry>(scenario);
+    let registry = ts::take_shared<KioskRegistry>(scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(scenario);
+    let mut kiosk_obj =
+        ts::take_shared_by_id<Kiosk>(scenario, minter_kiosk_id);
+    let kiosk_cap =
+        ts::take_from_address<PersonalKioskCap>(scenario, minter);
+    let state = market::mint_animacraft_v5_in_personal_kiosk_v2(
+        &config,
+        &kind_registry_obj,
+        &registry,
+        &soul_policy,
+        &mut kiosk_obj,
+        &kiosk_cap,
+        &mut root,
+        &protocol_config,
+        authorization,
+        b"Verified Animacraft v5 Soul".to_string(),
+        initial_content,
+        vector::empty(),
+        &test_clock,
+        scenario.ctx(),
+    );
+    let state_id = object::id(&state);
+    assert!(soul::has_animacraft_provenance(&state), 0);
+    assert!(soul::has_animacraft_output_provenance_v5(&state), 1);
+    assert!(soul::creator_royalty_bps(&state) == 250, 2);
+    market::finalize_soul_state(state);
+    animacraft_commerce_v5::share_root_v5_for_testing(root);
+    std::unit_test::destroy(protocol_config);
+
+    test_clock.destroy_for_testing();
+    ts::return_shared(config);
+    ts::return_shared(kind_registry_obj);
+    ts::return_shared(registry);
+    ts::return_shared(soul_policy);
+    ts::return_shared(kiosk_obj);
+    ts::return_to_address(minter, kiosk_cap);
+    (state_id, output_seal_id)
+}
+
+/// Retire the legacy market into the fail-closed v2 configuration. Primary
+/// minting remains enabled; secondary sales still require an explicit later
+/// admin action.
+fun retire_legacy_market_for_v2_testing(scenario: &mut ts::Scenario) {
+    scenario.next_tx(ADMIN);
+    let mut legacy_config = ts::take_shared<MarketConfig>(scenario);
+    let legacy_admin =
+        ts::take_from_address<MarketAdminCap>(scenario, ADMIN);
+    market::update_paused(&mut legacy_config, &legacy_admin, true);
+    market::retire_legacy_market(
+        &mut legacy_config,
+        legacy_admin,
+        scenario.ctx(),
+    );
+    ts::return_shared(legacy_config);
+}
+
+fun enable_secondary_market_v2_for_testing(scenario: &mut ts::Scenario) {
+    scenario.next_tx(ADMIN);
+    let mut config = ts::take_shared<MarketConfigV2>(scenario);
+    let admin_cap =
+        ts::take_from_address<MarketAdminCapV2>(scenario, ADMIN);
+    market::update_config_v2_secondary_enabled(
+        &mut config,
+        &admin_cap,
+        true,
+    );
+    ts::return_shared(config);
+    ts::return_to_address(ADMIN, admin_cap);
+}
+
+/// Exercise one of the two legacy v4 mint ABIs with the canonical inner
+/// authorization extracted from a genuine commerce-v5 completion. The
+/// production mint implementation must reject it on the authenticated
+/// Animacraft version before any Soul can be created.
+fun attempt_v5_authorization_through_legacy_mint_for_testing(
+    scenario: &mut ts::Scenario,
+    minter_kiosk_id: ID,
+    use_successor_market: bool,
+) {
+    let reqs = spec_blob_requests(spec_invariant_only(), MINTER);
+    mint_test_blobs_then_advance(scenario, reqs, MINTER);
+    let initial_content = build_initial_content_from_address(
+        MINTER,
+        scenario,
+        spec_invariant_only(),
+    );
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let (
+        authorization,
+        _root,
+        _protocol_config,
+        _output_seal_id,
+    ) = new_animacraft_v5_authorization_for_testing(
+        scenario.ctx(),
+        &test_clock,
+    );
+    let (
+        canonical_authorization,
+        _creator_royalty_bps,
+        _output_binding,
+    ) =
+        animacraft_commerce_v5::consume_commerce_v5_soul_mint_authorization(
+            authorization,
+        );
+
+    let kind_registry_obj = ts::take_shared<KindRegistry>(scenario);
+    let registry = ts::take_shared<KioskRegistry>(scenario);
+    let soul_policy = ts::take_shared<TransferPolicy<Soul>>(scenario);
+    let mut kiosk_obj =
+        ts::take_shared_by_id<Kiosk>(scenario, minter_kiosk_id);
+    let kiosk_cap =
+        ts::take_from_address<PersonalKioskCap>(scenario, MINTER);
+    if (use_successor_market) {
+        let config = ts::take_shared<MarketConfigV2>(scenario);
+        let _state = market::mint_animacraft_in_personal_kiosk_v2(
+            &config,
+            &kind_registry_obj,
+            &registry,
+            &soul_policy,
+            &mut kiosk_obj,
+            &kiosk_cap,
+            canonical_authorization,
+            b"Must reject v5 authorization on v4 ABI".to_string(),
+            initial_content,
+            vector[],
+            &test_clock,
+            scenario.ctx(),
+        );
+    } else {
+        let config = ts::take_shared<MarketConfig>(scenario);
+        let _state = market::mint_animacraft_in_personal_kiosk(
+            &config,
+            &kind_registry_obj,
+            &registry,
+            &soul_policy,
+            &mut kiosk_obj,
+            &kiosk_cap,
+            canonical_authorization,
+            b"Must reject v5 authorization on legacy ABI".to_string(),
+            initial_content,
+            vector[],
+            &test_clock,
+            scenario.ctx(),
+        );
+    };
+    abort 42
+}
+
+/// Mint a genuine v5 Soul, then attempt to route it through either the generic
+/// or v4-only successor listing ABI. Both paths must fail before a kiosk
+/// purchase capability or public listing is created.
+fun attempt_v5_soul_through_non_v5_listing_for_testing(
+    scenario: &mut ts::Scenario,
+    minter_kiosk_id: ID,
+    use_generic_listing: bool,
+) {
+    retire_legacy_market_for_v2_testing(scenario);
+    let (_state_id, _output_seal_id) = setup_and_mint_animacraft_v5(
+        scenario,
+        MINTER,
+        minter_kiosk_id,
+    );
+    enable_secondary_market_v2_for_testing(scenario);
+
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfigV2>(scenario);
+    let registry = ts::take_shared<KioskRegistry>(scenario);
+    let provenance = ts::take_immutable<AnimacraftProvenance>(scenario);
+    let mut kiosk_obj =
+        ts::take_shared_by_id<Kiosk>(scenario, minter_kiosk_id);
+    let kiosk_cap =
+        ts::take_from_address<PersonalKioskCap>(scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(scenario);
+    if (use_generic_listing) {
+        let _listing = market::list_soul_fixed_price_v2(
+            &config,
+            &registry,
+            &mut kiosk_obj,
+            &kiosk_cap,
+            &mut state,
+            SOUL_PRICE,
+            scenario.ctx(),
+        );
+    } else {
+        let _listing = market::list_animacraft_soul_fixed_price_v2(
+            &config,
+            &registry,
+            &provenance,
+            &mut kiosk_obj,
+            &kiosk_cap,
+            &mut state,
+            SOUL_PRICE,
+            scenario.ctx(),
+        );
+    };
+    abort 42
 }
 
 /// Mint with the bare invariant set (SOUL_DOC + MEMORY) and additionally
@@ -3848,6 +4281,329 @@ fun non_owner_cannot_set_state_config() {
 // ─────────────────────────────────────────────────────────────────────
 // List / buy soul flow
 // ─────────────────────────────────────────────────────────────────────
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftProtocolVersion)]
+fun animacraft_v5_authorization_cannot_use_legacy_v1_mint() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id =
+        init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    attempt_v5_authorization_through_legacy_mint_for_testing(
+        &mut scenario,
+        minter_kiosk_id,
+        false,
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftProtocolVersion)]
+fun animacraft_v5_authorization_cannot_use_legacy_v2_mint() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id =
+        init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    retire_legacy_market_for_v2_testing(&mut scenario);
+    attempt_v5_authorization_through_legacy_mint_for_testing(
+        &mut scenario,
+        minter_kiosk_id,
+        true,
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftListingPathRequired)]
+fun animacraft_v5_soul_cannot_use_generic_v2_listing() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id =
+        init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    attempt_v5_soul_through_non_v5_listing_for_testing(
+        &mut scenario,
+        minter_kiosk_id,
+        true,
+    );
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftV5CommercePathRequired)]
+fun animacraft_v5_soul_cannot_use_v4_animacraft_v2_listing() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id =
+        init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    attempt_v5_soul_through_non_v5_listing_for_testing(
+        &mut scenario,
+        minter_kiosk_id,
+        false,
+    );
+    abort 42
+}
+
+#[test]
+fun animacraft_v5_mint_royalty_comes_from_authenticated_authorization() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id =
+        init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    retire_legacy_market_for_v2_testing(&mut scenario);
+    let (_state_id, _output_seal_id) = setup_and_mint_animacraft_v5(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+    );
+
+    // The production mint ABI has no caller-supplied creator bps. The state
+    // can only receive the 250-bps value consumed from Animacraft's v5
+    // authorization, together with its TypeName-anchored Soul binding proof.
+    scenario.next_tx(MINTER);
+    let state = ts::take_shared<SoulState>(&scenario);
+    assert!(soul::creator_royalty_bps(&state) == 250, 0);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+#[test]
+fun animacraft_v5_output_seal_follows_current_soul_owner() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id =
+        init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    retire_legacy_market_for_v2_testing(&mut scenario);
+    let (state_id, output_seal_id) = setup_and_mint_animacraft_v5(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+    );
+
+    // The payer/current owner can initially decrypt the completed PNG.
+    scenario.next_tx(MINTER);
+    let root = ts::take_shared<MakerRootV5>(&scenario);
+    let provenance =
+        ts::take_immutable<AnimacraftProvenance>(&scenario);
+    let completed_output =
+        ts::take_immutable<AnimacraftOutputProvenanceV5>(&scenario);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    assert!(object::id(&state) == state_id, 0);
+    assert!(
+        soul::animacraft_output_provenance_v5_id(&state)
+            == object::id(&completed_output),
+        1,
+    );
+    animacraft_output_seal::seal_approve_animacraft_complete_output_v5(
+        copy output_seal_id,
+        &root,
+        &provenance,
+        &completed_output,
+        &state,
+        scenario.ctx(),
+    );
+
+    // A secondary purchase already calls this same owner rotation. Neither
+    // immutable provenance object nor the MakerRoot output record is edited.
+    soul::rotate_owner(
+        &mut state,
+        BUYER,
+        sui::object::id_from_address(@0xc501),
+    );
+    ts::return_shared(root);
+    ts::return_immutable(provenance);
+    ts::return_immutable(completed_output);
+    ts::return_shared(state);
+
+    // The new owner can now obtain the exact same ciphertext key.
+    scenario.next_tx(BUYER);
+    let root = ts::take_shared<MakerRootV5>(&scenario);
+    let provenance =
+        ts::take_immutable<AnimacraftProvenance>(&scenario);
+    let completed_output =
+        ts::take_immutable<AnimacraftOutputProvenanceV5>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    assert!(soul::current_owner(&state) == BUYER, 2);
+    assert!(soul::ownership_epoch(&state) == 1, 3);
+    animacraft_output_seal::seal_approve_animacraft_complete_output_v5(
+        output_seal_id,
+        &root,
+        &provenance,
+        &completed_output,
+        &state,
+        scenario.ctx(),
+    );
+
+    ts::return_shared(root);
+    ts::return_immutable(provenance);
+    ts::return_immutable(completed_output);
+    ts::return_shared(state);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::animacraft_output_seal::ENoAccess)]
+fun animacraft_v5_output_seal_rejects_original_payer_after_resale() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id =
+        init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    retire_legacy_market_for_v2_testing(&mut scenario);
+    let (_, output_seal_id) = setup_and_mint_animacraft_v5(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+    );
+
+    scenario.next_tx(MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    soul::rotate_owner(
+        &mut state,
+        BUYER,
+        sui::object::id_from_address(@0xc502),
+    );
+    ts::return_shared(state);
+
+    // The completion payer is immutable provenance, but no longer an access
+    // authority after current ownership moves to the buyer.
+    scenario.next_tx(MINTER);
+    let root = ts::take_shared<MakerRootV5>(&scenario);
+    let provenance =
+        ts::take_immutable<AnimacraftProvenance>(&scenario);
+    let completed_output =
+        ts::take_immutable<AnimacraftOutputProvenanceV5>(&scenario);
+    let state = ts::take_shared<SoulState>(&scenario);
+    animacraft_output_seal::seal_approve_animacraft_complete_output_v5(
+        output_seal_id,
+        &root,
+        &provenance,
+        &completed_output,
+        &state,
+        scenario.ctx(),
+    );
+    abort 42
+}
+
+#[test]
+fun animacraft_v5_quote_uses_the_approved_gross_price_distribution() {
+    let (seller, protocol, soul_creator, maker_source) =
+        market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 250, 300);
+    assert!(seller == 920_000, 0);
+    assert!(protocol == 25_000, 1);
+    assert!(soul_creator == 25_000, 2);
+    assert!(maker_source == 30_000, 3);
+
+    let (seller_at_cap, protocol_at_cap, creator_at_cap, maker_at_cap) =
+        market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 250, 500);
+    assert!(seller_at_cap == 900_000, 4);
+    assert!(protocol_at_cap == 25_000, 5);
+    assert!(creator_at_cap == 25_000, 6);
+    assert!(maker_at_cap == 50_000, 7);
+
+    let (seller_at_defaults, protocol_at_defaults, creator_at_defaults, maker_at_defaults) =
+        market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 250, 250);
+    assert!(seller_at_defaults == 925_000, 8);
+    assert!(protocol_at_defaults == 25_000, 9);
+    assert!(creator_at_defaults == 25_000, 10);
+    assert!(maker_at_defaults == 25_000, 11);
+
+    let (
+        seller_at_full_rights_cap,
+        protocol_at_full_rights_cap,
+        creator_at_full_rights_cap,
+        maker_at_full_rights_cap,
+    ) = market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 500, 500);
+    assert!(seller_at_full_rights_cap == 875_000, 12);
+    assert!(protocol_at_full_rights_cap == 25_000, 13);
+    assert!(creator_at_full_rights_cap == 50_000, 14);
+    assert!(maker_at_full_rights_cap == 50_000, 15);
+
+    let (seller_without_source, _, _, maker_without_source) =
+        market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 250, 0);
+    assert!(seller_without_source == 950_000, 16);
+    assert!(maker_without_source == 0, 17);
+}
+
+#[test]
+fun animacraft_v5_creator_royalty_snapshot_survives_multiple_resales() {
+    let mut scenario = ts::begin(ADMIN);
+    scenario.next_tx(ADMIN);
+    let mut state = soul::create_state(
+        sui::object::id_from_address(@0xa11ce),
+        MINTER,
+        250,
+        MINTER,
+        sui::object::id_from_address(@0xb001),
+        scenario.ctx(),
+    );
+
+    let (seller_1, protocol_1, creator_1, source_1) =
+        market::quote_animacraft_v5_soul_sale_for_state(&state, SOUL_PRICE, 250);
+    soul::rotate_owner(
+        &mut state,
+        BUYER,
+        sui::object::id_from_address(@0xb002),
+    );
+    let (seller_2, protocol_2, creator_2, source_2) =
+        market::quote_animacraft_v5_soul_sale_for_state(&state, SOUL_PRICE, 250);
+    soul::rotate_owner(
+        &mut state,
+        AGENT,
+        sui::object::id_from_address(@0xb003),
+    );
+    let (seller_3, protocol_3, creator_3, source_3) =
+        market::quote_animacraft_v5_soul_sale_for_state(&state, SOUL_PRICE, 250);
+
+    assert!(soul::state_creator(&state) == MINTER, 0);
+    assert!(soul::creator_royalty_bps(&state) == 250, 1);
+    assert!(seller_1 == 925_000 && seller_2 == seller_1 && seller_3 == seller_1, 2);
+    assert!(protocol_1 == 25_000 && protocol_2 == protocol_1 && protocol_3 == protocol_1, 3);
+    assert!(creator_1 == 25_000 && creator_2 == creator_1 && creator_3 == creator_1, 4);
+    assert!(source_1 == 25_000 && source_2 == source_1 && source_3 == source_1, 5);
+
+    soul::destroy_state_for_testing(state);
+    ts::end(scenario);
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftV5CreatorRoyaltyMismatch)]
+fun animacraft_v5_later_holder_cannot_lower_frozen_creator_royalty() {
+    let mut scenario = ts::begin(ADMIN);
+    scenario.next_tx(ADMIN);
+    let mut state = soul::create_state(
+        sui::object::id_from_address(@0xa11ce),
+        MINTER,
+        250,
+        MINTER,
+        sui::object::id_from_address(@0xb001),
+        scenario.ctx(),
+    );
+    soul::rotate_owner(
+        &mut state,
+        BUYER,
+        sui::object::id_from_address(@0xb002),
+    );
+    market::assert_animacraft_v5_creator_royalty_snapshot_for_testing(&state, 0);
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftV5CreatorRoyaltyTooHigh)]
+fun animacraft_v5_quote_rejects_creator_royalty_above_five_percent() {
+    let (_, _, _, _) = market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 501, 0);
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftV5MakerRoyaltyMismatch)]
+fun animacraft_v5_quote_rejects_rights_pool_above_ten_percent() {
+    let (_, _, _, _) =
+        market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 500, 550);
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftV5MakerRoyaltyMismatch)]
+fun animacraft_v5_quote_rejects_maker_source_royalty_outside_half_percent_steps() {
+    let (_, _, _, _) = market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 250, 275);
+    abort 42
+}
+
+#[test, expected_failure(abort_code = soulidity::market::EAnimacraftV5CreatorRoyaltyTooHigh)]
+fun animacraft_v5_quote_rejects_creator_royalty_outside_half_percent_steps() {
+    let (_, _, _, _) = market::quote_animacraft_v5_soul_sale(SOUL_PRICE, 275, 250);
+    abort 42
+}
 
 #[test]
 fun legacy_market_retirement_is_one_way_and_secondary_defaults_closed() {

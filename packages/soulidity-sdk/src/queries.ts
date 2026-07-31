@@ -1,6 +1,10 @@
 import { normalizeWalrusBlobId } from './walrus'
 import { suiClient } from './sui-client'
-import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
+import {
+  isValidSuiAddress,
+  normalizeStructTag,
+  normalizeSuiAddress,
+} from '@mysten/sui/utils'
 import { SOUL_GRANT_SCOPE_BITS } from './grant-scopes'
 import {
   getKioskPackageAddress,
@@ -15,6 +19,7 @@ import type {
   SoulContentObject,
   SoulGrantObject,
   SoulGrantScope,
+  SoulListingObject,
   SoulObject,
   SoulPaidAccessListObject,
   SoulProvenanceKind,
@@ -565,9 +570,11 @@ function getObjectOwnerObjectId(owner: unknown): string | null {
 }
 
 function typeMatchesPrefix(type: string, expectedTypePrefix: string) {
-  if (type.startsWith(expectedTypePrefix)) return true
-  const suffix = expectedTypePrefix.replace(/^0x[0-9a-fA-F]+/, '')
-  return type.endsWith(suffix)
+  try {
+    return normalizeStructTag(type) === normalizeStructTag(expectedTypePrefix)
+  } catch {
+    return false
+  }
 }
 
 function expectMoveObject(response: ObjectLike, objectId: string, expectedTypePrefix: string) {
@@ -1146,6 +1153,52 @@ export async function getSoulPaidAccessListObject(
     soulId: readObjectId(fields.soul_id, 'SoulPaidAccessList soul_id'),
     creatorAddress: readAddress(fields.creator, 'SoulPaidAccessList creator'),
     kindConfigs: [],
+  }
+}
+
+export function getSoulListingStructType(definingPackageId: string): string {
+  return `${normalizePackageId(definingPackageId)}::market::SoulListing`
+}
+
+/**
+ * Read the canonical shared listing instead of deriving fee terms from the DB
+ * mirror. This is mandatory for Animacraft v5 because the Soul creator share
+ * is frozen at mint and the buyer pays one gross listing price.
+ */
+export async function getSoulListingObject(
+  objectId: string,
+  definingPackageId: string,
+  client: Pick<typeof suiClient, 'getObject'> = suiClient,
+): Promise<SoulListingObject> {
+  const response = await client.getObject({
+    id: objectId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const expectedTypePrefix = getSoulListingStructType(definingPackageId)
+  const { fields, packageId: resolvedPackageId } = expectMoveObject(
+    response,
+    objectId,
+    expectedTypePrefix,
+  )
+  return {
+    objectId,
+    packageId: resolvedPackageId,
+    version: readNumber(fields.version, 'SoulListing version'),
+    soulId: readObjectId(fields.soul_id, 'SoulListing soul_id'),
+    stateId: readObjectId(fields.state_id, 'SoulListing state_id'),
+    sellerAddress: readAddress(fields.seller, 'SoulListing seller'),
+    sellerKioskId: readObjectId(fields.seller_kiosk_id, 'SoulListing seller_kiosk_id'),
+    priceAtomic: readBigInt(fields.price, 'SoulListing price'),
+    creatorAddress: readAddress(fields.creator, 'SoulListing creator'),
+    creatorRoyaltyBps: readNumber(
+      fields.creator_royalty_bps,
+      'SoulListing creator_royalty_bps',
+    ),
+    collectionId: readOptionalAddress(fields.collection_id, 'SoulListing collection_id'),
+    active: Boolean(fields.is_active),
   }
 }
 

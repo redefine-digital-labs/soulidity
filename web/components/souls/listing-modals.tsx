@@ -102,6 +102,7 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
         newPriceAtomic: priceAtomic,
         collectionObjectId: soul.collectionOnChainId,
         animacraftProvenanceObjectId: soul.animacraftProvenance?.objectId,
+        animacraftVersion: soul.animacraftProvenance?.animacraftVersion,
       })
       const result = await signAndExecute(tx)
 

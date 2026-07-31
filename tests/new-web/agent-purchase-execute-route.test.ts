@@ -25,6 +25,7 @@ const mockedGetRequiredSoulidityEnv = vi.hoisted(() => vi.fn())
 const mockedGetSuccessfulTransactionBlock = vi.hoisted(() => vi.fn())
 const mockedReadTransactionSender = vi.hoisted(() => vi.fn())
 const mockedExtractSoulPurchasedEvent = vi.hoisted(() => vi.fn())
+const mockedTryExtractAnimacraftV5SoulPurchasedEvent = vi.hoisted(() => vi.fn())
 const mockedSyncSoulProjectionFromChain = vi.hoisted(() => vi.fn())
 const mockedEndActiveSoulGrantProjectionsFromChain = vi.hoisted(() => vi.fn())
 const mockedTransactionDataBuilder = vi.hoisted(() => ({
@@ -61,6 +62,7 @@ vi.mock('@soulidity/sdk', async (importOriginal) => {
     suiClient: mockedSuiClient,
     getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
     extractSoulPurchasedEvent: mockedExtractSoulPurchasedEvent,
+    tryExtractAnimacraftV5SoulPurchasedEvent: mockedTryExtractAnimacraftV5SoulPurchasedEvent,
     getSuccessfulTransactionBlock: mockedGetSuccessfulTransactionBlock,
     readTransactionSender: mockedReadTransactionSender,
     waitForTransactionBestEffort: mockedWaitForTransactionBestEffort,
@@ -129,6 +131,7 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
     mockedGetSuccessfulTransactionBlock.mockResolvedValue({ digest: '0xtx' })
     mockedReadTransactionSender.mockReturnValue(AGENT_ADDRESS)
     mockedExtractSoulPurchasedEvent.mockReturnValue({ soulId: SOUL_ID })
+    mockedTryExtractAnimacraftV5SoulPurchasedEvent.mockReturnValue(null)
     mockedSyncSoulProjectionFromChain.mockResolvedValue({
       onChainId: SOUL_ID,
       currentOwnerAddress: AGENT_ADDRESS,
@@ -159,6 +162,20 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
       dbSynced: false,
       error: 'Transaction succeeded on chain, but local Soul sync failed.',
     })
+  })
+
+  it('accepts the dedicated v5 settlement event without requiring a legacy purchase event', async () => {
+    mockedTryExtractAnimacraftV5SoulPurchasedEvent.mockReturnValueOnce({
+      soulId: SOUL_ID,
+    })
+    mockedExtractSoulPurchasedEvent.mockImplementationOnce(() => {
+      throw new Error('legacy event should not be read')
+    })
+
+    const response = await callRoute()
+
+    expect(response.status).toBe(200)
+    expect(mockedExtractSoulPurchasedEvent).not.toHaveBeenCalled()
   })
 
   it('returns a recoverable partial result when grant invalidation sync fails after ownership sync', async () => {

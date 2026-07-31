@@ -9,11 +9,19 @@ import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import {
   getAnimacraftProvenanceForState,
   getMarketConfigV2,
+  getSoulListingObject,
+  ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
   quoteAnimacraftSoulPurchase,
+  quoteAnimacraftV5SoulSale,
   quoteSoulPurchase,
+  sameSuiValue,
 } from '@soulidity/sdk'
 import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from '@soulidity/sdk'
-import { buildBuyAnimacraftSoulTx, buildBuySoulTx } from '@soulidity/sdk'
+import {
+  buildBuyAnimacraftSoulTx,
+  buildBuyAnimacraftV5SoulTx,
+  buildBuySoulTx,
+} from '@soulidity/sdk'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
 export const dynamic = 'force-dynamic'
@@ -69,7 +77,45 @@ export async function POST(
         { status: 409 },
       )
     }
-    const quote = animacraftProvenance
+    const isAnimacraftV5 = animacraftProvenance?.animacraftVersion === 5
+    const quote = isAnimacraftV5
+      ? await (async () => {
+          const config = await getMarketConfigV2(
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+          )
+          if (!config.secondaryEnabled || config.platformFeeBps !== ANIMACRAFT_V5_PROTOCOL_FEE_BPS) {
+            throw new Error('Animacraft v5 secondary trading is unavailable')
+          }
+          const verifiedV5Listing = await getSoulListingObject(
+            soul.listingObjectOnChainId!,
+            packageId,
+          )
+          if (
+            verifiedV5Listing.version !== 5
+            || !verifiedV5Listing.active
+            || !sameSuiValue(verifiedV5Listing.soulId, soul.onChainId)
+            || !sameSuiValue(verifiedV5Listing.stateId, soul.stateOnChainId)
+            || verifiedV5Listing.priceAtomic !== listedPriceAtomic
+            || verifiedV5Listing.collectionId !== null
+          ) {
+            throw new Error('Animacraft v5 listing does not match the Soul')
+          }
+          const grossQuote = quoteAnimacraftV5SoulSale(listedPriceAtomic, {
+            makerSourceRoyaltyBps: animacraftProvenance!.makerRoyaltyBps,
+            soulCreatorRoyaltyBps: verifiedV5Listing.creatorRoyaltyBps,
+          })
+          return {
+            priceAtomic: grossQuote.priceAtomic.toString(),
+            platformFeeAtomic: grossQuote.protocolFeeAtomic.toString(),
+            creatorRoyaltyAtomic: grossQuote.soulCreatorRoyaltyAtomic.toString(),
+            collectionRoyaltyAtomic: '0',
+            totalAtomic: grossQuote.priceAtomic.toString(),
+            makerRoyaltyAtomic: grossQuote.makerSourceRoyaltyAtomic.toString(),
+            royaltySource: 'animacraft-maker' as const,
+          }
+        })()
+      : animacraftProvenance
       ? await (async () => {
           const config = await getMarketConfigV2(
             getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
@@ -129,14 +175,25 @@ export async function POST(
       buyerKioskId,
       buyerKioskCapOnChainId,
     }
-    const tx = animacraftProvenance
-      ? buildBuyAnimacraftSoulTx({
+    const tx = isAnimacraftV5
+      ? buildBuyAnimacraftV5SoulTx({
+          sellerKioskId: soul.currentKioskId,
+          stateObjectId: soul.stateOnChainId,
+          listingObjectId: soul.listingObjectOnChainId,
+          provenanceObjectId: animacraftProvenance!.objectId,
+          priceAtomic: totalRequired,
+          paymentCoinObjectIds: coinIds,
+          buyerKioskId,
+          buyerKioskCapOnChainId,
+        })
+      : animacraftProvenance
+        ? buildBuyAnimacraftSoulTx({
           ...sharedPurchaseParams,
           provenanceObjectId: animacraftProvenance.objectId,
           makerObjectId: animacraftProvenance.makerId,
           makerTreasuryObjectId: animacraftProvenance.makerTreasuryId,
         })
-      : buildBuySoulTx(sharedPurchaseParams)
+        : buildBuySoulTx(sharedPurchaseParams)
     tx.setSender(agentAddress)
 
     // Cross-package @mysten/sui type mismatch in the merged web runtime.

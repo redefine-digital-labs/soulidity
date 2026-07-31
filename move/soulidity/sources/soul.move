@@ -31,6 +31,10 @@ const PROVENANCE_ANIMACRAFT: u8 = 3;
 /// binding queryable after future package upgrades; a package-defined key type
 /// would remain pinned to the version that first introduced it.
 const ANIMACRAFT_PROVENANCE_KEY: u8 = 1;
+/// Commerce-v5 companion provenance. This deliberately uses a second
+/// primitive dynamic-field key instead of changing `SoulState` or the already
+/// deployed `AnimacraftProvenance` layout.
+const ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY: u8 = 2;
 const VERSION: u64 = 1;
 
 public struct SOUL has drop {}
@@ -236,6 +240,27 @@ public fun animacraft_provenance_id(self: &SoulState): ID {
     *df::borrow<u8, ID>(&self.id, ANIMACRAFT_PROVENANCE_KEY)
 }
 
+public fun has_animacraft_output_provenance_v5(self: &SoulState): bool {
+    df::exists_with_type<u8, ID>(
+        &self.id,
+        ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
+    )
+}
+
+public fun animacraft_output_provenance_v5_id(self: &SoulState): ID {
+    assert!(
+        df::exists_with_type<u8, ID>(
+            &self.id,
+            ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
+        ),
+        EAnimacraftProvenanceMissing,
+    );
+    *df::borrow<u8, ID>(
+        &self.id,
+        ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
+    )
+}
+
 public fun has_state_config(self: &SoulState, key: String): bool {
     self.config_ext.contains(key)
 }
@@ -368,6 +393,24 @@ public(package) fun bind_animacraft_provenance(
         EAnimacraftProvenanceAlreadyBound,
     );
     df::add(&mut state.id, ANIMACRAFT_PROVENANCE_KEY, provenance_id);
+}
+
+public(package) fun bind_animacraft_output_provenance_v5(
+    state: &mut SoulState,
+    provenance_id: ID,
+) {
+    assert!(
+        !df::exists_with_type<u8, ID>(
+            &state.id,
+            ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
+        ),
+        EAnimacraftProvenanceAlreadyBound,
+    );
+    df::add(
+        &mut state.id,
+        ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
+        provenance_id,
+    );
 }
 
 public(package) fun assert_owner(state: &SoulState, owner: address) {

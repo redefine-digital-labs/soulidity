@@ -8,7 +8,11 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { useToast } from '@/components/ui/toast'
 import { useListSoul } from '@/lib/hooks/use-list-soul'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
+import {
+  ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
+  formatAtomicAmountForDisplay,
+  parseDisplayAmountToAtomic,
+} from '@soulidity/sdk'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
@@ -95,6 +99,23 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
     )
   }
 
+  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+  if (isAnimacraftV5 && soul.collectionOnChainId) {
+    return (
+      <div className="max-w-[560px] mx-auto px-6 py-10">
+        <EmptyState
+          icon="🔒"
+          label="Collection-bound v5 Soul cannot be authorized"
+          sublabel="Animacraft v5 resale cannot combine its frozen royalties with a collection royalty. This release does not expose a collection-removal transaction, so no listing signature will be requested."
+          actionLabel="Back to Soul"
+          onAction={() => {
+            window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
+          }}
+        />
+      </div>
+    )
+  }
+
   if (priceAtomic == null || priceAtomic <= 0n || priceError) {
     const invalidPriceMessage = priceError ?? (priceAtomic != null && priceAtomic <= 0n
       ? 'Listing price must be greater than 0.'
@@ -131,6 +152,10 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
       </div>
     )
   }
+
+  const makerSourceRoyaltyBps = isAnimacraftV5
+    ? soul.animacraftProvenance!.makerRoyaltyBps
+    : 0
 
   const signingSubLabel: Record<string, string> = {
     building: 'Preparing transaction…',
@@ -180,19 +205,43 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
             <span className="text-muted">Contract</span>
-            <span className="font-mono text-xs text-teal">SoulMarket::list_soul</span>
+            <span className="font-mono text-xs text-teal">
+              {isAnimacraftV5
+                ? 'market::list_animacraft_v5_soul_fixed_price_v2'
+                : 'market::list_soul_fixed_price_v2'}
+            </span>
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
             <span className="text-muted">Listing Price</span>
             <span className="font-semibold">{formatAtomicAmountForDisplay(priceAtomic)}</span>
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
-            <span className="text-muted">Creator Royalty</span>
-            <span className="text-teal">{soul.creatorRoyaltyBps / 100}% → {soul.isCreator ? 'You' : formatAddress(soul.creatorAddress)} · <span className="text-[11px]">enforced on-chain</span></span>
+            <span className="text-muted">{isAnimacraftV5 ? 'Soul Creator Royalty' : 'Creator Royalty'}</span>
+            <span className="text-teal">
+              {soul.creatorRoyaltyBps / 100}% → {soul.isCreator ? 'You' : formatAddress(soul.creatorAddress)} ·{' '}
+              <span className="text-[11px]">
+                {isAnimacraftV5 ? 'frozen at first mint' : 'enforced on-chain'}
+              </span>
+            </span>
           </div>
+          {isAnimacraftV5 && (
+            <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
+              <span className="text-muted">Maker-source Royalty</span>
+              <span className="text-teal">
+                {makerSourceRoyaltyBps / 100}% →{' '}
+                {formatAddress(soul.animacraftProvenance!.makerCreatorAddress)}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
             <span className="text-muted">Platform Fee</span>
-            <span>{soul.platformFeeBps != null ? `${(soul.platformFeeBps / 100).toFixed(1)}% → Soulidity` : '—'}</span>
+            <span>
+              {isAnimacraftV5
+                ? `${(ANIMACRAFT_V5_PROTOCOL_FEE_BPS / 100).toFixed(1)}% → Soulidity`
+                : soul.platformFeeBps != null
+                  ? `${(soul.platformFeeBps / 100).toFixed(1)}% → Soulidity`
+                  : '—'}
+            </span>
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
             <span className="text-muted">Escrow</span>
@@ -218,7 +267,11 @@ export default function AuthorizePage({ params }: { params: Promise<{ id: string
 
         <div className="rounded-xl border border-gold/30 bg-gold/5 px-4 py-3 mb-6 text-sm text-gold leading-relaxed flex items-start gap-2">
           <span className="text-base mt-0.5">⚡</span>
-          <span>Once listed, your Soul enters escrow. You can delist anytime to reclaim it if unsold.</span>
+          <span>
+            {isAnimacraftV5
+              ? 'The buyer will pay exactly this gross price. Protocol and both frozen royalty shares are distributed from it. Once listed, you can delist anytime if unsold.'
+              : 'Once listed, your Soul enters escrow. You can delist anytime to reclaim it if unsold.'}
+          </span>
         </div>
 
         <div className="flex gap-2.5">
