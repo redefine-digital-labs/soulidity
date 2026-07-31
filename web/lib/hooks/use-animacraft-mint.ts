@@ -2,9 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { strToU8, zipSync } from 'fflate'
-import { normalizeStructTag } from '@mysten/sui/utils'
+import { normalizeStructTag, normalizeSuiAddress } from '@mysten/sui/utils'
 import {
+  appendAnimacraftCommerceV5Authorization,
   appendAnimacraftSoulMintAuthorization,
+  ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
+  MAX_ANIMACRAFT_V5_ADD_ON_BPS,
   attachSoulidityDeploymentSignature,
   assertObjectInputsExist,
   assertSoulidityTxSucceeded,
@@ -15,9 +18,13 @@ import {
   getRequiredSoulidityEnv,
   hasCurrentSoulidityDeploymentSignature,
   hashAnimacraftRecipe,
+  hashAnimacraftCompleteSelectionV5,
   normalizeTags,
   parseAnimacraftRecipeHashHex,
   selectCoinObjectIdsForAmountAcrossPages,
+  simulateAnimacraftCompleteQuoteV5,
+  tryExtractAnimacraftOutputProvenanceV5CreatedEvent,
+  type AnimacraftCompleteQuoteV5,
 } from '@soulidity/sdk'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useUploadCostReview } from '@/components/upload/upload-cost-review'
@@ -33,8 +40,16 @@ import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 import type {
   AnimacraftIntegrationConfig,
   AnimacraftMakerState,
+  AnimacraftCommerceV5State,
   ParsedAnimacraftHandoff,
 } from '@/lib/animacraft/handoff'
+import {
+  animacraftMintRecoveryContextsMatch,
+  normalizeAnimacraftMintRecoveryContext,
+  normalizeAnimacraftRecoveryHash,
+  normalizeAnimacraftRecoveryObjectId,
+  type AnimacraftMintRecoveryContext,
+} from '@/lib/animacraft/mint-recovery-context'
 
 export type AnimacraftMintStatus =
   | 'idle'
@@ -49,15 +64,23 @@ export interface AnimacraftMintInput {
   config: AnimacraftIntegrationConfig
   handoff: ParsedAnimacraftHandoff
   maker: AnimacraftMakerState
+  commerceV5: AnimacraftCommerceV5State | null
+  recoveryContext: AnimacraftMintRecoveryContext
   profileJsonBlobId: string
   imageBlobId: string
   imageUrl: string
   recipeHashHex: string
+  outputSealIdHex: string
+  outputNonceHex: string
+  outputDigestHex: string
 }
 
 interface MintResult {
   txDigest: string
   soulOnChainId: string
+  provenanceObjectId: string
+  outputProvenanceObjectId: string | null
+  recoveryContext: AnimacraftMintRecoveryContext
 }
 
 const ANIMACRAFT_MINT_RECOVERY_KEY = 'animacraft-soul-mint-recovery'
@@ -87,9 +110,79 @@ interface AnimacraftMintRecovery {
   userId: string
   txDigest: string
   soulOnChainId: string
+  provenanceObjectId: string
+  animacraftProtocolVersion?: 4 | 5
+  outputProvenanceObjectId?: string | null
+  recoveryContext: AnimacraftMintRecoveryContext
   pendingSync: AnimacraftPendingSync | null
   syncBody: AnimacraftSyncBody | null
   deploymentSignature: string
+}
+
+function animacraftProvenanceObjectId(
+  txResult: unknown,
+  expectedSoulId: string,
+): string {
+  const events = Array.isArray((txResult as { events?: unknown[] } | null)?.events)
+    ? (txResult as { events: Array<{ type?: unknown; parsedJson?: unknown }> }).events
+    : []
+  const event = events.find((candidate) => {
+    if (!String(candidate?.type || '').endsWith(
+      '::animacraft_provenance::AnimacraftProvenanceCreated',
+    )) return false
+    const fields = candidate?.parsedJson as
+      | { soul_id?: unknown; soulId?: unknown }
+      | null
+    return String(fields?.soul_id ?? fields?.soulId ?? '') === expectedSoulId
+  })
+  const fields = event?.parsedJson as
+    | { provenance_id?: unknown; provenanceId?: unknown }
+    | null
+  const objectId = String(
+    fields?.provenance_id ?? fields?.provenanceId ?? '',
+  ).trim()
+  if (!/^0x[0-9a-f]+$/i.test(objectId)) {
+    throw new Error(
+      'Canonical mint transaction is missing the expected Animacraft provenance event',
+    )
+  }
+  return objectId
+}
+
+function animacraftOutputProvenanceObjectId(
+  txResult: unknown,
+  packageId: string,
+  expected: {
+    soulId: string
+    stateId: string
+    baseProvenanceId: string
+    makerRootId: string
+    completeOutputSealId: Uint8Array
+  },
+): string | null {
+  const event = tryExtractAnimacraftOutputProvenanceV5CreatedEvent(
+    txResult as never,
+    packageId,
+  )
+  if (!event) return null
+
+  const sameId = (left: string, right: string) =>
+    normalizeSuiAddress(left) === normalizeSuiAddress(right)
+  if (
+    !sameId(event.soulId, expected.soulId)
+    || !sameId(event.stateId, expected.stateId)
+    || !sameId(event.baseProvenanceId, expected.baseProvenanceId)
+    || !sameId(event.makerRootId, expected.makerRootId)
+    || !equalAnimacraftRecipeHash(
+      event.completeOutputSealId,
+      expected.completeOutputSealId,
+    )
+  ) {
+    throw new Error(
+      'Canonical commerce v5 mint emitted mismatched completed-output provenance',
+    )
+  }
+  return event.outputProvenanceId
 }
 
 function isSealMaterial(value: unknown): value is PendingSealMaterial {
@@ -232,37 +325,65 @@ function livingContentFiles(
   ]
 }
 
-export function useAnimacraftMint() {
+export function useAnimacraftMint(
+  currentRecoveryContext: AnimacraftMintRecoveryContext | null,
+) {
   const [status, setStatus] = useState<AnimacraftMintStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<MintResult | null>(null)
+  const [completeQuoteV5, setCompleteQuoteV5] =
+    useState<AnimacraftCompleteQuoteV5 | null>(null)
   const [recoveryDigest, setRecoveryDigest] = useState<string | null>(null)
   const { user, getAuthHeaders } = useAuth()
   const { suiWallet, suiClient, signAndExecute } = useWalletSign()
   const { requestUploadCostApproval } = useUploadCostReview()
   const recoveryRef = useRef<AnimacraftMintRecovery | null>(null)
+  const normalizedCurrentRecoveryContext =
+    normalizeAnimacraftMintRecoveryContext(currentRecoveryContext)
+  const currentRecoveryContextKey = normalizedCurrentRecoveryContext
+    ? JSON.stringify(normalizedCurrentRecoveryContext)
+    : ''
 
   useEffect(() => {
     let cancelled = false
     Promise.resolve().then(() => {
       if (cancelled) return
+      recoveryRef.current = null
+      setRecoveryDigest(null)
       try {
         const raw = sessionStorage.getItem(ANIMACRAFT_MINT_RECOVERY_KEY)
         if (!raw) return
         const parsed = JSON.parse(raw) as AnimacraftMintRecovery
         const pendingSync = isPendingSync(parsed.pendingSync) ? parsed.pendingSync : null
         const syncBody = isSyncBody(parsed.syncBody) ? parsed.syncBody : null
+        const recoveryContext =
+          normalizeAnimacraftMintRecoveryContext(parsed.recoveryContext)
         if (
-          parsed.userId === user?.id
+          typeof parsed.userId === 'string'
           && parsed.txDigest
           && parsed.soulOnChainId
+          && parsed.provenanceObjectId
+          && recoveryContext
           && (pendingSync || syncBody)
           && hasCurrentSoulidityDeploymentSignature(parsed)
         ) {
-          const recovery = { ...parsed, pendingSync, syncBody }
+          const recovery = {
+            ...parsed,
+            recoveryContext,
+            pendingSync,
+            syncBody,
+          }
           recoveryRef.current = recovery
-          setRecoveryDigest(recovery.txDigest)
-        } else if (user?.id) {
+          if (
+            parsed.userId === user?.id
+            && animacraftMintRecoveryContextsMatch(
+              recoveryContext,
+              normalizedCurrentRecoveryContext,
+            )
+          ) {
+            setRecoveryDigest(recovery.txDigest)
+          }
+        } else {
           persistRecovery(null)
         }
       } catch {
@@ -270,7 +391,7 @@ export function useAnimacraftMint() {
       }
     })
     return () => { cancelled = true }
-  }, [user?.id])
+  }, [currentRecoveryContextKey, user?.id])
 
   async function resume(): Promise<void> {
     if (!user || !suiWallet) {
@@ -284,10 +405,33 @@ export function useAnimacraftMint() {
       setError('No recoverable Animacraft mint was found for this wallet and deployment')
       return
     }
+    if (
+      existingRecovery.userId !== user.id
+      || !animacraftMintRecoveryContextsMatch(
+        existingRecovery.recoveryContext,
+        normalizedCurrentRecoveryContext,
+      )
+    ) {
+      setStatus('error')
+      setError(
+        'The recoverable Animacraft mint belongs to a different Maker or completion handoff',
+      )
+      return
+    }
     try {
       setError(null)
       setResult(null)
       setStatus('syncing')
+      const recoveryProtocolVersion =
+        existingRecovery.animacraftProtocolVersion ?? 4
+      if (
+        recoveryProtocolVersion === 5
+        && !existingRecovery.outputProvenanceObjectId
+      ) {
+        throw new Error(
+          'Recoverable commerce v5 mint is missing its completed-output provenance',
+        )
+      }
       const authHeaders = await getAuthHeaders()
       let syncBody = existingRecovery.syncBody
       if (!syncBody) {
@@ -315,7 +459,14 @@ export function useAnimacraftMint() {
         const body = await response.json().catch(() => ({}))
         throw new Error(body.error ?? 'Soul is on-chain, but Soulidity sync still needs to be retried')
       }
-      setResult({ txDigest: existingRecovery.txDigest, soulOnChainId: existingRecovery.soulOnChainId })
+      setResult({
+        txDigest: existingRecovery.txDigest,
+        soulOnChainId: existingRecovery.soulOnChainId,
+        provenanceObjectId: existingRecovery.provenanceObjectId,
+        outputProvenanceObjectId:
+          existingRecovery.outputProvenanceObjectId ?? null,
+        recoveryContext: existingRecovery.recoveryContext,
+      })
       recoveryRef.current = null
       setRecoveryDigest(null)
       persistRecovery(null)
@@ -332,31 +483,133 @@ export function useAnimacraftMint() {
       setError('Connect and sign in with a Sui wallet before minting')
       return
     }
-    if (!input.config.ready) {
+    const integrationReady = input.handoff.protocolVersion === 5
+      ? input.config.commerceV5Ready
+      : input.config.ready
+    const integrationMissing = input.handoff.protocolVersion === 5
+      ? input.config.commerceV5Missing
+      : input.config.missing
+    if (!integrationReady) {
       setStatus('error')
-      setError(`Canonical Animacraft mint is not activated: ${input.config.missing.join(', ')}`)
+      setError(`Canonical Animacraft mint is not activated: ${integrationMissing.join(', ')}`)
+      return
+    }
+    const inputRecoveryContext =
+      normalizeAnimacraftMintRecoveryContext(input.recoveryContext)
+    if (
+      !inputRecoveryContext
+      || inputRecoveryContext.protocolVersion !== input.handoff.protocolVersion
+      || normalizeAnimacraftRecoveryObjectId(input.maker.objectId)
+        !== inputRecoveryContext.makerId
+      || normalizeAnimacraftRecoveryObjectId(input.handoff.makerId)
+        !== inputRecoveryContext.makerId
+      || normalizeAnimacraftRecoveryHash(input.recipeHashHex)
+        !== inputRecoveryContext.recipeHashHex
+      || (
+        input.handoff.protocolVersion === 5
+        && (
+          normalizeAnimacraftRecoveryObjectId(
+            input.commerceV5?.root.objectId ?? '',
+          )
+            !== inputRecoveryContext.makerRootId
+          || normalizeAnimacraftRecoveryHash(input.outputSealIdHex)
+            !== inputRecoveryContext.outputSealIdHex
+          || normalizeAnimacraftRecoveryHash(input.outputNonceHex)
+            !== inputRecoveryContext.outputNonceHex
+          || normalizeAnimacraftRecoveryHash(input.outputDigestHex)
+            !== inputRecoveryContext.outputDigestHex
+        )
+      )
+    ) {
+      setStatus('error')
+      setError(
+        'The Animacraft completion handoff does not match its recovery context',
+      )
       return
     }
     if (recoveryRef.current) {
-      await resume()
+      if (
+        recoveryRef.current.userId === user.id
+        && animacraftMintRecoveryContextsMatch(
+          recoveryRef.current.recoveryContext,
+          inputRecoveryContext,
+        )
+      ) {
+        await resume()
+      } else {
+        setStatus('error')
+        setError(
+          'Another Animacraft completion is awaiting recovery; reopen its original Maker before starting a new mint',
+        )
+      }
       return
     }
-    if (!recoveryRef.current && (!input.maker.mintingEnabled || !input.maker.published || input.maker.archived)) {
-      setStatus('error')
-      setError('This Animacraft Maker is not open for minting')
-      return
+    if (!recoveryRef.current) {
+      const makerReadyForProtocol = input.handoff.protocolVersion === 5
+        ? (
+            input.maker.published
+            && input.maker.archived
+            && !input.maker.mintingEnabled
+            && !input.maker.mintFeeEnabled
+            && input.maker.mintPriceAtomic === 0n
+          )
+        : (
+            input.maker.published
+            && !input.maker.archived
+            && input.maker.mintingEnabled
+          )
+      if (!makerReadyForProtocol) {
+        setStatus('error')
+        setError(
+          input.handoff.protocolVersion === 5
+            ? 'The legacy OCMaker has not been safely migrated to commerce v5'
+            : 'This Animacraft Maker is not open for minting',
+        )
+        return
+      }
     }
 
     let prepared: Awaited<ReturnType<typeof prepareSoulBlobsForBatchPublish>> | null = null
     try {
       setError(null)
       setResult(null)
+      setCompleteQuoteV5(null)
       const authHeaders = await getAuthHeaders()
       setStatus('preflight')
       const recipeHashBytes = parseAnimacraftRecipeHashHex(input.recipeHashHex)
-      const computedHash = await hashAnimacraftRecipe(input.handoff.recipe)
+      const outputSealIdBytes = input.handoff.protocolVersion === 5
+        ? parseAnimacraftRecipeHashHex(input.outputSealIdHex)
+        : new Uint8Array()
+      const outputNonceBytes = input.handoff.protocolVersion === 5
+        ? parseAnimacraftRecipeHashHex(input.outputNonceHex)
+        : new Uint8Array()
+      const outputDigestBytes = input.handoff.protocolVersion === 5
+        ? parseAnimacraftRecipeHashHex(input.outputDigestHex)
+        : new Uint8Array()
+      const computedHash = input.handoff.protocolVersion === 5
+        ? await hashAnimacraftCompleteSelectionV5(
+            input.handoff.recipe,
+            input.handoff.styleSelections,
+          )
+        : await hashAnimacraftRecipe(input.handoff.recipe)
       if (!equalAnimacraftRecipeHash(recipeHashBytes, computedHash)) {
         throw new Error('Animacraft recipe hash does not match the certified OC profile')
+      }
+      if (input.handoff.protocolVersion === 5 && !input.commerceV5) {
+        throw new Error('Animacraft commerce v5 state has not been verified')
+      }
+      if (
+        input.handoff.protocolVersion === 5
+        && (
+          ANIMACRAFT_V5_PROTOCOL_FEE_BPS
+            + input.maker.royaltyBps
+            + input.commerceV5!.root.soulCreatorRoyaltyBps
+          > MAX_ANIMACRAFT_V5_ADD_ON_BPS
+        )
+      ) {
+        throw new Error(
+          'Animacraft v5 resale shares exceed the 10% rights pool plus 2.5% protocol ceiling',
+        )
       }
 
       const paymentCoinType = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')
@@ -366,15 +619,22 @@ export function useAnimacraftMint() {
       const personalKiosk = await resolvePersonalKiosk(authHeaders, suiWallet.address)
       await assertObjectInputsExist(suiClient, {
         'Animacraft Maker': input.maker.objectId,
-        'Animacraft Maker treasury': input.maker.treasuryId,
-        'Animacraft protocol fee config': input.config.protocolFeeConfigId,
-        'Animacraft protocol treasury': input.config.protocolTreasuryId,
+        'Animacraft Maker treasury': input.handoff.protocolVersion === 5
+          ? input.commerceV5!.makerTreasury.objectId
+          : input.maker.treasuryId,
+        'Animacraft protocol fee config': input.handoff.protocolVersion === 5
+          ? input.commerceV5!.protocol.objectId
+          : input.config.protocolFeeConfigId,
+        'Animacraft protocol treasury': input.handoff.protocolVersion === 5
+          ? input.commerceV5!.protocolTreasury.objectId
+          : input.config.protocolTreasuryId,
+        'Animacraft MakerRootV5': input.commerceV5?.root.objectId ?? null,
         'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
         'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
       })
 
       let paymentCoinObjectIds: string[] = []
-      if (input.maker.mintFeeEnabled) {
+      if (input.handoff.protocolVersion === 4 && input.maker.mintFeeEnabled) {
         const selected = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
           owner: suiWallet.address,
           coinType: paymentCoinType,
@@ -382,6 +642,52 @@ export function useAnimacraftMint() {
         })
         if (!selected?.length) throw new Error('Insufficient USDC balance for this Maker mint')
         paymentCoinObjectIds = selected
+      }
+
+      // Fail before any Walrus upload/certification cost if the current
+      // wallet cannot use this exact Base/Pack/Style composition or cannot
+      // cover its authoritative on-chain Complete quote.
+      let commerceQuoteParams:
+        Parameters<typeof simulateAnimacraftCompleteQuoteV5>[1] | null = null
+      if (input.handoff.protocolVersion === 5) {
+        const commerce = input.commerceV5!
+        commerceQuoteParams = {
+          runtime: {
+            callablePackageId: input.config.commerceV5PackageId,
+            typeOriginPackageId: input.config.commerceV5TypeOriginPackageId,
+            originalPackageId: input.config.originalPackageId,
+            paymentCoinType,
+          },
+          rootObjectId: commerce.root.objectId,
+          rootOwnershipEpoch: commerce.root.ownershipEpoch,
+          legacyMakerObjectId: input.maker.objectId,
+          makerTreasuryObjectId: commerce.makerTreasury.objectId,
+          protocolConfigObjectId: commerce.protocol.objectId,
+          protocolTreasuryObjectId: commerce.protocolTreasury.objectId,
+          protocolFixedCompleteFeeAtomic:
+            commerce.protocol.fixedCompleteFeeAtomic,
+          wallet: suiWallet.address,
+          recipe: input.handoff.recipe,
+          styleSelections: input.handoff.styleSelections,
+        }
+        const preUploadQuoteV5 = await simulateAnimacraftCompleteQuoteV5(
+          suiClient,
+          commerceQuoteParams,
+        )
+        if (!equalAnimacraftRecipeHash(recipeHashBytes, preUploadQuoteV5.recipeHashBytes)) {
+          throw new Error('Commerce v5 quote does not match the certified OC package')
+        }
+        setCompleteQuoteV5(preUploadQuoteV5)
+        if (preUploadQuoteV5.totalDueAtomic > 0n) {
+          const selected = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
+            owner: suiWallet.address,
+            coinType: paymentCoinType,
+            requiredAmount: preUploadQuoteV5.totalDueAtomic,
+          })
+          if (!selected?.length) {
+            throw new Error('Insufficient USDC balance for this Animacraft Complete')
+          }
+        }
       }
 
       setStatus('uploading')
@@ -408,16 +714,84 @@ export function useAnimacraftMint() {
         initialSkillVisibility: 'private',
       })
 
+      let freshQuoteV5: AnimacraftCompleteQuoteV5 | null = null
+      if (input.handoff.protocolVersion === 5) {
+        if (!commerceQuoteParams) {
+          throw new Error('Animacraft commerce v5 quote context is missing')
+        }
+        freshQuoteV5 = await simulateAnimacraftCompleteQuoteV5(
+          suiClient,
+          commerceQuoteParams,
+        )
+        if (!equalAnimacraftRecipeHash(recipeHashBytes, freshQuoteV5.recipeHashBytes)) {
+          throw new Error('Fresh commerce v5 quote does not match the certified OC package')
+        }
+        setCompleteQuoteV5(freshQuoteV5)
+        if (freshQuoteV5.totalDueAtomic > 0n) {
+          const selected = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
+            owner: suiWallet.address,
+            coinType: paymentCoinType,
+            requiredAmount: freshQuoteV5.totalDueAtomic,
+          })
+          if (!selected?.length) {
+            throw new Error('Insufficient USDC balance for this Animacraft Complete')
+          }
+          paymentCoinObjectIds = selected
+        }
+      }
+
       const tx = await buildMintAnimacraftSoulTx({
         currentKioskId: personalKiosk?.currentKioskId ?? null,
         currentKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
+        animacraftProtocolVersion: input.handoff.protocolVersion,
+        makerRootV5ObjectId: input.handoff.protocolVersion === 5
+          ? input.commerceV5!.root.objectId
+          : null,
+        commerceV5ProtocolConfigObjectId:
+          input.handoff.protocolVersion === 5
+            ? input.commerceV5!.protocol.objectId
+            : null,
         description: input.handoff.description,
         initialContent,
         initialStateConfig,
         attachBeforeMint: prepared.attachCertifyCalls,
-        createAuthorization: (authorizationTx) => appendAnimacraftSoulMintAuthorization(
-          authorizationTx,
-          {
+        createAuthorization: (authorizationTx) => {
+          if (input.handoff.protocolVersion === 5) {
+            const commerce = input.commerceV5!
+            if (!freshQuoteV5) throw new Error('Fresh Animacraft v5 quote is missing')
+            return appendAnimacraftCommerceV5Authorization(
+              authorizationTx,
+              {
+                runtime: {
+                  callablePackageId: input.config.commerceV5PackageId,
+                  typeOriginPackageId: input.config.commerceV5TypeOriginPackageId,
+                  originalPackageId: input.config.originalPackageId,
+                  paymentCoinType,
+                },
+                rootObjectId: commerce.root.objectId,
+                rootOwnershipEpoch: commerce.root.ownershipEpoch,
+                legacyMakerObjectId: input.maker.objectId,
+                makerTreasuryObjectId: commerce.makerTreasury.objectId,
+                protocolConfigObjectId: commerce.protocol.objectId,
+                protocolTreasuryObjectId: commerce.protocolTreasury.objectId,
+                protocolFixedCompleteFeeAtomic:
+                  commerce.protocol.fixedCompleteFeeAtomic,
+                wallet: suiWallet.address,
+                quote: freshQuoteV5,
+                paymentCoinObjectIds,
+                name: input.handoff.name,
+                profileJsonBlobId: input.profileJsonBlobId,
+                imageBlobId: input.imageBlobId,
+                imageUrl: input.imageUrl,
+                outputSealId: outputSealIdBytes,
+                outputNonce: outputNonceBytes,
+                outputDigest: outputDigestBytes,
+                recipe: input.handoff.recipe,
+                styleSelections: input.handoff.styleSelections,
+              },
+            )
+          }
+          return appendAnimacraftSoulMintAuthorization(authorizationTx, {
             animacraftPackageId: input.config.packageId,
             animacraftOriginalPackageId: input.config.originalPackageId,
             makerObjectId: input.maker.objectId,
@@ -434,17 +808,47 @@ export function useAnimacraftMint() {
             imageUrl: input.imageUrl,
             recipeHashBytes,
             recipe: input.handoff.recipe,
-          },
-        ),
+          })
+        },
       })
 
       setStatus('signing')
+      // Allow the exact on-chain v5 quote to render before opening the wallet
+      // signature prompt. The final PTB re-quotes atomically and aborts if any
+      // quota, Pack entitlement, fee, or ownership state changed meanwhile.
+      if (freshQuoteV5 && typeof window !== 'undefined') {
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+      }
       const txResult = await signAndExecute(tx)
       assertSoulidityTxSucceeded(txResult, 'Animacraft canonical Soul mint')
 
       const soulidityPackageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
       const minted = extractAllSoulMintedToKioskEvents(txResult as never, soulidityPackageId)[0]
       if (!minted) throw new Error('Canonical mint transaction is missing SoulMintedToKiosk')
+      const provenanceObjectId = animacraftProvenanceObjectId(
+        txResult,
+        minted.soulId,
+      )
+      const outputProvenanceObjectId =
+        animacraftOutputProvenanceObjectId(
+          txResult,
+          soulidityPackageId,
+          {
+            soulId: minted.soulId,
+            stateId: minted.stateId,
+            baseProvenanceId: provenanceObjectId,
+            makerRootId: input.commerceV5?.root.objectId ?? '',
+            completeOutputSealId: outputSealIdBytes,
+          },
+        )
+      if (
+        input.handoff.protocolVersion === 5
+        && !outputProvenanceObjectId
+      ) {
+        throw new Error(
+          'Canonical commerce v5 mint is missing its completed-output provenance event',
+        )
+      }
       const pendingSync: AnimacraftPendingSync = {
         tags: input.handoff.tags,
         previewImages: [input.imageUrl],
@@ -459,6 +863,10 @@ export function useAnimacraftMint() {
         userId: user.id,
         txDigest: txResult.digest,
         soulOnChainId: minted.soulId,
+        provenanceObjectId,
+        animacraftProtocolVersion: input.handoff.protocolVersion,
+        outputProvenanceObjectId,
+        recoveryContext: inputRecoveryContext,
         pendingSync,
         syncBody: null,
       })
@@ -491,7 +899,13 @@ export function useAnimacraftMint() {
       recoveryRef.current = null
       setRecoveryDigest(null)
       persistRecovery(null)
-      setResult({ txDigest: txResult.digest, soulOnChainId: minted.soulId })
+      setResult({
+        txDigest: txResult.digest,
+        soulOnChainId: minted.soulId,
+        provenanceObjectId,
+        outputProvenanceObjectId,
+        recoveryContext: inputRecoveryContext,
+      })
       setStatus('done')
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Animacraft Soul mint failed')
@@ -499,5 +913,20 @@ export function useAnimacraftMint() {
     }
   }
 
-  return { status, error, result, hasRecovery: Boolean(recoveryDigest), mint, resume }
+  return {
+    status,
+    error,
+    result,
+    completeQuoteV5,
+    hasRecovery: Boolean(
+      recoveryDigest
+      && recoveryRef.current?.userId === user?.id
+      && animacraftMintRecoveryContextsMatch(
+        recoveryRef.current?.recoveryContext,
+        normalizedCurrentRecoveryContext,
+      ),
+    ),
+    mint,
+    resume,
+  }
 }

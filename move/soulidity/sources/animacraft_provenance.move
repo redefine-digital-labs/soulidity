@@ -13,6 +13,8 @@ use std::string::String;
 use sui::event;
 
 const VERSION: u64 = 1;
+const ANIMACRAFT_PROTOCOL_VERSION_V4: u64 = 4;
+const ANIMACRAFT_PROTOCOL_VERSION_V5: u64 = 5;
 
 const ESoulMismatch: u64 = 0;
 const EMakerMismatch: u64 = 1;
@@ -168,6 +170,16 @@ public fun soul_id(self: &AnimacraftProvenance): ID {
 
 public fun animacraft_version(self: &AnimacraftProvenance): u64 {
     self.animacraft_version
+}
+
+/// Compatibility is derived from the protocol version frozen in the consumed
+/// authorization, never from a caller-supplied market flag.
+public fun is_v4_compatible(self: &AnimacraftProvenance): bool {
+    self.animacraft_version == ANIMACRAFT_PROTOCOL_VERSION_V4
+}
+
+public fun is_v5_commerce_compatible(self: &AnimacraftProvenance): bool {
+    self.animacraft_version == ANIMACRAFT_PROTOCOL_VERSION_V5
 }
 
 public fun maker_id(self: &AnimacraftProvenance): ID {

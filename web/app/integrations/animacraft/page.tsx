@@ -27,8 +27,16 @@ export default async function AnimacraftIntegrationPage({
         imageUrl: first(params.image),
         profileBlobId: first(params.profileBlob),
         imageBlobId: first(params.imageBlob),
+        imagePreviewBlobId: first(params.imagePreviewBlob),
         recipeHash: first(params.recipeHash),
         walletHint: first(params.wallet),
+        commerceRootId: first(params.commerceRoot),
+        commerceTreasuryId: first(params.commerceTreasury),
+        returnOrigin: first(params.returnOrigin),
+        returnNonce: first(params.returnNonce),
+        outputSealId: first(params.outputSealId),
+        outputNonce: first(params.outputNonce),
+        outputDigest: first(params.outputDigest),
       }}
     />
   )
