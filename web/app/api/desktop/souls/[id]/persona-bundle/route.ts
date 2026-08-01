@@ -24,7 +24,6 @@ import {
   ContentAccessDeniedError,
   resolveContentAccessPayload,
 } from '@/lib/soulidity/access'
-import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   downloadPolicyFromU8,
   KIND_SPRITE,
@@ -190,7 +189,6 @@ export async function GET(
       },
       version,
       viewerAddresses: walletAddresses,
-      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
     })
 
     return NextResponse.json({

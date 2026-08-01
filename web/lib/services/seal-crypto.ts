@@ -1,4 +1,4 @@
-import type { SealClient, SessionKey } from '@mysten/seal'
+import { EncryptedObject, type SealClient, type SessionKey } from '@mysten/seal'
 import { Transaction } from '@mysten/sui/transactions'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import type { AccessPolicyDescriptor } from '@/lib/services/seal'
@@ -134,6 +134,14 @@ function normalizeSuiHex(value: string): string {
   return stripHexPrefix(normalizeSuiAddress(value)).toLowerCase()
 }
 
+function normalizeSealPackageId(value: string): string {
+  try {
+    return normalizeSuiAddress(value)
+  } catch {
+    throw new Error('Seal package id is invalid')
+  }
+}
+
 function isValidDocumentIdForDomains(
   value: string,
   specs: readonly { domain: string; minSuffixBytes: number }[],
@@ -232,6 +240,13 @@ export function parseSealEnvelopeSidecar(value: unknown): SealEnvelopeSidecar {
   }
 
   const documentId = typeof candidate.documentId === 'string' ? candidate.documentId : ''
+  let sealPackageId: string | undefined
+  if (candidate.sealPackageId != null) {
+    if (typeof candidate.sealPackageId !== 'string') {
+      throw new Error('Seal envelope sidecar sealPackageId is invalid')
+    }
+    sealPackageId = normalizeSealPackageId(candidate.sealPackageId)
+  }
   const encryptedDek = typeof candidate.encryptedDek === 'string' ? candidate.encryptedDek : ''
   const iv = typeof candidate.iv === 'string' ? candidate.iv : ''
   const cipher = candidate.cipher
@@ -267,6 +282,7 @@ export function parseSealEnvelopeSidecar(value: unknown): SealEnvelopeSidecar {
   return {
     version: 1,
     mode: 'seal-envelope',
+    ...(sealPackageId ? { sealPackageId } : {}),
     documentId,
     encryptedDek,
     iv,
@@ -275,6 +291,55 @@ export function parseSealEnvelopeSidecar(value: unknown): SealEnvelopeSidecar {
     fileName,
     contentHash,
   }
+}
+
+/**
+ * Read the immutable Seal namespace embedded in the encrypted DEK object.
+ * This is authoritative for legacy sidecars that predate `sealPackageId`.
+ */
+export function getSealEnvelopePackageId(value: unknown): string {
+  const sidecar = parseSealEnvelopeSidecar(value)
+  let embeddedPackageId: string
+  try {
+    const encryptedObject = EncryptedObject.parse(base64ToBytes(sidecar.encryptedDek))
+    embeddedPackageId = normalizeSealPackageId(encryptedObject.packageId)
+    if (
+      stripHexPrefix(encryptedObject.id).toLowerCase()
+      !== stripHexPrefix(sidecar.documentId).toLowerCase()
+    ) {
+      throw new Error('documentId does not match encryptedDek')
+    }
+  } catch (error) {
+    throw new Error(
+      `Seal envelope encryptedDek is not a valid Seal encrypted object: ${error instanceof Error ? error.message : 'unknown error'}`,
+    )
+  }
+
+  if (
+    sidecar.sealPackageId
+    && normalizeSealPackageId(sidecar.sealPackageId) !== embeddedPackageId
+  ) {
+    throw new Error('Seal envelope sidecar namespace does not match encryptedDek')
+  }
+  return embeddedPackageId
+}
+
+/**
+ * Reject ciphertext created under a latest/upgraded package. Seal identity
+ * must remain anchored to the first/original package across every upgrade.
+ */
+export function assertSealEnvelopePackageId(
+  value: unknown,
+  expectedSealPackageId: string,
+): string {
+  const embeddedPackageId = getSealEnvelopePackageId(value)
+  const expected = normalizeSealPackageId(expectedSealPackageId)
+  if (embeddedPackageId !== expected) {
+    throw new Error(
+      `Seal envelope namespace mismatch: expected original package ${expected}, received ${embeddedPackageId}`,
+    )
+  }
+  return embeddedPackageId
 }
 
 export async function encryptBundle(params: {
@@ -304,7 +369,7 @@ export async function encryptBundle(params: {
 
     const { encryptedObject } = await params.sealClient.encrypt({
       threshold: params.threshold,
-      packageId: params.accessPolicy.packageId,
+      packageId: params.accessPolicy.sealPackageId,
       id: documentId,
       data: keyMaterial,
     })
@@ -314,6 +379,7 @@ export async function encryptBundle(params: {
       sidecar: {
         version: 1,
         mode: 'seal-envelope',
+        sealPackageId: normalizeSealPackageId(params.accessPolicy.sealPackageId),
         documentId,
         encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
         iv: bytesToBase64(iv),
@@ -331,7 +397,7 @@ export async function encryptBundle(params: {
 
 export async function createSealEnvelopeSidecar(params: {
   sealClient: Pick<SealClient, 'encrypt'>
-  packageId: string
+  sealPackageId: string
   soulObjectId: string
   threshold: number
   dek: Uint8Array
@@ -356,7 +422,7 @@ export async function createSealEnvelopeSidecar(params: {
     const documentId = generateSealDocumentId(params.soulObjectId, params.nonce)
     const { encryptedObject } = await params.sealClient.encrypt({
       threshold: params.threshold,
-      packageId: params.packageId,
+      packageId: params.sealPackageId,
       id: documentId,
       data: keyMaterial,
     })
@@ -364,6 +430,7 @@ export async function createSealEnvelopeSidecar(params: {
     return {
       version: 1,
       mode: 'seal-envelope',
+      sealPackageId: normalizeSealPackageId(params.sealPackageId),
       documentId,
       encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
       iv: bytesToBase64(params.iv),
@@ -447,7 +514,7 @@ export function generateSkillDocumentIdForVersion(
 
 export async function createMemoryEntrySealEnvelopeSidecar(params: {
   sealClient: Pick<SealClient, 'encrypt'>
-  packageId: string
+  sealPackageId: string
   memoryObjectId: string
   timestampKey: number
   threshold: number
@@ -472,7 +539,7 @@ export async function createMemoryEntrySealEnvelopeSidecar(params: {
     const documentId = generateMemoryDocumentId(params.memoryObjectId, params.timestampKey)
     const { encryptedObject } = await params.sealClient.encrypt({
       threshold: params.threshold,
-      packageId: params.packageId,
+      packageId: params.sealPackageId,
       id: documentId,
       data: keyMaterial,
     })
@@ -480,6 +547,7 @@ export async function createMemoryEntrySealEnvelopeSidecar(params: {
     return {
       version: 1,
       mode: 'seal-envelope',
+      sealPackageId: normalizeSealPackageId(params.sealPackageId),
       documentId,
       encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
       iv: bytesToBase64(params.iv),
@@ -495,7 +563,7 @@ export async function createMemoryEntrySealEnvelopeSidecar(params: {
 
 export async function createSkillVersionSealEnvelopeSidecar(params: {
   sealClient: Pick<SealClient, 'encrypt'>
-  packageId: string
+  sealPackageId: string
   skillsObjectId: string
   skillName: string
   versionIndex: number
@@ -525,7 +593,7 @@ export async function createSkillVersionSealEnvelopeSidecar(params: {
     )
     const { encryptedObject } = await params.sealClient.encrypt({
       threshold: params.threshold,
-      packageId: params.packageId,
+      packageId: params.sealPackageId,
       id: documentId,
       data: keyMaterial,
     })
@@ -533,6 +601,7 @@ export async function createSkillVersionSealEnvelopeSidecar(params: {
     return {
       version: 1,
       mode: 'seal-envelope',
+      sealPackageId: normalizeSealPackageId(params.sealPackageId),
       documentId,
       encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
       iv: bytesToBase64(params.iv),
@@ -548,7 +617,7 @@ export async function createSkillVersionSealEnvelopeSidecar(params: {
 
 export async function createAssetVersionSealEnvelopeSidecar(params: {
   sealClient: Pick<SealClient, 'encrypt'>
-  packageId: string
+  sealPackageId: string
   assetsObjectId: string
   assetName: string
   versionIndex: number
@@ -578,7 +647,7 @@ export async function createAssetVersionSealEnvelopeSidecar(params: {
     )
     const { encryptedObject } = await params.sealClient.encrypt({
       threshold: params.threshold,
-      packageId: params.packageId,
+      packageId: params.sealPackageId,
       id: documentId,
       data: keyMaterial,
     })
@@ -586,6 +655,7 @@ export async function createAssetVersionSealEnvelopeSidecar(params: {
     return {
       version: 1,
       mode: 'seal-envelope',
+      sealPackageId: normalizeSealPackageId(params.sealPackageId),
       documentId,
       encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
       iv: bytesToBase64(params.iv),
@@ -606,8 +676,10 @@ export async function decryptBundle(params: {
   encryptedData: Uint8Array
   sidecar: SealEnvelopeSidecar
   expectedSoulObjectId: string
+  expectedSealPackageId: string
 }): Promise<Uint8Array> {
   const sidecar = parseSealEnvelopeSidecar(params.sidecar)
+  assertSealEnvelopePackageId(sidecar, params.expectedSealPackageId)
   assertDocumentIdMatchesExpectedBinding({
     documentId: sidecar.documentId,
     expectedSoulObjectId: params.expectedSoulObjectId,
@@ -668,7 +740,7 @@ export async function buildSealApprovalTxBytes(params: {
   })
 
   const tx = new Transaction()
-  const target = `${params.accessPolicy.packageId}::${params.accessPolicy.moduleName}::${params.accessPolicy.functionName}`
+  const target = `${params.accessPolicy.callablePackageId}::${params.accessPolicy.moduleName}::${params.accessPolicy.functionName}`
   const documentIdArg = tx.pure.vector('u8', Array.from(hexToBytes(params.documentId)))
   const soulIdArg = tx.pure.id(params.accessPolicy.soulObjectId)
   let argumentsForCall

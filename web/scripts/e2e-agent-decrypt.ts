@@ -28,7 +28,8 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import { Transaction } from '@mysten/sui/transactions'
-import { SealClient, SessionKey } from '@mysten/seal'
+import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { EncryptedObject, SealClient, SessionKey } from '@mysten/seal'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100'
 const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC
@@ -68,6 +69,7 @@ function base64ToBytes(value: string): Uint8Array {
 interface SealSidecar {
   version: 1
   mode: 'seal-envelope'
+  sealPackageId?: string
   documentId: string
   encryptedDek: string
   iv: string
@@ -88,6 +90,7 @@ function parseSidecar(value: unknown): SealSidecar {
   return {
     version: 1,
     mode: 'seal-envelope',
+    ...(typeof v.sealPackageId === 'string' ? { sealPackageId: v.sealPackageId } : {}),
     documentId: v.documentId as string,
     encryptedDek: v.encryptedDek as string,
     iv: v.iv as string,
@@ -109,7 +112,10 @@ type SealApprovalFunctionName =
   | 'seal_approve_content_paid_access'
 
 interface AccessPolicy {
+  /** @deprecated Original namespace alias. */
   packageId: string
+  sealPackageId?: string
+  callablePackageId?: string
   stateObjectId: string
   contentObjectId: string
   kind: number
@@ -124,7 +130,7 @@ interface AccessPolicy {
 
 function buildSealApprovalTx(accessPolicy: AccessPolicy, documentId: string): Transaction {
   const tx = new Transaction()
-  const target = `${accessPolicy.packageId}::${accessPolicy.moduleName}::${accessPolicy.functionName}`
+  const target = `${accessPolicy.callablePackageId || accessPolicy.packageId}::${accessPolicy.moduleName}::${accessPolicy.functionName}`
   const docIdArg = tx.pure.vector('u8', Array.from(hexToBytes(documentId)))
   const stateArg = tx.object(accessPolicy.stateObjectId)
   const contentArg = tx.object(accessPolicy.contentObjectId)
@@ -235,6 +241,32 @@ async function main() {
   const access = await accessRes.json()
   const sidecar = parseSidecar(access.sealSidecar)
   const accessPolicy = access.accessPolicy as AccessPolicy
+  const encryptedObject = EncryptedObject.parse(base64ToBytes(sidecar.encryptedDek))
+  const embeddedSealPackageId = normalizeSuiAddress(encryptedObject.packageId)
+  const sealPackageId = accessPolicy.sealPackageId
+    ? normalizeSuiAddress(accessPolicy.sealPackageId)
+    : embeddedSealPackageId
+  if (embeddedSealPackageId !== sealPackageId) {
+    throw new Error('Seal envelope namespace does not match the access policy original package')
+  }
+  if (
+    sidecar.sealPackageId
+    && normalizeSuiAddress(sidecar.sealPackageId) !== normalizeSuiAddress(sealPackageId)
+  ) {
+    throw new Error('Seal sidecar namespace does not match the access policy original package')
+  }
+  if (
+    encryptedObject.id.replace(/^0x/, '').toLowerCase()
+    !== sidecar.documentId.replace(/^0x/, '').toLowerCase()
+  ) {
+    throw new Error('Seal envelope document does not match the sidecar')
+  }
+  if (
+    sidecar.documentId.replace(/^0x/, '').toLowerCase()
+    !== accessPolicy.documentIdHex.replace(/^0x/, '').toLowerCase()
+  ) {
+    throw new Error('Seal sidecar document does not match the approval policy')
+  }
   console.log(`Access kind: ${access.accessKind}`)
   console.log(`Policy: ${accessPolicy.functionName}`)
   console.log(`Blob URL: ${access.artifact.walrusBlobUrl}`)
@@ -265,7 +297,7 @@ async function main() {
 
   const sessionKey = await SessionKey.create({
     address: agentAddress,
-    packageId: accessPolicy.packageId,
+    packageId: sealPackageId,
     ttlMin: access.sessionTtlMin ?? 10,
     suiClient,
   })

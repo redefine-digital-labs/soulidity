@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { hasSealSessionConfig } from '@/lib/services/seal'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import { ContentAccessDeniedError, resolveContentAccessPayload } from '@/lib/soulidity/access'
-import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { CANONICAL_SOUL_DOC_NAME, KIND_SOUL_DOC } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
@@ -99,7 +98,6 @@ export async function GET(
       },
       version: contentVersion,
       viewerAddresses: auth.walletAddresses,
-      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
     })
     return NextResponse.json(payload)
   } catch (error: unknown) {

@@ -5,18 +5,18 @@ import {
 import { Transaction } from '@mysten/sui/transactions'
 
 import {
-  assertCanonicalMainnetDeployment,
   assertDeletedObject,
   assertLegacyMarketConfig,
+  assertMainnetDeploymentRecord,
   assertMainnetRpc,
   assertObjectAddressOwner,
   assertObjectShared,
   assertUpgradeCap,
   moveFields,
+  objectAddressOwner,
   objectIdFromMoveField,
   readDeploymentSnapshot,
   requiredAddress,
-  SOULIDITY_MAINNET_ADMIN,
 } from './lib/soulidity-mainnet-migration'
 
 interface PostflightArgs {
@@ -31,13 +31,14 @@ export function parsePostflightArgs(argv: string[]): PostflightArgs {
       continue
     }
     if (argument === '--expect-secondary=enabled') {
-      expectSecondaryEnabled = true
-      continue
+      throw new Error(
+        'Guarded-launch postflight requires the secondary gate to remain disabled',
+      )
     }
     if (argument === '--help' || argument === '-h') {
       throw new Error(
         'Usage: npm run postflight:animacraft-market-retirement -- '
-          + '[--expect-secondary=disabled|enabled]',
+          + '[--expect-secondary=disabled]',
       )
     }
     throw new Error(`Unknown argument: ${argument}`)
@@ -89,20 +90,14 @@ function normalizedFunctionUsesLegacyConfig(
 async function main() {
   const args = parsePostflightArgs(process.argv.slice(2))
   const snapshot = readDeploymentSnapshot()
-  const deployment = assertCanonicalMainnetDeployment(snapshot.mainnet)
+  const deployment = assertMainnetDeploymentRecord(snapshot.mainnet)
   if (deployment.callablePackageId === deployment.originalPackageId) {
     throw new Error(
       'callablePackageId still equals originalPackageId; the guarded upgrade is not active',
     )
   }
-  const animacraftProvenancePackageId = requiredAddress(
-    snapshot.mainnet.animacraftProvenancePackageId,
-    'mainnet.animacraftProvenancePackageId',
-  )
-  const marketConfigV2PackageId = requiredAddress(
-    snapshot.mainnet.marketConfigV2PackageId,
-    'mainnet.marketConfigV2PackageId',
-  )
+  const animacraftProvenancePackageId = deployment.animacraftProvenancePackageId
+  const marketConfigV2PackageId = deployment.marketConfigV2PackageId
   const successorConfigId = requiredAddress(
     process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID
       ?? snapshot.mainnet.marketConfigV2Id,
@@ -116,15 +111,6 @@ async function main() {
     snapshot.mainnet.kioskRegistryId,
     'mainnet.kioskRegistryId',
   )
-
-  if (animacraftProvenancePackageId === deployment.originalPackageId) {
-    throw new Error(
-      'AnimacraftProvenance TypeOrigin still points at the original package',
-    )
-  }
-  if (marketConfigV2PackageId === deployment.originalPackageId) {
-    throw new Error('MarketConfigV2 TypeOrigin still points at the original package')
-  }
 
   const client = new SuiJsonRpcClient({
     url: getJsonRpcFullnodeUrl('mainnet'),
@@ -185,7 +171,8 @@ async function main() {
     }),
   ])
 
-  assertUpgradeCap(upgradeCap, deployment.callablePackageId)
+  const capabilityOwner = objectAddressOwner(upgradeCap, 'Soulidity UpgradeCap')
+  assertUpgradeCap(upgradeCap, deployment.callablePackageId, capabilityOwner)
   const legacyFields = assertLegacyMarketConfig(
     legacyConfig,
     deployment.originalPackageId,
@@ -230,8 +217,8 @@ async function main() {
   if (String(successorFields.version) !== '2') {
     throw new Error(`MarketConfigV2.version is ${String(successorFields.version)}; expected 2`)
   }
-  if (successorFields.primary_enabled !== true) {
-    throw new Error('Unified MarketConfigV2 primary gate is not enabled')
+  if (successorFields.primary_enabled !== false) {
+    throw new Error('Unified MarketConfigV2 primary gate must remain disabled')
   }
   if (successorFields.secondary_enabled !== args.expectSecondaryEnabled) {
     throw new Error(
@@ -249,7 +236,7 @@ async function main() {
   )
   assertObjectAddressOwner(
     successorAdmin,
-    SOULIDITY_MAINNET_ADMIN,
+    capabilityOwner,
     'MarketAdminCapV2',
   )
   if (objectIdFromMoveField(
@@ -273,7 +260,7 @@ async function main() {
     ],
   })
   const runtimeResult = await client.devInspectTransactionBlock({
-    sender: SOULIDITY_MAINNET_ADMIN,
+    sender: capabilityOwner,
     transactionBlock: runtimeProbe,
   })
   const pauseAbortEvidence = assertLegacyPauseAbort(runtimeResult)
@@ -290,7 +277,7 @@ async function main() {
     legacyAdminCapDeleted: true,
     successorConfigId,
     successorAdminCapId,
-    primaryEnabled: true,
+    primaryEnabled: false,
     secondaryEnabled: args.expectSecondaryEnabled,
     successorCrossReferencesVerified: true,
     immutableOriginalAbiVerified: [

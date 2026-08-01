@@ -2,16 +2,75 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildCapTransferPtb,
+  assertLegacyCliPublishAllowed,
+  assertNoPendingReleaseAttempt,
+  assertHistoricalSealRoutePreserved,
   assertMainnetFreshPublishAllowed,
   extractDeploymentFromPublishResult,
   parseArgs,
+  readReleaseAttempt,
   readPublishedTomlSections,
+  verifyCapTransferOwners,
+  verifyFreshDeploymentOnChain,
   writePublishedTomlSection,
 } from '../../scripts/publish-soulidity-and-sync'
+
+describe('signed release-attempt journal', () => {
+  let dir: string
+  let path: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'soulidity-release-attempt-'))
+    path = join(dir, 'deployment-release-attempt.json')
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('accepts only an explicit null journal as idle', () => {
+    writeFileSync(path, 'null\n')
+    expect(readReleaseAttempt(path)).toBeNull()
+    expect(() => assertNoPendingReleaseAttempt(path)).not.toThrow()
+  })
+
+  it('fails closed when the journal is missing or malformed', () => {
+    expect(() => readReleaseAttempt(path)).toThrow(/journal is missing/)
+    writeFileSync(path, '{}\n')
+    expect(() => readReleaseAttempt(path)).toThrow(/malformed/)
+  })
+
+  it('durably blocks retry while a signed operation is unresolved', () => {
+    writeFileSync(path, JSON.stringify({
+      operation: 'fresh-publish',
+      network: 'mainnet',
+      status: 'submitted',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      deployerAddr: '0xaa',
+      digest: 'submitted-digest',
+    }))
+    expect(() => assertNoPendingReleaseAttempt(path)).toThrow(
+      /DO NOT RETRY.*reconciled/,
+    )
+  })
+})
+
+function completePublishObjectChanges(packageId: string) {
+  return [
+    { type: 'published', packageId },
+    { objectType: '0x2::package::UpgradeCap', objectId: '0xupgradecap' },
+    { objectType: `${packageId}::market::MarketAdminCap`, objectId: '0xadmincap' },
+    { objectType: `${packageId}::kind_registry::KindAdminCap`, objectId: '0xkindadmincap' },
+    { objectType: `0x2::transfer_policy::TransferPolicyCap<${packageId}::soul::Soul>`, objectId: '0xsoulpolicycap' },
+    { objectType: `0x2::transfer_policy::TransferPolicyCap<${packageId}::collection::SoulCollectionRight>`, objectId: '0xcollectionpolicycap' },
+    { objectType: `0x2::display::Display<${packageId}::soul::Soul>`, objectId: '0xsouldisplay' },
+    { objectType: `0x2::display::Display<${packageId}::collection::SoulCollectionRight>`, objectId: '0xcollectiondisplay' },
+  ]
+}
 
 // ── extractDeploymentFromPublishResult ─────────────────────
 
@@ -19,10 +78,7 @@ describe('extractDeploymentFromPublishResult', () => {
   it('extracts the core deployment ids from a publish result', () => {
     const deployment = extractDeploymentFromPublishResult({
       digest: '6XqMK1KoLFXTP4gg4rVraN4vqzTJ28kQp7iPR7wkhdLd',
-      objectChanges: [
-        { type: 'published', packageId: '0xpackage' },
-        { objectType: '0x2::package::UpgradeCap', objectId: '0xupgradecap' },
-      ],
+      objectChanges: completePublishObjectChanges('0xpackage'),
       events: [
         {
           type: '0xpackage::market::MarketInitialized',
@@ -51,6 +107,7 @@ describe('extractDeploymentFromPublishResult', () => {
       animacraftProvenancePackageId: '0xpackage',
       packageId: '0xpackage',
       marketConfigId: '0xconfig',
+      marketConfigV2PackageId: '0xpackage',
       kioskRegistryId: '0xregistry',
       kindRegistryId: '0xkindregistry',
       soulTransferPolicyId: '0xsoulpolicy',
@@ -65,10 +122,7 @@ describe('extractDeploymentFromPublishResult', () => {
   it('fails fast when payment coin type cannot be resolved', () => {
     expect(() => extractDeploymentFromPublishResult({
       digest: '0xdigest',
-      objectChanges: [
-        { type: 'published', packageId: '0xpackage' },
-        { objectType: '0x2::package::UpgradeCap', objectId: '0xupgradecap' },
-      ],
+      objectChanges: completePublishObjectChanges('0xpackage'),
       events: [
         {
           type: '0xpackage::market::MarketInitialized',
@@ -95,10 +149,7 @@ describe('extractDeploymentFromPublishResult', () => {
       effects: {
         transactionDigest: '0xdryrundigest',
       },
-      objectChanges: [
-        { type: 'published', packageId: '0xpackage' },
-        { objectType: '0x2::package::UpgradeCap', objectId: '0xupgradecap' },
-      ],
+      objectChanges: completePublishObjectChanges('0xpackage'),
       events: [
         {
           type: '0xpackage::market::MarketInitialized',
@@ -167,6 +218,228 @@ describe('extractDeploymentFromPublishResult', () => {
     expect(deployment.collectionPolicyCapId).toBe('0xcollectionpolicycap')
     expect(deployment.soulDisplayId).toBe('0xsouldisplay')
     expect(deployment.collectionDisplayId).toBe('0xcollectiondisplay')
+  })
+
+  it('rejects a publish response that omits a governance object', () => {
+    const packageId = '0xpackage'
+    expect(() => extractDeploymentFromPublishResult({
+      digest: '0xdigest',
+      objectChanges: completePublishObjectChanges(packageId).filter(
+        (change) => change.objectId !== '0xsouldisplay',
+      ),
+      events: [
+        {
+          type: `${packageId}::market::MarketInitialized`,
+          parsedJson: {
+            config_id: '0xconfig',
+            registry_id: '0xregistry',
+            soul_policy_id: '0xsoulpolicy',
+            collection_policy_id: '0xcollectionpolicy',
+          },
+        },
+        {
+          type: `${packageId}::kind_registry::KindRegistryCreated`,
+          parsedJson: {
+            registry_id: '0xkindregistry',
+            admin_cap_id: '0xkindadmincap',
+          },
+        },
+      ],
+    }, { paymentCoinType: '0x2::coin::COIN' })).toThrow(/Soul display id/)
+  })
+})
+
+// ── finalized object readback ──────────────────────────────
+
+const READBACK_PACKAGE = '0x11'
+const READBACK_DEPLOYER = '0xaa'
+const READBACK_MULTISIG = '0xbb'
+
+const readbackDeployment = {
+  callablePackageId: READBACK_PACKAGE,
+  originalPackageId: READBACK_PACKAGE,
+  animacraftProvenancePackageId: READBACK_PACKAGE,
+  packageId: READBACK_PACKAGE,
+  marketConfigId: '0x21',
+  marketConfigV2PackageId: READBACK_PACKAGE,
+  kioskRegistryId: '0x22',
+  kindRegistryId: '0x23',
+  soulTransferPolicyId: '0x24',
+  collectionTransferPolicyId: '0x25',
+  paymentCoinType: '0x2::sui::SUI',
+  publishTxDigest: 'digest',
+  upgradeCapId: '0x26',
+  marketAdminCapId: '0x27',
+  kindAdminCapId: '0x28',
+  soulPolicyCapId: '0x29',
+  collectionPolicyCapId: '0x2a',
+  soulDisplayId: '0x2b',
+  collectionDisplayId: '0x2c',
+}
+
+function moveObject(params: {
+  objectId: string
+  type: string
+  owner: string | 'shared'
+  fields?: Record<string, unknown>
+}) {
+  return {
+    data: {
+      objectId: params.objectId,
+      type: params.type,
+      owner: params.owner === 'shared'
+        ? { Shared: { initial_shared_version: '1' } }
+        : { AddressOwner: params.owner },
+      content: {
+        dataType: 'moveObject' as const,
+        type: params.type,
+        hasPublicTransfer: true,
+        fields: params.fields ?? { id: { id: params.objectId } },
+      },
+    },
+  }
+}
+
+function readbackObjects(owner = READBACK_DEPLOYER, paused = true) {
+  const pkg = READBACK_PACKAGE
+  return new Map<string, ReturnType<typeof moveObject>>([
+    [readbackDeployment.marketConfigId, moveObject({
+      objectId: readbackDeployment.marketConfigId,
+      type: `${pkg}::market::MarketConfig`,
+      owner: 'shared',
+      fields: {
+        id: { id: readbackDeployment.marketConfigId },
+        version: '1',
+        fee_recipient: READBACK_DEPLOYER,
+        platform_fee_bps: '1000',
+        paused,
+      },
+    })],
+    [readbackDeployment.marketAdminCapId, moveObject({
+      objectId: readbackDeployment.marketAdminCapId,
+      type: `${pkg}::market::MarketAdminCap`,
+      owner,
+    })],
+    [readbackDeployment.upgradeCapId, moveObject({
+      objectId: readbackDeployment.upgradeCapId,
+      type: '0x2::package::UpgradeCap',
+      owner,
+      fields: {
+        id: { id: readbackDeployment.upgradeCapId },
+        package: pkg,
+        policy: 0,
+        version: '1',
+      },
+    })],
+    [readbackDeployment.kioskRegistryId, moveObject({
+      objectId: readbackDeployment.kioskRegistryId,
+      type: `${pkg}::market::KioskRegistry`,
+      owner: 'shared',
+    })],
+    [readbackDeployment.kindRegistryId, moveObject({
+      objectId: readbackDeployment.kindRegistryId,
+      type: `${pkg}::kind_registry::KindRegistry`,
+      owner: 'shared',
+    })],
+    [readbackDeployment.soulTransferPolicyId, moveObject({
+      objectId: readbackDeployment.soulTransferPolicyId,
+      type: `0x2::transfer_policy::TransferPolicy<${pkg}::soul::Soul>`,
+      owner: 'shared',
+    })],
+    [readbackDeployment.collectionTransferPolicyId, moveObject({
+      objectId: readbackDeployment.collectionTransferPolicyId,
+      type: `0x2::transfer_policy::TransferPolicy<${pkg}::collection::SoulCollectionRight>`,
+      owner: 'shared',
+    })],
+    [readbackDeployment.kindAdminCapId, moveObject({
+      objectId: readbackDeployment.kindAdminCapId,
+      type: `${pkg}::kind_registry::KindAdminCap`,
+      owner,
+    })],
+    [readbackDeployment.soulPolicyCapId, moveObject({
+      objectId: readbackDeployment.soulPolicyCapId,
+      type: `0x2::transfer_policy::TransferPolicyCap<${pkg}::soul::Soul>`,
+      owner,
+    })],
+    [readbackDeployment.collectionPolicyCapId, moveObject({
+      objectId: readbackDeployment.collectionPolicyCapId,
+      type: `0x2::transfer_policy::TransferPolicyCap<${pkg}::collection::SoulCollectionRight>`,
+      owner,
+    })],
+    [readbackDeployment.soulDisplayId, moveObject({
+      objectId: readbackDeployment.soulDisplayId,
+      type: `0x2::display::Display<${pkg}::soul::Soul>`,
+      owner,
+    })],
+    [readbackDeployment.collectionDisplayId, moveObject({
+      objectId: readbackDeployment.collectionDisplayId,
+      type: `0x2::display::Display<${pkg}::collection::SoulCollectionRight>`,
+      owner,
+    })],
+  ])
+}
+
+function readbackClient(objects: Map<string, ReturnType<typeof moveObject>>) {
+  return {
+    getObject: vi.fn(async ({ id }: { id: string }) => {
+      const object = objects.get(id)
+      if (!object) return { error: { code: 'notExists', object_id: id } }
+      return object
+    }),
+  }
+}
+
+describe('finalized fresh deployment readback', () => {
+  it('accepts a complete paused deployment owned by the deployer', async () => {
+    const client = readbackClient(readbackObjects())
+    await expect(verifyFreshDeploymentOnChain({
+      client: client as never,
+      deployment: readbackDeployment,
+      deployerAddr: READBACK_DEPLOYER,
+    })).resolves.toEqual({ paused: true })
+    expect(client.getObject).toHaveBeenCalledTimes(12)
+  })
+
+  it('rejects a fresh deployment whose market is active', async () => {
+    await expect(verifyFreshDeploymentOnChain({
+      client: readbackClient(readbackObjects(READBACK_DEPLOYER, false)) as never,
+      deployment: readbackDeployment,
+      deployerAddr: READBACK_DEPLOYER,
+    })).rejects.toThrow(/expected paused=true/)
+  })
+
+  it('rejects a fresh deployment whose capability owner is wrong', async () => {
+    await expect(verifyFreshDeploymentOnChain({
+      client: readbackClient(readbackObjects(READBACK_MULTISIG)) as never,
+      deployment: readbackDeployment,
+      deployerAddr: READBACK_DEPLOYER,
+    })).rejects.toThrow(/owner is .* expected/)
+  })
+})
+
+describe('finalized capability handoff readback', () => {
+  it('accepts only after every transferred object belongs to the target', async () => {
+    const client = readbackClient(readbackObjects(READBACK_MULTISIG))
+    await expect(verifyCapTransferOwners({
+      client: client as never,
+      deployment: readbackDeployment,
+      expectedOwner: READBACK_MULTISIG,
+    })).resolves.toBeUndefined()
+    expect(client.getObject).toHaveBeenCalledTimes(7)
+  })
+
+  it('rejects when even one transferred object still belongs to the deployer', async () => {
+    const objects = readbackObjects(READBACK_MULTISIG)
+    objects.set(readbackDeployment.soulDisplayId, moveObject({
+      objectId: readbackDeployment.soulDisplayId,
+      type: `0x2::display::Display<${READBACK_PACKAGE}::soul::Soul>`,
+      owner: READBACK_DEPLOYER,
+    }))
+    await expect(verifyCapTransferOwners({
+      client: readbackClient(objects) as never,
+      deployment: readbackDeployment,
+      expectedOwner: READBACK_MULTISIG,
+    })).rejects.toThrow(/Soul display owner is .* expected/)
   })
 })
 
@@ -264,6 +537,100 @@ describe('mainnet fresh-publish guard', () => {
       breakGlassAllowMainnetFreshPublish: false,
       breakGlassConfirm: null,
     }, undefined)).not.toThrow()
+  })
+
+  it('requires an explicit historical Seal route before replacing a Mainnet family', () => {
+    const previous = {
+      originalPackageId: '0x2',
+      callablePackageId: '0x3',
+    }
+
+    expect(() => assertHistoricalSealRoutePreserved(
+      'mainnet',
+      previous,
+      undefined,
+    )).toThrow(/NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES is required/)
+    expect(() => assertHistoricalSealRoutePreserved(
+      'mainnet',
+      previous,
+      '[]',
+    )).toThrow(/does not preserve the previous Mainnet family/)
+    expect(() => assertHistoricalSealRoutePreserved(
+      'mainnet',
+      previous,
+      JSON.stringify([{ sealPackageId: '0x2', callablePackageId: '0x4' }]),
+    )).toThrow(/does not preserve the previous Mainnet family/)
+  })
+
+  it('accepts the previous family route after canonical Sui ID normalization', () => {
+    expect(() => assertHistoricalSealRoutePreserved(
+      'mainnet',
+      {
+        originalPackageId: '0x2',
+        callablePackageId: `0x${'0'.repeat(63)}3`,
+      },
+      JSON.stringify([{
+        sealPackageId: `0x${'0'.repeat(63)}2`,
+        callablePackageId: '0x3',
+      }]),
+    )).not.toThrow()
+  })
+
+  it('rejects malformed or conflicting historical route payloads', () => {
+    const previous = {
+      originalPackageId: '0x2',
+      callablePackageId: '0x3',
+    }
+    expect(() => assertHistoricalSealRoutePreserved(
+      'mainnet',
+      previous,
+      '{',
+    )).toThrow(/must be valid JSON/)
+    expect(() => assertHistoricalSealRoutePreserved(
+      'mainnet',
+      previous,
+      JSON.stringify([
+        { sealPackageId: '0x2', callablePackageId: '0x3' },
+        { sealPackageId: `0x${'0'.repeat(63)}2`, callablePackageId: '0x4' },
+      ]),
+    )).toThrow(/conflicts with callable/)
+  })
+
+  it('does not require historical routes for a first family or non-Mainnet publish', () => {
+    expect(() => assertHistoricalSealRoutePreserved(
+      'mainnet',
+      undefined,
+      undefined,
+    )).not.toThrow()
+    expect(() => assertHistoricalSealRoutePreserved(
+      'testnet',
+      existing,
+      undefined,
+    )).not.toThrow()
+  })
+})
+
+describe('legacy CLI publish guard', () => {
+  it('never permits the unjournaled CLI flow to publish on Mainnet', () => {
+    expect(() => assertLegacyCliPublishAllowed('mainnet', true)).toThrow(
+      /only the exact testnet environment is supported/,
+    )
+    expect(() => assertLegacyCliPublishAllowed('mainnet', false)).toThrow(
+      /guarded SDK flow/,
+    )
+    expect(() => assertLegacyCliPublishAllowed('prod', true)).toThrow(
+      /Network prod is not allowed/,
+    )
+    expect(() => assertLegacyCliPublishAllowed('custom-mainnet', false)).toThrow(
+      /Network custom-mainnet is not allowed/,
+    )
+  })
+
+  it('retains the legacy compatibility flow for Testnet dry-runs', () => {
+    expect(() => assertLegacyCliPublishAllowed('testnet', true)).not.toThrow()
+    expect(() => assertLegacyCliPublishAllowed('testnet', false)).toThrow(
+      /Signed publishing is disabled/,
+    )
   })
 })
 

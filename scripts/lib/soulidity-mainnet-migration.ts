@@ -160,6 +160,64 @@ export function assertCanonicalMainnetDeployment(
   }
 }
 
+/**
+ * Parse a deployment record without pinning it to the retired 2026 package
+ * family. Fresh-family releases are safe only when the scripts subsequently
+ * prove every object type, package linkage and capability owner on chain.
+ *
+ * `packageId` is a compatibility alias for the immutable original package and
+ * may never be redirected to a later callable upgrade.
+ */
+export function assertMainnetDeploymentRecord(
+  deployment: SoulidityDeploymentRecord,
+): {
+  originalPackageId: string
+  callablePackageId: string
+  legacyConfigId: string
+  legacyAdminCapId: string
+  upgradeCapId: string
+  marketConfigV2PackageId: string
+  animacraftProvenancePackageId: string
+} {
+  const originalPackageId = requiredAddress(
+    deployment.originalPackageId ?? deployment.packageId,
+    'mainnet.originalPackageId',
+  )
+  const callablePackageId = requiredAddress(
+    deployment.callablePackageId ?? deployment.packageId,
+    'mainnet.callablePackageId',
+  )
+  if (deployment.packageId
+    && requiredAddress(deployment.packageId, 'mainnet.packageId') !== originalPackageId) {
+    throw new Error('mainnet.packageId must remain the immutable original package id')
+  }
+
+  return {
+    originalPackageId,
+    callablePackageId,
+    legacyConfigId: requiredAddress(
+      deployment.marketConfigId,
+      'mainnet.marketConfigId',
+    ),
+    legacyAdminCapId: requiredAddress(
+      deployment.marketAdminCapId,
+      'mainnet.marketAdminCapId',
+    ),
+    upgradeCapId: requiredAddress(
+      deployment.upgradeCapId,
+      'mainnet.upgradeCapId',
+    ),
+    marketConfigV2PackageId: requiredAddress(
+      deployment.marketConfigV2PackageId?.trim() || originalPackageId,
+      'mainnet.marketConfigV2PackageId',
+    ),
+    animacraftProvenancePackageId: requiredAddress(
+      deployment.animacraftProvenancePackageId?.trim() || originalPackageId,
+      'mainnet.animacraftProvenancePackageId',
+    ),
+  }
+}
+
 export async function assertMainnetRpc(client: SuiJsonRpcClient): Promise<void> {
   const chainIdentifier = (await client.getChainIdentifier()).trim().toLowerCase()
   if (chainIdentifier !== SOULIDITY_MAINNET_CHAIN_IDENTIFIER) {
@@ -192,7 +250,7 @@ function assertObjectType(
   return data
 }
 
-function addressOwner(response: ObjectResponse, label: string): string {
+export function objectAddressOwner(response: ObjectResponse, label: string): string {
   const data = objectData(response, label)
   const owner = data.owner as unknown
   if (!owner || typeof owner !== 'object' || !('AddressOwner' in owner)) {
@@ -202,10 +260,6 @@ function addressOwner(response: ObjectResponse, label: string): string {
     (owner as { AddressOwner?: unknown }).AddressOwner,
     `${label}.owner`,
   )
-}
-
-function assertCanonicalOwner(response: ObjectResponse, label: string) {
-  assertObjectAddressOwner(response, SOULIDITY_MAINNET_ADMIN, label)
 }
 
 function assertSharedOwner(response: ObjectResponse, label: string) {
@@ -221,7 +275,7 @@ export function assertObjectAddressOwner(
   expectedOwner: string,
   label: string,
 ): void {
-  const owner = addressOwner(response, label)
+  const owner = objectAddressOwner(response, label)
   const expected = requiredAddress(expectedOwner, `${label}.expectedOwner`)
   if (owner !== expected) {
     throw new Error(`${label} owner is ${owner}; expected ${expected}`)
@@ -274,13 +328,14 @@ function finiteInteger(value: unknown, label: string): number {
 export function assertUpgradeCap(
   response: ObjectResponse,
   expectedPackageId: string,
+  expectedOwner = SOULIDITY_MAINNET_ADMIN,
 ): UpgradeCapState {
   const fields = moveFields(
     response,
     '0x2::package::UpgradeCap',
     'Soulidity UpgradeCap',
   )
-  assertCanonicalOwner(response, 'Soulidity UpgradeCap')
+  assertObjectAddressOwner(response, expectedOwner, 'Soulidity UpgradeCap')
   const packageId = objectIdFromMoveField(fields.package, 'UpgradeCap.package')
   if (packageId !== requiredAddress(expectedPackageId, 'expected current package')) {
     throw new Error(
@@ -304,13 +359,14 @@ export function assertUpgradeCap(
 export function assertLegacyAdminCap(
   response: ObjectResponse,
   originalPackageId = SOULIDITY_MAINNET_ORIGINAL_PACKAGE,
+  expectedOwner = SOULIDITY_MAINNET_ADMIN,
 ): void {
   assertObjectType(
     response,
     `${originalPackageId}::market::MarketAdminCap`,
     'legacy MarketAdminCap',
   )
-  assertCanonicalOwner(response, 'legacy MarketAdminCap')
+  assertObjectAddressOwner(response, expectedOwner, 'legacy MarketAdminCap')
 }
 
 export function assertLegacyMarketConfig(
@@ -358,11 +414,15 @@ export function assertExecutionConfirmation(
   }
 }
 
-export function assertCanonicalSigner(address: string): string {
+export function assertCanonicalSigner(
+  address: string,
+  expectedOwner = SOULIDITY_MAINNET_ADMIN,
+): string {
   const normalized = requiredAddress(address, 'signer address')
-  if (normalized !== SOULIDITY_MAINNET_ADMIN) {
+  const expected = requiredAddress(expectedOwner, 'expected signer address')
+  if (normalized !== expected) {
     throw new Error(
-      `Refusing signer ${normalized}; expected canonical admin ${SOULIDITY_MAINNET_ADMIN}`,
+      `Refusing signer ${normalized}; expected capability owner ${expected}`,
     )
   }
   return normalized

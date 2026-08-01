@@ -83,7 +83,7 @@ manifest_digest = "F5EE3601B0F0F292A09B1CF6BFF941E8BCD70C7624692070796849E0B7FB3
 deps = { Sui = "Sui_2", WAL = "WAL" }
 
 [pinned.mainnet.animacraft]
-source = { git = "https://github.com/redefine-digital-labs/animacraft.git", subdir = "move/animacraft", rev = "99c6b2b9b6ea432d4ee87d6b9523855d0d9a150c" }
+source = { git = "https://github.com/redefine-digital-labs/animacraft.git", subdir = "move/animacraft", rev = "31073bd3b90d0256571133198518621980fc22c1" }
 use_environment = "mainnet"
 manifest_digest = "D102AD9D5653054ABB17E21F853CF4E888E04AB30025D5DAC19DAF483C2B899B"
 deps = { Sui = "Sui_3" }

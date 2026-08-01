@@ -14,6 +14,15 @@
 export interface SealEnvelopeSidecar {
   version: 1
   mode: 'seal-envelope'
+  /**
+   * Immutable Seal identity namespace. This is always the first/original
+   * Soulidity package, never the latest callable upgrade package.
+   *
+   * Optional only for compatibility with v1 sidecars written before the
+   * routing split. Readers must recover the namespace from `encryptedDek`
+   * and validate it before requesting Seal keys.
+   */
+  sealPackageId?: string
   documentId: string
   encryptedDek: string
   iv: string
@@ -547,7 +556,12 @@ export type ContentAccessResponse =
         blobObjectId: string
       }
       accessPolicy: {
+        /** @deprecated Namespace alias kept for older clients. */
         packageId: string
+        /** First/original package used by Seal encryption and SessionKey. */
+        sealPackageId: string
+        /** Latest package used only as the `seal_approve*` Move call target. */
+        callablePackageId: string
         stateObjectId: string
         contentObjectId: string
         kind: number

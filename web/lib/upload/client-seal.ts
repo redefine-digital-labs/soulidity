@@ -1,6 +1,7 @@
 'use client'
 
 import { SealClient, type KeyServerConfig, type SealCompatibleClient } from '@mysten/seal'
+import { normalizeSuiAddress } from '@mysten/sui/utils'
 import {
   createAssetVersionSealEnvelopeSidecar,
   createMemoryEntrySealEnvelopeSidecar,
@@ -146,9 +147,18 @@ function parseConfiguredKeyServers(rawConfig: string | undefined): KeyServerConf
       if (!value || typeof value !== 'object') return []
       const candidate = value as Record<string, unknown>
       if (typeof candidate.objectId !== 'string' || candidate.objectId.trim().length === 0) return []
+      let objectId: string
+      try {
+        objectId = normalizeSuiAddress(candidate.objectId.trim())
+      } catch {
+        return []
+      }
+      if (objectId === `0x${'0'.repeat(64)}`) return []
+      const weight = candidate.weight == null ? 1 : candidate.weight
+      if (typeof weight !== 'number' || !Number.isInteger(weight) || weight <= 0) return []
       return [{
-        objectId: candidate.objectId.trim(),
-        weight: typeof candidate.weight === 'number' && candidate.weight > 0 ? candidate.weight : 1,
+        objectId,
+        weight,
         ...(typeof candidate.aggregatorUrl === 'string' && candidate.aggregatorUrl.trim()
           ? { aggregatorUrl: candidate.aggregatorUrl.trim() }
           : {}),
@@ -167,10 +177,20 @@ function getBrowserSealRuntimeConfig() {
     ? DEFAULT_TESTNET_SEAL_SERVER_CONFIGS
     : parseConfiguredKeyServers(process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS)
       ?? (network === 'testnet' ? DEFAULT_TESTNET_SEAL_SERVER_CONFIGS : [])
-  const threshold = Math.min(
-    Math.max(Number.parseInt(process.env.NEXT_PUBLIC_SEAL_THRESHOLD ?? '2', 10) || 1, 1),
-    serverConfigs.length,
-  )
+  const totalWeight = serverConfigs.reduce((total, config) => total + config.weight, 0)
+  const thresholdRaw = process.env.NEXT_PUBLIC_SEAL_THRESHOLD?.trim()
+  const parsedThreshold = thresholdRaw == null || thresholdRaw.length === 0
+    ? Math.min(2, totalWeight)
+    : /^\d+$/.test(thresholdRaw)
+      ? Number.parseInt(thresholdRaw, 10)
+      : 0
+  const threshold = totalWeight > 0
+    && totalWeight < 255
+    && parsedThreshold > 0
+    && parsedThreshold <= totalWeight
+    && parsedThreshold < 255
+    ? parsedThreshold
+    : 0
   return {
     threshold,
     serverConfigs,
@@ -203,7 +223,7 @@ function materialToBytes(material: PendingSealMaterial) {
 
 export async function createSoulSealSidecarFromMaterial(params: {
   suiClient: SealCompatibleClient
-  packageId: string
+  sealPackageId: string
   soulObjectId: string
   material: PendingSealMaterial
 }): Promise<SealEnvelopeSidecar> {
@@ -212,7 +232,7 @@ export async function createSoulSealSidecarFromMaterial(params: {
   try {
     return await createSealEnvelopeSidecar({
       sealClient,
-      packageId: params.packageId,
+      sealPackageId: params.sealPackageId,
       soulObjectId: params.soulObjectId,
       threshold,
       dek,
@@ -228,7 +248,7 @@ export async function createSoulSealSidecarFromMaterial(params: {
 
 export async function createMemorySealSidecarFromMaterial(params: {
   suiClient: SealCompatibleClient
-  packageId: string
+  sealPackageId: string
   memoryObjectId: string
   timestampKey: number
   material: PendingSealMaterial
@@ -238,7 +258,7 @@ export async function createMemorySealSidecarFromMaterial(params: {
   try {
     return await createMemoryEntrySealEnvelopeSidecar({
       sealClient,
-      packageId: params.packageId,
+      sealPackageId: params.sealPackageId,
       memoryObjectId: params.memoryObjectId,
       timestampKey: params.timestampKey,
       threshold,
@@ -255,7 +275,7 @@ export async function createMemorySealSidecarFromMaterial(params: {
 
 export async function createSkillSealSidecarFromMaterial(params: {
   suiClient: SealCompatibleClient
-  packageId: string
+  sealPackageId: string
   skillsObjectId: string
   skillName: string
   versionIndex: number
@@ -266,7 +286,7 @@ export async function createSkillSealSidecarFromMaterial(params: {
   try {
     return await createSkillVersionSealEnvelopeSidecar({
       sealClient,
-      packageId: params.packageId,
+      sealPackageId: params.sealPackageId,
       skillsObjectId: params.skillsObjectId,
       skillName: params.skillName,
       versionIndex: params.versionIndex,
@@ -284,7 +304,7 @@ export async function createSkillSealSidecarFromMaterial(params: {
 
 export async function createAssetSealSidecarFromMaterial(params: {
   suiClient: SealCompatibleClient
-  packageId: string
+  sealPackageId: string
   assetsObjectId: string
   assetName: string
   versionIndex: number
@@ -295,7 +315,7 @@ export async function createAssetSealSidecarFromMaterial(params: {
   try {
     return await createAssetVersionSealEnvelopeSidecar({
       sealClient,
-      packageId: params.packageId,
+      sealPackageId: params.sealPackageId,
       assetsObjectId: params.assetsObjectId,
       assetName: params.assetName,
       versionIndex: params.versionIndex,

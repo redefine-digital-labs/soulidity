@@ -14,8 +14,15 @@
  * but a defensive check is kept here for any caller passing
  * `sealEncrypted=false`.
  */
-import { parseSealEnvelopeSidecar } from '@/lib/services/seal-crypto'
-import { isContentDocumentIdForVersion, type SealEnvelopeSidecar } from '@soulidity/sdk'
+import {
+  assertSealEnvelopePackageId,
+  parseSealEnvelopeSidecar,
+} from '@/lib/services/seal-crypto'
+import {
+  getRequiredSoulidityEnv,
+  isContentDocumentIdForVersion,
+  type SealEnvelopeSidecar,
+} from '@soulidity/sdk'
 
 export class SealSidecarSyncConfigError extends Error {
   constructor(message: string) {
@@ -49,6 +56,8 @@ export interface BuildSyncSealSidecarsInput {
    * version) layout enforced by the Move layer.
    */
   contentObjectId: string
+  /** Override only for deterministic tests; production uses the original package. */
+  sealPackageId?: string
   /** One row per content version that this sync should mirror. */
   entries: ReadonlyArray<ContentSidecarInput>
 }
@@ -66,6 +75,8 @@ export interface BuildSyncSealSidecarsOutput {
 export function buildSyncSealSidecars(
   input: BuildSyncSealSidecarsInput,
 ): BuildSyncSealSidecarsOutput {
+  const expectedSealPackageId = input.sealPackageId
+    ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const validatedEntries: ContentSidecarRecord[] = input.entries.map((entry) => {
     let provided: SealEnvelopeSidecar | null = null
     if (entry.sidecar) {
@@ -94,9 +105,23 @@ export function buildSyncSealSidecars(
           `content sidecar documentId does not match content version (kind=${entry.kind}, name=${entry.name}, version=${entry.versionIndex})`,
         )
       }
+      let embeddedSealPackageId: string
+      try {
+        embeddedSealPackageId = assertSealEnvelopePackageId(
+          provided,
+          expectedSealPackageId,
+        )
+      } catch (error) {
+        throw new SealSidecarSyncConfigError(
+          error instanceof Error ? error.message : 'content sidecar Seal namespace is invalid',
+        )
+      }
       return {
         ...entry,
-        validatedSidecar: provided,
+        validatedSidecar: {
+          ...provided,
+          sealPackageId: embeddedSealPackageId,
+        },
       }
     }
 

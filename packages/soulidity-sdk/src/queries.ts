@@ -600,6 +600,73 @@ function expectMoveObject(response: ObjectLike, objectId: string, expectedTypePr
   }
 }
 
+/**
+ * Read the package family that defines a concrete Move object directly from
+ * its on-chain type. This is intentionally independent from the active
+ * deployment manifest: objects created by an older, separately-published
+ * Soulidity package keep that package address in their type forever.
+ *
+ * Callers must still apply their own allowlist/trust policy to the returned
+ * package id before using it as a transaction target. This helper only proves
+ * the object's module/struct identity and returns its defining package.
+ */
+export async function getMoveObjectDefiningPackageId(params: {
+  objectId: string
+  moduleName: string
+  structName: string
+  client?: Pick<typeof suiClient, 'getObject'>
+}): Promise<string> {
+  const response = await (params.client ?? suiClient).getObject({
+    id: params.objectId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const object = response.data
+  if (
+    !object
+    || typeof object.objectId !== 'string'
+    || !sameSuiValue(object.objectId, params.objectId)
+  ) {
+    throw new OnChainVerificationError('On-chain object was not found')
+  }
+  const content = object.content
+  if (
+    typeof object.type !== 'string'
+    || !content
+    || content.dataType !== 'moveObject'
+    || typeof content.type !== 'string'
+  ) {
+    throw new OnChainVerificationError('On-chain object content is not a move object')
+  }
+
+  let objectType: string
+  let contentType: string
+  try {
+    objectType = normalizeStructTag(object.type)
+    contentType = normalizeStructTag(content.type)
+  } catch {
+    throw new OnChainVerificationError('On-chain object type is malformed')
+  }
+  if (objectType !== contentType) {
+    throw new OnChainVerificationError('On-chain object type and content type do not match')
+  }
+
+  const [packageId, moduleName, structName, ...extra] = contentType.split('::')
+  if (
+    !packageId
+    || moduleName !== params.moduleName
+    || structName !== params.structName
+    || extra.length > 0
+  ) {
+    throw new OnChainVerificationError(
+      `On-chain object is not ${params.moduleName}::${params.structName}`,
+    )
+  }
+  return normalizePackageId(packageId)
+}
+
 export function getVendoredKioskPackageAddress() {
   return getKioskPackageAddress()
 }

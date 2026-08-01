@@ -30,6 +30,7 @@ describe('legacy market retirement security boundary', () => {
     expect(retirement).toContain('assert!(config.paused, ELegacyMarketMustBePaused)')
     expect(retirement).toContain('let MarketAdminCap { id: legacy_admin_uid } = admin_cap')
     expect(retirement).toContain('legacy_admin_uid.delete()')
+    expect(retirement).toContain('primary_enabled: false')
     expect(retirement).toContain('secondary_enabled: false')
   })
 

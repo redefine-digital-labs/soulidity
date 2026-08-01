@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parse } from 'dotenv'
 
@@ -11,6 +11,7 @@ const PRODUCTION_ENV_ALLOWLIST = [
   'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+  'NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES',
   'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
   'NEXT_PUBLIC_ANIMACRAFT_APP_URL',
   'NEXT_PUBLIC_ANIMACRAFT_PACKAGE_ID',
@@ -75,6 +76,15 @@ const FORBIDDEN_ENV_KEYS = new Set([
 
 const REQUIRED_PRODUCTION_KEYS = [
   'NEXT_PUBLIC_SUI_NETWORK',
+  // Always write this key, including the explicit empty value `[]` for the
+  // first package family. Omitting it during a later fresh-family rollout can
+  // make historical Souls undecryptable after the active package IDs change.
+  'NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES',
+  // Guarded v5/v6 rollout: these flags must be written explicitly so an old
+  // Vercel value of `true` cannot survive merely because a local env omitted
+  // the key.
+  'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
+  'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
   'DATABASE_URL',
   'DIRECT_URL',
   'AUTH_SECRET',
@@ -89,12 +99,19 @@ const WALRUS_UPLOAD_TRANSPORTS = ['managed', 'browser', 'server'] as const
 type CliOptions = {
   apply: boolean
   envFile: string
+  deploymentHistoryFile: string
+  deploymentHistoryOverridden: boolean
 }
+
+const CANONICAL_DEPLOYMENT_HISTORY_FILE =
+  'packages/soulidity-sdk/src/deployment-manifest-history.json'
 
 function parseCliOptions(argv: string[]): CliOptions {
   const options: CliOptions = {
     apply: false,
     envFile: '.env',
+    deploymentHistoryFile: CANONICAL_DEPLOYMENT_HISTORY_FILE,
+    deploymentHistoryOverridden: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -114,7 +131,22 @@ function parseCliOptions(argv: string[]): CliOptions {
       index += 1
       continue
     }
+    if (arg === '--deployment-history-file') {
+      const next = argv[index + 1]
+      if (!next) throw new Error('--deployment-history-file requires a path')
+      options.deploymentHistoryFile = next
+      options.deploymentHistoryOverridden = true
+      index += 1
+      continue
+    }
     throw new Error(`Unknown argument: ${arg}`)
+  }
+
+  if (options.apply && options.deploymentHistoryOverridden) {
+    throw new Error(
+      '--apply must use the repository canonical deployment history; '
+        + '--deployment-history-file is dry-run/test only',
+    )
   }
 
   return options
@@ -152,7 +184,150 @@ function isNonZeroSuiId(value: string): boolean {
   )
 }
 
-function assertProductionEnv(env: Record<string, string>) {
+function normalizeNonZeroSuiId(value: string): string | null {
+  const trimmed = value.trim()
+  if (!isNonZeroSuiId(trimmed)) return null
+  return `0x${trimmed.slice(2).toLowerCase().padStart(64, '0')}`
+}
+
+type HistoricalSealRoute = {
+  sealPackageId: string
+  callablePackageId: string
+}
+
+function loadRequiredHistoricalSealRoutes(path: string): HistoricalSealRoute[] {
+  if (!existsSync(path)) {
+    throw new Error(
+      `${path} is missing; production Seal routing requires an explicit deployment history file`,
+    )
+  }
+
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${path} must contain a JSON array`)
+  }
+
+  const callableByNamespace = new Map<string, string>()
+  for (const [index, entry] of parsed.entries()) {
+    if (!entry || typeof entry !== 'object') {
+      throw new Error(`${path} entry ${index} must be an object`)
+    }
+    const record = entry as Record<string, unknown>
+    if (record.network !== 'mainnet') continue
+    if (!record.deployment || typeof record.deployment !== 'object') {
+      throw new Error(`${path} entry ${index}.deployment must be an object`)
+    }
+    const deployment = record.deployment as Record<string, unknown>
+    const originalRaw = typeof deployment.originalPackageId === 'string'
+      ? deployment.originalPackageId
+      : (typeof deployment.packageId === 'string' ? deployment.packageId : '')
+    const callableRaw = typeof deployment.callablePackageId === 'string'
+      ? deployment.callablePackageId
+      : (typeof deployment.packageId === 'string' ? deployment.packageId : '')
+    const sealPackageId = normalizeNonZeroSuiId(originalRaw)
+    const callablePackageId = normalizeNonZeroSuiId(callableRaw)
+    if (!sealPackageId || !callablePackageId) {
+      throw new Error(
+        `${path} entry ${index} must contain valid non-zero original/callable package IDs`,
+      )
+    }
+    const existingCallable = callableByNamespace.get(sealPackageId)
+    if (existingCallable && existingCallable !== callablePackageId) {
+      throw new Error(
+        `${path} entry ${index} conflicts with callable ${existingCallable} for namespace ${sealPackageId}`,
+      )
+    }
+    callableByNamespace.set(sealPackageId, callablePackageId)
+  }
+
+  return Array.from(callableByNamespace, ([sealPackageId, callablePackageId]) => ({
+    sealPackageId,
+    callablePackageId,
+  }))
+}
+
+type ValidatedSealServerConfig = {
+  objectId: string
+  weight: number
+  weightWasProvided: boolean
+}
+
+function parseSealServerConfigs(
+  raw: string | undefined,
+  envName: 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' | 'SEAL_SERVER_CONFIGS',
+  errors: string[],
+): ValidatedSealServerConfig[] {
+  const configured = raw?.trim()
+  if (!configured) return []
+
+  try {
+    const parsed = JSON.parse(configured) as unknown
+    if (!Array.isArray(parsed)) {
+      throw new Error('must be a JSON array')
+    }
+
+    const seenObjectIds = new Set<string>()
+    return parsed.map((entry, index) => {
+      if (!entry || typeof entry !== 'object') {
+        throw new Error(`server ${index} must be an object`)
+      }
+      const value = entry as Record<string, unknown>
+      const objectId = typeof value.objectId === 'string'
+        ? normalizeNonZeroSuiId(value.objectId)
+        : null
+      if (!objectId) {
+        throw new Error(`server ${index}.objectId must be a non-zero Sui object ID`)
+      }
+      if (seenObjectIds.has(objectId)) {
+        throw new Error(`server ${index}.objectId duplicates ${objectId}`)
+      }
+      seenObjectIds.add(objectId)
+
+      const weight = value.weight == null ? 1 : value.weight
+      if (typeof weight !== 'number' || !Number.isInteger(weight) || weight <= 0) {
+        throw new Error(`server ${index}.weight must be a positive integer`)
+      }
+
+      const hasApiKeyName = typeof value.apiKeyName === 'string'
+        && value.apiKeyName.trim().length > 0
+      const hasApiKey = typeof value.apiKey === 'string'
+        && value.apiKey.trim().length > 0
+      if (envName === 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' && (hasApiKeyName || hasApiKey)) {
+        throw new Error(`server ${index} must not expose API credentials in a NEXT_PUBLIC env`)
+      }
+      if (envName === 'SEAL_SERVER_CONFIGS' && hasApiKeyName !== hasApiKey) {
+        throw new Error(`server ${index} must set apiKeyName and apiKey together`)
+      }
+      if (value.aggregatorUrl != null) {
+        if (typeof value.aggregatorUrl !== 'string') {
+          throw new Error(`server ${index}.aggregatorUrl must be an HTTPS URL`)
+        }
+        try {
+          const aggregatorUrl = new URL(value.aggregatorUrl)
+          if (aggregatorUrl.protocol !== 'https:' || aggregatorUrl.username || aggregatorUrl.password) {
+            throw new Error('invalid')
+          }
+        } catch {
+          throw new Error(`server ${index}.aggregatorUrl must be an HTTPS URL without credentials`)
+        }
+      }
+
+      return {
+        objectId,
+        weight,
+        weightWasProvided: value.weight != null,
+      }
+    })
+  } catch (error) {
+    errors.push(`${envName} is invalid: ${(error as Error).message}`)
+    return []
+  }
+}
+
+function assertProductionEnv(
+  env: Record<string, string>,
+  requiredHistoricalSealRoutes: HistoricalSealRoute[],
+) {
   const errors: string[] = []
 
   const forbiddenWithValues = Array.from(FORBIDDEN_ENV_KEYS)
@@ -169,6 +344,15 @@ function assertProductionEnv(env: Record<string, string>) {
 
   if (env.NEXT_PUBLIC_SUI_NETWORK?.trim() !== 'mainnet') {
     errors.push('NEXT_PUBLIC_SUI_NETWORK must be mainnet before syncing Vercel Production env')
+  }
+
+  for (const key of [
+    'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
+    'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+  ] as const) {
+    if (env[key]?.trim() !== 'false') {
+      errors.push(`${key} must be exactly false for the guarded v5/v6 rollout`)
+    }
   }
 
   const soulidityRoutingKeys = [
@@ -188,8 +372,69 @@ function assertProductionEnv(env: Record<string, string>) {
     )
   }
   for (const key of configuredSoulidityRouting) {
-    if (!/^0x[0-9a-fA-F]{1,64}$/.test(env[key]!.trim())) {
-      errors.push(`${key} must be a valid Sui package ID`)
+    if (!normalizeNonZeroSuiId(env[key]!.trim())) {
+      errors.push(`${key} must be a valid non-zero Sui package ID`)
+    }
+  }
+
+  const sealRoutesRaw = env.NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES?.trim()
+  if (sealRoutesRaw) {
+    try {
+      const routes = JSON.parse(sealRoutesRaw) as unknown
+      if (!Array.isArray(routes)) throw new Error('must be a JSON array')
+      const activeOriginal = normalizeNonZeroSuiId(
+        env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID ?? '',
+      )
+      const activeCallable = normalizeNonZeroSuiId(
+        env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID ?? '',
+      )
+      if (routes.length > 0 && (!activeOriginal || !activeCallable)) {
+        throw new Error(
+          'requires active NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID and NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID',
+        )
+      }
+      const callableByNamespace = new Map<string, string>()
+      const configuredHistoricalRoutes = new Map<string, string>()
+      if (activeOriginal && activeCallable) {
+        callableByNamespace.set(activeOriginal, activeCallable)
+      }
+      for (const [index, route] of routes.entries()) {
+        if (!route || typeof route !== 'object') {
+          throw new Error(`route ${index} must be an object`)
+        }
+        const value = route as Record<string, unknown>
+        const sealPackageId = typeof value.sealPackageId === 'string'
+          ? normalizeNonZeroSuiId(value.sealPackageId)
+          : null
+        const callablePackageId = typeof value.callablePackageId === 'string'
+          ? normalizeNonZeroSuiId(value.callablePackageId)
+          : null
+        if (!sealPackageId) {
+          throw new Error(`route ${index}.sealPackageId must be a non-zero Sui package ID`)
+        }
+        if (!callablePackageId) {
+          throw new Error(`route ${index}.callablePackageId must be a non-zero Sui package ID`)
+        }
+        const existingCallable = callableByNamespace.get(sealPackageId)
+        if (existingCallable && existingCallable !== callablePackageId) {
+          throw new Error(
+            `route ${index} conflicts with callable ${existingCallable} for namespace ${sealPackageId}`,
+          )
+        }
+        callableByNamespace.set(sealPackageId, callablePackageId)
+        configuredHistoricalRoutes.set(sealPackageId, callablePackageId)
+      }
+      for (const required of requiredHistoricalSealRoutes) {
+        if (configuredHistoricalRoutes.get(required.sealPackageId) !== required.callablePackageId) {
+          throw new Error(
+            `does not preserve archived Mainnet family ${required.sealPackageId} -> ${required.callablePackageId}`,
+          )
+        }
+      }
+    } catch (error) {
+      errors.push(
+        `NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES is invalid: ${(error as Error).message}`,
+      )
     }
   }
 
@@ -213,10 +458,24 @@ function assertProductionEnv(env: Record<string, string>) {
     errors.push('DEFAULT_PROVIDER must be deepseek or a DeepSeek model id for Vercel Production admin LLM')
   }
 
-  const hasPublicSealConfig = Boolean(env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS?.trim())
-  const hasServerSealConfig = Boolean(env.SEAL_SERVER_CONFIGS?.trim())
-  if (!hasPublicSealConfig && !hasServerSealConfig) {
-    errors.push('Missing Seal key server config for mainnet: set NEXT_PUBLIC_SEAL_SERVER_CONFIGS or SEAL_SERVER_CONFIGS')
+  const publicSealConfigs = parseSealServerConfigs(
+    env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS,
+    'NEXT_PUBLIC_SEAL_SERVER_CONFIGS',
+    errors,
+  )
+  const serverSealConfigs = parseSealServerConfigs(
+    env.SEAL_SERVER_CONFIGS,
+    'SEAL_SERVER_CONFIGS',
+    errors,
+  )
+  if (!env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS?.trim()) {
+    errors.push(
+      'Missing NEXT_PUBLIC_SEAL_SERVER_CONFIGS: browser Seal decryption requires a public mainnet key-server list',
+    )
+  } else if (publicSealConfigs.length === 0) {
+    errors.push(
+      'NEXT_PUBLIC_SEAL_SERVER_CONFIGS must contain at least one usable mainnet key server',
+    )
   }
 
   const walrusTransport = env.NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT?.trim() || 'managed'
@@ -235,9 +494,51 @@ function assertProductionEnv(env: Record<string, string>) {
   } else if (hasWalrusUploaderUrl || hasWalrusUploaderTokenSecret) {
     errors.push(`NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=${walrusTransport} must not sync NEXT_PUBLIC_WALRUS_UPLOADER_URL or WALRUS_UPLOADER_TOKEN_SECRET`)
   }
-  const threshold = Number.parseInt(env.NEXT_PUBLIC_SEAL_THRESHOLD ?? '', 10)
+  const publicSealWeight = publicSealConfigs.reduce(
+    (total, config) => total + config.weight,
+    0,
+  )
+  const mergedSealConfigs = new Map(
+    publicSealConfigs.map((config) => [config.objectId, config] as const),
+  )
+  for (const config of serverSealConfigs) {
+    const publicConfig = mergedSealConfigs.get(config.objectId)
+    if (!publicConfig) {
+      errors.push(
+        `SEAL_SERVER_CONFIGS may only override an objectId present in NEXT_PUBLIC_SEAL_SERVER_CONFIGS: ${config.objectId}`,
+      )
+      continue
+    }
+    if (config.weightWasProvided && config.weight !== publicConfig.weight) {
+      errors.push(
+        `SEAL_SERVER_CONFIGS must preserve public weight ${publicConfig.weight} for ${config.objectId}`,
+      )
+    }
+    mergedSealConfigs.set(config.objectId, publicConfig)
+  }
+  const mergedSealWeight = Array.from(mergedSealConfigs.values()).reduce(
+    (total, config) => total + config.weight,
+    0,
+  )
+  if (publicSealWeight >= 255) {
+    errors.push(
+      `NEXT_PUBLIC_SEAL_SERVER_CONFIGS total weight must be less than 255; received ${publicSealWeight}`,
+    )
+  }
+  if (mergedSealWeight >= 255) {
+    errors.push(`Merged Seal key-server weight must be less than 255; received ${mergedSealWeight}`)
+  }
+
+  const thresholdRaw = env.NEXT_PUBLIC_SEAL_THRESHOLD?.trim() ?? ''
+  const threshold = /^\d+$/.test(thresholdRaw) ? Number.parseInt(thresholdRaw, 10) : Number.NaN
   if (!Number.isFinite(threshold) || threshold <= 0) {
     errors.push('NEXT_PUBLIC_SEAL_THRESHOLD must be a positive integer for mainnet')
+  } else if (publicSealWeight > 0 && publicSealWeight < threshold) {
+    errors.push(
+      `NEXT_PUBLIC_SEAL_SERVER_CONFIGS has weight ${publicSealWeight}, below threshold ${threshold}`,
+    )
+  } else if (mergedSealWeight > 0 && mergedSealWeight < threshold) {
+    errors.push(`Merged Seal key-server weight ${mergedSealWeight} is below threshold ${threshold}`)
   }
 
   const animacraftEnabled = env.NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED?.trim() === 'true'
@@ -312,9 +613,13 @@ function syncEnvVar(key: string, value: string) {
 function main() {
   const options = parseCliOptions(process.argv.slice(2))
   const envPath = resolve(process.cwd(), options.envFile)
+  const deploymentHistoryPath = resolve(process.cwd(), options.deploymentHistoryFile)
   const env = parse(readFileSync(envPath))
+  const requiredHistoricalSealRoutes = loadRequiredHistoricalSealRoutes(
+    deploymentHistoryPath,
+  )
 
-  assertProductionEnv(env)
+  assertProductionEnv(env, requiredHistoricalSealRoutes)
 
   const selectedEntries = PRODUCTION_ENV_ALLOWLIST
     .map((key) => [key, env[key]] as const)

@@ -20,8 +20,13 @@
  * fetch the plaintext URL directly.
  */
 import { prisma } from '@/lib/prisma'
-import { getBlobUrl, getRequiredSoulidityEnv } from '@soulidity/sdk'
-import { getSealRuntimeConfig, getSealSessionTtlMinutes } from '@/lib/services/seal'
+import { getBlobUrl } from '@soulidity/sdk'
+import {
+  getSealRuntimeConfig,
+  getSealSessionTtlMinutes,
+  resolveSouliditySealPackageRoute,
+} from '@/lib/services/seal'
+import { getSealEnvelopePackageId } from '@/lib/services/seal-crypto'
 import {
   CANONICAL_MEMORY_NAME,
   CANONICAL_SOUL_DOC_NAME,
@@ -34,6 +39,7 @@ import {
 } from '@soulidity/sdk'
 import {
   findActiveGrantSlotForViewer,
+  getMoveObjectDefiningPackageId,
   getSoulGrantObject,
   getSoulStateObject,
   normalizeSuiValue,
@@ -59,7 +65,6 @@ interface ResolveContentAccessParams {
   soul: Pick<SoulAssetSummary, 'onChainId' | 'stateOnChainId' | 'contentOnChainId' | 'paidAccessListOnChainId'>
   version: SoulContentVersionRecord
   viewerAddresses: string[]
-  packageId: string
 }
 
 function buildSlotDescriptor(version: SoulContentVersionRecord): ContentSlotDescriptor {
@@ -125,16 +130,40 @@ function buildSealedResponse(params: {
   paidAccessListOnChainId: string | null
   viewerAddress: string
   accessKind: ContentAccessKind
+  soulPackageRoute: ReturnType<typeof resolveSouliditySealPackageRoute>
 }): ContentAccessResponse {
   if (!params.version.sealSidecar) {
     throw new ContentAccessDeniedError('Seal sidecar is missing for encrypted slot', 409)
+  }
+  let route: ReturnType<typeof resolveSouliditySealPackageRoute>
+  try {
+    route = resolveSouliditySealPackageRoute(
+      getSealEnvelopePackageId(params.version.sealSidecar),
+    )
+  } catch (error) {
+    throw new ContentAccessDeniedError(
+      error instanceof Error ? error.message : 'Seal envelope namespace is invalid',
+      409,
+    )
+  }
+  if (route.sealPackageId !== params.soulPackageRoute.sealPackageId) {
+    throw new ContentAccessDeniedError(
+      'Seal envelope namespace does not match the Soul package family',
+      409,
+    )
+  }
+  const sealSidecar = {
+    ...params.version.sealSidecar,
+    sealPackageId: route.sealPackageId,
   }
   return {
     visibility: 'sealed',
     slot: buildSlotDescriptor(params.version),
     artifact: blobArtifact(params.version),
     accessPolicy: {
-      packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
+      packageId: route.sealPackageId,
+      sealPackageId: route.sealPackageId,
+      callablePackageId: route.callablePackageId,
       stateObjectId: params.stateObjectId,
       contentObjectId: params.contentObjectId,
       kind: params.version.kind,
@@ -144,10 +173,10 @@ function buildSealedResponse(params: {
       functionName: params.functionName,
       soulGrantObjectId: params.soulGrantObjectId,
       paidAccessListOnChainId: params.paidAccessListOnChainId,
-      documentIdHex: params.version.sealSidecar.documentId,
+      documentIdHex: sealSidecar.documentId,
     },
     seal: getSealRuntimeConfig(),
-    sealSidecar: params.version.sealSidecar,
+    sealSidecar,
     viewerAddress: params.viewerAddress,
     accessKind: params.accessKind,
     sessionTtlMin: getSealSessionTtlMinutes(),
@@ -191,13 +220,14 @@ async function checkPaidAccessEntry(params: {
  *
  * The caller (HTTP route) is responsible for: (1) loading the
  * `SoulContentVersionRecord` from the mirror DB, (2) confirming the soul
- * exists and is current-package, and (3) forwarding the response to the
- * client (which constructs the Seal SessionKey for sealed responses).
+ * exists, and (3) forwarding the response to the client (which constructs
+ * the Seal SessionKey for sealed responses). This resolver derives and
+ * trust-checks the Soul's package family from its on-chain SoulState type.
  */
 export async function resolveContentAccessPayload(
   params: ResolveContentAccessParams,
 ): Promise<ContentAccessResponse> {
-  const { soul, version, viewerAddresses: rawViewers, packageId } = params
+  const { soul, version, viewerAddresses: rawViewers } = params
 
   ensureSlotReadable(version)
   ensureCanonicalName(version)
@@ -210,9 +240,28 @@ export async function resolveContentAccessPayload(
     .map((address) => normalizeSuiValue(address))
     .filter((value): value is string => value != null)
 
+  let soulPackageRoute: ReturnType<typeof resolveSouliditySealPackageRoute>
+  try {
+    const definingPackageId = await getMoveObjectDefiningPackageId({
+      objectId: soul.stateOnChainId,
+      moduleName: 'soul',
+      structName: 'SoulState',
+    })
+    soulPackageRoute = resolveSouliditySealPackageRoute(definingPackageId)
+  } catch (error) {
+    throw new ContentAccessDeniedError(
+      error instanceof Error ? error.message : 'Soul package family is invalid',
+      409,
+    )
+  }
+
+  const packageId = soulPackageRoute.sealPackageId
   const state = await getSoulStateObject(soul.stateOnChainId, packageId, {
     includeActiveGrants: false,
   })
+  if (!sameSuiValue(state.soulId, soul.onChainId)) {
+    throw new ContentAccessDeniedError('SoulState does not belong to this Soul', 409)
+  }
   const resolvedPackageId = state.packageId ?? packageId
 
   // ── 1. Owner check ───────────────────────────────────────────────────
@@ -232,6 +281,7 @@ export async function resolveContentAccessPayload(
         paidAccessListOnChainId: null,
         viewerAddress: ownerMatch,
         accessKind: 'owner',
+        soulPackageRoute,
       })
     }
   }
@@ -269,6 +319,7 @@ export async function resolveContentAccessPayload(
             paidAccessListOnChainId: null,
             viewerAddress: granteeMatch,
             accessKind: 'granted-agent',
+            soulPackageRoute,
           })
         }
       }
@@ -301,6 +352,7 @@ export async function resolveContentAccessPayload(
           paidAccessListOnChainId: soul.paidAccessListOnChainId,
           viewerAddress: buyer,
           accessKind: 'paid',
+          soulPackageRoute,
         })
       }
     }
@@ -322,6 +374,7 @@ export async function resolveContentAccessPayload(
         paidAccessListOnChainId: null,
         viewerAddress,
         accessKind: 'public',
+        soulPackageRoute,
       })
     }
     if ((version.downloadPolicy as SoulDownloadPolicy) === 'public') {
