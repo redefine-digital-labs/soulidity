@@ -415,7 +415,7 @@ public struct CollectionListingDeleted has copy, drop {
 }
 
 fun init(otw: MARKET, ctx: &mut TxContext) {
-    init_impl(package::claim(otw, ctx), ctx.sender(), ctx)
+    init_impl(package::claim(otw, ctx), ctx.sender(), true, ctx)
 }
 
 public fun protocol_version(): u64 {
@@ -781,8 +781,9 @@ public fun update_paused(
 /// (deletes) the only `MarketAdminCap`; therefore no transaction can ever
 /// unpause the old `MarketConfig` again.
 ///
-/// The successor config starts with primary minting enabled and secondary
-/// resale disabled. Enabling resale is a separate, explicit admin action.
+/// The successor config starts with both primary minting and secondary resale
+/// disabled. Enabling either gate is a separate, explicit admin action after
+/// the new package family has passed production postflight.
 #[allow(lint(share_owned))]
 public fun retire_legacy_market(
     config: &mut MarketConfig,
@@ -800,7 +801,7 @@ public fun retire_legacy_market(
         legacy_config_id,
         fee_recipient: config.fee_recipient,
         platform_fee_bps: config.platform_fee_bps,
-        primary_enabled: true,
+        primary_enabled: false,
         secondary_enabled: false,
     };
     let successor_id = object::id(&successor);
@@ -3940,7 +3941,12 @@ fun assert_registered_personal_kiosk(
 
 // TransferPolicy must stay shared so admins can add/remove Kiosk rules later.
 #[allow(lint(share_owned))]
-fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
+fun init_impl(
+    publisher: Publisher,
+    admin: address,
+    start_paused: bool,
+    ctx: &mut TxContext,
+) {
     let (mut soul_policy, soul_policy_cap) = transfer_policy::new<Soul>(&publisher, ctx);
     let (mut collection_policy, collection_policy_cap) =
         transfer_policy::new<SoulCollectionRight>(&publisher, ctx);
@@ -3949,7 +3955,9 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
         version: VERSION,
         fee_recipient: admin,
         platform_fee_bps: DEFAULT_PLATFORM_FEE_BPS,
-        paused: false,
+        // Production passes `true`: a freshly published package family must
+        // never become writable merely because the initializer ran.
+        paused: start_paused,
     };
     let registry = KioskRegistry {
         id: object::new(ctx),
@@ -3989,7 +3997,10 @@ fun init_impl(publisher: Publisher, admin: address, ctx: &mut TxContext) {
 
 #[test_only]
 public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
-    init_impl(package::claim(MARKET {}, ctx), recipient, ctx);
+    // Unit tests explicitly opt into the historical active setup so existing
+    // behavior tests can exercise market entrypoints. The production one-time
+    // witness path above always starts paused.
+    init_impl(package::claim(MARKET {}, ctx), recipient, false, ctx);
 }
 
 #[test_only]

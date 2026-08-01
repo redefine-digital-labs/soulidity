@@ -31,6 +31,54 @@ function productionTransactionSources(): string {
 
 describe('Soulidity operational script package routing', () => {
   it.each([
+    'web/lib/hooks/use-publish.ts',
+    'web/lib/hooks/use-import.ts',
+    'web/lib/hooks/use-wrap-publish.ts',
+    'web/lib/hooks/use-collection-publish.ts',
+    'web/lib/hooks/use-animacraft-mint.ts',
+    'web/lib/hooks/use-soul-content-actions.ts',
+  ])('%s encrypts Living Content with the immutable original Seal namespace', (path) => {
+    const text = source(path)
+    const calls = text.split('buildContentSidecarsForVersionsWithSuiClient({').slice(1)
+    expect(calls.length).toBeGreaterThan(0)
+    for (const call of calls) {
+      const args = call.slice(0, call.indexOf('})') + 2)
+      expect(args).toContain(
+        "sealPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')",
+      )
+      expect(args).not.toContain('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+    }
+  })
+
+  it('keeps Living Content encryption/session identity separate from approval routing', () => {
+    const sidecars = source('web/lib/hooks/phase2-mint-helpers.ts')
+    const access = source('web/lib/soulidity/access.ts')
+    const actions = source('web/lib/hooks/use-soul-content-actions.ts')
+    const seal = source('web/lib/services/seal.ts')
+
+    expect(sidecars).toContain('packageId: args.sealPackageId')
+    expect(sidecars).toContain('sealPackageId: args.sealPackageId')
+    expect(access).toContain('resolveSouliditySealPackageRoute(')
+    expect(access).toContain('getSealEnvelopePackageId(params.version.sealSidecar)')
+    expect(access).toContain('callablePackageId: route.callablePackageId')
+    expect(actions).toContain('packageId: sealPackageId')
+    expect(actions).toContain('access.accessPolicy.callablePackageId')
+    expect(seal).toContain('packageId: trustedSealPackageId')
+    expect(seal).not.toContain('packageId: getSoulObjectPackageId()')
+  })
+
+  it('routes Animacraft output approval through the latest callable package', () => {
+    const animacraft = source('packages/soulidity-sdk/src/tx/animacraft.ts')
+    const builder = animacraft.slice(
+      animacraft.indexOf('export function buildAnimacraftCompleteOutputSealApprovalTx'),
+      animacraft.indexOf('export function buildBuyAnimacraftSoulTx'),
+    )
+    expect(builder).toContain("'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'")
+    expect(builder).toContain('::animacraft_output_seal::seal_approve_animacraft_complete_output_v5')
+    expect(builder).not.toContain('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
+  })
+
+  it.each([
     'scripts/phase2-smoke.ts',
     'scripts/phase2-mainnet-execute-rest.ts',
     'scripts/phase2-retry-failed.ts',
@@ -112,6 +160,10 @@ describe('Soulidity operational script package routing', () => {
 
   it('verifies successor objects against their stable defining-package TypeOrigin', () => {
     const text = source('scripts/preflight-animacraft-market-retirement.ts')
+    expect(text).toContain('assertMainnetDeploymentRecord(snapshot.mainnet)')
+    expect(text).toContain("objectAddressOwner(upgradeCap, 'Soulidity UpgradeCap')")
+    expect(text).toContain('successorFields.primary_enabled !== false')
+    expect(text).not.toContain('SOULIDITY_MAINNET_ADMIN')
     expect(text).toContain('`${marketConfigV2PackageId}::market::MarketConfigV2`')
     expect(text).toContain('`${marketConfigV2PackageId}::market::MarketAdminCapV2`')
     expect(text).toContain("module: 'animacraft_provenance'")

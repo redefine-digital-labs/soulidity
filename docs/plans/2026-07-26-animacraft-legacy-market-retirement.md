@@ -138,9 +138,12 @@ they can sign.
    npm run upgrade:soulidity-mainnet -- \
      --execute \
      --confirm=UPGRADE_SOULIDITY_MAINNET \
-     --write-manifest \
-     --record-animacraft-provenance-origin
+     --write-manifest
    ```
+
+   A fresh v5 family already defines `AnimacraftProvenance` and
+   `MarketConfigV2`. Their TypeOrigins remain the immutable v5 original
+   package across the v6 upgrade; never rewrite them to the v6 callable.
 
 5. Simulate retirement. This PTB redundantly calls
    `update_paused(..., true)` and then consumes `MarketAdminCap` in
@@ -179,12 +182,9 @@ they can sign.
    npm run postflight:animacraft-market-retirement
    ```
 
-   After a separately approved secondary enablement:
-
-   ```sh
-   npm run postflight:animacraft-market-retirement -- \
-     --expect-secondary=enabled
-   ```
+   Guarded launch requires both successor gates to remain disabled. Gate
+   activation is a separate, explicitly approved protocol operation and is
+   not accepted by this retirement postflight.
 
 Do not use `npm run publish:soulidity` for this migration. A fresh Mainnet
 publish now fails closed whenever a Mainnet package family is already
@@ -230,7 +230,7 @@ It must prove:
 - legacy `MarketConfig.paused == true`;
 - legacy `MarketAdminCap` no longer exists;
 - successor config points to the exact legacy config;
-- successor primary mint gate is enabled;
+- successor primary mint gate is disabled;
 - successor secondary market gate is disabled;
 - successor admin cap points to the successor config.
 

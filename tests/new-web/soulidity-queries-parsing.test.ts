@@ -26,6 +26,7 @@ import {
   sameSuiValue,
   scopeMaskToScopes,
   getTrustedPackageIds,
+  getMoveObjectDefiningPackageId,
   getVendoredKioskPackageAddress,
   getPersonalKioskCapTypePackageAddress,
   ensureTransactionSucceeded,
@@ -225,6 +226,80 @@ describe('getTrustedPackageIds', () => {
 
   it('throws for a malformed package ID', () => {
     expect(() => getTrustedPackageIds('not-hex')).toThrow(OnChainVerificationError)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getMoveObjectDefiningPackageId
+// ---------------------------------------------------------------------------
+
+describe('getMoveObjectDefiningPackageId', () => {
+  const stateObjectId = '0x' + '11'.repeat(32)
+  const historicalPackageId = '0x' + '44'.repeat(32)
+
+  function objectResponse(type: string) {
+    return {
+      data: {
+        objectId: stateObjectId,
+        type,
+        content: {
+          dataType: 'moveObject',
+          type,
+          fields: {},
+        },
+      },
+    }
+  }
+
+  it('derives a historical package family from the immutable object type', async () => {
+    const getObject = vi.fn(async () => objectResponse(
+      `${historicalPackageId}::soul::SoulState`,
+    ))
+
+    await expect(getMoveObjectDefiningPackageId({
+      objectId: stateObjectId,
+      moduleName: 'soul',
+      structName: 'SoulState',
+      client: { getObject } as never,
+    })).resolves.toBe(historicalPackageId)
+    expect(getObject).toHaveBeenCalledWith({
+      id: stateObjectId,
+      options: { showContent: true, showType: true },
+    })
+  })
+
+  it('rejects a same-named object from the wrong module', async () => {
+    await expect(getMoveObjectDefiningPackageId({
+      objectId: stateObjectId,
+      moduleName: 'soul',
+      structName: 'SoulState',
+      client: {
+        getObject: vi.fn(async () => objectResponse(
+          `${historicalPackageId}::attacker::SoulState`,
+        )),
+      } as never,
+    })).rejects.toThrow('On-chain object is not soul::SoulState')
+  })
+
+  it('rejects inconsistent top-level and content types', async () => {
+    await expect(getMoveObjectDefiningPackageId({
+      objectId: stateObjectId,
+      moduleName: 'soul',
+      structName: 'SoulState',
+      client: {
+        getObject: vi.fn(async () => ({
+          data: {
+            objectId: stateObjectId,
+            type: `${historicalPackageId}::soul::SoulState`,
+            content: {
+              dataType: 'moveObject',
+              type: `${'0x' + '55'.repeat(32)}::soul::SoulState`,
+              fields: {},
+            },
+          },
+        })),
+      } as never,
+    })).rejects.toThrow('type and content type do not match')
   })
 })
 

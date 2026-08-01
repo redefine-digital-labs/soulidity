@@ -8,6 +8,27 @@ import {
 
 const ROOT = process.cwd()
 const SMOKE_MATRIX_PATH = 'scripts/scenarios/soulidity-smoke-matrix.example.json'
+const ORIGINAL_SEAL_PACKAGE_ID = `0x${'22'.repeat(32)}`
+const CALLABLE_PACKAGE_ID = `0x${'44'.repeat(32)}`
+
+function fakeSealEncryptedObject(packageId: string, documentId: string) {
+  const packageBytes = Buffer.from(packageId.slice(2).padStart(64, '0'), 'hex')
+  const idBytes = Buffer.from(documentId.slice(2), 'hex')
+  if (idBytes.length >= 128) throw new Error('Test document id is too long')
+  return new Uint8Array([
+    0,
+    ...packageBytes,
+    idBytes.length,
+    ...idBytes,
+    0,
+    1,
+    0,
+    ...new Uint8Array(96),
+    0,
+    ...new Uint8Array(32),
+    2,
+  ])
+}
 
 const LEGACY_SIDECAR_REQUEST_FIELDS = [
   'sealSidecar',
@@ -180,7 +201,7 @@ describe('Soulidity publish content sidecars', () => {
     expect(mirrorGate).not.toContain('isValidContentDocumentId')
 
     const accessResolver = readSource('web/lib/soulidity/access.ts')
-    expect(accessResolver).toContain('documentIdHex: params.version.sealSidecar.documentId')
+    expect(accessResolver).toContain('documentIdHex: sealSidecar.documentId')
     expect(accessResolver).not.toContain('generateContentDocumentIdHex')
   })
 
@@ -199,6 +220,83 @@ describe('Soulidity publish content sidecars', () => {
           mode: 'seal-envelope',
           documentId: '0x1234',
           encryptedDek: 'ZW5jcnlwdGVk',
+          iv: 'AAAAAAAAAAAAAAAA',
+          cipher: 'AES-GCM-256',
+          mimeType: 'text/markdown',
+          fileName: 'soul.md',
+          contentHash: 'a'.repeat(64),
+        },
+      }],
+    })).toThrow(SealSidecarSyncConfigError)
+  })
+
+  it('migrates a legacy sidecar by inferring its original Seal namespace', async () => {
+    const { buildSyncSealSidecars } = await import('../../web/lib/soulidity/mirror/build-seal-sidecars')
+    const contentObjectId = `0x${'11'.repeat(32)}`
+    const documentId = generateContentDocumentIdHex({
+      contentObjectId,
+      kind: 0,
+      name: 'soul',
+      versionIndex: 0,
+      nonce: new Uint8Array(16).fill(7),
+    })
+    const result = buildSyncSealSidecars({
+      contentObjectId,
+      sealPackageId: ORIGINAL_SEAL_PACKAGE_ID,
+      entries: [{
+        kind: 0,
+        name: 'soul',
+        versionIndex: 0,
+        sealEncrypted: true,
+        sidecar: {
+          version: 1,
+          mode: 'seal-envelope',
+          documentId,
+          encryptedDek: Buffer.from(fakeSealEncryptedObject(
+            ORIGINAL_SEAL_PACKAGE_ID,
+            documentId,
+          )).toString('base64'),
+          iv: 'AAAAAAAAAAAAAAAA',
+          cipher: 'AES-GCM-256',
+          mimeType: 'text/markdown',
+          fileName: 'soul.md',
+          contentHash: 'a'.repeat(64),
+        },
+      }],
+    })
+
+    expect(result.validatedEntries[0]?.validatedSidecar?.sealPackageId)
+      .toBe(ORIGINAL_SEAL_PACKAGE_ID)
+  })
+
+  it('rejects a sidecar encrypted under the upgraded callable package', async () => {
+    const { buildSyncSealSidecars, SealSidecarSyncConfigError } = await import('../../web/lib/soulidity/mirror/build-seal-sidecars')
+    const contentObjectId = `0x${'11'.repeat(32)}`
+    const documentId = generateContentDocumentIdHex({
+      contentObjectId,
+      kind: 0,
+      name: 'soul',
+      versionIndex: 0,
+      nonce: new Uint8Array(16).fill(8),
+    })
+
+    expect(() => buildSyncSealSidecars({
+      contentObjectId,
+      sealPackageId: ORIGINAL_SEAL_PACKAGE_ID,
+      entries: [{
+        kind: 0,
+        name: 'soul',
+        versionIndex: 0,
+        sealEncrypted: true,
+        sidecar: {
+          version: 1,
+          mode: 'seal-envelope',
+          sealPackageId: CALLABLE_PACKAGE_ID,
+          documentId,
+          encryptedDek: Buffer.from(fakeSealEncryptedObject(
+            CALLABLE_PACKAGE_ID,
+            documentId,
+          )).toString('base64'),
           iv: 'AAAAAAAAAAAAAAAA',
           cipher: 'AES-GCM-256',
           mimeType: 'text/markdown',

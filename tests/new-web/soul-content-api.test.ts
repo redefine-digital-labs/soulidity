@@ -230,7 +230,6 @@ describe('GET /api/souls/[id]/content/[kind]/[name]/[versionIndex]/access', () =
         versionIndex: 2,
       }),
       viewerAddresses: [WALLET],
-      packageId: PACKAGE_ID,
     })
   })
 

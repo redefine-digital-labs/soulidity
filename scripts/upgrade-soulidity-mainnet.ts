@@ -24,19 +24,19 @@ import { normalizeSuiAddress } from '@mysten/sui/utils'
 
 import { loadKeypairFromEnv } from './lib/keypair'
 import {
-  assertCanonicalMainnetDeployment,
   assertCanonicalSigner,
   assertDeploymentSnapshotUnchanged,
   assertExecutionConfirmation,
   assertLegacyAdminCap,
   assertLegacyMarketConfig,
+  assertMainnetDeploymentRecord,
   assertMainnetRpc,
   assertSuccessfulEffects,
   assertUpgradeCap,
   atomicPatchMainnetDeployment,
   atomicWriteText,
+  objectAddressOwner,
   readDeploymentSnapshot,
-  SOULIDITY_MAINNET_ADMIN,
   SOULIDITY_MAINNET_CONFIRM_UPGRADE,
   transactionDigest,
 } from './lib/soulidity-mainnet-migration'
@@ -51,7 +51,6 @@ export interface UpgradeArgs {
   execute: boolean
   confirm: string | null
   writeManifest: boolean
-  recordAnimacraftProvenanceOrigin: boolean
   privKeyEnv: string
   gasBudget: bigint
 }
@@ -97,7 +96,6 @@ export function parseUpgradeArgs(argv: string[]): UpgradeArgs {
     execute: false,
     confirm: null,
     writeManifest: false,
-    recordAnimacraftProvenanceOrigin: false,
     privKeyEnv: 'MAINNET_DEPLOYER_PRIV_KEY',
     gasBudget: DEFAULT_GAS_BUDGET,
   }
@@ -116,11 +114,6 @@ export function parseUpgradeArgs(argv: string[]): UpgradeArgs {
       parsed.writeManifest = true
       continue
     }
-    if (argument === '--record-animacraft-provenance-origin') {
-      parsed.recordAnimacraftProvenanceOrigin = true
-      continue
-    }
-
     const confirmation = valueFor(argv, index, '--confirm')
     if (confirmation) {
       parsed.confirm = confirmation.value
@@ -148,7 +141,7 @@ export function parseUpgradeArgs(argv: string[]): UpgradeArgs {
       throw new Error(
         'Usage: npm run upgrade:soulidity-mainnet -- [--dry-run] '
           + '[--execute --confirm=UPGRADE_SOULIDITY_MAINNET] '
-          + '[--write-manifest] [--record-animacraft-provenance-origin]',
+          + '[--write-manifest]',
       )
     }
     throw new Error(`Unknown argument: ${argument}`)
@@ -338,7 +331,7 @@ async function main() {
   const args = parseUpgradeArgs(process.argv.slice(2))
   const snapshot = readDeploymentSnapshot()
   const publishedTomlSnapshot = readFileSync(publishedTomlPath, 'utf8')
-  const deployment = assertCanonicalMainnetDeployment(snapshot.mainnet)
+  const deployment = assertMainnetDeploymentRecord(snapshot.mainnet)
   const client = new SuiJsonRpcClient({
     url: getJsonRpcFullnodeUrl('mainnet'),
     network: 'mainnet',
@@ -361,11 +354,30 @@ async function main() {
       }),
     ])
 
+  const capabilityOwner = objectAddressOwner(
+    legacyAdminResponse,
+    'legacy MarketAdminCap',
+  )
+  const upgradeCapOwner = objectAddressOwner(
+    upgradeCapResponse,
+    'Soulidity UpgradeCap',
+  )
+  if (upgradeCapOwner !== capabilityOwner) {
+    throw new Error(
+      `Soulidity capability owners differ: UpgradeCap=${upgradeCapOwner}, `
+        + `MarketAdminCap=${capabilityOwner}`,
+    )
+  }
   const upgradeCap = assertUpgradeCap(
     upgradeCapResponse,
     deployment.callablePackageId,
+    capabilityOwner,
   )
-  assertLegacyAdminCap(legacyAdminResponse, deployment.originalPackageId)
+  assertLegacyAdminCap(
+    legacyAdminResponse,
+    deployment.originalPackageId,
+    capabilityOwner,
+  )
   const legacyMarket = assertLegacyMarketConfig(
     legacyConfigResponse,
     deployment.originalPackageId,
@@ -385,7 +397,7 @@ async function main() {
       upgradeCapId: deployment.upgradeCapId,
       policy: upgradeCap.policy,
       built,
-      sender: SOULIDITY_MAINNET_ADMIN,
+      sender: capabilityOwner,
       gasBudget: args.gasBudget,
     })
 
@@ -421,7 +433,7 @@ async function main() {
     }
 
     const signer = loadKeypairFromEnv(args.privKeyEnv)
-    assertCanonicalSigner(signer.toSuiAddress())
+    assertCanonicalSigner(signer.toSuiAddress(), capabilityOwner)
     const execution = await client.signAndExecuteTransaction({
       signer,
       transaction: tx,
@@ -456,7 +468,11 @@ async function main() {
       id: deployment.upgradeCapId,
       options: { showContent: true, showOwner: true, showType: true },
     })
-    const upgradedCap = assertUpgradeCap(upgradedCapResponse, callablePackageId)
+    const upgradedCap = assertUpgradeCap(
+      upgradedCapResponse,
+      callablePackageId,
+      capabilityOwner,
+    )
     if (upgradedCap.version !== upgradeCap.version + 1n) {
       throw new Error(
         `UpgradeCap version is ${upgradedCap.version}; expected ${upgradeCap.version + 1n}`,
@@ -468,9 +484,6 @@ async function main() {
       const patch = {
         callablePackageId,
         upgradeTxDigest: digest,
-        ...(args.recordAnimacraftProvenanceOrigin
-          ? { animacraftProvenancePackageId: callablePackageId }
-          : {}),
       }
 
       // Validate both source records before writing either one. If the process

@@ -9,12 +9,12 @@ import { normalizeSuiAddress } from '@mysten/sui/utils'
 
 import { loadKeypairFromEnv } from './lib/keypair'
 import {
-  assertCanonicalMainnetDeployment,
   assertCanonicalSigner,
   assertDeletedObject,
   assertExecutionConfirmation,
   assertLegacyAdminCap,
   assertLegacyMarketConfig,
+  assertMainnetDeploymentRecord,
   assertMainnetRpc,
   assertObjectAddressOwner,
   assertObjectShared,
@@ -22,10 +22,10 @@ import {
   assertUpgradeCap,
   atomicPatchMainnetDeployment,
   moveFields,
+  objectAddressOwner,
   objectIdFromMoveField,
   readDeploymentSnapshot,
   requiredAddress,
-  SOULIDITY_MAINNET_ADMIN,
   SOULIDITY_MAINNET_CONFIRM_PAUSE,
   SOULIDITY_MAINNET_CONFIRM_RETIRE,
   transactionDigest,
@@ -256,11 +256,12 @@ export function extractRetirementObjectIds(
 
 function assertRetirementEvent(
   result: MigrationResult,
-  callablePackageId: string,
+  eventTypeOriginPackageId: string,
   legacyConfigId: string,
   ids: RetirementObjectIds,
+  retiredBy: string,
 ) {
-  const expectedEventType = `${callablePackageId}::market::LegacyMarketRetired`
+  const expectedEventType = `${eventTypeOriginPackageId}::market::LegacyMarketRetired`
   const matches = (result.events ?? []).filter((event) => event.type === expectedEventType)
   if (matches.length !== 1) {
     throw new Error(`Expected one ${expectedEventType} event; found ${matches.length}`)
@@ -270,7 +271,7 @@ function assertRetirementEvent(
     [payload.legacy_config_id, legacyConfigId, 'event legacy_config_id'],
     [payload.config_v2_id, ids.marketConfigV2Id, 'event config_v2_id'],
     [payload.admin_cap_v2_id, ids.marketAdminCapV2Id, 'event admin_cap_v2_id'],
-    [payload.retired_by, SOULIDITY_MAINNET_ADMIN, 'event retired_by'],
+    [payload.retired_by, retiredBy, 'event retired_by'],
   ]
   for (const [actualValue, expected, label] of checks) {
     const actual = objectIdFromMoveField(actualValue, label)
@@ -288,6 +289,7 @@ async function verifyRetiredState(
     legacyConfigId: string
     legacyAdminCapId: string
     ids: RetirementObjectIds
+    adminOwner: string
   },
 ) {
   const [legacyConfig, legacyAdmin, successorConfig, successorAdmin] =
@@ -332,8 +334,8 @@ async function verifyRetiredState(
   if (String(configFields.version) !== '2') {
     throw new Error(`MarketConfigV2.version is ${String(configFields.version)}; expected 2`)
   }
-  if (configFields.primary_enabled !== true) {
-    throw new Error('Unified MarketConfigV2 primary gate is not enabled')
+  if (configFields.primary_enabled !== false) {
+    throw new Error('Unified MarketConfigV2 primary gate must be disabled at retirement')
   }
   if (configFields.secondary_enabled !== false) {
     throw new Error('Unified MarketConfigV2 secondary gate must be disabled at retirement')
@@ -344,7 +346,7 @@ async function verifyRetiredState(
   const adminFields = moveFields(successorAdmin, adminType, 'MarketAdminCapV2')
   assertObjectAddressOwner(
     successorAdmin,
-    SOULIDITY_MAINNET_ADMIN,
+    input.adminOwner,
     'MarketAdminCapV2',
   )
   if (objectIdFromMoveField(
@@ -358,8 +360,14 @@ async function verifyRetiredState(
 async function main() {
   const args = parseRetirementArgs(process.argv.slice(2))
   const snapshot = readDeploymentSnapshot()
-  const deployment = assertCanonicalMainnetDeployment(snapshot.mainnet)
+  const deployment = assertMainnetDeploymentRecord(snapshot.mainnet)
   const callablePackageId = args.callablePackageId ?? deployment.callablePackageId
+  const configuredV2TypeOrigin = snapshot.mainnet.marketConfigV2PackageId?.trim()
+  const marketConfigV2PackageId = configuredV2TypeOrigin
+    ? requiredAddress(configuredV2TypeOrigin, 'mainnet.marketConfigV2PackageId')
+    : callablePackageId === deployment.originalPackageId
+      ? deployment.originalPackageId
+      : callablePackageId
   if (args.callablePackageId
     && deployment.callablePackageId !== deployment.originalPackageId
     && args.callablePackageId !== deployment.callablePackageId) {
@@ -400,8 +408,26 @@ async function main() {
         options: { showContent: true, showOwner: true, showType: true },
       }),
     ])
-  assertUpgradeCap(upgradeCapResponse, callablePackageId)
-  assertLegacyAdminCap(legacyAdminResponse, deployment.originalPackageId)
+  const capabilityOwner = objectAddressOwner(
+    legacyAdminResponse,
+    'legacy MarketAdminCap',
+  )
+  const upgradeCapOwner = objectAddressOwner(
+    upgradeCapResponse,
+    'Soulidity UpgradeCap',
+  )
+  if (upgradeCapOwner !== capabilityOwner) {
+    throw new Error(
+      `Soulidity capability owners differ: UpgradeCap=${upgradeCapOwner}, `
+        + `MarketAdminCap=${capabilityOwner}`,
+    )
+  }
+  assertUpgradeCap(upgradeCapResponse, callablePackageId, capabilityOwner)
+  assertLegacyAdminCap(
+    legacyAdminResponse,
+    deployment.originalPackageId,
+    capabilityOwner,
+  )
   const legacyState = assertLegacyMarketConfig(
     legacyConfigResponse,
     deployment.originalPackageId,
@@ -429,14 +455,14 @@ async function main() {
       packageId: deployment.originalPackageId,
       legacyConfigId: deployment.legacyConfigId,
       legacyAdminCapId: deployment.legacyAdminCapId,
-      sender: SOULIDITY_MAINNET_ADMIN,
+      sender: capabilityOwner,
       gasBudget: args.gasBudget,
     })
     : buildLegacyRetirementTransaction({
       callablePackageId,
       legacyConfigId: deployment.legacyConfigId,
       legacyAdminCapId: deployment.legacyAdminCapId,
-      sender: SOULIDITY_MAINNET_ADMIN,
+      sender: capabilityOwner,
       gasBudget: args.gasBudget,
     })
 
@@ -451,13 +477,14 @@ async function main() {
 
   const simulatedIds = args.pauseOnly
     ? null
-    : extractRetirementObjectIds(simulation as MigrationResult, callablePackageId)
+    : extractRetirementObjectIds(simulation as MigrationResult, marketConfigV2PackageId)
   if (simulatedIds) {
     assertRetirementEvent(
       simulation as MigrationResult,
-      callablePackageId,
+      marketConfigV2PackageId,
       deployment.legacyConfigId,
       simulatedIds,
+      capabilityOwner,
     )
   }
 
@@ -481,7 +508,7 @@ async function main() {
   }
 
   const signer = loadKeypairFromEnv(args.privKeyEnv)
-  assertCanonicalSigner(signer.toSuiAddress())
+  assertCanonicalSigner(signer.toSuiAddress(), capabilityOwner)
   const execution = await client.signAndExecuteTransaction({
     signer,
     transaction: tx,
@@ -529,13 +556,14 @@ async function main() {
 
   const ids = extractRetirementObjectIds(
     finalized as MigrationResult,
-    callablePackageId,
+    marketConfigV2PackageId,
   )
   assertRetirementEvent(
     finalized as MigrationResult,
-    callablePackageId,
+    marketConfigV2PackageId,
     deployment.legacyConfigId,
     ids,
+    capabilityOwner,
   )
   if (simulatedIds
     && (ids.marketConfigV2Id !== simulatedIds.marketConfigV2Id
@@ -544,10 +572,11 @@ async function main() {
   }
   await verifyRetiredState(client, {
     originalPackageId: deployment.originalPackageId,
-    marketConfigV2PackageId: callablePackageId,
+    marketConfigV2PackageId,
     legacyConfigId: deployment.legacyConfigId,
     legacyAdminCapId: deployment.legacyAdminCapId,
     ids,
+    adminOwner: capabilityOwner,
   })
 
   let manifestWritten = false
@@ -566,8 +595,8 @@ async function main() {
     }
     atomicPatchMainnetDeployment(snapshot, {
       callablePackageId,
-      animacraftProvenancePackageId: callablePackageId,
-      marketConfigV2PackageId: callablePackageId,
+      animacraftProvenancePackageId: deployment.animacraftProvenancePackageId,
+      marketConfigV2PackageId,
       marketConfigV2Id: ids.marketConfigV2Id,
       marketAdminCapV2Id: ids.marketAdminCapV2Id,
       legacyMarketRetirementTxDigest: digest,
@@ -580,12 +609,12 @@ async function main() {
     mode: 'retirement-executed',
     digest,
     callablePackageId,
-    animacraftProvenancePackageId: callablePackageId,
-    marketConfigV2PackageId: callablePackageId,
+    animacraftProvenancePackageId: deployment.animacraftProvenancePackageId,
+    marketConfigV2PackageId,
     legacyConfigId: deployment.legacyConfigId,
     legacyAdminCapDeleted: true,
     ...ids,
-    primaryEnabled: true,
+    primaryEnabled: false,
     secondaryEnabled: false,
     manifestWritten,
     manifestPath: snapshot.path,

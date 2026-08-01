@@ -17,7 +17,7 @@ import {
   parseContentKindParam,
   parseContentVersionIndexParam,
 } from '@/lib/soulidity/content-route'
-import { READ_PUBLIC, getRequiredSoulidityEnv } from '@soulidity/sdk'
+import { READ_PUBLIC } from '@soulidity/sdk'
 import type { SoulContentVersionRecord } from '@soulidity/sdk'
 
 export const dynamic = 'force-dynamic'
@@ -68,7 +68,6 @@ export async function GET(
     return NextResponse.json({ error: 'Content version not found' }, { status: 404 })
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
   const soulRef = {
     onChainId: soul.onChainId,
     stateOnChainId: soul.stateOnChainId,
@@ -101,7 +100,6 @@ export async function GET(
         soul: soulRef,
         version,
         viewerAddresses: [],
-        packageId,
       })
       return NextResponse.json(payload)
     } catch (error: unknown) {
@@ -153,7 +151,6 @@ export async function GET(
       soul: soulRef,
       version,
       viewerAddresses: auth.walletAddresses,
-      packageId,
     })
     return NextResponse.json(payload)
   } catch (error: unknown) {

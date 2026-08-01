@@ -886,9 +886,9 @@ fun setup_and_mint_animacraft_v5(
     (state_id, output_seal_id)
 }
 
-/// Retire the legacy market into the fail-closed v2 configuration. Primary
-/// minting remains enabled; secondary sales still require an explicit later
-/// admin action.
+/// Retire the legacy market, then explicitly enable primary minting for tests
+/// that exercise v2 mint behavior. Production retirement itself leaves both
+/// gates disabled.
 fun retire_legacy_market_for_v2_testing(scenario: &mut ts::Scenario) {
     scenario.next_tx(ADMIN);
     let mut legacy_config = ts::take_shared<MarketConfig>(scenario);
@@ -901,6 +901,18 @@ fun retire_legacy_market_for_v2_testing(scenario: &mut ts::Scenario) {
         scenario.ctx(),
     );
     ts::return_shared(legacy_config);
+
+    scenario.next_tx(ADMIN);
+    let mut successor = ts::take_shared<MarketConfigV2>(scenario);
+    let successor_admin =
+        ts::take_from_address<MarketAdminCapV2>(scenario, ADMIN);
+    market::update_config_v2_primary_enabled(
+        &mut successor,
+        &successor_admin,
+        true,
+    );
+    ts::return_shared(successor);
+    ts::return_to_address(ADMIN, successor_admin);
 }
 
 fun enable_secondary_market_v2_for_testing(scenario: &mut ts::Scenario) {
@@ -4625,7 +4637,7 @@ fun legacy_market_retirement_is_one_way_and_secondary_defaults_closed() {
     assert!(market::config_v2_version(&successor) == 2, 1);
     assert!(market::config_v2_legacy_config_id(&successor) == legacy_config_id, 2);
     assert!(market::admin_cap_v2_config_id(&successor_admin) == object::id(&successor), 3);
-    assert!(market::config_v2_primary_enabled(&successor), 4);
+    assert!(!market::config_v2_primary_enabled(&successor), 4);
     assert!(!market::config_v2_secondary_enabled(&successor), 5);
     ts::return_shared(successor);
     ts::return_to_address(ADMIN, successor_admin);
@@ -4867,6 +4879,7 @@ fun ordinary_soul_full_lifecycle_works_after_legacy_retirement() {
     scenario.next_tx(ADMIN);
     let mut config = ts::take_shared<MarketConfigV2>(&scenario);
     let admin_cap = ts::take_from_address<MarketAdminCapV2>(&scenario, ADMIN);
+    market::update_config_v2_primary_enabled(&mut config, &admin_cap, true);
     market::update_config_v2_secondary_enabled(&mut config, &admin_cap, true);
     ts::return_shared(config);
     ts::return_to_address(ADMIN, admin_cap);

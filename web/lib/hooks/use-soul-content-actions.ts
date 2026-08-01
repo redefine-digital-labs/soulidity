@@ -47,6 +47,10 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { buildContentSidecarsForVersionsWithSuiClient } from '@/lib/hooks/phase2-mint-helpers'
 import { base64ToBytes, createBrowserSealClient, sha256Hex } from '@/lib/upload/client-seal'
+import {
+  assertSealEnvelopePackageId,
+  getSealEnvelopePackageId,
+} from '@/lib/services/seal-crypto'
 import { uploadSoulPayload, type SoulUploadType } from '@/lib/upload/client-upload'
 import {
   clearContentSyncPending,
@@ -219,7 +223,9 @@ function buildContentSealApprovalTx(access: Extract<ContentAccessResponse, { vis
   const kindArg = tx.pure.u32(access.accessPolicy.kind)
   const nameArg = tx.pure.string(access.accessPolicy.name)
   const versionArg = tx.pure.u64(BigInt(access.accessPolicy.versionIndex))
-  const target = `${access.accessPolicy.packageId}::${access.accessPolicy.moduleName}::${access.accessPolicy.functionName}`
+  const callablePackageId = access.accessPolicy.callablePackageId
+    || access.accessPolicy.packageId
+  const target = `${callablePackageId}::${access.accessPolicy.moduleName}::${access.accessPolicy.functionName}`
 
   if (access.accessPolicy.functionName === 'seal_approve_content_owner') {
     tx.moveCall({
@@ -355,12 +361,11 @@ export function useSoulContentSyncReplay({
   } = useSoulContentSyncRuntime({ soul, detailQueryId, viewerId })
 
   const replayPendingSync = useCallback(async (rec: ContentSyncPendingRecord) => {
-    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
     let sealSidecar: SealEnvelopeSidecar | null = null
     if (rec.sealMaterial) {
       const sidecars = await buildContentSidecarsForVersionsWithSuiClient({
         suiClient,
-        packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
+        sealPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
         contentObjectId: rec.contentOnChainId,
         pendingByKindName: [{
           kind: rec.kind,
@@ -794,7 +799,7 @@ export function useSoulContentActions({
 
       const sidecars = await buildContentSidecarsForVersionsWithSuiClient({
         suiClient,
-        packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
+        sealPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
         contentObjectId: event.contentId,
         pendingByKindName: [{
           kind: event.kind,
@@ -969,9 +974,19 @@ export function useSoulContentActions({
 
       const encryptedData = await fetchBytes(access.artifact.walrusBlobUrl)
       const { sealClient } = createBrowserSealClient(suiClient)
+      const declaredSealPackageId = access.accessPolicy.sealPackageId
+      const sealPackageId = declaredSealPackageId
+        ? assertSealEnvelopePackageId(access.sealSidecar, declaredSealPackageId)
+        : getSealEnvelopePackageId(access.sealSidecar)
+      if (
+        stripHexPrefix(access.sealSidecar.documentId).toLowerCase()
+        !== stripHexPrefix(access.accessPolicy.documentIdHex).toLowerCase()
+      ) {
+        throw new Error('Seal sidecar document does not match the approval policy')
+      }
       const sessionKey = await SessionKey.create({
         address: access.viewerAddress || suiWallet.address,
-        packageId: access.accessPolicy.packageId,
+        packageId: sealPackageId,
         ttlMin: access.sessionTtlMin,
         suiClient: suiClient as never,
       })

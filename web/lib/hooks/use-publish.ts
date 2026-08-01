@@ -234,7 +234,7 @@ async function buildPublishSyncBody(params: {
 
   const contentSidecars = await buildContentSidecarsForVersionsWithSuiClient({
     suiClient: params.suiClient as never,
-    packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
+    sealPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
     contentObjectId: minted.contentId,
     pendingByKindName: buildPendingMintSlots({
       soulMaterial: params.publishParams.sealMaterial ?? null,

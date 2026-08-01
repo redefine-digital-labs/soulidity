@@ -48,7 +48,6 @@ describe('controlled Soulidity mainnet upgrade args', () => {
       execute: false,
       confirm: null,
       writeManifest: false,
-      recordAnimacraftProvenanceOrigin: false,
       privKeyEnv: 'MAINNET_DEPLOYER_PRIV_KEY',
     })
   })
@@ -76,12 +75,16 @@ describe('controlled Soulidity mainnet upgrade args', () => {
       '--execute',
       `--confirm=${SOULIDITY_MAINNET_CONFIRM_UPGRADE}`,
       '--write-manifest',
-      '--record-animacraft-provenance-origin',
     ])).toMatchObject({
       execute: true,
       writeManifest: true,
-      recordAnimacraftProvenanceOrigin: true,
     })
+  })
+
+  it('refuses to rewrite the v5 AnimacraftProvenance TypeOrigin during v6 upgrade', () => {
+    expect(() => parseUpgradeArgs([
+      '--record-animacraft-provenance-origin',
+    ])).toThrow(/Unknown argument/)
   })
 })
 
@@ -215,6 +218,30 @@ describe('retirement controls', () => {
     expect(() => extractRetirementObjectIds({
       objectChanges: [],
     }, CALLABLE)).toThrow(/exactly one/)
+  })
+})
+
+describe('fresh-family market gates', () => {
+  it('publishes paused and retires with both v2 gates disabled', () => {
+    const market = readFileSync(
+      join(process.cwd(), 'move/soulidity/sources/market.move'),
+      'utf8',
+    )
+    const retirement = market.slice(
+      market.indexOf('public fun retire_legacy_market('),
+      market.indexOf('public fun update_config_v2_primary_enabled('),
+    )
+    const initializer = market.slice(
+      market.indexOf('fun init_impl('),
+      market.indexOf('#[test_only]\npublic fun init_for_testing'),
+    )
+
+    expect(market).toContain(
+      'init_impl(package::claim(otw, ctx), ctx.sender(), true, ctx)',
+    )
+    expect(initializer).toContain('paused: start_paused')
+    expect(retirement).toContain('primary_enabled: false')
+    expect(retirement).toContain('secondary_enabled: false')
   })
 })
 

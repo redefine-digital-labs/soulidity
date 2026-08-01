@@ -15,9 +15,13 @@ describe('Seal service configuration', () => {
     delete process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS
     delete process.env.NEXT_PUBLIC_SEAL_THRESHOLD
     delete process.env.NEXT_PUBLIC_SEAL_VERIFY_KEY_SERVERS
+    delete process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID
+    delete process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID
+    delete process.env.NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     process.env = { ...ORIGINAL_ENV }
   })
 
@@ -30,7 +34,9 @@ describe('Seal service configuration', () => {
       currentKioskId: '0xkiosk',
       currentKioskCapOnChainId: '0xkioskcap',
     })).toEqual({
-      packageId: deploymentManifest.testnet.packageId,
+      packageId: deploymentManifest.testnet.originalPackageId,
+      sealPackageId: deploymentManifest.testnet.originalPackageId,
+      callablePackageId: deploymentManifest.testnet.callablePackageId,
       soulObjectId: '0xsoul-object',
       moduleName: 'seal_policy',
       functionName: 'seal_approve_owner_in_personal_kiosk',
@@ -43,7 +49,9 @@ describe('Seal service configuration', () => {
       soulObjectId: '0xsoul-object',
       allowlistRegistryObjectId: '0xallowlist',
     })).toEqual({
-      packageId: deploymentManifest.testnet.packageId,
+      packageId: deploymentManifest.testnet.originalPackageId,
+      sealPackageId: deploymentManifest.testnet.originalPackageId,
+      callablePackageId: deploymentManifest.testnet.callablePackageId,
       soulObjectId: '0xsoul-object',
       moduleName: 'seal_policy',
       functionName: 'seal_approve_allowlisted',
@@ -67,28 +75,150 @@ describe('Seal service configuration', () => {
     expect(mod.hasCredentialedSealServerConfigs()).toBe(false)
   })
 
-  it('allows the access policy package id to be overridden with the on-chain Soul package id', async () => {
+  it('accepts the active original package and rejects untrusted namespaces', async () => {
     const mod = await import('../../web/lib/services/seal.ts')
+    const originalPackageId = deploymentManifest.testnet.originalPackageId
 
     expect(mod.getOwnerSealSession({
-      packageId: '0xorigin',
+      sealPackageId: originalPackageId,
       soulObjectId: '0xsoul-object',
       currentKioskId: '0xkiosk',
       currentKioskCapOnChainId: '0xkioskcap',
     })).toMatchObject({
-      packageId: '0xorigin',
+      packageId: originalPackageId,
+      sealPackageId: originalPackageId,
+      callablePackageId: deploymentManifest.testnet.callablePackageId,
     })
 
     expect(mod.getAllowlistedSealSession({
-      packageId: '0xorigin',
+      sealPackageId: originalPackageId,
       soulObjectId: '0xsoul-object',
       allowlistRegistryObjectId: '0xallowlist',
     })).toMatchObject({
-      packageId: '0xorigin',
+      packageId: originalPackageId,
+      sealPackageId: originalPackageId,
+      callablePackageId: deploymentManifest.testnet.callablePackageId,
+    })
+
+    expect(() => mod.getOwnerSealSession({
+      sealPackageId: `0x${'ff'.repeat(32)}`,
+      soulObjectId: '0xsoul-object',
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xkioskcap',
+    })).toThrow('Seal namespace is not a trusted Soulidity package family')
+  })
+
+  it('uses fresh deployment env package ids ahead of the bundled manifest', async () => {
+    const freshOriginal = `0x${'aa'.repeat(32)}`
+    const freshCallable = `0x${'bb'.repeat(32)}`
+    process.env.NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID = freshOriginal
+    process.env.NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID = freshCallable
+    const mod = await import('../../web/lib/services/seal.ts')
+
+    expect(mod.getSouliditySealPackageId()).toBe(freshOriginal)
+    expect(mod.getSouliditySealCallablePackageId()).toBe(freshCallable)
+    expect(mod.getOwnerSealSession({
+      soulObjectId: '0xsoul-object',
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xkioskcap',
+    })).toMatchObject({
+      packageId: freshOriginal,
+      sealPackageId: freshOriginal,
+      callablePackageId: freshCallable,
     })
   })
 
+  it('routes historical ciphertext through its own package family callable', async () => {
+    const historicalOriginal = `0x${'44'.repeat(32)}`
+    const historicalCallable = `0x${'55'.repeat(32)}`
+    process.env.NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES = JSON.stringify([{
+      sealPackageId: historicalOriginal,
+      callablePackageId: historicalCallable,
+    }])
+    const mod = await import('../../web/lib/services/seal.ts')
+
+    expect(mod.getOwnerSealSession({
+      sealPackageId: historicalOriginal,
+      soulObjectId: '0xsoul-object',
+      currentKioskId: '0xkiosk',
+      currentKioskCapOnChainId: '0xkioskcap',
+    })).toMatchObject({
+      packageId: historicalOriginal,
+      sealPackageId: historicalOriginal,
+      callablePackageId: historicalCallable,
+    })
+  })
+
+  it('fails closed on conflicting package-family routes', async () => {
+    const currentOriginal = deploymentManifest.testnet.originalPackageId
+    process.env.NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES = JSON.stringify([{
+      sealPackageId: currentOriginal,
+      callablePackageId: `0x${'66'.repeat(32)}`,
+    }])
+    const mod = await import('../../web/lib/services/seal.ts')
+    expect(() => mod.getSouliditySealPackageRoutes()).toThrow(
+      'conflicting callable routes',
+    )
+  })
+
+  it('creates SessionKey identity under the original package, never the callable target', async () => {
+    const mod = await import('../../web/lib/services/seal.ts')
+    const address = `0x${'11'.repeat(32)}`
+    let requestedPackageId = ''
+    const client = {
+      core: {
+        getObject: vi.fn(async ({ objectId }: { objectId: string }) => {
+          requestedPackageId = objectId
+          return { object: { version: 1 } }
+        }),
+      },
+    }
+
+    const sessionKey = await mod.createSealSessionKey({
+      toSuiAddress: () => address,
+      getPublicKey: () => ({ toSuiAddress: () => address }),
+    } as never, client as never)
+
+    expect(requestedPackageId).toBe(deploymentManifest.testnet.originalPackageId)
+    expect(sessionKey.getPackageId()).toBe(deploymentManifest.testnet.originalPackageId)
+  })
+
+  it('can create a SessionKey under a trusted historical package family', async () => {
+    const historicalOriginal = `0x${'44'.repeat(32)}`
+    const historicalCallable = `0x${'55'.repeat(32)}`
+    process.env.NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES = JSON.stringify([{
+      sealPackageId: historicalOriginal,
+      callablePackageId: historicalCallable,
+    }])
+    const mod = await import('../../web/lib/services/seal.ts')
+    const address = `0x${'11'.repeat(32)}`
+    let requestedPackageId = ''
+    const client = {
+      core: {
+        getObject: vi.fn(async ({ objectId }: { objectId: string }) => {
+          requestedPackageId = objectId
+          return { object: { version: 1 } }
+        }),
+      },
+    }
+
+    const sessionKey = await mod.createSealSessionKey({
+      toSuiAddress: () => address,
+      getPublicKey: () => ({ toSuiAddress: () => address }),
+    } as never, client as never, historicalOriginal)
+
+    expect(requestedPackageId).toBe(historicalOriginal)
+    expect(sessionKey.getPackageId()).toBe(historicalOriginal)
+    await expect(mod.createSealSessionKey({
+      toSuiAddress: () => address,
+      getPublicKey: () => ({ toSuiAddress: () => address }),
+    } as never, client as never, `0x${'ff'.repeat(32)}`)).rejects.toThrow(
+      'Seal namespace is not a trusted Soulidity package family',
+    )
+  })
+
   it('honors explicit runtime overrides', async () => {
+    const normalizedObjectId = `0x${'0'.repeat(61)}abc`
     process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
     process.env.NEXT_PUBLIC_SEAL_THRESHOLD = '1'
     process.env.NEXT_PUBLIC_SEAL_VERIFY_KEY_SERVERS = 'false'
@@ -103,7 +233,7 @@ describe('Seal service configuration', () => {
     ])
     process.env.SEAL_SERVER_CONFIGS = JSON.stringify([
       {
-        objectId: '0xabc',
+        objectId: normalizedObjectId,
         apiKeyName: 'x-seal-api-key',
         apiKey: 'server-secret',
       },
@@ -118,14 +248,90 @@ describe('Seal service configuration', () => {
       verifyKeyServers: false,
       serverConfigs: [
         {
-          objectId: '0xabc',
+          objectId: normalizedObjectId,
           weight: 1,
           aggregatorUrl: 'https://example.com',
         },
       ],
     })
     expect(mod.hasCredentialedSealServerConfigs()).toBe(true)
-    expect(consoleWarn).toHaveBeenCalledWith('Seal threshold is 1-of-1 on mainnet')
+    expect(consoleWarn).toHaveBeenCalledWith(
+      'Seal uses one physical key server on mainnet (threshold 1)',
+    )
+    consoleWarn.mockRestore()
+  })
+
+  it('rejects fractional, excessive, and under-threshold Seal weight configurations', async () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+    process.env.NEXT_PUBLIC_SEAL_THRESHOLD = '2'
+    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([{
+      objectId: `0x${'77'.repeat(32)}`,
+      weight: 0.5,
+    }])
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let mod = await import('../../web/lib/services/seal.ts')
+    expect(mod.hasSealSessionConfig()).toBe(false)
+
+    vi.resetModules()
+    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([{
+      objectId: `0x${'77'.repeat(32)}`,
+      weight: 255,
+    }])
+    mod = await import('../../web/lib/services/seal.ts')
+    expect(mod.hasSealSessionConfig()).toBe(false)
+    expect(consoleWarn).toHaveBeenCalledWith(
+      'Seal key server weight must total less than 255; received 255 on mainnet',
+    )
+
+    vi.resetModules()
+    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([{
+      objectId: `0x${'77'.repeat(32)}`,
+      weight: 1,
+    }])
+    mod = await import('../../web/lib/services/seal.ts')
+    expect(mod.hasSealSessionConfig()).toBe(false)
+    expect(consoleWarn).toHaveBeenCalledWith('Seal threshold 2 exceeds the configured weight 1')
+
+    vi.resetModules()
+    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([{
+      objectId: `0x${'77'.repeat(32)}`,
+      weight: 2,
+    }])
+    mod = await import('../../web/lib/services/seal.ts')
+    expect(mod.hasSealSessionConfig()).toBe(true)
+    expect(mod.getSealRuntimeConfig().threshold).toBe(2)
+    consoleWarn.mockRestore()
+  })
+
+  it('preserves public Seal weight when server credentials omit weight', async () => {
+    const objectId = `0x${'77'.repeat(32)}`
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'mainnet'
+    process.env.NEXT_PUBLIC_SEAL_THRESHOLD = '2'
+    process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS = JSON.stringify([{
+      objectId,
+      weight: 2,
+    }])
+    process.env.SEAL_SERVER_CONFIGS = JSON.stringify([{
+      objectId,
+      aggregatorUrl: 'https://seal.example.com',
+      apiKeyName: 'x-seal-key',
+      apiKey: 'secret',
+    }])
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let mod = await import('../../web/lib/services/seal.ts')
+    expect(mod.hasSealSessionConfig()).toBe(true)
+    expect(mod.getSealRuntimeConfig()).toMatchObject({ threshold: 2 })
+
+    vi.resetModules()
+    process.env.SEAL_SERVER_CONFIGS = JSON.stringify([{
+      objectId,
+      weight: 1,
+    }])
+    mod = await import('../../web/lib/services/seal.ts')
+    expect(mod.hasSealSessionConfig()).toBe(false)
+    expect(consoleWarn).toHaveBeenCalledWith(
+      `SEAL_SERVER_CONFIGS must preserve public weight 2 for ${objectId}`,
+    )
     consoleWarn.mockRestore()
   })
 

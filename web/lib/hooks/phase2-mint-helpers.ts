@@ -157,7 +157,7 @@ type SealEncryptCapableClient = Pick<SealClient, 'encrypt'>
  */
 async function createContentVersionSealSidecar(args: {
   sealClient: SealEncryptCapableClient
-  packageId: string
+  sealPackageId: string
   threshold: number
   contentObjectId: string
   kind: number
@@ -200,13 +200,14 @@ async function createContentVersionSealSidecar(args: {
   try {
     const { encryptedObject } = await args.sealClient.encrypt({
       threshold: args.threshold,
-      packageId: args.packageId,
+      packageId: args.sealPackageId,
       id: documentIdHex,
       data: keyMaterial,
     })
     return {
       version: 1,
       mode: 'seal-envelope',
+      sealPackageId: args.sealPackageId,
       documentId: documentIdHex,
       encryptedDek: bytesToBase64(new Uint8Array(encryptedObject)),
       iv: bytesToBase64(iv),
@@ -223,7 +224,8 @@ async function createContentVersionSealSidecar(args: {
 
 export interface BuildContentSidecarsForVersionsArgs {
   sealClient: SealEncryptCapableClient
-  packageId: string
+  /** First/original Soulidity package used as the immutable Seal namespace. */
+  sealPackageId: string
   threshold: number
   /** Phase 2 SoulContent root id from `SoulMintedToKiosk.content_id`. */
   contentObjectId: string
@@ -267,7 +269,7 @@ export async function buildContentSidecarsForVersions(
     }
     const sidecar = await createContentVersionSealSidecar({
       sealClient: args.sealClient,
-      packageId: args.packageId,
+      sealPackageId: args.sealPackageId,
       threshold: args.threshold,
       contentObjectId: args.contentObjectId,
       kind: version.kind,
