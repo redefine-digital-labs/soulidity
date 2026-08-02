@@ -35,7 +35,7 @@
  *   npx tsx web/scripts/e2e-relist-soul.ts
  */
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { buildListSoulTx, extractSoulListedEvent } from '@soulidity/sdk'
 import { loadKeypairFromEnv } from '../../scripts/lib/keypair'
 import { prisma } from '../lib/prisma'
@@ -126,7 +126,7 @@ async function main() {
   })
   tx.setSender(sender)
 
-  const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(network), network })
+  const client = createSuiGrpcCompatClient(network)
   const bytes = await tx.build({ client })
   const { signature } = await keypair.signTransaction(bytes)
 

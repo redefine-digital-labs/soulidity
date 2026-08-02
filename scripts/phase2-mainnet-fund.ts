@@ -23,7 +23,7 @@ import './lib/dotenv'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { Transaction } from '@mysten/sui/transactions'
 
 import { decodeEd25519SecretKey } from './lib/keypair'
@@ -71,7 +71,7 @@ console.log(`agent  : ${agentAddr ?? '(skipped)'}`)
 console.log(`mode   : ${apply ? 'EXECUTE' : 'dry-run'}`)
 console.log()
 
-const suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' })
+const suiClient = createSuiGrpcCompatClient('mainnet')
 
 const tx = new Transaction()
 tx.setSender(funderAddr)

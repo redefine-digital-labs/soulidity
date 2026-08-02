@@ -11,7 +11,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { decodeEd25519SecretKey } from './lib/keypair'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -44,7 +44,7 @@ const CONTENT_ID = '0x5a77726071e481fff1fae9bdc9842949c4fb53ac4f0ed9aef26b0df1ef
 const KIOSK_ID = '0xe677f1a96d815e6c8ab3e8f39b77b86d829a57b7e6e591c9857c373a20ec8fbf'
 const LISTING_ID = '0x74ff19c7347e01238cdb910e36b5e96681fb3ddd87a0328bffa3d0b6981956be'
 
-const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' })
+const client = createSuiGrpcCompatClient('mainnet')
 
 async function exec(label: string, txFactory: () => Promise<{ tx: import('@mysten/sui/transactions').Transaction; signer: import('@mysten/sui/keypairs/ed25519').Ed25519Keypair }>) {
   try {

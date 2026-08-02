@@ -63,7 +63,8 @@ import { fileURLToPath } from 'node:url'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { Transaction } from '@mysten/sui/transactions'
 
 import {
@@ -212,7 +213,7 @@ function loadKeypair(envName: 'OWNER_PRIVATE_KEY' | 'BUYER_PRIVATE_KEY'): Ed2551
 }
 
 function makeClient(): SuiClient {
-  return new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(SUI_NETWORK), network: SUI_NETWORK })
+  return createSuiGrpcCompatClient(SUI_NETWORK)
 }
 
 function statusSucceeded(result: TxResult): boolean {

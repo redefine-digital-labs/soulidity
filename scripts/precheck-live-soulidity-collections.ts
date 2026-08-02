@@ -1,8 +1,10 @@
 import './lib/dotenv'
 
 import { PrismaPg } from '@prisma/adapter-pg'
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { SuiGraphQLClient } from '@mysten/sui/graphql'
+import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 
 import { PrismaClient } from '../src/db/prisma-client.js'
 
@@ -33,6 +35,19 @@ interface CliOptions {
   databaseUrl: string
   owners: string[]
   network: 'mainnet' | 'testnet' | 'devnet' | 'localnet'
+}
+
+const SUI_GRAPHQL_URL = {
+  mainnet: 'https://graphql.mainnet.sui.io/graphql',
+  testnet: 'https://graphql.testnet.sui.io/graphql',
+  devnet: 'https://graphql.devnet.sui.io/graphql',
+} as const
+
+type CollectionEventsQuery = {
+  events: {
+    nodes: Array<{ contents: { json: unknown } | null }>
+    pageInfo: { hasNextPage: boolean; endCursor: string | null }
+  }
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -115,32 +130,46 @@ async function checkDatabase(databaseUrl: string) {
   }
 }
 
-async function checkSuiEvents(client: SuiJsonRpcClient, packageId: string) {
+async function checkSuiEvents(client: SuiGraphQLClient, packageId: string) {
   const findings: { eventType: string; count: number; sampleIds: string[] }[] = []
   for (const moduleEvent of [
     `${packageId}::collection::SoulCollectionCreated`,
     `${packageId}::market::CollectionMintedToKiosk`,
   ]) {
     const sampleIds: string[] = []
-    let cursor: { txDigest: string; eventSeq: string } | null | undefined = null
+    let cursor: string | null = null
     let total = 0
     // Page until we either prove non-empty (one page is enough) or cleanly
     // exhaust the stream. Hard cap at 5 pages so we never spin forever.
     for (let page = 0; page < 5; page++) {
-      const res = await client.queryEvents({
-        query: { MoveEventType: moduleEvent },
-        cursor: cursor ?? null,
-        limit: 50,
+      const res = await client.query<
+        CollectionEventsQuery,
+        { type: string; after: string | null }
+      >({
+        query: `
+          query SoulidityCollectionEvents($type: String!, $after: String) {
+            events(first: 50, after: $after, filter: { type: $type }) {
+              nodes { contents { json } }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        `,
+        variables: { type: moduleEvent, after: cursor },
       })
-      total += res.data.length
-      for (const ev of res.data) {
-        const parsed = ev.parsedJson as { collection_id?: string } | undefined
+      if (res.errors?.length || !res.data) {
+        throw new Error(
+          `Sui GraphQL event query failed for ${moduleEvent}: ${JSON.stringify(res.errors ?? [])}`,
+        )
+      }
+      total += res.data.events.nodes.length
+      for (const ev of res.data.events.nodes) {
+        const parsed = ev.contents?.json as { collection_id?: string } | undefined
         if (parsed?.collection_id && sampleIds.length < 5) {
           sampleIds.push(parsed.collection_id)
         }
       }
-      if (!res.hasNextPage || total >= 50) break
-      cursor = res.nextCursor ?? null
+      if (!res.data.events.pageInfo.hasNextPage || total >= 50) break
+      cursor = res.data.events.pageInfo.endCursor
     }
     findings.push({ eventType: moduleEvent, count: total, sampleIds })
   }
@@ -178,8 +207,12 @@ async function checkOwnedRights(client: SuiJsonRpcClient, packageId: string, own
 async function main() {
   const opts = parseArgs(process.argv)
 
-  const client = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl(opts.network),
+  if (opts.network === 'localnet') {
+    throw new Error('Live collection precheck does not support localnet')
+  }
+  const client = createSuiGrpcCompatClient(opts.network)
+  const graphqlClient = new SuiGraphQLClient({
+    url: process.env.SUI_GRAPHQL_URL?.trim() || SUI_GRAPHQL_URL[opts.network],
     network: opts.network,
   })
 
@@ -187,7 +220,7 @@ async function main() {
 
   const [db, events, owned] = await Promise.all([
     checkDatabase(opts.databaseUrl),
-    checkSuiEvents(client, opts.originalPackageId),
+    checkSuiEvents(graphqlClient, opts.originalPackageId),
     checkOwnedRights(client, opts.originalPackageId, opts.owners),
   ])
 

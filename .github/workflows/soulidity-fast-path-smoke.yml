@@ -84,7 +84,7 @@ jobs:
         run: npm --prefix packages/soulidity-sdk run typecheck
       - name: Typecheck desktop main process
         working-directory: desktop/apps/desktop
-        run: pnpm exec tsc --noEmit -p tsconfig.node.json
+        run: pnpm run build:shared && pnpm run build:backend && pnpm exec tsc --noEmit -p tsconfig.node.json
       - name: Build Walrus uploader
         run: npm --prefix services/walrus-uploader run build
       - name: Run TS unit + integration tests
