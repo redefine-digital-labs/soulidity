@@ -22,6 +22,18 @@ on:
       - 'tests/new-web/walrus-batch-helper-split.test.ts'
       - 'scripts/smoke-soulidity.ts'
       - 'scripts/phase2-testnet-smoke.ts'
+      - 'scripts/lib/soulidity-mainnet-migration.ts'
+      - 'scripts/preflight-animacraft-market-retirement.ts'
+      - 'scripts/publish-soulidity-and-sync.ts'
+      - 'scripts/retire-soulidity-legacy-market.ts'
+      - 'scripts/upgrade-soulidity-mainnet.ts'
+      - 'packages/soulidity-sdk/**'
+      - 'web/components/providers/**'
+      - 'desktop/apps/desktop/src/main/**'
+      - 'services/walrus-uploader/**'
+      - 'tests/new-web/sui-grpc-compat.test.ts'
+      - 'tests/scripts/soulidity-mainnet-migration.test.ts'
+      - 'tests/scripts/publish-soulidity-and-sync.test.ts'
       - '.github/workflows/soulidity-fast-path-smoke.yml'
   workflow_dispatch:
     inputs:
@@ -66,6 +78,15 @@ jobs:
       - name: Install desktop deps
         working-directory: desktop
         run: pnpm install --frozen-lockfile
+      - name: Install Walrus uploader deps
+        run: npm --prefix services/walrus-uploader ci --no-audit --no-fund
+      - name: Typecheck Soulidity SDK
+        run: npm --prefix packages/soulidity-sdk run typecheck
+      - name: Typecheck desktop main process
+        working-directory: desktop/apps/desktop
+        run: pnpm run build:shared && pnpm run build:backend && pnpm exec tsc --noEmit -p tsconfig.node.json
+      - name: Build Walrus uploader
+        run: npm --prefix services/walrus-uploader run build
       - name: Run TS unit + integration tests
         run: npm test
       - name: Run web typecheck

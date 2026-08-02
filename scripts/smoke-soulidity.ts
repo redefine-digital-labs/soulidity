@@ -43,9 +43,13 @@ import { loadEnvFile } from './lib/dotenv'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
-import { extractAllContentVersionAppendedEvents, getRequiredSoulidityEnv } from '@soulidity/sdk'
+import {
+  createSuiGrpcCompatClient,
+  extractAllContentVersionAppendedEvents,
+  getRequiredSoulidityEnv,
+} from '@soulidity/sdk'
 
 // Load smoke wallets / scenario from `.env.soulidity-smoke` (or an explicit
 // override via SOULIDITY_SMOKE_ENV_FILE). Documented in `.env.soulidity-smoke
@@ -117,10 +121,7 @@ interface RunContext {
 
 async function ctx(): Promise<RunContext> {
   const network = (process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet') as 'testnet' | 'mainnet'
-  const suiClient = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl(network),
-    network,
-  })
+  const suiClient = createSuiGrpcCompatClient(network)
   const wallets = loadSmokeWallets()
   const webBaseUrl = process.env.SOULIDITY_WEB_URL ?? 'http://localhost:3000'
   return { network, suiClient, wallets, webBaseUrl }

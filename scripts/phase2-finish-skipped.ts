@@ -12,7 +12,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import type { Transaction } from '@mysten/sui/transactions'
 
@@ -75,7 +75,7 @@ const BLOB_S3_SPRITE = '0x303c0222fff427d894b879af10eb024a899d85436e1b23bb6dff0a
 const PAID_PRICE_ATOMIC = 500_000n
 const PAID_TOTAL_ATOMIC = 512_500n // price * (1 + 250/10000)
 
-const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' })
+const client = createSuiGrpcCompatClient('mainnet')
 
 async function exec(label: string, txFactory: () => Promise<{ tx: Transaction; signer: Ed25519Keypair }>) {
   try {

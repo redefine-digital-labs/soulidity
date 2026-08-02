@@ -1,4 +1,4 @@
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import {
   loadDecryptedContentVersion,
   parseContentAccessResponse,
@@ -13,10 +13,7 @@ export interface ProtectedSpriteDecryptResult {
 }
 
 function createSuiClient(network: 'testnet' | 'mainnet') {
-  return new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl(network),
-    network,
-  })
+  return createSuiGrpcCompatClient(network)
 }
 
 function copyBytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {

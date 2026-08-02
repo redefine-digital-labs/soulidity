@@ -43,7 +43,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { Transaction } from '@mysten/sui/transactions'
 
 type SuiClientLike = SuiJsonRpcClient
@@ -188,7 +189,7 @@ async function main() {
   const walType = readWalCoinType()
   const SUI_TYPE = '0x2::sui::SUI'
 
-  const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' })
+  const client = createSuiGrpcCompatClient('mainnet')
 
   // Resolve recipients (and abort if any role key is missing — fail closed).
   const recipients: RecipientPlan[] = []

@@ -38,7 +38,7 @@ import { tmpdir, homedir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { decodeEd25519SecretKey } from './lib/keypair'
 
 // ── Config ────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ if (activeAddr === testAddress.toLowerCase()) {
 // ── Step 5: verify balances ──────────────────────────────────────────
 
 logStep(5, 'Verify SUI / WAL balance on mainnet')
-const suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' })
+const suiClient = createSuiGrpcCompatClient('mainnet')
 
 if (!args.apply && !alreadyImported) {
   console.log('[dry-run] balance check skipped (key not yet imported, but wallet exists on chain)')

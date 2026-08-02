@@ -2,7 +2,6 @@
 
 import { useEffect, type ReactNode } from 'react'
 import { SuiClientProvider, WalletProvider } from '@mysten/dapp-kit'
-import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
 import '@mysten/dapp-kit/dist/index.css'
 import posthog from 'posthog-js'
 import { PostHogProvider } from 'posthog-js/react'
@@ -14,17 +13,26 @@ import { E2EWalletHelpers } from './e2e-wallet-helpers'
 import { E2EWalletStub } from './e2e-wallet-stub'
 import { ToastProvider } from '@/components/ui/toast'
 import { UploadCostReviewProvider } from '@/components/upload/upload-cost-review'
-import { syncSoulidityDeploymentSession } from '@soulidity/sdk'
+import {
+  createSuiGrpcCompatClient,
+  getSuiGrpcFullnodeUrl,
+  syncSoulidityDeploymentSession,
+} from '@soulidity/sdk'
 import { VisualThemeProvider } from './visual-theme-provider'
 import { SOULIDITY_DAPP_KIT_THEME } from '@/lib/theme/dapp-kit-theme'
 
-// SuiJsonRpcClientOptions requires both `url` and `network` in dapp-kit v1 / @mysten/sui v2
+// dapp-kit v1 still types its context as SuiJsonRpcClient. The factory keeps
+// that method surface while all network requests use Sui's supported gRPC API.
 const suiNetworks = {
-  testnet: { url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' as const },
-  mainnet: { url: getJsonRpcFullnodeUrl('mainnet'), network: 'mainnet' as const },
+  testnet: { url: getSuiGrpcFullnodeUrl('testnet'), network: 'testnet' as const },
+  mainnet: { url: getSuiGrpcFullnodeUrl('mainnet'), network: 'mainnet' as const },
 }
 
 type SuiNetwork = keyof typeof suiNetworks
+
+function createGrpcClient(name: string) {
+  return createSuiGrpcCompatClient(name as SuiNetwork)
+}
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const network = (process.env.NEXT_PUBLIC_SUI_NETWORK as SuiNetwork | undefined) ?? 'testnet'
@@ -45,7 +53,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
           process.env.NEXT_PUBLIC_E2E_TEST_MODE === '1' ? (
             <E2EWalletStub />
           ) : null}
-          <SuiClientProvider networks={suiNetworks} defaultNetwork={defaultNetwork}>
+          <SuiClientProvider
+            networks={suiNetworks}
+            defaultNetwork={defaultNetwork}
+            createClient={createGrpcClient}
+          >
             <WalletProvider autoConnect theme={SOULIDITY_DAPP_KIT_THEME}>
               <AuthProvider>
                 <WalletAuthBridge />

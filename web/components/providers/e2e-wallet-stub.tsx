@@ -24,7 +24,8 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 import { Transaction } from '@mysten/sui/transactions'
 import { toBase64 } from '@mysten/sui/utils'
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { ReadonlyWalletAccount, registerWallet } from '@wallet-standard/wallet'
 import type { Wallet, WalletAccount, WalletIcon } from '@wallet-standard/base'
 import type {
@@ -106,7 +107,7 @@ class E2ETestWallet implements Wallet {
       features: ['sui:signPersonalMessage', 'sui:signTransaction', 'sui:signAndExecuteTransaction'],
       label: `E2E ${address.slice(0, 6)}…${address.slice(-4)}`,
     })
-    this.#suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(network), network })
+    this.#suiClient = createSuiGrpcCompatClient(network)
   }
 
   get accounts(): readonly WalletAccount[] {

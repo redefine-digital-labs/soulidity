@@ -26,7 +26,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { Transaction } from '@mysten/sui/transactions'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { EncryptedObject, SealClient, SessionKey } from '@mysten/seal'
@@ -43,7 +43,7 @@ const CONTENT_VERSION_INDEX = process.env.CONTENT_VERSION_INDEX
 const COMPARE_FILE = process.env.COMPARE_FILE
 const COMPARE_DIR = process.env.COMPARE_DIR
 
-const suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(SUI_NETWORK), network: SUI_NETWORK })
+const suiClient = createSuiGrpcCompatClient(SUI_NETWORK)
 
 // --- Seal envelope helpers (inline to avoid legacy imports) ---
 

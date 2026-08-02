@@ -49,7 +49,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import { Transaction } from '@mysten/sui/transactions'
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
@@ -238,7 +238,7 @@ const usdcCoinIds = (process.env.PHASE2_USDC_COIN_IDS ?? '')
 
 // ── Sui client ─────────────────────────────────────────────────────────
 
-const suiClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(network), network })
+const suiClient = createSuiGrpcCompatClient(network)
 
 // ── Result tracking ────────────────────────────────────────────────────
 

@@ -27,7 +27,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import { createSuiGrpcCompatClient } from '@soulidity/sdk'
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import type { Transaction } from '@mysten/sui/transactions'
 
@@ -113,7 +113,7 @@ const COLLECTION_ID = required('PHASE2_SMOKE_COLLECTION_ID')
 // the unused slots).
 const MEM_APPEND_BLOB = process.env.PHASE2_MEM_APPEND_BLOB?.trim()
 
-const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(network), network })
+const client = createSuiGrpcCompatClient(network)
 
 // ── Helpers ───────────────────────────────────────────────────────────
 

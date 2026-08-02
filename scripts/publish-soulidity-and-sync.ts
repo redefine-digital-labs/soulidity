@@ -6,10 +6,11 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc'
+import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
 import { Transaction } from '@mysten/sui/transactions'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
+import { createSuiGrpcCompatClient } from '../packages/soulidity-sdk/src/sui-grpc-compat'
 
 import { loadKeypairFromEnv } from './lib/keypair'
 import {
@@ -22,6 +23,8 @@ import {
   atomicWriteJson,
   atomicWriteText,
   moveFields,
+  SOULIDITY_MAINNET_CHAIN_IDENTIFIER,
+  SOULIDITY_MAINNET_GENESIS_DIGEST,
   transactionDigest,
 } from './lib/soulidity-mainnet-migration'
 
@@ -1220,15 +1223,16 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
 
   // Pre-flight 2: bind the RPC to the requested chain, even though the SDK URL
   // is network-specific. This is a final defense against endpoint drift.
-  const client = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl(network),
-    network,
-  })
-  const chainIdentifier = (await client.getChainIdentifier()).trim().toLowerCase()
-  if (network === 'mainnet' && chainIdentifier !== '35834a8a') {
+  const client = createSuiGrpcCompatClient(network)
+  const chainIdentifier = (await client.getChainIdentifier()).trim()
+  if (
+    network === 'mainnet'
+    && chainIdentifier.toLowerCase() !== SOULIDITY_MAINNET_CHAIN_IDENTIFIER
+    && chainIdentifier !== SOULIDITY_MAINNET_GENESIS_DIGEST
+  ) {
     exitWithError(
       EXIT_PREFLIGHT_FAILED,
-      `Pre-flight: RPC chain ${chainIdentifier} is not Sui mainnet 35834a8a`,
+      `Pre-flight: RPC chain ${chainIdentifier} is not Sui mainnet`,
     )
   }
 
@@ -1394,9 +1398,10 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
     writeJsonFile(manifestPath, manifest)
 
     // Write Published.toml [published.<network>] (preserves other env sections)
-    const chainId = await client.getChainIdentifier()
     writePublishedTomlSection(sourcePublishedTomlPath, network, {
-      chainId,
+      chainId: network === 'mainnet'
+        ? SOULIDITY_MAINNET_CHAIN_IDENTIFIER
+        : await client.getChainIdentifier(),
       packageId: deployment.packageId,
       version: 1,
       toolchainVersion: resolveSuiToolchainVersion(suiBin),
@@ -1516,10 +1521,7 @@ async function runResumeCapTransferFlow(args: ParsedArgs, network: 'mainnet' | '
     }
   }
 
-  const client = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl(network),
-    network,
-  })
+  const client = createSuiGrpcCompatClient(network)
   const balance = await client.getBalance({ owner: deployerAddr })
   if (BigInt(balance.totalBalance) < DEFAULT_TRANSFER_GAS_BUDGET) {
     exitWithError(
