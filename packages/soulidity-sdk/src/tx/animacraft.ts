@@ -148,6 +148,54 @@ export interface BuyAnimacraftV5SoulTxParams {
   buyerKioskCapOnChainId?: string | null
 }
 
+/** Canonical Animacraft v6 loadout row revalidated during list and buy. */
+export interface AnimacraftV6LoadoutSelectionInput {
+  productId: string
+  slotKey: string
+  /** 0 = wallet, 1 = Soul, 2 = embedded. */
+  subjectKind: 0 | 1 | 2
+  /** Required only for independently wallet-owned selections. */
+  ownedInstanceId?: string | null
+}
+
+/**
+ * Exact cross-package identities needed to revalidate an Animacraft v6
+ * appearance. These are authoritative object IDs loaded from the published
+ * Maker/appearance manifest, never wallet-selected substitutes.
+ */
+export interface AnimacraftV6SecondaryContext {
+  animacraftCallablePackageId: string
+  animacraftCompositionTypeOriginPackageId: string
+  compositionRegistryObjectId: string
+  compositionConfigObjectId: string
+  commerceConfigObjectId: string
+  makerProfileObjectId: string
+  makerRootObjectId: string
+  appearanceObjectId: string
+  selections: ReadonlyArray<AnimacraftV6LoadoutSelectionInput>
+}
+
+export interface ListAnimacraftV6SoulTxParams {
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  stateObjectId: string
+  provenanceObjectId: string
+  priceAtomic: bigint
+  v6: AnimacraftV6SecondaryContext
+}
+
+export interface BuyAnimacraftV6SoulTxParams {
+  sellerKioskId: string
+  stateObjectId: string
+  listingObjectId: string
+  provenanceObjectId: string
+  priceAtomic: bigint
+  paymentCoinObjectIds: string[]
+  buyerKioskId?: string | null
+  buyerKioskCapOnChainId?: string | null
+  v6: AnimacraftV6SecondaryContext
+}
+
 export interface AnimacraftRecipeSlotInput {
   partKey: string
   itemKey: string
@@ -878,7 +926,7 @@ export function buildBuyAnimacraftSoulTx(params: BuyAnimacraftSoulTxParams): Tra
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const marketConfigId = getRequiredSoulidityEnv(
-    'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+    'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID',
   )
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
@@ -886,6 +934,7 @@ export function buildBuyAnimacraftSoulTx(params: BuyAnimacraftSoulTxParams): Tra
   const buyerKiosk = buildBuyerKioskArgs(tx, {
     buyerKioskId: params.buyerKioskId,
     buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
+    registrationMarket: 'secondary-v6',
   })
   const paymentCoin = buildExactPaymentCoin(
     tx,
@@ -895,8 +944,8 @@ export function buildBuyAnimacraftSoulTx(params: BuyAnimacraftSoulTxParams): Tra
 
   tx.moveCall({
     target: params.collectionObjectId
-      ? `${packageId}::market::buy_animacraft_soul_fixed_price_with_collection_v2`
-      : `${packageId}::market::buy_animacraft_soul_fixed_price_v2`,
+      ? `${packageId}::market::buy_animacraft_soul_fixed_price_with_collection_v6`
+      : `${packageId}::market::buy_animacraft_soul_fixed_price_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -942,11 +991,11 @@ export function buildListAnimacraftV5SoulTx(
     makerSourceRoyaltyBps: params.makerSourceRoyaltyBps,
   })
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const tx = new Transaction()
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -954,7 +1003,7 @@ export function buildListAnimacraftV5SoulTx(
     ],
   })
   const listing = tx.moveCall({
-    target: `${packageId}::market::list_animacraft_v5_soul_fixed_price_v2`,
+    target: `${packageId}::market::list_animacraft_v5_soul_fixed_price_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -989,17 +1038,18 @@ export function buildBuyAnimacraftV5SoulTx(
   }
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const buyerKiosk = buildBuyerKioskArgs(tx, {
     buyerKioskId: params.buyerKioskId,
     buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
+    registrationMarket: 'secondary-v6',
   })
   const paymentCoin = buildExactPaymentCoin(tx, params.paymentCoinObjectIds, params.priceAtomic)
   tx.moveCall({
-    target: `${packageId}::market::buy_animacraft_v5_soul_fixed_price_v2`,
+    target: `${packageId}::market::buy_animacraft_v5_soul_fixed_price_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -1011,6 +1061,148 @@ export function buildBuyAnimacraftV5SoulTx(
       tx.object(params.stateObjectId),
       tx.object(params.listingObjectId),
       paymentCoin,
+    ],
+  })
+  finishBuyerKioskArgs(tx, buyerKiosk)
+  return tx
+}
+
+function appendAnimacraftV6Selections(
+  tx: Transaction,
+  context: AnimacraftV6SecondaryContext,
+): TransactionArgument {
+  requireNonEmpty(context.animacraftCallablePackageId, 'v6 Animacraft callable package id')
+  requireNonEmpty(context.animacraftCompositionTypeOriginPackageId, 'v6 composition TypeOrigin package id')
+  if (context.selections.length === 0) {
+    throw new Error('Animacraft v6 secondary transfer requires at least one canonical loadout selection')
+  }
+  const elements = context.selections.map((selection, index) => {
+    requireNonEmpty(selection.productId, `v6 selections[${index}].productId`)
+    requireNonEmpty(selection.slotKey, `v6 selections[${index}].slotKey`)
+    if (selection.subjectKind !== 1 && selection.subjectKind !== 2) {
+      throw new Error('Animacraft v6 secondary transfer accepts only Soul-bound or embedded selections')
+    }
+    if (selection.ownedInstanceId) {
+      throw new Error('Animacraft v6 secondary transfer rejects wallet-owned selection instances')
+    }
+    return asTransactionObjectArgument(tx.moveCall({
+      target: `${context.animacraftCallablePackageId}::composition_v6::new_loadout_selection_v6`,
+      arguments: [
+        tx.pure.id(selection.productId),
+        tx.pure.string(selection.slotKey),
+        tx.pure.u8(selection.subjectKind),
+        tx.pure.option('address', null),
+      ],
+    }))
+  })
+  return tx.makeMoveVec({
+    type: `${context.animacraftCompositionTypeOriginPackageId}::composition_v6::LoadoutSelectionV6`,
+    elements,
+  })
+}
+
+function validateAnimacraftV6SecondaryContext(context: AnimacraftV6SecondaryContext): void {
+  requireNonEmpty(context.compositionRegistryObjectId, 'v6 composition registry object id')
+  requireNonEmpty(context.compositionConfigObjectId, 'v6 composition config object id')
+  requireNonEmpty(context.commerceConfigObjectId, 'v6 commerce config object id')
+  requireNonEmpty(context.makerProfileObjectId, 'v6 Maker profile object id')
+  requireNonEmpty(context.makerRootObjectId, 'v6 Maker root object id')
+  requireNonEmpty(context.appearanceObjectId, 'v6 appearance object id')
+}
+
+/** Build the only transfer-safe listing path for a Soul with dynamic field key 3. */
+export function buildListAnimacraftV6SoulTx(
+  params: ListAnimacraftV6SoulTxParams,
+): Transaction {
+  requireNonEmpty(params.currentKioskId, 'currentKioskId')
+  requireNonEmpty(params.currentKioskCapOnChainId, 'currentKioskCapOnChainId')
+  requireNonEmpty(params.stateObjectId, 'stateObjectId')
+  requireNonEmpty(params.provenanceObjectId, 'provenanceObjectId')
+  if (params.priceAtomic <= 0n) throw new Error('priceAtomic must be positive')
+  validateAnimacraftV6SecondaryContext(params.v6)
+
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v6`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      tx.object(params.currentKioskCapOnChainId),
+    ],
+  })
+  const selections = appendAnimacraftV6Selections(tx, params.v6)
+  const listing = tx.moveCall({
+    target: `${packageId}::market::list_animacraft_v6_soul_fixed_price_v6`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      tx.object(params.provenanceObjectId),
+      tx.object(params.v6.compositionRegistryObjectId),
+      tx.object(params.v6.compositionConfigObjectId),
+      tx.object(params.v6.commerceConfigObjectId),
+      tx.object(params.v6.makerProfileObjectId),
+      tx.object(params.v6.makerRootObjectId),
+      tx.object(params.currentKioskId),
+      tx.object(params.currentKioskCapOnChainId),
+      tx.object(params.stateObjectId),
+      tx.object(params.v6.appearanceObjectId),
+      selections,
+      tx.pure.u64(params.priceAtomic),
+    ],
+  })
+  tx.moveCall({
+    target: `${packageId}::market::finalize_animacraft_v6_soul_listing`,
+    arguments: [listing],
+  })
+  return tx
+}
+
+/** Build v6 settlement; the live canonical selections are rechecked on chain. */
+export function buildBuyAnimacraftV6SoulTx(
+  params: BuyAnimacraftV6SoulTxParams,
+): Transaction {
+  requireNonEmpty(params.sellerKioskId, 'sellerKioskId')
+  requireNonEmpty(params.stateObjectId, 'stateObjectId')
+  requireNonEmpty(params.listingObjectId, 'listingObjectId')
+  requireNonEmpty(params.provenanceObjectId, 'provenanceObjectId')
+  if (params.priceAtomic <= 0n) throw new Error('priceAtomic must be positive')
+  validateAnimacraftV6SecondaryContext(params.v6)
+
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
+  const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
+  const tx = new Transaction()
+  const buyerKiosk = buildBuyerKioskArgs(tx, {
+    buyerKioskId: params.buyerKioskId,
+    buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
+    registrationMarket: 'secondary-v6',
+  })
+  const selections = appendAnimacraftV6Selections(tx, params.v6)
+  const payment = buildExactPaymentCoin(tx, params.paymentCoinObjectIds, params.priceAtomic)
+  tx.moveCall({
+    target: `${packageId}::market::buy_animacraft_v6_soul_fixed_price_v6`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      tx.object(transferPolicyId),
+      tx.object(params.provenanceObjectId),
+      tx.object(params.v6.compositionRegistryObjectId),
+      tx.object(params.v6.compositionConfigObjectId),
+      tx.object(params.v6.commerceConfigObjectId),
+      tx.object(params.v6.makerProfileObjectId),
+      tx.object(params.v6.makerRootObjectId),
+      tx.object(params.sellerKioskId),
+      buyerKiosk.buyerKiosk,
+      buyerKiosk.buyerKioskCap,
+      tx.object(params.stateObjectId),
+      tx.object(params.v6.appearanceObjectId),
+      tx.object(params.listingObjectId),
+      selections,
+      payment,
     ],
   })
   finishBuyerKioskArgs(tx, buyerKiosk)

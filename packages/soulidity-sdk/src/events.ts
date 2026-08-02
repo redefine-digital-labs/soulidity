@@ -569,6 +569,73 @@ export function tryExtractAnimacraftV5SoulPurchasedEvent(
   return event ? parseAnimacraftV5SoulPurchasedEvent(event) : null
 }
 
+export function extractAnimacraftV6SoulListedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(
+    transaction,
+    `${packageId}::market::AnimacraftV6SoulListed`,
+    trustedPackageIds,
+  )
+  if (!event) {
+    throw new OnChainVerificationError('AnimacraftV6SoulListed event is missing from the transaction')
+  }
+  return {
+    listingId: readObjectId(event.listing_id, 'AnimacraftV6SoulListed listing_id'),
+    soulId: readObjectId(event.soul_id, 'AnimacraftV6SoulListed soul_id'),
+    appearanceStateId: readObjectId(event.appearance_state_id, 'AnimacraftV6SoulListed appearance_state_id'),
+    appearanceRevision: readNumber(event.appearance_revision, 'AnimacraftV6SoulListed appearance_revision'),
+    ownershipEpoch: readNumber(event.ownership_epoch, 'AnimacraftV6SoulListed ownership_epoch'),
+    loadoutHash: readByteVector(event.loadout_hash, 'AnimacraftV6SoulListed loadout_hash'),
+  }
+}
+
+export function extractAnimacraftV6SoulListingCancelledEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(
+    transaction,
+    `${packageId}::market::AnimacraftV6SoulListingCancelled`,
+    trustedPackageIds,
+  )
+  if (!event) {
+    throw new OnChainVerificationError('AnimacraftV6SoulListingCancelled event is missing from the transaction')
+  }
+  return {
+    listingId: readObjectId(event.listing_id, 'AnimacraftV6SoulListingCancelled listing_id'),
+    soulId: readObjectId(event.soul_id, 'AnimacraftV6SoulListingCancelled soul_id'),
+    appearanceRevision: readNumber(event.appearance_revision, 'AnimacraftV6SoulListingCancelled appearance_revision'),
+  }
+}
+
+export function extractAnimacraftV6SoulPurchasedEvent(
+  transaction: TransactionLike,
+  packageId: string,
+  trustedPackageIds?: string[],
+) {
+  const event = extractTypedEvent(
+    transaction,
+    `${packageId}::market::AnimacraftV6SoulPurchased`,
+    trustedPackageIds,
+  )
+  if (!event) {
+    throw new OnChainVerificationError('AnimacraftV6SoulPurchased event is missing from the transaction')
+  }
+  return {
+    listingId: readObjectId(event.listing_id, 'AnimacraftV6SoulPurchased listing_id'),
+    soulId: readObjectId(event.soul_id, 'AnimacraftV6SoulPurchased soul_id'),
+    appearanceStateId: readObjectId(event.appearance_state_id, 'AnimacraftV6SoulPurchased appearance_state_id'),
+    appearanceRevision: readNumber(event.appearance_revision, 'AnimacraftV6SoulPurchased appearance_revision'),
+    previousOwnershipEpoch: readNumber(event.previous_ownership_epoch, 'AnimacraftV6SoulPurchased previous_ownership_epoch'),
+    ownershipEpoch: readNumber(event.ownership_epoch, 'AnimacraftV6SoulPurchased ownership_epoch'),
+    buyerAddress: readAddress(event.buyer, 'AnimacraftV6SoulPurchased buyer'),
+  }
+}
+
 export function extractSoulListingCancelledEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
   const event = extractTypedEvent(transaction, `${packageId}::market::SoulListingCancelled`, trustedPackageIds)
   if (!event) {

@@ -22,6 +22,8 @@ const EStateConfigKeyEmpty: u64 = 17;
 const EStateConfigKeyMissing: u64 = 18;
 const EAnimacraftProvenanceAlreadyBound: u64 = 19;
 const EAnimacraftProvenanceMissing: u64 = 20;
+const EAnimacraftAppearanceV6AlreadyBound: u64 = 21;
+const EAnimacraftAppearanceV6Missing: u64 = 22;
 
 const PROVENANCE_NATIVE: u8 = 0;
 const PROVENANCE_IMPORTED: u8 = 1;
@@ -35,6 +37,9 @@ const ANIMACRAFT_PROVENANCE_KEY: u8 = 1;
 /// primitive dynamic-field key instead of changing `SoulState` or the already
 /// deployed `AnimacraftProvenance` layout.
 const ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY: u8 = 2;
+/// Composable-assets-v6 companion state. As with the v5 provenance binding,
+/// the primitive key deliberately preserves the deployed `SoulState` layout.
+const ANIMACRAFT_APPEARANCE_V6_KEY: u8 = 3;
 const VERSION: u64 = 1;
 
 public struct SOUL has drop {}
@@ -261,6 +266,27 @@ public fun animacraft_output_provenance_v5_id(self: &SoulState): ID {
     )
 }
 
+public fun has_animacraft_appearance_v6(self: &SoulState): bool {
+    df::exists_with_type<u8, ID>(
+        &self.id,
+        ANIMACRAFT_APPEARANCE_V6_KEY,
+    )
+}
+
+public fun animacraft_appearance_v6_id(self: &SoulState): ID {
+    assert!(
+        df::exists_with_type<u8, ID>(
+            &self.id,
+            ANIMACRAFT_APPEARANCE_V6_KEY,
+        ),
+        EAnimacraftAppearanceV6Missing,
+    );
+    *df::borrow<u8, ID>(
+        &self.id,
+        ANIMACRAFT_APPEARANCE_V6_KEY,
+    )
+}
+
 public fun has_state_config(self: &SoulState, key: String): bool {
     self.config_ext.contains(key)
 }
@@ -410,6 +436,24 @@ public(package) fun bind_animacraft_output_provenance_v5(
         &mut state.id,
         ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
         provenance_id,
+    );
+}
+
+public(package) fun bind_animacraft_appearance_v6(
+    state: &mut SoulState,
+    appearance_state_id: ID,
+) {
+    assert!(
+        !df::exists_with_type<u8, ID>(
+            &state.id,
+            ANIMACRAFT_APPEARANCE_V6_KEY,
+        ),
+        EAnimacraftAppearanceV6AlreadyBound,
+    );
+    df::add(
+        &mut state.id,
+        ANIMACRAFT_APPEARANCE_V6_KEY,
+        appearance_state_id,
     );
 }
 

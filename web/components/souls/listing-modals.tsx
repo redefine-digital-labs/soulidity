@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
-import { assertObjectInputsExist } from '@soulidity/sdk'
+import { assertObjectInputsExist, getAnimacraftAppearanceV6Id } from '@soulidity/sdk'
 import { buildUpdateListingPriceTx } from '@soulidity/sdk'
-import { buildDelistSoulTx } from '@soulidity/sdk'
+import { buildDelistAnimacraftV6SoulTx, buildDelistSoulTx } from '@soulidity/sdk'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
 import type { SoulAssetDetail } from '@soulidity/sdk'
 
@@ -84,6 +84,12 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
       }
       if (soul.provenanceKind === 'animacraft' && !soul.animacraftProvenance) {
         throw new Error('Animacraft provenance is unavailable; price update is blocked')
+      }
+      const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
+      if (appearanceV6Id) {
+        throw new Error(
+          'Animacraft v6 listings cannot be repriced in place. Delist this Soul, then create a fresh listing.',
+        )
       }
       await assertObjectInputsExist(suiClient, {
         'Soul kiosk': soulKioskId,
@@ -217,18 +223,28 @@ export function DelistModal({ soul, open, onClose }: DelistModalProps) {
       if (!soulKioskId || !soulKioskCapId) {
         throw new Error('Soul kiosk info is missing - the Soul may not be held in a personal kiosk')
       }
+      const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
       await assertObjectInputsExist(suiClient, {
         'Soul kiosk': soulKioskId,
         'Soul kiosk capability': soulKioskCapId,
         'Soul state': soul.stateOnChainId,
+        'Animacraft v6 appearance': appearanceV6Id,
         'Soul listing': soul.listingObjectOnChainId,
       })
-      const tx = buildDelistSoulTx({
-        currentKioskId: soulKioskId,
-        currentKioskCapOnChainId: soulKioskCapId,
-        stateObjectId: soul.stateOnChainId,
-        listingObjectId: soul.listingObjectOnChainId,
-      })
+      const tx = appearanceV6Id
+        ? buildDelistAnimacraftV6SoulTx({
+            currentKioskId: soulKioskId,
+            currentKioskCapOnChainId: soulKioskCapId,
+            stateObjectId: soul.stateOnChainId,
+            appearanceObjectId: appearanceV6Id,
+            listingObjectId: soul.listingObjectOnChainId,
+          })
+        : buildDelistSoulTx({
+            currentKioskId: soulKioskId,
+            currentKioskCapOnChainId: soulKioskCapId,
+            stateObjectId: soul.stateOnChainId,
+            listingObjectId: soul.listingObjectOnChainId,
+          })
       const result = await signAndExecute(tx)
 
       setStatus('syncing')

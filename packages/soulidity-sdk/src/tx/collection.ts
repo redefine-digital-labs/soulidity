@@ -102,7 +102,7 @@ function appendListCollectionRightCall(
   priceAtomic: bigint | number,
 ): MoveCallResult {
   return tx.moveCall({
-    target: `${packageId}::market::list_collection_right_fixed_price_v2`,
+    target: `${packageId}::market::list_collection_right_fixed_price_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -223,7 +223,7 @@ export async function buildCreateCollectionWithListTx(
   const listing = appendListCollectionRightCall(
     tx,
     env.packageId,
-    env.marketConfigId,
+    getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
     env.kioskRegistryId,
     personalKiosk,
     collection,

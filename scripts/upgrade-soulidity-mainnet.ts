@@ -1,6 +1,7 @@
 import './lib/dotenv'
 
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   cpSync,
   existsSync,
@@ -14,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   Transaction,
-  UpgradePolicy,
+  TransactionDataBuilder,
 } from '@mysten/sui/transactions'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { createSuiGrpcCompatClient } from '../packages/soulidity-sdk/src/sui-grpc-compat'
@@ -26,20 +27,29 @@ import {
 } from './lib/reviewed-move-dependencies'
 import {
   assertCanonicalSigner,
-  assertDeploymentSnapshotUnchanged,
   assertExecutionConfirmation,
   assertLegacyAdminCap,
   assertLegacyMarketConfig,
   assertMainnetDeploymentRecord,
   assertMainnetRpc,
+  assertNoPendingMainnetMutationAttempt,
   assertSuccessfulEffects,
   assertUpgradeCap,
+  ambiguousMainnetMutationError,
   atomicPatchMainnetDeployment,
   atomicWriteText,
+  beginMainnetMutationAttempt,
+  clearMainnetMutationAttempt,
+  initializeMainnetMutationJournal,
+  type MainnetMutationAttempt,
   objectAddressOwner,
+  readMainnetMutationAttempt,
   readDeploymentSnapshot,
   SOULIDITY_MAINNET_CONFIRM_UPGRADE,
+  SOULIDITY_MAINNET_CONFIRM_INITIALIZE_JOURNAL,
+  submittedMainnetMutationError,
   transactionDigest,
+  updateMainnetMutationAttempt,
 } from './lib/soulidity-mainnet-migration'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -50,6 +60,8 @@ const DEFAULT_GAS_BUDGET = 1_500_000_000n
 
 export interface UpgradeArgs {
   execute: boolean
+  reconcileFromJournal: boolean
+  initializeMutationJournal: boolean
   confirm: string | null
   writeManifest: boolean
   privKeyEnv: string
@@ -74,6 +86,63 @@ type UpgradeResult = {
   }> | null
 }
 
+type MainnetClient = ReturnType<typeof createSuiGrpcCompatClient>
+
+interface UpgradeAttemptContext {
+  originalPackageId: string
+  currentPackageId: string
+  expectedCallablePackageId: string
+  upgradeCapId: string
+  legacyConfigId: string
+  legacyAdminCapId: string
+  previousUpgradeVersion: string
+  nextUpgradeVersion: string
+  writeManifest: boolean
+  toolchainVersion: string
+  priorManifestSha256: string
+  priorPublishedTomlSha256: string
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function contextString(
+  context: MainnetMutationAttempt['context'],
+  key: string,
+): string {
+  const value = context[key]
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Upgrade journal context.${key} is missing`)
+  }
+  return value.trim()
+}
+
+function upgradeAttemptContext(attempt: MainnetMutationAttempt): UpgradeAttemptContext {
+  if (attempt.operation !== 'upgrade') {
+    throw new Error(`Expected an upgrade journal; found ${attempt.operation}`)
+  }
+  return {
+    originalPackageId: normalizeSuiAddress(contextString(attempt.context, 'originalPackageId')),
+    currentPackageId: normalizeSuiAddress(contextString(attempt.context, 'currentPackageId')),
+    expectedCallablePackageId: normalizeSuiAddress(
+      contextString(attempt.context, 'expectedCallablePackageId'),
+    ),
+    upgradeCapId: normalizeSuiAddress(contextString(attempt.context, 'upgradeCapId')),
+    legacyConfigId: normalizeSuiAddress(contextString(attempt.context, 'legacyConfigId')),
+    legacyAdminCapId: normalizeSuiAddress(contextString(attempt.context, 'legacyAdminCapId')),
+    previousUpgradeVersion: contextString(attempt.context, 'previousUpgradeVersion'),
+    nextUpgradeVersion: contextString(attempt.context, 'nextUpgradeVersion'),
+    writeManifest: attempt.context.writeManifest === true,
+    toolchainVersion: contextString(attempt.context, 'toolchainVersion'),
+    priorManifestSha256: contextString(attempt.context, 'priorManifestSha256'),
+    priorPublishedTomlSha256: contextString(
+      attempt.context,
+      'priorPublishedTomlSha256',
+    ),
+  }
+}
+
 function valueFor(argv: string[], index: number, flag: string) {
   const argument = argv[index]
   if (argument === flag) {
@@ -95,6 +164,8 @@ export function parseUpgradeArgs(argv: string[]): UpgradeArgs {
   let dryRunRequested = false
   const parsed: UpgradeArgs = {
     execute: false,
+    reconcileFromJournal: false,
+    initializeMutationJournal: false,
     confirm: null,
     writeManifest: false,
     privKeyEnv: 'MAINNET_DEPLOYER_PRIV_KEY',
@@ -109,6 +180,14 @@ export function parseUpgradeArgs(argv: string[]): UpgradeArgs {
     }
     if (argument === '--execute') {
       parsed.execute = true
+      continue
+    }
+    if (argument === '--reconcile-from-journal') {
+      parsed.reconcileFromJournal = true
+      continue
+    }
+    if (argument === '--initialize-mutation-journal') {
+      parsed.initializeMutationJournal = true
       continue
     }
     if (argument === '--write-manifest' || argument === '--write-deployment-records') {
@@ -142,7 +221,9 @@ export function parseUpgradeArgs(argv: string[]): UpgradeArgs {
       throw new Error(
         'Usage: npm run upgrade:soulidity-mainnet -- [--dry-run] '
           + '[--execute --confirm=UPGRADE_SOULIDITY_MAINNET] '
-          + '[--write-manifest]',
+          + '[--write-manifest] | [--reconcile-from-journal] | '
+          + '[--initialize-mutation-journal '
+          + '--confirm=INITIALIZE_SOULIDITY_MAINNET_MUTATION_JOURNAL]',
       )
     }
     throw new Error(`Unknown argument: ${argument}`)
@@ -153,6 +234,40 @@ export function parseUpgradeArgs(argv: string[]): UpgradeArgs {
   }
   if (dryRunRequested && parsed.execute) {
     throw new Error('--dry-run and --execute are mutually exclusive')
+  }
+  if (parsed.reconcileFromJournal && (
+    parsed.execute
+    || dryRunRequested
+    || parsed.confirm !== null
+    || parsed.writeManifest
+    || parsed.privKeyEnv !== 'MAINNET_DEPLOYER_PRIV_KEY'
+    || parsed.gasBudget !== DEFAULT_GAS_BUDGET
+  )) {
+    throw new Error(
+      '--reconcile-from-journal is an isolated read-only-chain mode; remove all signing, '
+        + 'dry-run, key, gas, confirmation and manifest flags',
+    )
+  }
+  if (parsed.initializeMutationJournal && (
+    parsed.execute
+    || parsed.reconcileFromJournal
+    || dryRunRequested
+    || parsed.writeManifest
+    || parsed.privKeyEnv !== 'MAINNET_DEPLOYER_PRIV_KEY'
+    || parsed.gasBudget !== DEFAULT_GAS_BUDGET
+  )) {
+    throw new Error(
+      '--initialize-mutation-journal is an isolated local-state operation; remove all '
+        + 'execute, reconcile, dry-run, key, gas and manifest flags',
+    )
+  }
+  if (
+    parsed.initializeMutationJournal
+    && parsed.confirm !== SOULIDITY_MAINNET_CONFIRM_INITIALIZE_JOURNAL
+  ) {
+    throw new Error(
+      `Journal initialization requires --confirm=${SOULIDITY_MAINNET_CONFIRM_INITIALIZE_JOURNAL}`,
+    )
   }
   assertExecutionConfirmation(
     parsed.execute,
@@ -328,8 +443,220 @@ export function renderUpdatedPublishedToml(input: {
   return content.replace(sectionPattern, nextSection).replace(/\s+$/, '\n')
 }
 
+function assertUpgradeRecordIdentity(
+  attempt: MainnetMutationAttempt,
+  deployment: ReturnType<typeof assertMainnetDeploymentRecord>,
+): UpgradeAttemptContext {
+  const context = upgradeAttemptContext(attempt)
+  const checks: Array<[string, string, string]> = [
+    ['original package', deployment.originalPackageId, context.originalPackageId],
+    ['UpgradeCap', deployment.upgradeCapId, context.upgradeCapId],
+    ['legacy MarketConfig', deployment.legacyConfigId, context.legacyConfigId],
+    ['legacy MarketAdminCap', deployment.legacyAdminCapId, context.legacyAdminCapId],
+  ]
+  for (const [label, actual, expected] of checks) {
+    if (actual !== expected) {
+      throw new Error(`Upgrade journal ${label} ${expected} does not match local record ${actual}`)
+    }
+  }
+  return context
+}
+
+export function persistUpgradeRecordsFromAttempt(
+  attempt: MainnetMutationAttempt,
+  digest = attempt.digest,
+): void {
+  const snapshot = readDeploymentSnapshot()
+  const deployment = assertMainnetDeploymentRecord(snapshot.mainnet)
+  const context = assertUpgradeRecordIdentity(attempt, deployment)
+
+  if (deployment.callablePackageId === context.currentPackageId) {
+    if (sha256(snapshot.serializedMainnet) !== context.priorManifestSha256) {
+      throw new Error(
+        'deployment-manifest.json changed since the journal was prepared; refusing recovery write',
+      )
+    }
+    atomicPatchMainnetDeployment(snapshot, {
+      callablePackageId: context.expectedCallablePackageId,
+      // MarketConfigV6/MarketAdminCapV6 are introduced by this upgrade, so
+      // their immutable TypeOrigin is the finalized upgrade package.
+      marketConfigV6PackageId: context.expectedCallablePackageId,
+      upgradeTxDigest: digest,
+    })
+  } else if (deployment.callablePackageId === context.expectedCallablePackageId) {
+    if (deployment.marketConfigV6PackageId
+      && deployment.marketConfigV6PackageId !== context.expectedCallablePackageId) {
+      throw new Error(
+        `Local v6 market TypeOrigin ${deployment.marketConfigV6PackageId} conflicts with `
+          + `journal package ${context.expectedCallablePackageId}`,
+      )
+    }
+    if (snapshot.mainnet.upgradeTxDigest
+      && snapshot.mainnet.upgradeTxDigest !== digest) {
+      throw new Error(
+        `Local upgrade digest ${snapshot.mainnet.upgradeTxDigest} conflicts with journal ${digest}`,
+      )
+    }
+    if (
+      snapshot.mainnet.upgradeTxDigest !== digest
+      || snapshot.mainnet.marketConfigV6PackageId !== context.expectedCallablePackageId
+    ) {
+      const current = readDeploymentSnapshot()
+      atomicPatchMainnetDeployment(current, {
+        marketConfigV6PackageId: context.expectedCallablePackageId,
+        upgradeTxDigest: digest,
+      })
+    }
+  } else {
+    throw new Error(
+      `Local callable package ${deployment.callablePackageId} is neither journal prestate `
+        + `${context.currentPackageId} nor finalized package ${context.expectedCallablePackageId}`,
+    )
+  }
+
+  const publishedContent = readFileSync(publishedTomlPath, 'utf8')
+  if (publishedContent.includes(`published-at = "${context.currentPackageId}"`)) {
+    if (sha256(publishedContent) !== context.priorPublishedTomlSha256) {
+      throw new Error('Published.toml changed since the journal was prepared; refusing recovery write')
+    }
+    const nextPublishedToml = renderUpdatedPublishedToml({
+      content: publishedContent,
+      currentPackageId: context.currentPackageId,
+      callablePackageId: context.expectedCallablePackageId,
+      originalPackageId: context.originalPackageId,
+      upgradeCapId: context.upgradeCapId,
+      version: BigInt(context.nextUpgradeVersion),
+      toolchainVersion: context.toolchainVersion,
+    })
+    if (readFileSync(publishedTomlPath, 'utf8') !== publishedContent) {
+      throw new Error('Published.toml changed during recovery; refusing to overwrite it')
+    }
+    atomicWriteText(publishedTomlPath, nextPublishedToml)
+  } else {
+    const expectedLines = [
+      `published-at = "${context.expectedCallablePackageId}"`,
+      `original-id = "${context.originalPackageId}"`,
+      `version = ${context.nextUpgradeVersion}`,
+      `upgrade-capability = "${context.upgradeCapId}"`,
+    ]
+    if (!expectedLines.every((line) => publishedContent.includes(line))) {
+      throw new Error('Published.toml is neither the journal prestate nor the verified upgrade state')
+    }
+  }
+
+  const recordReadback = readDeploymentSnapshot().mainnet
+  if (
+    recordReadback.callablePackageId !== context.expectedCallablePackageId
+    || recordReadback.marketConfigV6PackageId !== context.expectedCallablePackageId
+    || recordReadback.upgradeTxDigest !== digest
+  ) {
+    throw new Error('Upgrade deployment record failed final readback')
+  }
+  const publishedReadback = readFileSync(publishedTomlPath, 'utf8')
+  if (!publishedReadback.includes(`published-at = "${context.expectedCallablePackageId}"`)) {
+    throw new Error('Published.toml failed final upgrade readback')
+  }
+}
+
+/**
+ * Read-only chain recovery for a previously signed upgrade. It never builds,
+ * signs or submits a transaction. The journal is cleared only after finalized
+ * effects, the UpgradeCap poststate and optional local records all read back.
+ */
+export async function reconcileUpgradeFromJournal(input: {
+  client: MainnetClient
+  attempt: MainnetMutationAttempt
+  journalPath?: string
+  persistRecords?: (attempt: MainnetMutationAttempt) => void
+}): Promise<{ digest: string; callablePackageId: string; version: string }> {
+  const { client, attempt, journalPath } = input
+  const context = upgradeAttemptContext(attempt)
+  await assertMainnetRpc(client)
+  const finalized = await client.getTransactionBlock({
+    digest: attempt.digest,
+    options: {
+      showEffects: true,
+      showEvents: true,
+      showObjectChanges: true,
+    },
+  })
+  assertSuccessfulEffects(finalized, 'Reconciled Soulidity mainnet upgrade')
+  const finalizedDigest = transactionDigest(finalized)
+  if (finalizedDigest !== attempt.digest) {
+    throw new Error(`Reconciled digest ${finalizedDigest} differs from journal ${attempt.digest}`)
+  }
+  const callablePackageId = extractUpgradedCallablePackageId(
+    finalized as UpgradeResult,
+    context.currentPackageId,
+  )
+  if (callablePackageId !== context.expectedCallablePackageId) {
+    throw new Error(
+      `Finalized callable package ${callablePackageId} differs from journal expectation `
+        + context.expectedCallablePackageId,
+    )
+  }
+  const upgradedCapResponse = await client.getObject({
+    id: context.upgradeCapId,
+    options: { showContent: true, showOwner: true, showType: true },
+  })
+  const upgradedCap = assertUpgradeCap(
+    upgradedCapResponse,
+    callablePackageId,
+    attempt.signerAddress,
+  )
+  if (upgradedCap.version.toString() !== context.nextUpgradeVersion) {
+    throw new Error(
+      `UpgradeCap version ${upgradedCap.version} differs from journal expectation `
+        + context.nextUpgradeVersion,
+    )
+  }
+
+  const verifiedAttempt = updateMainnetMutationAttempt(attempt, 'verified', journalPath)
+  if (context.writeManifest) {
+    const persistRecords = input.persistRecords ?? persistUpgradeRecordsFromAttempt
+    persistRecords(verifiedAttempt)
+  }
+  clearMainnetMutationAttempt(verifiedAttempt, journalPath)
+  return {
+    digest: attempt.digest,
+    callablePackageId,
+    version: upgradedCap.version.toString(),
+  }
+}
+
+async function runUpgradeReconcile(): Promise<void> {
+  const attempt = readMainnetMutationAttempt()
+  if (!attempt || attempt.operation !== 'upgrade') {
+    throw new Error('No upgrade attempt exists in the durable mainnet mutation journal')
+  }
+  const result = await reconcileUpgradeFromJournal({
+    client: createSuiGrpcCompatClient('mainnet'),
+    attempt,
+  })
+  console.log(JSON.stringify({
+    ok: true,
+    mode: 'upgrade-reconciled',
+    chainWrites: false,
+    ...result,
+  }, null, 2))
+}
+
 async function main() {
   const args = parseUpgradeArgs(process.argv.slice(2))
+  if (args.initializeMutationJournal) {
+    initializeMainnetMutationJournal(args.confirm)
+    console.log('Initialized private Soulidity mainnet mutation journal.')
+    return
+  }
+  if (args.reconcileFromJournal) {
+    await runUpgradeReconcile()
+    return
+  }
+  if (args.execute) {
+    // Fail before package compilation or key loading when an earlier signed
+    // mainnet mutation still needs read-only reconciliation.
+    assertNoPendingMainnetMutationAttempt()
+  }
   const snapshot = readDeploymentSnapshot()
   const publishedTomlSnapshot = readFileSync(publishedTomlPath, 'utf8')
   const deployment = assertMainnetDeploymentRecord(snapshot.mainnet)
@@ -440,80 +767,63 @@ async function main() {
 
     const signer = loadKeypairFromEnv(args.privKeyEnv)
     assertCanonicalSigner(signer.toSuiAddress(), capabilityOwner)
-    const execution = await client.signAndExecuteTransaction({
-      signer,
-      transaction: tx,
-      options: {
-        showEffects: true,
-        showEvents: true,
-        showObjectChanges: true,
-      },
-    })
-    assertSuccessfulEffects(execution, 'Soulidity mainnet upgrade')
-    const digest = transactionDigest(execution)
-    const finalized = await client.waitForTransaction({
+    const digest = TransactionDataBuilder.getDigestFromBytes(transactionBytes)
+    const { signature } = await signer.signTransaction(transactionBytes)
+    let attempt = beginMainnetMutationAttempt({
+      operation: 'upgrade',
+      signerAddress: capabilityOwner,
       digest,
-      options: {
-        showEffects: true,
-        showEvents: true,
-        showObjectChanges: true,
+      transactionBytesBase64: Buffer.from(transactionBytes).toString('base64'),
+      signature,
+      context: {
+        originalPackageId: deployment.originalPackageId,
+        currentPackageId: upgradeCap.packageId,
+        expectedCallablePackageId: simulatedCallablePackageId,
+        upgradeCapId: deployment.upgradeCapId,
+        legacyConfigId: deployment.legacyConfigId,
+        legacyAdminCapId: deployment.legacyAdminCapId,
+        previousUpgradeVersion: upgradeCap.version.toString(),
+        nextUpgradeVersion: (upgradeCap.version + 1n).toString(),
+        writeManifest: args.writeManifest,
+        toolchainVersion: toolchainVersion(suiBin),
+        priorManifestSha256: sha256(snapshot.serializedMainnet),
+        priorPublishedTomlSha256: sha256(publishedTomlSnapshot),
       },
     })
-    assertSuccessfulEffects(finalized, 'Finalized Soulidity mainnet upgrade')
-    const callablePackageId = extractUpgradedCallablePackageId(
-      finalized as UpgradeResult,
-      upgradeCap.packageId,
-    )
-    if (callablePackageId !== simulatedCallablePackageId) {
-      throw new Error(
-        `Executed callable package ${callablePackageId} differs from simulation ${simulatedCallablePackageId}`,
-      )
-    }
 
-    const upgradedCapResponse = await client.getObject({
-      id: deployment.upgradeCapId,
-      options: { showContent: true, showOwner: true, showType: true },
-    })
-    const upgradedCap = assertUpgradeCap(
-      upgradedCapResponse,
-      callablePackageId,
-      capabilityOwner,
-    )
-    if (upgradedCap.version !== upgradeCap.version + 1n) {
-      throw new Error(
-        `UpgradeCap version is ${upgradedCap.version}; expected ${upgradeCap.version + 1n}`,
-      )
-    }
-
-    let recordsWritten = false
-    if (args.writeManifest) {
-      const patch = {
-        callablePackageId,
-        upgradeTxDigest: digest,
-      }
-
-      // Validate both source records before writing either one. If the process
-      // stops between the two atomic renames, the runtime manifest is written
-      // first so production routes point at the finalized on-chain package;
-      // Published.toml is build metadata and can then be recovered safely.
-      if (readFileSync(publishedTomlPath, 'utf8') !== publishedTomlSnapshot) {
-        throw new Error(
-          'Published.toml changed during the chain operation; refusing to overwrite it.',
-        )
-      }
-      const nextPublishedToml = renderUpdatedPublishedToml({
-        content: publishedTomlSnapshot,
-        currentPackageId: upgradeCap.packageId,
-        callablePackageId,
-        originalPackageId: deployment.originalPackageId,
-        upgradeCapId: deployment.upgradeCapId,
-        version: upgradedCap.version,
-        toolchainVersion: toolchainVersion(suiBin),
+    let execution
+    try {
+      execution = await client.executeTransactionBlock({
+        transactionBlock: transactionBytes,
+        signature,
+        options: {
+          showEffects: true,
+          showEvents: true,
+          showObjectChanges: true,
+        },
       })
-      assertDeploymentSnapshotUnchanged(snapshot)
-      atomicPatchMainnetDeployment(snapshot, patch)
-      atomicWriteText(publishedTomlPath, nextPublishedToml)
-      recordsWritten = true
+    } catch (error) {
+      throw ambiguousMainnetMutationError('Soulidity mainnet upgrade', attempt, error)
+    }
+
+    let reconciled: Awaited<ReturnType<typeof reconcileUpgradeFromJournal>>
+    try {
+      const returnedDigest = transactionDigest(execution)
+      if (returnedDigest !== digest) {
+        throw new Error(`Submission returned digest ${returnedDigest}; expected ${digest}`)
+      }
+      attempt = updateMainnetMutationAttempt(attempt, 'submitted')
+      await client.waitForTransaction({
+        digest,
+        options: {
+          showEffects: true,
+          showEvents: true,
+          showObjectChanges: true,
+        },
+      })
+      reconciled = await reconcileUpgradeFromJournal({ client, attempt })
+    } catch (error) {
+      throw submittedMainnetMutationError('Soulidity mainnet upgrade', attempt, error)
     }
 
     console.log(JSON.stringify({
@@ -521,11 +831,11 @@ async function main() {
       mode: 'executed',
       digest,
       currentPackageId: upgradeCap.packageId,
-      callablePackageId,
+      callablePackageId: reconciled.callablePackageId,
       upgradeCapId: deployment.upgradeCapId,
-      upgradeCapVersion: upgradedCap.version.toString(),
+      upgradeCapVersion: reconciled.version,
       legacyConfigPaused: true,
-      recordsWritten,
+      recordsWritten: args.writeManifest,
       manifestPath: snapshot.path,
       publishedTomlPath,
     }, null, 2))

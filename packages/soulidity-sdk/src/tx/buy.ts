@@ -34,20 +34,21 @@ export function buildBuySoulTx(params: {
   buyerKioskCapOnChainId?: string | null
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const buyerKiosk = buildBuyerKioskArgs(tx, {
     buyerKioskId: params.buyerKioskId,
     buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
+    registrationMarket: 'secondary-v6',
   })
   const paymentCoin = buildExactPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
 
   tx.moveCall({
     target: params.collectionObjectId
-      ? `${packageId}::market::buy_soul_fixed_price_with_collection_v2`
-      : `${packageId}::market::buy_soul_fixed_price_v2`,
+      ? `${packageId}::market::buy_soul_fixed_price_with_collection_v6`
+      : `${packageId}::market::buy_soul_fixed_price_v6`,
     arguments: params.collectionObjectId
       ? [
           tx.object(marketConfigId),
@@ -88,18 +89,19 @@ export function buildBuyCollectionTx(params: {
   buyerKioskCapOnChainId?: string | null
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const collectionPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID')
   const tx = new Transaction()
   const buyerKiosk = buildBuyerKioskArgs(tx, {
     buyerKioskId: params.buyerKioskId,
     buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
+    registrationMarket: 'secondary-v6',
   })
   const paymentCoin = buildExactPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
 
   tx.moveCall({
-    target: `${packageId}::market::buy_collection_right_fixed_price_v2`,
+    target: `${packageId}::market::buy_collection_right_fixed_price_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

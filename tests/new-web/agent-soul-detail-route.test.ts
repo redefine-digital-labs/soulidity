@@ -12,7 +12,7 @@ const mockedFindSoul = vi.hoisted(() => vi.fn())
 const mockedToDetail = vi.hoisted(() => vi.fn())
 const mockedGetEnv = vi.hoisted(() => vi.fn())
 const mockedGetConfig = vi.hoisted(() => vi.fn())
-const mockedGetAnimacraftConfig = vi.hoisted(() => vi.fn())
+const mockedGetSecondaryConfig = vi.hoisted(() => vi.fn())
 const mockedGetProvenance = vi.hoisted(() => vi.fn())
 const mockedGetSoulListing = vi.hoisted(() => vi.fn())
 const mockedQuoteAnimacraft = vi.hoisted(() => vi.fn())
@@ -33,7 +33,7 @@ vi.mock('@soulidity/sdk', async (importOriginal) => {
     ...actual,
     getRequiredSoulidityEnv: mockedGetEnv,
     getCachedMarketConfig: mockedGetConfig,
-    getMarketConfigV2: mockedGetAnimacraftConfig,
+    getMarketConfigV6: mockedGetSecondaryConfig,
     getAnimacraftProvenanceForState: mockedGetProvenance,
     getSoulListingObject: mockedGetSoulListing,
     quoteAnimacraftSoulPurchase: mockedQuoteAnimacraft,
@@ -52,7 +52,7 @@ describe('GET /api/agent/souls/[id]', () => {
     })
     mockedTakeRateLimitToken.mockResolvedValue({ limited: false, retryAfterSeconds: 60 })
     mockedGetEnv.mockImplementation((name: string) => {
-      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID') {
+      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID') {
         return `0x${'6'.repeat(64)}`
       }
       if (name.includes('MARKET_CONFIG')) return `0x${'8'.repeat(64)}`
@@ -62,9 +62,8 @@ describe('GET /api/agent/souls/[id]', () => {
       return `0x${'7'.repeat(64)}`
     })
     mockedGetConfig.mockResolvedValue({ platformFeeBps: 250 })
-    mockedGetAnimacraftConfig.mockResolvedValue({
+    mockedGetSecondaryConfig.mockResolvedValue({
       platformFeeBps: 250,
-      primaryEnabled: true,
       secondaryEnabled: true,
     })
     mockedToDetail.mockImplementation((_soul, params) => params)
@@ -103,7 +102,7 @@ describe('GET /api/agent/souls/[id]', () => {
 
     expect(response.status).toBe(200)
     expect(mockedQuoteSoul).not.toHaveBeenCalled()
-    expect(mockedGetAnimacraftConfig).toHaveBeenCalledWith(
+    expect(mockedGetSecondaryConfig).toHaveBeenCalledWith(
       `0x${'8'.repeat(64)}`,
       `0x${'6'.repeat(64)}`,
     )

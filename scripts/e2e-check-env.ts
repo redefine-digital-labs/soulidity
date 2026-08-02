@@ -348,6 +348,9 @@ function main() {
       'marketConfigV2PackageId',
       'marketConfigV2Id',
       'marketAdminCapV2Id',
+      'marketConfigV6PackageId',
+      'marketConfigV6Id',
+      'marketAdminCapV6Id',
     ] as const
     for (const key of required) {
       const value = manifest[key]
@@ -380,10 +383,18 @@ function main() {
         'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
         'marketConfigV2PackageId',
       ],
+      [
+        'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID',
+        'marketConfigV6PackageId',
+      ],
       ['NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID', 'marketConfigId'],
       [
         'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
         'marketConfigV2Id',
+      ],
+      [
+        'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID',
+        'marketConfigV6Id',
       ],
       ['NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID', 'kioskRegistryId'],
       ['NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', 'kindRegistryId'],

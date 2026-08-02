@@ -44,6 +44,9 @@ export interface SoulidityDeployment {
   marketConfigV2PackageId?: string
   marketConfigV2Id?: string
   marketAdminCapV2Id?: string
+  marketConfigV6PackageId?: string
+  marketConfigV6Id?: string
+  marketAdminCapV6Id?: string
   kioskRegistryId: string
   kindRegistryId?: string
   soulTransferPolicyId: string
@@ -733,6 +736,9 @@ export function extractDeploymentFromPublishResult(
     // that TypeOrigin so post-upgrade object/event matching does not
     // incorrectly use the v6 callable package.
     marketConfigV2PackageId: packageId,
+    // A fresh v6 family defines the isolated secondary-market types in the
+    // original package even though their shared objects are created later.
+    marketConfigV6PackageId: packageId,
     kioskRegistryId,
     kindRegistryId,
     soulTransferPolicyId,

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
-  getMarketConfigV2,
+  getMarketConfigV6,
   getAnimacraftProvenanceForState,
   getSoulListingObject,
   getRequiredSoulidityEnv,
@@ -57,9 +57,9 @@ export async function GET(
     if (soul.listingStatus === 'listed' && listedPrice != null && listedPrice > 0n) {
       if (soul.provenanceKind === 'animacraft') {
         if (!animacraftProvenance) throw new Error('Animacraft provenance is unavailable')
-        const config = await getMarketConfigV2(
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+        const config = await getMarketConfigV6(
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
         )
         platformFeeBps = config.platformFeeBps
         if (animacraftProvenance.animacraftVersion === 5) {
@@ -113,9 +113,9 @@ export async function GET(
           }
         }
       } else {
-        const config = await getMarketConfigV2(
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+        const config = await getMarketConfigV6(
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
         )
         platformFeeBps = config.platformFeeBps
         quote = {

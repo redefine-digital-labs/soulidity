@@ -298,6 +298,7 @@ const readbackDeployment = {
   packageId: READBACK_PACKAGE,
   marketConfigId: '0x21',
   marketConfigV2PackageId: READBACK_PACKAGE,
+  marketConfigV6PackageId: READBACK_PACKAGE,
   kioskRegistryId: '0x22',
   kindRegistryId: '0x23',
   soulTransferPolicyId: '0x24',

@@ -1,4 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -38,6 +44,8 @@ function writeEnvFile(extra: Record<string, string>) {
     NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
     NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
     NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID: `0x${'8'.repeat(64)}`,
     NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: REQUIRED_HISTORICAL_SEAL_ROUTES,
     NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED: 'false',
     NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED: 'false',
@@ -69,6 +77,39 @@ function writeDeploymentHistory(entries: unknown[]) {
   const path = join(dir, 'deployment-manifest-history.json')
   writeFileSync(path, JSON.stringify(entries))
   return path
+}
+
+function runApplyWithFakeVercel(envFile: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'fake-vercel-cli-'))
+  tempDirs.push(dir)
+  const capturePath = join(dir, 'calls.jsonl')
+  const npxPath = join(dir, 'npx')
+  writeFileSync(npxPath, `#!/usr/bin/env node
+const fs = require('node:fs')
+fs.readFileSync(0, 'utf8')
+fs.appendFileSync(process.env.VERCEL_CALL_CAPTURE, JSON.stringify(process.argv.slice(2)) + '\\n')
+`)
+  chmodSync(npxPath, 0o755)
+  const result = spawnSync(process.execPath, [
+    '--import',
+    'tsx',
+    SCRIPT,
+    '--apply',
+    '--env-file',
+    envFile,
+  ], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${dir}:${process.env.PATH ?? ''}`,
+      VERCEL_CALL_CAPTURE: capturePath,
+    },
+  })
+  const calls = result.status === 0
+    ? readFileSync(capturePath, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as string[])
+    : []
+  return { result, calls }
 }
 
 afterEach(() => {
@@ -509,4 +550,23 @@ describe('Vercel production env sync guardrails', () => {
       )
     },
   )
+
+  it('passes explicit Vercel CLI 56 sensitivity flags for public and secret keys', () => {
+    const envFile = writeEnvFile({
+      ...productionSupportEnv,
+      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
+    })
+    const { result, calls } = runApplyWithFakeVercel(envFile)
+    expect(result.status, result.stderr).toBe(0)
+
+    const publicCall = calls.find((args) =>
+      args.slice(0, 4).join(' ') === 'vercel env add NEXT_PUBLIC_SUI_NETWORK')
+    expect(publicCall).toContain('--no-sensitive')
+    expect(publicCall).not.toContain('--sensitive')
+
+    const secretCall = calls.find((args) =>
+      args.slice(0, 4).join(' ') === 'vercel env add AUTH_SECRET')
+    expect(secretCall).toContain('--sensitive')
+    expect(secretCall).not.toContain('--no-sensitive')
+  })
 })

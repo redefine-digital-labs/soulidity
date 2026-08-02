@@ -16,6 +16,9 @@ export function buildUpdateListingPriceTx(params: {
     throw new Error('newPriceAtomic must be positive')
   }
   const isAnimacraftV5 = params.animacraftVersion === 5
+  if (params.animacraftVersion === 6) {
+    throw new Error('Animacraft v6 listing price updates are disabled; cancel the v6 listing and create a fresh one')
+  }
   if (params.animacraftVersion != null && params.animacraftVersion !== 4 && !isAnimacraftV5) {
     throw new Error(`Unsupported Animacraft protocol version ${params.animacraftVersion}`)
   }
@@ -28,7 +31,7 @@ export function buildUpdateListingPriceTx(params: {
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const isAnimacraft = Boolean(params.animacraftProvenanceObjectId)
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const tx = new Transaction()
 
@@ -45,7 +48,7 @@ export function buildUpdateListingPriceTx(params: {
 
   // Step 2: Repair stale market registry bindings before relisting.
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -57,7 +60,7 @@ export function buildUpdateListingPriceTx(params: {
   let listing: ReturnType<Transaction['moveCall']>
   if (isAnimacraftV5) {
     listing = tx.moveCall({
-      target: `${packageId}::market::list_animacraft_v5_soul_fixed_price_v2`,
+      target: `${packageId}::market::list_animacraft_v5_soul_fixed_price_v6`,
       arguments: [
         tx.object(marketConfigId),
         tx.object(kioskRegistryId),
@@ -71,7 +74,7 @@ export function buildUpdateListingPriceTx(params: {
   } else if (params.animacraftProvenanceObjectId) {
     listing = params.collectionObjectId
       ? tx.moveCall({
-          target: `${packageId}::market::list_animacraft_soul_fixed_price_with_collection_v2`,
+          target: `${packageId}::market::list_animacraft_soul_fixed_price_with_collection_v6`,
           arguments: [
             tx.object(marketConfigId),
             tx.object(kioskRegistryId),
@@ -84,7 +87,7 @@ export function buildUpdateListingPriceTx(params: {
           ],
         })
       : tx.moveCall({
-          target: `${packageId}::market::list_animacraft_soul_fixed_price_v2`,
+          target: `${packageId}::market::list_animacraft_soul_fixed_price_v6`,
           arguments: [
             tx.object(marketConfigId),
             tx.object(kioskRegistryId),
@@ -98,7 +101,7 @@ export function buildUpdateListingPriceTx(params: {
   } else {
     listing = params.collectionObjectId
       ? tx.moveCall({
-          target: `${packageId}::market::list_soul_fixed_price_with_collection_v2`,
+          target: `${packageId}::market::list_soul_fixed_price_with_collection_v6`,
           arguments: [
             tx.object(marketConfigId),
             tx.object(kioskRegistryId),
@@ -110,7 +113,7 @@ export function buildUpdateListingPriceTx(params: {
           ],
         })
       : tx.moveCall({
-          target: `${packageId}::market::list_soul_fixed_price_v2`,
+          target: `${packageId}::market::list_soul_fixed_price_v6`,
           arguments: [
             tx.object(marketConfigId),
             tx.object(kioskRegistryId),

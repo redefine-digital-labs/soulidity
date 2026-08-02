@@ -1,13 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import type { SoulAssetDetail } from '@soulidity/sdk'
-import { assertObjectInputsExist } from '@soulidity/sdk'
-import { buildListAnimacraftV5SoulTx, buildListSoulTx } from '@soulidity/sdk'
+import type { AnimacraftV6SecondaryContext, SoulAssetDetail } from '@soulidity/sdk'
+import { assertObjectInputsExist, getAnimacraftAppearanceV6Id } from '@soulidity/sdk'
+import { buildListAnimacraftV5SoulTx, buildListAnimacraftV6SoulTx, buildListSoulTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
 export type ListStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
+
+type SoulWithV6SecondaryContext = SoulAssetDetail & {
+  animacraftV6SecondaryContext?: AnimacraftV6SecondaryContext | null
+}
 
 export function useListSoul(soul: SoulAssetDetail | null) {
   const [status, setStatus] = useState<ListStatus>('idle')
@@ -58,6 +62,11 @@ export function useListSoul(soul: SoulAssetDetail | null) {
       }
       const animacraftVersion = soul.animacraftProvenance?.animacraftVersion
       const isAnimacraftV5 = animacraftVersion === 5
+      const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
+      const v6Context = (soul as SoulWithV6SecondaryContext).animacraftV6SecondaryContext ?? null
+      if (appearanceV6Id && (!v6Context || v6Context.appearanceObjectId !== appearanceV6Id)) {
+        throw new Error('Animacraft v6 appearance is bound, but its verified Maker loadout context is unavailable; listing is blocked')
+      }
       if (
         soul.provenanceKind === 'animacraft'
         && animacraftVersion !== 4
@@ -78,9 +87,24 @@ export function useListSoul(soul: SoulAssetDetail | null) {
         Soul: soul.onChainId,
         Collection: soul.collectionOnChainId,
         'Animacraft provenance': soul.animacraftProvenance?.objectId ?? null,
+        'Animacraft v6 appearance': appearanceV6Id,
+        'Animacraft v6 composition registry': v6Context?.compositionRegistryObjectId ?? null,
+        'Animacraft v6 composition config': v6Context?.compositionConfigObjectId ?? null,
+        'Animacraft v6 commerce config': v6Context?.commerceConfigObjectId ?? null,
+        'Animacraft v6 Maker profile': v6Context?.makerProfileObjectId ?? null,
+        'Animacraft v6 Maker root': v6Context?.makerRootObjectId ?? null,
       })
 
-      const tx = isAnimacraftV5
+      const tx = appearanceV6Id
+        ? buildListAnimacraftV6SoulTx({
+            currentKioskId: soulKioskId,
+            currentKioskCapOnChainId: soulKioskCapId,
+            stateObjectId: soul.stateOnChainId,
+            provenanceObjectId: soul.animacraftProvenance!.objectId,
+            priceAtomic,
+            v6: v6Context!,
+          })
+        : isAnimacraftV5
         ? buildListAnimacraftV5SoulTx({
             currentKioskId: soulKioskId,
             currentKioskCapOnChainId: soulKioskCapId,

@@ -81,6 +81,17 @@ export interface SoulidityMarketConfigV2 {
   secondaryEnabled: boolean
 }
 
+/** Isolated secondary-market policy introduced by Soulidity v6. */
+export interface SoulidityMarketConfigV6 {
+  objectId: string
+  packageId: string
+  configV2Id: string
+  legacyConfigId: string
+  feeRecipient: string
+  platformFeeBps: number
+  secondaryEnabled: boolean
+}
+
 export interface SoulObject {
   objectId: string
   packageId: string
@@ -123,6 +134,8 @@ export interface SoulStateObject {
   paidAccessListId: string | null
   collectionId: string | null
   isListed: boolean
+  /** SoulAppearanceStateV6 bound through the SoulState dynamic-field key u8=3. */
+  animacraftAppearanceV6Id: string | null
 }
 
 /**

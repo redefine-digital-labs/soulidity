@@ -241,9 +241,23 @@ export function validateInitialStateConfigEntries(
 export function buildBuyerKioskArgs(tx: Transaction, params: {
   buyerKioskId?: string | null
   buyerKioskCapOnChainId?: string | null
+  /**
+   * Primary mint/content flows stay on the recoverable MarketConfigV2 gate.
+   * Every secondary-market flow must opt into MarketConfigV6 so immutable v2
+   * bytecode can never re-enable or authorize a resale after retirement.
+   */
+  registrationMarket?: 'primary-v2' | 'secondary-v6'
 }) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const registrationMarket = params.registrationMarket ?? 'primary-v2'
+  const marketConfigId = getRequiredSoulidityEnv(
+    registrationMarket === 'secondary-v6'
+      ? 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'
+      : 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+  )
+  const ensureRegistrationTarget = registrationMarket === 'secondary-v6'
+    ? `${packageId}::market::ensure_personal_kiosk_registered_v6`
+    : `${packageId}::market::ensure_personal_kiosk_registered_v2`
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const kioskPackageId = getKioskPackageAddress()
   const buyerKioskId = params.buyerKioskId?.trim()
@@ -255,7 +269,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
 
   if (buyerKioskId && buyerKioskCapOnChainId) {
     tx.moveCall({
-      target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
+      target: ensureRegistrationTarget,
       arguments: [
         tx.object(marketConfigId),
         tx.object(kioskRegistryId),
@@ -281,7 +295,7 @@ export function buildBuyerKioskArgs(tx: Transaction, params: {
   })
 
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
+    target: ensureRegistrationTarget,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

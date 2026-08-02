@@ -102,4 +102,36 @@ describe('sell flow regression guards', () => {
     expect(source).toContain('currentKioskId: soulKioskId')
     expect(source).toContain('currentKioskCapOnChainId: soulKioskCapId')
   })
+
+  it('routes v6 listing recovery through the appearance-bound cancellation path', () => {
+    const modalSource = readSource('web/components/souls/listing-modals.tsx')
+    const routeSource = readSource('web/app/api/souls/[id]/delist/route.ts')
+
+    expect(modalSource).toContain('getAnimacraftAppearanceV6Id(soul.stateOnChainId)')
+    expect(modalSource).toContain('buildDelistAnimacraftV6SoulTx')
+    expect(modalSource).toContain('appearanceObjectId: appearanceV6Id')
+    expect(modalSource).toContain('Animacraft v6 listings cannot be repriced in place')
+
+    expect(routeSource).toContain('extractSoulListingCancelledEvent')
+    expect(routeSource).toContain('extractAnimacraftV6SoulListingCancelledEvent')
+    expect(routeSource).toContain('getAnimacraftAppearanceV6Id(soul.stateOnChainId)')
+    expect(routeSource).toContain('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID')
+    expect(routeSource).toContain('transaction,\n        v6EventPackageId')
+    expect(routeSource).toContain('v6Cancelled.listingId !== cancelled.listingId')
+  })
+
+  it('quotes every secondary sale from MarketConfigV6', () => {
+    const sources = [
+      readSource('web/app/api/agent/souls/[id]/purchase/route.ts'),
+      readSource('web/app/api/agent/souls/[id]/route.ts'),
+      readSource('web/app/api/souls/[id]/route.ts'),
+    ]
+
+    for (const source of sources) {
+      expect(source).toContain('getMarketConfigV6')
+      expect(source).toContain('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
+      expect(source).not.toContain('getMarketConfigV2')
+      expect(source).not.toContain('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+    }
+  })
 })

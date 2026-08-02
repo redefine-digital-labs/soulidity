@@ -118,9 +118,9 @@ function appendListSoulFixedPriceCall(
   priceAtomic: bigint | number,
 ) {
   return tx.moveCall({
-    target: `${env.packageId}::market::list_soul_fixed_price_v2`,
+    target: `${env.packageId}::market::list_soul_fixed_price_v6`,
     arguments: [
-      tx.object(env.marketConfigId),
+      tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')),
       tx.object(env.kioskRegistryId),
       personalKiosk.buyerKiosk,
       personalKiosk.buyerKioskCap,
@@ -139,9 +139,9 @@ function appendListSoulFixedPriceWithCollectionCall(
   priceAtomic: bigint | number,
 ) {
   return tx.moveCall({
-    target: `${env.packageId}::market::list_soul_fixed_price_with_collection_v2`,
+    target: `${env.packageId}::market::list_soul_fixed_price_with_collection_v6`,
     arguments: [
-      tx.object(env.marketConfigId),
+      tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')),
       tx.object(env.kioskRegistryId),
       tx.object(collectionId),
       personalKiosk.buyerKiosk,

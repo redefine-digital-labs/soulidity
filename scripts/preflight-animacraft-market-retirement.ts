@@ -6,15 +6,12 @@ import {
   assertLegacyMarketConfig,
   assertMainnetDeploymentRecord,
   assertMainnetRpc,
-  assertObjectAddressOwner,
-  assertObjectShared,
   assertUpgradeCap,
-  moveFields,
   objectAddressOwner,
-  objectIdFromMoveField,
   readDeploymentSnapshot,
   requiredAddress,
 } from './lib/soulidity-mainnet-migration'
+import { verifyRetiredState } from './retire-soulidity-legacy-market'
 
 interface PostflightArgs {
   expectSecondaryEnabled: boolean
@@ -95,6 +92,10 @@ async function main() {
   }
   const animacraftProvenancePackageId = deployment.animacraftProvenancePackageId
   const marketConfigV2PackageId = deployment.marketConfigV2PackageId
+  const marketConfigV6PackageId = requiredAddress(
+    deployment.marketConfigV6PackageId ?? snapshot.mainnet.marketConfigV6PackageId,
+    'mainnet.marketConfigV6PackageId',
+  )
   const successorConfigId = requiredAddress(
     process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID
       ?? snapshot.mainnet.marketConfigV2Id,
@@ -103,6 +104,15 @@ async function main() {
   const successorAdminCapId = requiredAddress(
     snapshot.mainnet.marketAdminCapV2Id,
     'mainnet.marketAdminCapV2Id',
+  )
+  const successorConfigV6Id = requiredAddress(
+    process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID
+      ?? snapshot.mainnet.marketConfigV6Id,
+    'mainnet.marketConfigV6Id',
+  )
+  const successorAdminCapV6Id = requiredAddress(
+    snapshot.mainnet.marketAdminCapV6Id,
+    'mainnet.marketAdminCapV6Id',
   )
   const kioskRegistryId = requiredAddress(
     snapshot.mainnet.kioskRegistryId,
@@ -116,12 +126,11 @@ async function main() {
     upgradeCap,
     legacyConfig,
     legacyAdmin,
-    successorConfig,
-    successorAdmin,
     originalListAbi,
     originalBuyAbi,
     provenanceStruct,
     configV2Struct,
+    configV6Struct,
   ] = await Promise.all([
     client.getObject({
       id: deployment.upgradeCapId,
@@ -134,14 +143,6 @@ async function main() {
     client.getObject({
       id: deployment.legacyAdminCapId,
       options: { showOwner: true, showType: true },
-    }),
-    client.getObject({
-      id: successorConfigId,
-      options: { showContent: true, showOwner: true, showType: true },
-    }),
-    client.getObject({
-      id: successorAdminCapId,
-      options: { showContent: true, showOwner: true, showType: true },
     }),
     client.getNormalizedMoveFunction({
       package: deployment.originalPackageId,
@@ -162,6 +163,11 @@ async function main() {
       package: marketConfigV2PackageId,
       module: 'market',
       struct: 'MarketConfigV2',
+    }),
+    client.getNormalizedMoveStruct({
+      package: marketConfigV6PackageId,
+      module: 'market',
+      struct: 'MarketConfigV6',
     }),
   ])
 
@@ -193,52 +199,23 @@ async function main() {
   if (!configV2Struct || typeof configV2Struct !== 'object') {
     throw new Error('MarketConfigV2 TypeOrigin struct is unavailable')
   }
-
-  const successorType =
-    `${marketConfigV2PackageId}::market::MarketConfigV2`
-  const successorFields = moveFields(
-    successorConfig,
-    successorType,
-    'MarketConfigV2',
-  )
-  assertObjectShared(successorConfig, 'MarketConfigV2')
-  if (objectIdFromMoveField(
-    successorFields.legacy_config_id,
-    'MarketConfigV2.legacy_config_id',
-  ) !== deployment.legacyConfigId) {
-    throw new Error('Successor config is not bound to the canonical legacy MarketConfig')
+  if (!configV6Struct || typeof configV6Struct !== 'object') {
+    throw new Error('MarketConfigV6 TypeOrigin struct is unavailable')
   }
-  if (String(successorFields.version) !== '2') {
-    throw new Error(`MarketConfigV2.version is ${String(successorFields.version)}; expected 2`)
-  }
-  if (successorFields.primary_enabled !== false) {
-    throw new Error('Unified MarketConfigV2 primary gate must remain disabled')
-  }
-  if (successorFields.secondary_enabled !== args.expectSecondaryEnabled) {
-    throw new Error(
-      `Unified MarketConfigV2 secondary gate is ${String(successorFields.secondary_enabled)}; `
-        + `expected ${String(args.expectSecondaryEnabled)}`,
-    )
-  }
-
-  const successorAdminType =
-    `${marketConfigV2PackageId}::market::MarketAdminCapV2`
-  const successorAdminFields = moveFields(
-    successorAdmin,
-    successorAdminType,
-    'MarketAdminCapV2',
-  )
-  assertObjectAddressOwner(
-    successorAdmin,
-    capabilityOwner,
-    'MarketAdminCapV2',
-  )
-  if (objectIdFromMoveField(
-    successorAdminFields.config_id,
-    'MarketAdminCapV2.config_id',
-  ) !== successorConfigId) {
-    throw new Error('MarketAdminCapV2 does not control the canonical successor config')
-  }
+  await verifyRetiredState(client, {
+    originalPackageId: deployment.originalPackageId,
+    marketConfigV2PackageId,
+    marketConfigV6PackageId,
+    legacyConfigId: deployment.legacyConfigId,
+    legacyAdminCapId: deployment.legacyAdminCapId,
+    ids: {
+      marketConfigV2Id: successorConfigId,
+      marketAdminCapV2Id: successorAdminCapId,
+      marketConfigV6Id: successorConfigV6Id,
+      marketAdminCapV6Id: successorAdminCapV6Id,
+    },
+    adminOwner: capabilityOwner,
+  })
 
   // A production list/buy fixture cannot be fabricated safely by a read-only
   // script. Instead, exercise an original-package function whose first guard
@@ -266,13 +243,17 @@ async function main() {
     originalPackageId: deployment.originalPackageId,
     animacraftProvenancePackageId,
     marketConfigV2PackageId,
+    marketConfigV6PackageId,
     legacyConfigId: deployment.legacyConfigId,
     legacyConfigPaused: true,
     legacyAdminCapDeleted: true,
     successorConfigId,
     successorAdminCapId,
+    successorConfigV6Id,
+    successorAdminCapV6Id,
     primaryEnabled: false,
-    secondaryEnabled: args.expectSecondaryEnabled,
+    v2SecondaryEnabled: false,
+    v6SecondaryEnabled: args.expectSecondaryEnabled,
     successorCrossReferencesVerified: true,
     immutableOriginalAbiVerified: [
       'market::list_soul_fixed_price(&MarketConfig, ...)',
