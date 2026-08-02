@@ -11,6 +11,8 @@ const PRODUCTION_ENV_ALLOWLIST = [
   'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
+  'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID',
   'NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES',
   'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
   'NEXT_PUBLIC_ANIMACRAFT_APP_URL',
@@ -360,6 +362,7 @@ function assertProductionEnv(
     'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID',
     'NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID',
     'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
+    'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID',
   ] as const
   const configuredSoulidityRouting = soulidityRoutingKeys
     .filter((key) => Boolean(env[key]?.trim()))
@@ -375,6 +378,18 @@ function assertProductionEnv(
     if (!normalizeNonZeroSuiId(env[key]!.trim())) {
       errors.push(`${key} must be a valid non-zero Sui package ID`)
     }
+  }
+  const v6ConfigPackage = env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID?.trim()
+  const v6ConfigId = env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID?.trim()
+  if (Boolean(v6ConfigPackage) !== Boolean(v6ConfigId)) {
+    errors.push(
+      'V6 secondary-market routing must set both '
+        + 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID and '
+        + 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID',
+    )
+  }
+  if (v6ConfigId && !normalizeNonZeroSuiId(v6ConfigId)) {
+    errors.push('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID must be a valid non-zero Sui object ID')
   }
 
   const sealRoutesRaw = env.NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES?.trim()
@@ -598,7 +613,10 @@ function syncEnvVar(key: string, value: string) {
     'production',
     '--force',
     '--yes',
-    ...(isSensitiveKey(key) ? ['--sensitive'] : []),
+    // Vercel CLI 56 defaults non-interactive env writes to Sensitive. Public
+    // browser configuration must opt out explicitly or later pull/readback is
+    // impossible. Server-only values stay explicitly sensitive.
+    ...(isSensitiveKey(key) ? ['--sensitive'] : ['--no-sensitive']),
   ]
   const result = spawnSync('npx', args, {
     input: value,

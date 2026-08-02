@@ -26,6 +26,7 @@ import type {
   SoulStateObject,
   SoulidityMarketConfig,
   SoulidityMarketConfigV2,
+  SoulidityMarketConfigV6,
 } from './types'
 
 export { getPersonalKioskCapTypePackageAddress } from './kiosk'
@@ -767,6 +768,43 @@ export async function getMarketConfigV2(
   }
 }
 
+export async function getMarketConfigV6(
+  configId: string,
+  packageId: string,
+): Promise<SoulidityMarketConfigV6> {
+  const response = await suiClient.getObject({
+    id: configId,
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  })
+  const expectedTypePrefix = `${normalizePackageId(packageId)}::market::MarketConfigV6`
+  const { fields, packageId: resolvedPackageId } =
+    expectMoveObject(response, configId, expectedTypePrefix)
+  return {
+    objectId: configId,
+    packageId: resolvedPackageId,
+    configV2Id: readObjectId(
+      fields.config_v2_id,
+      'MarketConfigV6 config_v2_id',
+    ),
+    legacyConfigId: readObjectId(
+      fields.legacy_config_id,
+      'MarketConfigV6 legacy_config_id',
+    ),
+    feeRecipient: readAddress(
+      fields.fee_recipient,
+      'MarketConfigV6 fee_recipient',
+    ),
+    platformFeeBps: readNumber(
+      fields.platform_fee_bps,
+      'MarketConfigV6 platform_fee_bps',
+    ),
+    secondaryEnabled: Boolean(fields.secondary_enabled),
+  }
+}
+
 function ceilBpsAmount(price: bigint, bps: bigint) {
   const numerator = price * bps
   return numerator === 0n ? 0n : (numerator + MAX_BPS - 1n) / MAX_BPS
@@ -777,7 +815,7 @@ function floorBpsAmount(price: bigint, bps: bigint) {
 }
 
 type SecondaryMarketQuoteConfig = Pick<SoulidityMarketConfig, 'platformFeeBps'>
-  & Partial<Pick<SoulidityMarketConfigV2, 'secondaryEnabled'>>
+  & Partial<Pick<SoulidityMarketConfigV6, 'secondaryEnabled'>>
 
 function assertSecondaryMarketQuoteEnabled(config: SecondaryMarketQuoteConfig) {
   if (config.secondaryEnabled === false) {
@@ -825,7 +863,7 @@ export function quoteCollectionPurchase(config: SecondaryMarketQuoteConfig, para
   }
 }
 
-export function quoteAnimacraftSoulPurchase(config: SoulidityMarketConfigV2, params: {
+export function quoteAnimacraftSoulPurchase(config: SoulidityMarketConfigV6, params: {
   priceAtomic: bigint
   makerRoyaltyBps: number
   collectionRoyaltyBps: number
@@ -933,6 +971,7 @@ export async function getSoulStateObject(
   const activeGrants = shouldMaterializeActiveGrants
     ? await readActiveGrantSlots(fields, ownershipEpoch, activeGrantCount)
     : []
+  const animacraftAppearanceV6Id = await getAnimacraftAppearanceV6Id(objectId)
   return {
     objectId,
     packageId: resolvedPackageId,
@@ -950,6 +989,53 @@ export async function getSoulStateObject(
     paidAccessListId: readNestedObjectId(fields.access_list_id, 'SoulState access_list_id'),
     collectionId: readNestedObjectId(fields.collection_id, 'SoulState collection_id'),
     isListed: Boolean(fields.is_listed),
+    animacraftAppearanceV6Id,
+  }
+}
+
+/**
+ * Resolve the v6 appearance companion bound to a SoulState. The u8 key is a
+ * protocol constant; only an explicit dynamic-field-not-found response is
+ * treated as an ordinary pre-v6 Soul.
+ */
+export async function getAnimacraftAppearanceV6Id(
+  stateObjectId: string,
+): Promise<string | null> {
+  try {
+    const response = await suiClient.getDynamicFieldObject({
+      parentId: stateObjectId,
+      name: {
+        type: 'u8',
+        value: 3,
+      },
+    })
+    if (!response.data) {
+      if (isDynamicFieldNotFound(response.error)) return null
+      throw new OnChainVerificationError('Animacraft v6 appearance binding is missing on chain')
+    }
+    const content = response.data.content
+    if (!content || !('fields' in content)) {
+      throw new OnChainVerificationError(
+        'Animacraft v6 appearance binding is malformed on chain',
+      )
+    }
+    const fields = readMoveStructFields(
+      content.fields,
+      'Animacraft v6 appearance dynamic field',
+    )
+    const appearanceId = readNestedObjectId(
+      fields.value,
+      'Animacraft v6 appearance id',
+    )
+    if (!appearanceId) {
+      throw new OnChainVerificationError(
+        'Animacraft v6 appearance id is malformed on chain',
+      )
+    }
+    return appearanceId
+  } catch (error) {
+    if (isDynamicFieldNotFound(error)) return null
+    throw error
   }
 }
 

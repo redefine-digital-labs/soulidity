@@ -17,7 +17,7 @@ const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedSelectCoinObjectIdsForAmountAcrossPages = vi.hoisted(() => vi.fn())
 const mockedGetRequiredSoulidityEnv = vi.hoisted(() => vi.fn())
 const mockedGetMarketConfig = vi.hoisted(() => vi.fn())
-const mockedGetMarketConfigV2 = vi.hoisted(() => vi.fn())
+const mockedGetMarketConfigV6 = vi.hoisted(() => vi.fn())
 const mockedQuoteSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedQuoteAnimacraftSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedQuoteAnimacraftV5SoulSale = vi.hoisted(() => vi.fn())
@@ -71,7 +71,7 @@ vi.mock('@soulidity/sdk', async (importOriginal) => {
     suiClient: { kind: 'mock-sui-client' },
     getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
     getMarketConfig: mockedGetMarketConfig,
-    getMarketConfigV2: mockedGetMarketConfigV2,
+    getMarketConfigV6: mockedGetMarketConfigV6,
     quoteSoulPurchase: mockedQuoteSoulPurchase,
     quoteAnimacraftSoulPurchase: mockedQuoteAnimacraftSoulPurchase,
     quoteAnimacraftV5SoulSale: mockedQuoteAnimacraftV5SoulSale,
@@ -127,18 +127,17 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
         return `0x${'a'.repeat(64)}`
       }
       if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID') return `0x${'8'.repeat(64)}`
-      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID') {
-        return `0x${'6'.repeat(64)}`
+      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID') {
+        return `0x${'b'.repeat(64)}`
       }
-      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID') {
-        return `0x${'a'.repeat(64)}`
+      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID') {
+        return `0x${'c'.repeat(64)}`
       }
       throw new Error(`Unexpected env request: ${name}`)
     })
     mockedGetMarketConfig.mockResolvedValue({ platformFeeBps: 0 })
-    mockedGetMarketConfigV2.mockResolvedValue({
+    mockedGetMarketConfigV6.mockResolvedValue({
       platformFeeBps: 0,
-      primaryEnabled: true,
       secondaryEnabled: true,
     })
     mockedQuoteSoulPurchase.mockReturnValue({
@@ -290,9 +289,9 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
 
     expect(response.status).toBe(200)
     expect(mockedQuoteSoulPurchase).not.toHaveBeenCalled()
-    expect(mockedGetMarketConfigV2).toHaveBeenCalledWith(
-      `0x${'6'.repeat(64)}`,
-      `0x${'a'.repeat(64)}`,
+    expect(mockedGetMarketConfigV6).toHaveBeenCalledWith(
+      `0x${'b'.repeat(64)}`,
+      `0x${'c'.repeat(64)}`,
     )
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
     expect(mockedBuildBuyAnimacraftSoulTx).toHaveBeenCalledWith(expect.objectContaining({
@@ -323,9 +322,8 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
       currentKioskId: KIOSK_ID,
       stateOnChainId: STATE_ID,
     })
-    mockedGetMarketConfigV2.mockResolvedValueOnce({
+    mockedGetMarketConfigV6.mockResolvedValueOnce({
       platformFeeBps: 250,
-      primaryEnabled: true,
       secondaryEnabled: true,
     })
     mockedGetAnimacraftProvenanceForState.mockResolvedValueOnce({

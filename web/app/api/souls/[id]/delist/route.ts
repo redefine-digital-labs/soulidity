@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { extractSoulListingCancelledEvent } from '@soulidity/sdk'
+import {
+  extractAnimacraftV6SoulListingCancelledEvent,
+  extractSoulListingCancelledEvent,
+  getAnimacraftAppearanceV6Id,
+} from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
 import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/mirror/tx-sync'
@@ -67,6 +71,32 @@ export async function POST(
     const cancelled = extractSoulListingCancelledEvent(transaction, packageId)
     if (cancelled.soulId !== soul.onChainId) {
       return NextResponse.json({ error: 'Transaction delisted a different Soulidity object' }, { status: 422 })
+    }
+    if (
+      soul.listingObjectOnChainId
+      && cancelled.listingId !== soul.listingObjectOnChainId
+    ) {
+      return NextResponse.json({ error: 'Transaction cancelled a different Soulidity listing' }, { status: 422 })
+    }
+
+    const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
+    if (appearanceV6Id) {
+      const v6EventPackageId = getRequiredSoulidityEnv(
+        'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID',
+      )
+      const v6Cancelled = extractAnimacraftV6SoulListingCancelledEvent(
+        transaction,
+        v6EventPackageId,
+      )
+      if (
+        v6Cancelled.soulId !== soul.onChainId
+        || v6Cancelled.listingId !== cancelled.listingId
+      ) {
+        return NextResponse.json(
+          { error: 'Transaction cancelled a different Animacraft v6 listing' },
+          { status: 422 },
+        )
+      }
     }
 
     const mirrored = await syncSoulProjectionFromChain({

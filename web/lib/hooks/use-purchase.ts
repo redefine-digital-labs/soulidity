@@ -1,16 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import type { SoulAssetDetail } from '@soulidity/sdk'
+import type { AnimacraftV6SecondaryContext, SoulAssetDetail } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
-import { assertObjectInputsExist } from '@soulidity/sdk'
+import { assertObjectInputsExist, getAnimacraftAppearanceV6Id } from '@soulidity/sdk'
 import { buildBuySoulTx } from '@soulidity/sdk'
-import { buildBuyAnimacraftSoulTx, buildBuyAnimacraftV5SoulTx } from '@soulidity/sdk'
+import { buildBuyAnimacraftSoulTx, buildBuyAnimacraftV5SoulTx, buildBuyAnimacraftV6SoulTx } from '@soulidity/sdk'
 import { quoteAnimacraftV5SoulSale } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
 export type PurchaseStatus = 'idle' | 'building' | 'signing' | 'syncing' | 'done' | 'error'
+
+type SoulWithV6SecondaryContext = SoulAssetDetail & {
+  animacraftV6SecondaryContext?: AnimacraftV6SecondaryContext | null
+}
 
 async function resolvePersonalKiosk(headers: Record<string, string>, walletAddress?: string | null) {
   const url = walletAddress
@@ -57,6 +61,11 @@ export function usePurchase(soul: SoulAssetDetail | null) {
       }
       const animacraftVersion = soul.animacraftProvenance?.animacraftVersion
       const isAnimacraftV5 = animacraftVersion === 5
+      const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
+      const v6Context = (soul as SoulWithV6SecondaryContext).animacraftV6SecondaryContext ?? null
+      if (appearanceV6Id && (!v6Context || v6Context.appearanceObjectId !== appearanceV6Id)) {
+        throw new Error('Animacraft v6 appearance is bound, but its verified Maker loadout context is unavailable; purchase is blocked')
+      }
       if (
         soul.provenanceKind === 'animacraft'
         && animacraftVersion !== 4
@@ -123,6 +132,12 @@ export function usePurchase(soul: SoulAssetDetail | null) {
         'Your personal kiosk': personalKiosk?.currentKioskId ?? null,
         'Your personal kiosk capability': personalKiosk?.currentKioskCapOnChainId ?? null,
         'Animacraft provenance': soul.animacraftProvenance?.objectId ?? null,
+        'Animacraft v6 appearance': appearanceV6Id,
+        'Animacraft v6 composition registry': v6Context?.compositionRegistryObjectId ?? null,
+        'Animacraft v6 composition config': v6Context?.compositionConfigObjectId ?? null,
+        'Animacraft v6 commerce config': v6Context?.commerceConfigObjectId ?? null,
+        'Animacraft v6 Maker profile': v6Context?.makerProfileObjectId ?? null,
+        'Animacraft v6 Maker root': v6Context?.makerRootObjectId ?? null,
         'Animacraft Maker': isAnimacraftV5
           ? null
           : soul.animacraftProvenance?.makerId ?? null,
@@ -141,7 +156,19 @@ export function usePurchase(soul: SoulAssetDetail | null) {
         buyerKioskId: personalKiosk?.currentKioskId ?? null,
         buyerKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
       }
-      const tx = isAnimacraftV5
+      const tx = appearanceV6Id
+        ? buildBuyAnimacraftV6SoulTx({
+            sellerKioskId: soul.currentKioskId,
+            stateObjectId: soul.stateOnChainId,
+            listingObjectId: soul.listingObjectOnChainId,
+            provenanceObjectId: soul.animacraftProvenance!.objectId,
+            priceAtomic: requiredAtomic,
+            paymentCoinObjectIds: selectedCoinIds,
+            buyerKioskId: personalKiosk?.currentKioskId ?? null,
+            buyerKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
+            v6: v6Context!,
+          })
+        : isAnimacraftV5
         ? buildBuyAnimacraftV5SoulTx({
             sellerKioskId: soul.currentKioskId,
             stateObjectId: soul.stateOnChainId,

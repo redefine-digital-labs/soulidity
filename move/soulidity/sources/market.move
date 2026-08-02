@@ -146,9 +146,8 @@ public struct MarketConfig has key {
 
 /// Successor configuration used after the legacy `MarketConfig` has been
 /// irreversibly retired. The primary mint and secondary resale gates are
-/// intentionally independent: production migration enables primary minting
-/// immediately while secondary trading remains fail-closed until an explicit
-/// post-deployment audit decision.
+/// intentionally independent. Migration leaves both gates fail-closed; each
+/// requires a separate, explicit post-deployment governance decision.
 public struct MarketConfigV2 has key {
     id: UID,
     version: u64,
@@ -162,6 +161,29 @@ public struct MarketConfigV2 has key {
 public struct MarketAdminCapV2 has key, store {
     id: UID,
     config_id: ID,
+}
+
+/// Secondary-market policy introduced by v6. This is deliberately a new
+/// TypeOrigin: immutable v2 bytecode can only accept `MarketConfigV2`, whose
+/// secondary gate remains permanently closed after retirement.
+public struct MarketConfigV6 has key {
+    id: UID,
+    version: u64,
+    config_v2_id: ID,
+    legacy_config_id: ID,
+    fee_recipient: address,
+    platform_fee_bps: u16,
+    secondary_enabled: bool,
+}
+
+/// The only post-retirement admin capability. The v2 capability is wrapped
+/// inside this object and is never exposed, so old package bytecode cannot
+/// borrow it to enable `MarketConfigV2.secondary_enabled`.
+public struct MarketAdminCapV6 has key, store {
+    id: UID,
+    config_v2_id: ID,
+    config_v6_id: ID,
+    v2_admin_cap: MarketAdminCapV2,
 }
 
 public struct KioskRegistry has key {
@@ -188,15 +210,21 @@ public struct SoulListing has key {
     is_active: bool,
 }
 
-/// Companion for a v5-settled Soul listing whose current appearance is v6.
-/// `SoulListing` cannot be extended without breaking deployed layout, so this
-/// key-only object pins the exact transferable appearance in the same PTB.
-public struct AnimacraftV6SoulListingSnapshot has key {
+/// Dedicated listing for a Soul whose active appearance uses Animacraft v6.
+/// It intentionally cannot be passed to any immutable v1/v2/v5 buy or cancel
+/// entrypoint, while carrying the purchase capability and exact appearance
+/// snapshot in one atomic object.
+public struct AnimacraftV6SoulListing has key {
     id: UID,
     version: u64,
-    soul_listing_id: ID,
     soul_id: ID,
     state_id: ID,
+    seller: address,
+    seller_kiosk_id: ID,
+    price: u64,
+    creator: address,
+    creator_royalty_bps: u16,
+    purchase_cap: Option<kiosk::PurchaseCap<Soul>>,
     appearance_state_id: ID,
     appearance_revision: u64,
     ownership_epoch: u64,
@@ -291,12 +319,31 @@ public struct LegacyMarketRetired has copy, drop {
     retired_by: address,
 }
 
+/// Additive v6 event. `LegacyMarketRetired` is a deployed TypeOrigin and must
+/// retain its exact v5 layout for upgrade compatibility.
+public struct MarketV6Initialized has copy, drop {
+    config_v2_id: ID,
+    admin_cap_v2_id: ID,
+    config_v6_id: ID,
+    admin_cap_v6_id: ID,
+    initialized_by: address,
+}
+
 public struct MarketPrimaryGateV2Updated has copy, drop {
     enabled: bool,
 }
 
 public struct MarketSecondaryGateV2Updated has copy, drop {
     enabled: bool,
+}
+
+public struct MarketSecondaryGateV6Updated has copy, drop {
+    enabled: bool,
+}
+
+public struct MarketFeePolicyV6Updated has copy, drop {
+    fee_recipient: address,
+    platform_fee_bps: u16,
 }
 
 public struct PersonalKioskInitialized has copy, drop {
@@ -389,7 +436,6 @@ public struct AnimacraftV5SoulPurchased has copy, drop {
 
 public struct AnimacraftV6SoulListed has copy, drop {
     listing_id: ID,
-    listing_snapshot_id: ID,
     soul_id: ID,
     appearance_state_id: ID,
     appearance_revision: u64,
@@ -399,14 +445,12 @@ public struct AnimacraftV6SoulListed has copy, drop {
 
 public struct AnimacraftV6SoulListingCancelled has copy, drop {
     listing_id: ID,
-    listing_snapshot_id: ID,
     soul_id: ID,
     appearance_revision: u64,
 }
 
 public struct AnimacraftV6SoulPurchased has copy, drop {
     listing_id: ID,
-    listing_snapshot_id: ID,
     soul_id: ID,
     appearance_state_id: ID,
     appearance_revision: u64,
@@ -491,32 +535,28 @@ public fun soul_listing_version(self: &SoulListing): u64 {
     self.version
 }
 
-public fun animacraft_v6_listing_snapshot_version(
-    self: &AnimacraftV6SoulListingSnapshot,
+public fun animacraft_v6_listing_version(
+    self: &AnimacraftV6SoulListing,
 ): u64 { self.version }
 
-public fun animacraft_v6_listing_snapshot_listing_id(
-    self: &AnimacraftV6SoulListingSnapshot,
-): ID { self.soul_listing_id }
-
-public fun animacraft_v6_listing_snapshot_appearance_id(
-    self: &AnimacraftV6SoulListingSnapshot,
+public fun animacraft_v6_listing_appearance_id(
+    self: &AnimacraftV6SoulListing,
 ): ID { self.appearance_state_id }
 
-public fun animacraft_v6_listing_snapshot_revision(
-    self: &AnimacraftV6SoulListingSnapshot,
+public fun animacraft_v6_listing_revision(
+    self: &AnimacraftV6SoulListing,
 ): u64 { self.appearance_revision }
 
-public fun animacraft_v6_listing_snapshot_ownership_epoch(
-    self: &AnimacraftV6SoulListingSnapshot,
+public fun animacraft_v6_listing_ownership_epoch(
+    self: &AnimacraftV6SoulListing,
 ): u64 { self.ownership_epoch }
 
-public fun animacraft_v6_listing_snapshot_loadout_hash(
-    self: &AnimacraftV6SoulListingSnapshot,
+public fun animacraft_v6_listing_loadout_hash(
+    self: &AnimacraftV6SoulListing,
 ): &vector<u8> { &self.loadout_hash }
 
-public fun animacraft_v6_listing_snapshot_is_active(
-    self: &AnimacraftV6SoulListingSnapshot,
+public fun animacraft_v6_listing_is_active(
+    self: &AnimacraftV6SoulListing,
 ): bool { self.is_active }
 
 public fun collection_listing_version(self: &CollectionListing): u64 {
@@ -574,6 +614,38 @@ public fun admin_cap_v2_config_id(self: &MarketAdminCapV2): ID {
     self.config_id
 }
 
+public fun config_v6_version(self: &MarketConfigV6): u64 {
+    self.version
+}
+
+public fun config_v6_config_v2_id(self: &MarketConfigV6): ID {
+    self.config_v2_id
+}
+
+public fun config_v6_legacy_config_id(self: &MarketConfigV6): ID {
+    self.legacy_config_id
+}
+
+public fun config_v6_fee_recipient(self: &MarketConfigV6): address {
+    self.fee_recipient
+}
+
+public fun config_v6_platform_fee_bps(self: &MarketConfigV6): u16 {
+    self.platform_fee_bps
+}
+
+public fun config_v6_secondary_enabled(self: &MarketConfigV6): bool {
+    self.secondary_enabled
+}
+
+public fun admin_cap_v6_config_v2_id(self: &MarketAdminCapV6): ID {
+    self.config_v2_id
+}
+
+public fun admin_cap_v6_config_v6_id(self: &MarketAdminCapV6): ID {
+    self.config_v6_id
+}
+
 // ── Initial entry constructors (callable by wallet PTBs) ──────────────
 
 public fun new_initial_content_entry(
@@ -616,6 +688,21 @@ public fun quote_soul_purchase(
 
 public fun quote_soul_purchase_v2(
     config: &MarketConfigV2,
+    price: u64,
+    creator_royalty_bps: u16,
+    collection_royalty_bps: u16,
+): (u64, u64, u64, u64, u64) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    quote_soul_purchase_with_fee_bps(
+        config.platform_fee_bps,
+        price,
+        creator_royalty_bps,
+        collection_royalty_bps,
+    )
+}
+
+public fun quote_soul_purchase_v6(
+    config: &MarketConfigV6,
     price: u64,
     creator_royalty_bps: u16,
     collection_royalty_bps: u16,
@@ -672,6 +759,21 @@ public fun quote_animacraft_soul_purchase(
 
 public fun quote_animacraft_soul_purchase_v2(
     config: &MarketConfigV2,
+    price: u64,
+    maker_royalty_bps: u16,
+    collection_royalty_bps: u16,
+): (u64, u64, u64, u64, u64) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    quote_animacraft_soul_purchase_with_fee_bps(
+        config.platform_fee_bps,
+        price,
+        maker_royalty_bps,
+        collection_royalty_bps,
+    )
+}
+
+public fun quote_animacraft_soul_purchase_v6(
+    config: &MarketConfigV6,
     price: u64,
     maker_royalty_bps: u16,
     collection_royalty_bps: u16,
@@ -805,6 +907,17 @@ public fun quote_collection_purchase_v2(
     (platform_fee, price, total as u64)
 }
 
+public fun quote_collection_purchase_v6(
+    config: &MarketConfigV6,
+    price: u64,
+): (u64, u64, u64) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    let platform_fee = bps_amount(price, config.platform_fee_bps);
+    let total = (price as u128) + (platform_fee as u128);
+    assert!(total <= MAX_U64_AS_U128, EQuoteOverflow);
+    (platform_fee, price, total as u64)
+}
+
 public fun quote_paid_access_purchase(
     config: &MarketConfig,
     price: u64,
@@ -890,19 +1003,85 @@ public fun retire_legacy_market(
         secondary_enabled: false,
     };
     let successor_id = object::id(&successor);
-    let successor_admin = MarketAdminCapV2 {
+    let successor_admin_v2 = MarketAdminCapV2 {
         id: object::new(ctx),
         config_id: successor_id,
     };
-    let successor_admin_id = object::id(&successor_admin);
+    let successor_admin_v2_id = object::id(&successor_admin_v2);
+    let successor_v6 = MarketConfigV6 {
+        id: object::new(ctx),
+        version: MARKET_VERSION_ANIMACRAFT_V6,
+        config_v2_id: successor_id,
+        legacy_config_id,
+        fee_recipient: config.fee_recipient,
+        platform_fee_bps: config.platform_fee_bps,
+        secondary_enabled: false,
+    };
+    let successor_v6_id = object::id(&successor_v6);
+    let successor_admin_v6 = MarketAdminCapV6 {
+        id: object::new(ctx),
+        config_v2_id: successor_id,
+        config_v6_id: successor_v6_id,
+        v2_admin_cap: successor_admin_v2,
+    };
+    let successor_admin_v6_id = object::id(&successor_admin_v6);
 
     transfer::share_object(successor);
-    transfer::transfer(successor_admin, ctx.sender());
+    transfer::share_object(successor_v6);
+    transfer::transfer(successor_admin_v6, ctx.sender());
     event::emit(LegacyMarketRetired {
         legacy_config_id,
         config_v2_id: successor_id,
-        admin_cap_v2_id: successor_admin_id,
+        admin_cap_v2_id: successor_admin_v2_id,
         retired_by: ctx.sender(),
+    });
+    event::emit(MarketV6Initialized {
+        config_v2_id: successor_id,
+        admin_cap_v2_id: successor_admin_v2_id,
+        config_v6_id: successor_v6_id,
+        admin_cap_v6_id: successor_admin_v6_id,
+        initialized_by: ctx.sender(),
+    });
+}
+
+/// Upgrade an already-retired v2 market to the isolated v6 secondary policy.
+/// The v2 secondary gate must still be closed and its capability is consumed
+/// into the v6 vault, making the old enable function unreachable thereafter.
+#[allow(lint(share_owned))]
+public fun initialize_market_v6_from_v2(
+    config: &MarketConfigV2,
+    admin_cap_v2: MarketAdminCapV2,
+    ctx: &mut TxContext,
+) {
+    assert!(!config.secondary_enabled, ESecondaryPausedV2);
+    assert!(admin_cap_v2.config_id == object::id(config), EAnimacraftAuthorizationMismatch);
+    let config_v2_id = object::id(config);
+    let successor_v6 = MarketConfigV6 {
+        id: object::new(ctx),
+        version: MARKET_VERSION_ANIMACRAFT_V6,
+        config_v2_id,
+        legacy_config_id: config.legacy_config_id,
+        fee_recipient: config.fee_recipient,
+        platform_fee_bps: config.platform_fee_bps,
+        secondary_enabled: false,
+    };
+    let config_v6_id = object::id(&successor_v6);
+    let admin_cap_v6 = MarketAdminCapV6 {
+        id: object::new(ctx),
+        config_v2_id,
+        config_v6_id,
+        v2_admin_cap: admin_cap_v2,
+    };
+    let admin_cap_v2_id = object::id(&admin_cap_v6.v2_admin_cap);
+    let admin_cap_v6_id = object::id(&admin_cap_v6);
+    transfer::share_object(successor_v6);
+    transfer::transfer(admin_cap_v6, ctx.sender());
+    event::emit(MarketV6Initialized {
+        config_v2_id,
+        admin_cap_v2_id,
+        config_v6_id,
+        admin_cap_v6_id,
+        initialized_by: ctx.sender(),
     });
 }
 
@@ -946,6 +1125,76 @@ public fun update_config_v2_platform_fee_bps(
     assert!(fee_bps <= MAX_BPS, EPlatformFeeTooHigh);
     config.platform_fee_bps = fee_bps;
     event::emit(PlatformFeeBpsUpdated { fee_bps });
+}
+
+/// Primary operations continue to use `MarketConfigV2`, but only the v6
+/// wrapper capability can manage their gate after retirement.
+public fun update_config_v6_primary_enabled(
+    config_v2: &mut MarketConfigV2,
+    admin_cap: &MarketAdminCapV6,
+    enabled: bool,
+) {
+    assert_v6_admin_links(config_v2, admin_cap);
+    // Reassert the invariant on every v6 governance write. The wrapped v2
+    // capability is intentionally retained only for primary administration.
+    assert!(!config_v2.secondary_enabled, ESecondaryPausedV2);
+    config_v2.primary_enabled = enabled;
+    event::emit(MarketPrimaryGateV2Updated { enabled });
+}
+
+public fun update_config_v6_secondary_enabled(
+    config_v2: &MarketConfigV2,
+    config_v6: &mut MarketConfigV6,
+    admin_cap: &MarketAdminCapV6,
+    enabled: bool,
+) {
+    assert_v6_admin_links(config_v2, admin_cap);
+    assert_v6_config_links(config_v2, config_v6, admin_cap);
+    assert!(!config_v2.secondary_enabled, ESecondaryPausedV2);
+    config_v6.secondary_enabled = enabled;
+    event::emit(MarketSecondaryGateV6Updated { enabled });
+}
+
+/// Fee policy is kept identical for primary v2 and secondary v6 flows. A
+/// single transaction updates both objects, preventing split-brain quotes.
+public fun update_config_v6_fee_policy(
+    config_v2: &mut MarketConfigV2,
+    config_v6: &mut MarketConfigV6,
+    admin_cap: &MarketAdminCapV6,
+    fee_recipient: address,
+    fee_bps: u16,
+) {
+    assert_v6_admin_links(config_v2, admin_cap);
+    assert_v6_config_links(config_v2, config_v6, admin_cap);
+    assert!(!config_v2.secondary_enabled, ESecondaryPausedV2);
+    assert!(fee_recipient != @0x0, EInvalidRecipient);
+    assert!(fee_bps <= MAX_BPS, EPlatformFeeTooHigh);
+    config_v2.fee_recipient = fee_recipient;
+    config_v2.platform_fee_bps = fee_bps;
+    config_v6.fee_recipient = fee_recipient;
+    config_v6.platform_fee_bps = fee_bps;
+    event::emit(MarketFeePolicyV6Updated {
+        fee_recipient,
+        platform_fee_bps: fee_bps,
+    });
+}
+
+fun assert_v6_admin_links(
+    config_v2: &MarketConfigV2,
+    admin_cap: &MarketAdminCapV6,
+) {
+    assert!(admin_cap.config_v2_id == object::id(config_v2), EAnimacraftAuthorizationMismatch);
+    assert!(admin_cap.v2_admin_cap.config_id == object::id(config_v2), EAnimacraftAuthorizationMismatch);
+}
+
+fun assert_v6_config_links(
+    config_v2: &MarketConfigV2,
+    config_v6: &MarketConfigV6,
+    admin_cap: &MarketAdminCapV6,
+) {
+    assert!(config_v6.config_v2_id == object::id(config_v2), EAnimacraftAuthorizationMismatch);
+    assert!(config_v6.legacy_config_id == config_v2.legacy_config_id, EAnimacraftAuthorizationMismatch);
+    assert!(admin_cap.config_v6_id == object::id(config_v6), EAnimacraftAuthorizationMismatch);
 }
 
 // ── Personal kiosk plumbing ───────────────────────────────────────────
@@ -998,6 +1247,28 @@ public fun init_personal_kiosk_v2(
     kiosk_id
 }
 
+public fun init_personal_kiosk_v6(
+    config: &MarketConfigV6,
+    registry: &mut KioskRegistry,
+    ctx: &mut TxContext,
+): ID {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    let (mut kiosk_obj, kiosk_owner_cap) = kiosk::new(ctx);
+    let kiosk_id = object::id(&kiosk_obj);
+    let personal_kiosk_cap = personal_kiosk::new(&mut kiosk_obj, kiosk_owner_cap, ctx);
+    let kiosk_cap_id = object::id(&personal_kiosk_cap);
+    let owner = ctx.sender();
+    register_personal_kiosk(registry, owner, kiosk_id, kiosk_cap_id);
+    transfer::public_share_object(kiosk_obj);
+    personal_kiosk::transfer_to_sender(personal_kiosk_cap, ctx);
+    event::emit(PersonalKioskInitialized {
+        kiosk_id,
+        kiosk_cap_id,
+        owner,
+    });
+    kiosk_id
+}
+
 public fun ensure_personal_kiosk_registered(
     config: &MarketConfig,
     registry: &mut KioskRegistry,
@@ -1018,6 +1289,19 @@ public fun ensure_personal_kiosk_registered_v2(
     ctx: &TxContext,
 ) {
     assert!(config.primary_enabled || config.secondary_enabled, EPrimaryPausedV2);
+    let owner = ctx.sender();
+    let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
+    let kiosk_cap_id = object::id(personal_kiosk_cap);
+    insert_or_assert_personal_kiosk_registration(registry, owner, kiosk_id, kiosk_cap_id);
+}
+
+public fun ensure_personal_kiosk_registered_v6(
+    config: &MarketConfigV6,
+    registry: &mut KioskRegistry,
+    personal_kiosk_cap: &PersonalKioskCap,
+    ctx: &TxContext,
+) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
     let owner = ctx.sender();
     let kiosk_id = kiosk::kiosk_owner_cap_for(personal_kiosk::borrow(personal_kiosk_cap));
     let kiosk_cap_id = object::id(personal_kiosk_cap);
@@ -1055,6 +1339,17 @@ public fun rebind_primary_kiosk_v2(
     ctx: &TxContext,
 ) {
     assert!(config.primary_enabled || config.secondary_enabled, EPrimaryPausedV2);
+    rebind_primary_kiosk_impl(registry, old_kiosk, new_personal_kiosk_cap, ctx);
+}
+
+public fun rebind_primary_kiosk_v6(
+    config: &MarketConfigV6,
+    registry: &mut KioskRegistry,
+    old_kiosk: &Kiosk,
+    new_personal_kiosk_cap: &PersonalKioskCap,
+    ctx: &TxContext,
+) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
     rebind_primary_kiosk_impl(registry, old_kiosk, new_personal_kiosk_cap, ctx);
 }
 
@@ -1987,8 +2282,10 @@ public fun list_soul_fixed_price_v2(
     assert!(config.secondary_enabled, ESecondaryPausedV2);
     assert!(!soul::has_animacraft_provenance(state), EAnimacraftListingPathRequired);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
-    list_soul_after_validation_v2(
-        config,
+    list_soul_after_validation_successor(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        MARKET_VERSION_V2,
         registry,
         kiosk_obj,
         personal_kiosk_cap,
@@ -2014,8 +2311,64 @@ public fun list_soul_fixed_price_with_collection_v2(
     assert!(!soul::has_animacraft_provenance(state), EAnimacraftListingPathRequired);
     let collection_id = object::id(collection_obj);
     assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
-    list_soul_after_validation_v2(
-        config,
+    list_soul_after_validation_successor(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        MARKET_VERSION_V2,
+        registry,
+        kiosk_obj,
+        personal_kiosk_cap,
+        state,
+        price,
+        option::some(collection_id),
+        collection::extra_royalty_bps(collection_obj),
+        ctx,
+    )
+}
+
+public fun list_soul_fixed_price_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    price: u64,
+    ctx: &mut TxContext,
+): SoulListing {
+    assert!(!soul::has_animacraft_provenance(state), EAnimacraftListingPathRequired);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    list_soul_after_validation_successor(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        MARKET_VERSION_ANIMACRAFT_V6,
+        registry,
+        kiosk_obj,
+        personal_kiosk_cap,
+        state,
+        price,
+        option::none(),
+        0,
+        ctx,
+    )
+}
+
+public fun list_soul_fixed_price_with_collection_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    collection_obj: &SoulCollection,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    price: u64,
+    ctx: &mut TxContext,
+): SoulListing {
+    assert!(!soul::has_animacraft_provenance(state), EAnimacraftListingPathRequired);
+    let collection_id = object::id(collection_obj);
+    assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
+    list_soul_after_validation_successor(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        MARKET_VERSION_ANIMACRAFT_V6,
         registry,
         kiosk_obj,
         personal_kiosk_cap,
@@ -2133,8 +2486,10 @@ public fun list_animacraft_soul_fixed_price_v2(
         0,
     );
 
-    list_soul_after_validation_v2(
-        config,
+    list_soul_after_validation_successor(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        MARKET_VERSION_V2,
         registry,
         kiosk_obj,
         personal_kiosk_cap,
@@ -2172,8 +2527,87 @@ public fun list_animacraft_soul_fixed_price_with_collection_v2(
         collection_royalty_bps,
     );
 
-    list_soul_after_validation_v2(
-        config,
+    list_soul_after_validation_successor(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        MARKET_VERSION_V2,
+        registry,
+        kiosk_obj,
+        personal_kiosk_cap,
+        state,
+        price,
+        option::some(collection_id),
+        collection_royalty_bps,
+        ctx,
+    )
+}
+
+public fun list_animacraft_soul_fixed_price_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    provenance: &AnimacraftProvenance,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    price: u64,
+    ctx: &mut TxContext,
+): SoulListing {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v4_compatible(provenance), EAnimacraftV5CommercePathRequired);
+    assert!(soul::creator_royalty_bps(state) == 0, EAnimacraftAuthorizationMismatch);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    animacraft_provenance::assert_matches_soul(provenance, state);
+    let (_, _, _, _, _) = quote_animacraft_soul_purchase_with_fee_bps(
+        config.platform_fee_bps,
+        price,
+        animacraft_provenance::royalty_bps(provenance),
+        0,
+    );
+    list_soul_after_validation_successor(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        MARKET_VERSION_ANIMACRAFT_V6,
+        registry,
+        kiosk_obj,
+        personal_kiosk_cap,
+        state,
+        price,
+        option::none(),
+        0,
+        ctx,
+    )
+}
+
+public fun list_animacraft_soul_fixed_price_with_collection_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    provenance: &AnimacraftProvenance,
+    collection_obj: &SoulCollection,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    price: u64,
+    ctx: &mut TxContext,
+): SoulListing {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v4_compatible(provenance), EAnimacraftV5CommercePathRequired);
+    assert!(soul::creator_royalty_bps(state) == 0, EAnimacraftAuthorizationMismatch);
+    let collection_id = object::id(collection_obj);
+    assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
+    animacraft_provenance::assert_matches_soul(provenance, state);
+    let collection_royalty_bps = collection::extra_royalty_bps(collection_obj);
+    let (_, _, _, _, _) = quote_animacraft_soul_purchase_with_fee_bps(
+        config.platform_fee_bps,
+        price,
+        animacraft_provenance::royalty_bps(provenance),
+        collection_royalty_bps,
+    );
+    list_soul_after_validation_successor(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        MARKET_VERSION_ANIMACRAFT_V6,
         registry,
         kiosk_obj,
         personal_kiosk_cap,
@@ -2230,7 +2664,58 @@ public fun list_animacraft_v5_soul_fixed_price_with_creator_royalty_v2(
 ): SoulListing {
     assert_legacy_listing_has_no_v6_appearance(state);
     list_animacraft_v5_soul_fixed_price_with_creator_royalty_impl(
+        config.secondary_enabled,
+        config.platform_fee_bps,
+        registry,
+        provenance,
+        kiosk_obj,
+        personal_kiosk_cap,
+        state,
+        price,
+        soul_creator_royalty_bps,
+        ctx,
+    )
+}
+
+public fun list_animacraft_v5_soul_fixed_price_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    provenance: &AnimacraftProvenance,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    price: u64,
+    ctx: &mut TxContext,
+): SoulListing {
+    let frozen_creator_royalty_bps = soul::creator_royalty_bps(state);
+    list_animacraft_v5_soul_fixed_price_with_creator_royalty_v6(
         config,
+        registry,
+        provenance,
+        kiosk_obj,
+        personal_kiosk_cap,
+        state,
+        price,
+        frozen_creator_royalty_bps,
+        ctx,
+    )
+}
+
+public fun list_animacraft_v5_soul_fixed_price_with_creator_royalty_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    provenance: &AnimacraftProvenance,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    price: u64,
+    soul_creator_royalty_bps: u16,
+    ctx: &mut TxContext,
+): SoulListing {
+    assert_legacy_listing_has_no_v6_appearance(state);
+    list_animacraft_v5_soul_fixed_price_with_creator_royalty_impl(
+        config.secondary_enabled,
+        config.platform_fee_bps,
         registry,
         provenance,
         kiosk_obj,
@@ -2243,7 +2728,8 @@ public fun list_animacraft_v5_soul_fixed_price_with_creator_royalty_v2(
 }
 
 fun list_animacraft_v5_soul_fixed_price_with_creator_royalty_impl(
-    config: &MarketConfigV2,
+    secondary_enabled: bool,
+    platform_fee_bps: u16,
     registry: &KioskRegistry,
     provenance: &AnimacraftProvenance,
     kiosk_obj: &mut Kiosk,
@@ -2253,8 +2739,8 @@ fun list_animacraft_v5_soul_fixed_price_with_creator_royalty_impl(
     soul_creator_royalty_bps: u16,
     ctx: &mut TxContext,
 ): SoulListing {
-    assert!(config.secondary_enabled, ESecondaryPausedV2);
-    assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
+    assert!(secondary_enabled, ESecondaryPausedV2);
+    assert!(platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
     assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
@@ -2310,10 +2796,10 @@ fun list_animacraft_v5_soul_fixed_price_with_creator_royalty_impl(
 }
 
 /// The only listing creation path for a Soul with a v6 appearance companion.
-/// Settlement remains the audited v5 gross-price split, while this additive
-/// snapshot pins the exact transferable loadout and ownership epoch.
-public fun list_animacraft_v6_soul_fixed_price_v2(
-    config: &MarketConfigV2,
+/// A new config and listing TypeOrigin ensure immutable v2/v5 bytecode cannot
+/// create or settle this path.
+public fun list_animacraft_v6_soul_fixed_price_v6(
+    config: &MarketConfigV6,
     registry: &KioskRegistry,
     provenance: &AnimacraftProvenance,
     composition_registry: &CompositionRegistryV6,
@@ -2328,7 +2814,7 @@ public fun list_animacraft_v6_soul_fixed_price_v2(
     selections: vector<LoadoutSelectionV6>,
     price: u64,
     ctx: &mut TxContext,
-): (SoulListing, AnimacraftV6SoulListingSnapshot) {
+): AnimacraftV6SoulListing {
     appearance_adapter_v6::assert_secondary_market_appearance_v6(
         composition_registry,
         composition_config,
@@ -2353,7 +2839,7 @@ public fun list_animacraft_v6_soul_fixed_price_v2(
 }
 
 fun list_animacraft_v6_soul_fixed_price_impl(
-    config: &MarketConfigV2,
+    config: &MarketConfigV6,
     registry: &KioskRegistry,
     provenance: &AnimacraftProvenance,
     kiosk_obj: &mut Kiosk,
@@ -2362,31 +2848,61 @@ fun list_animacraft_v6_soul_fixed_price_impl(
     appearance: &SoulAppearanceStateV6,
     price: u64,
     ctx: &mut TxContext,
-): (SoulListing, AnimacraftV6SoulListingSnapshot) {
+): AnimacraftV6SoulListing {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
+    assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    animacraft_provenance::assert_matches_soul(provenance, state);
+    let soul_creator_royalty_bps = soul::creator_royalty_bps(state);
+    let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
+    let (_, _, _, _) = quote_animacraft_v5_soul_sale_for_state(
+        state,
+        price,
+        maker_source_royalty_bps,
+    );
+    assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    assert!(soul::current_owner(state) == ctx.sender(), ESoulOwnerMismatch);
+    assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), ESoulCurrentKioskMismatch);
     appearance_v6::assert_transfer_safe_for_listing(state, appearance);
+
+    let soul_id = soul::soul_id(state);
+    let seller = personal_kiosk::owner(kiosk_obj);
+    let seller_kiosk_id = object::id(kiosk_obj);
+    assert_registered_personal_kiosk(
+        registry,
+        seller,
+        seller_kiosk_id,
+        object::id(personal_kiosk_cap),
+    );
+    let _soul_ref = kiosk::borrow<Soul>(
+        kiosk_obj,
+        personal_kiosk::borrow(personal_kiosk_cap),
+        soul_id,
+    );
+    let purchase_cap = kiosk::list_with_purchase_cap<Soul>(
+        kiosk_obj,
+        personal_kiosk::borrow(personal_kiosk_cap),
+        soul_id,
+        0,
+        ctx,
+    );
     let appearance_state_id = object::id(appearance);
     let appearance_revision = appearance_v6::revision(appearance);
     let ownership_epoch = appearance_v6::ownership_epoch_snapshot(appearance);
     let loadout_hash = *appearance_v6::current_loadout_hash(appearance);
-    let soul_creator_royalty_bps = soul::creator_royalty_bps(state);
-    let listing = list_animacraft_v5_soul_fixed_price_with_creator_royalty_impl(
-        config,
-        registry,
-        provenance,
-        kiosk_obj,
-        personal_kiosk_cap,
-        state,
-        price,
-        soul_creator_royalty_bps,
-        ctx,
-    );
-    let listing_id = object::id(&listing);
-    let snapshot = AnimacraftV6SoulListingSnapshot {
+    let listing = AnimacraftV6SoulListing {
         id: object::new(ctx),
         version: MARKET_VERSION_ANIMACRAFT_V6,
-        soul_listing_id: listing_id,
-        soul_id: soul::soul_id(state),
+        soul_id,
         state_id: object::id(state),
+        seller,
+        seller_kiosk_id,
+        price,
+        creator: soul::state_creator(state),
+        creator_royalty_bps: soul_creator_royalty_bps,
+        purchase_cap: option::some(purchase_cap),
         appearance_state_id,
         appearance_revision,
         ownership_epoch,
@@ -2394,21 +2910,29 @@ fun list_animacraft_v6_soul_fixed_price_impl(
         transfer_safe: true,
         is_active: true,
     };
+    let listing_id = object::id(&listing);
+    soul::set_listed(state, true);
+    event::emit(SoulListed {
+        listing_id,
+        soul_id,
+        seller,
+        kiosk_id: seller_kiosk_id,
+        price,
+    });
     event::emit(AnimacraftV6SoulListed {
         listing_id,
-        listing_snapshot_id: object::id(&snapshot),
-        soul_id: soul::soul_id(state),
+        soul_id,
         appearance_state_id,
         appearance_revision,
         ownership_epoch,
         loadout_hash,
     });
-    (listing, snapshot)
+    listing
 }
 
 #[test_only]
 public fun list_animacraft_v6_soul_fixed_price_for_testing(
-    config: &MarketConfigV2,
+    config: &MarketConfigV6,
     registry: &KioskRegistry,
     provenance: &AnimacraftProvenance,
     kiosk_obj: &mut Kiosk,
@@ -2417,7 +2941,7 @@ public fun list_animacraft_v6_soul_fixed_price_for_testing(
     appearance: &SoulAppearanceStateV6,
     price: u64,
     ctx: &mut TxContext,
-): (SoulListing, AnimacraftV6SoulListingSnapshot) {
+): AnimacraftV6SoulListing {
     list_animacraft_v6_soul_fixed_price_impl(
         config,
         registry,
@@ -2476,27 +3000,29 @@ public fun cancel_animacraft_v6_soul_listing(
     personal_kiosk_cap: &PersonalKioskCap,
     state: &mut SoulState,
     appearance: &SoulAppearanceStateV6,
-    listing: &mut SoulListing,
-    snapshot: &mut AnimacraftV6SoulListingSnapshot,
+    listing: &mut AnimacraftV6SoulListing,
 ) {
-    assert_animacraft_v6_listing_snapshot(
+    assert_animacraft_v6_listing(
         state,
         appearance,
         listing,
-        snapshot,
     );
-    cancel_soul_listing_impl(
-        kiosk_obj,
-        personal_kiosk_cap,
-        state,
-        listing,
-    );
-    snapshot.is_active = false;
+    assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    assert!(object::id(kiosk_obj) == listing.seller_kiosk_id, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EKioskOwnerMismatch);
+    let purchase_cap = take_animacraft_v6_soul_purchase_cap(listing);
+    kiosk::return_purchase_cap<Soul>(kiosk_obj, purchase_cap);
+    listing.is_active = false;
+    soul::set_listed(state, false);
+    event::emit(SoulListingCancelled {
+        listing_id: object::id(listing),
+        soul_id: listing.soul_id,
+        seller: listing.seller,
+    });
     event::emit(AnimacraftV6SoulListingCancelled {
         listing_id: object::id(listing),
-        listing_snapshot_id: object::id(snapshot),
-        soul_id: snapshot.soul_id,
-        appearance_revision: snapshot.appearance_revision,
+        soul_id: listing.soul_id,
+        appearance_revision: listing.appearance_revision,
     });
 }
 
@@ -2609,6 +3135,77 @@ public fun buy_soul_fixed_price_v2(
 
 public fun buy_soul_fixed_price_with_collection_v2(
     config: &MarketConfigV2,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    collection_obj: &SoulCollection,
+    seller_kiosk: &mut Kiosk,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    listing: &mut SoulListing,
+    payment: Coin<USDC>,
+    ctx: &mut TxContext,
+) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(!soul::has_animacraft_provenance(state), EAnimacraftPurchasePathRequired);
+    let collection_id = object::id(collection_obj);
+    assert!(listing.collection_id.contains(&collection_id), ECollectionMismatch);
+    assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
+    buy_soul_impl(
+        false,
+        config.fee_recipient,
+        config.platform_fee_bps,
+        registry,
+        soul_policy,
+        seller_kiosk,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        state,
+        listing,
+        payment,
+        collection::extra_royalty_bps(collection_obj),
+        collection::current_holder(collection_obj),
+        ctx,
+    )
+}
+
+public fun buy_soul_fixed_price_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    seller_kiosk: &mut Kiosk,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    listing: &mut SoulListing,
+    payment: Coin<USDC>,
+    ctx: &mut TxContext,
+) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    let seller = listing.seller;
+    assert!(!soul::has_animacraft_provenance(state), EAnimacraftPurchasePathRequired);
+    assert!(listing.collection_id.is_none(), ECollectionMismatch);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    buy_soul_impl(
+        false,
+        config.fee_recipient,
+        config.platform_fee_bps,
+        registry,
+        soul_policy,
+        seller_kiosk,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        state,
+        listing,
+        payment,
+        0,
+        seller,
+        ctx,
+    )
+}
+
+public fun buy_soul_fixed_price_with_collection_v6(
+    config: &MarketConfigV6,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     collection_obj: &SoulCollection,
@@ -2803,6 +3400,87 @@ public fun buy_animacraft_soul_fixed_price_with_collection_v2(
     )
 }
 
+public fun buy_animacraft_soul_fixed_price_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    provenance: &AnimacraftProvenance,
+    maker: &OCMaker,
+    maker_treasury: &mut MakerTreasury<USDC>,
+    seller_kiosk: &mut Kiosk,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    listing: &mut SoulListing,
+    payment: Coin<USDC>,
+    ctx: &mut TxContext,
+) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    let seller = listing.seller;
+    assert!(listing.collection_id.is_none(), ECollectionMismatch);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    buy_animacraft_soul_impl(
+        false,
+        config.fee_recipient,
+        config.platform_fee_bps,
+        registry,
+        soul_policy,
+        provenance,
+        maker,
+        maker_treasury,
+        seller_kiosk,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        state,
+        listing,
+        payment,
+        0,
+        seller,
+        ctx,
+    )
+}
+
+public fun buy_animacraft_soul_fixed_price_with_collection_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    provenance: &AnimacraftProvenance,
+    maker: &OCMaker,
+    maker_treasury: &mut MakerTreasury<USDC>,
+    collection_obj: &SoulCollection,
+    seller_kiosk: &mut Kiosk,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    listing: &mut SoulListing,
+    payment: Coin<USDC>,
+    ctx: &mut TxContext,
+) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    let collection_id = object::id(collection_obj);
+    assert!(listing.collection_id.contains(&collection_id), ECollectionMismatch);
+    assert!(soul::collection_id(state).contains(&collection_id), ECollectionMismatch);
+    buy_animacraft_soul_impl(
+        false,
+        config.fee_recipient,
+        config.platform_fee_bps,
+        registry,
+        soul_policy,
+        provenance,
+        maker,
+        maker_treasury,
+        seller_kiosk,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        state,
+        listing,
+        payment,
+        collection::extra_royalty_bps(collection_obj),
+        collection::current_holder(collection_obj),
+        ctx,
+    )
+}
+
 /// Dedicated v5 counterpart to `list_animacraft_v5_soul_fixed_price_v2`.
 /// Payment is exactly the listed gross price; no generic or v4 purchase
 /// function can settle this listing because both provenance and listing
@@ -2822,7 +3500,40 @@ public fun buy_animacraft_v5_soul_fixed_price_v2(
 ) {
     assert_legacy_listing_has_no_v6_appearance(state);
     buy_animacraft_v5_soul_fixed_price_impl(
-        config,
+        config.secondary_enabled,
+        config.fee_recipient,
+        config.platform_fee_bps,
+        registry,
+        soul_policy,
+        provenance,
+        seller_kiosk,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        state,
+        listing,
+        payment,
+        ctx,
+    )
+}
+
+public fun buy_animacraft_v5_soul_fixed_price_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    provenance: &AnimacraftProvenance,
+    seller_kiosk: &mut Kiosk,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    listing: &mut SoulListing,
+    payment: Coin<USDC>,
+    ctx: &mut TxContext,
+) {
+    assert_legacy_listing_has_no_v6_appearance(state);
+    buy_animacraft_v5_soul_fixed_price_impl(
+        config.secondary_enabled,
+        config.fee_recipient,
+        config.platform_fee_bps,
         registry,
         soul_policy,
         provenance,
@@ -2837,7 +3548,9 @@ public fun buy_animacraft_v5_soul_fixed_price_v2(
 }
 
 fun buy_animacraft_v5_soul_fixed_price_impl(
-    config: &MarketConfigV2,
+    secondary_enabled: bool,
+    fee_recipient: address,
+    platform_fee_bps: u16,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     provenance: &AnimacraftProvenance,
@@ -2849,8 +3562,8 @@ fun buy_animacraft_v5_soul_fixed_price_impl(
     payment: Coin<USDC>,
     ctx: &mut TxContext,
 ) {
-    assert!(config.secondary_enabled, ESecondaryPausedV2);
-    assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
+    assert!(secondary_enabled, ESecondaryPausedV2);
+    assert!(platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
     assert!(listing.version == MARKET_VERSION_ANIMACRAFT_V5, EAnimacraftV5ListingMismatch);
     assert!(listing.collection_id.is_none(), ECollectionMismatch);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
@@ -2901,7 +3614,7 @@ fun buy_animacraft_v5_soul_fixed_price_impl(
     let mut seller_payment = payment;
     if (protocol_fee > 0) {
         let fee_payment = coin::split(&mut seller_payment, protocol_fee, ctx);
-        transfer::public_transfer(fee_payment, config.fee_recipient);
+        transfer::public_transfer(fee_payment, fee_recipient);
     };
     if (soul_creator_royalty > 0) {
         let royalty_payment = coin::split(&mut seller_payment, soul_creator_royalty, ctx);
@@ -2945,11 +3658,10 @@ fun buy_animacraft_v5_soul_fixed_price_impl(
     });
 }
 
-/// Dedicated v6 settlement wrapper. It reuses the audited v5 payment split,
-/// then atomically advances the companion's ownership epoch without changing
-/// its appearance revision or loadout.
-public fun buy_animacraft_v6_soul_fixed_price_v2(
-    config: &MarketConfigV2,
+/// Dedicated v6 settlement. The v6 listing owns the kiosk purchase cap, so no
+/// immutable old buy function can consume it without synchronizing ownership.
+public fun buy_animacraft_v6_soul_fixed_price_v6(
+    config: &MarketConfigV6,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     provenance: &AnimacraftProvenance,
@@ -2963,8 +3675,7 @@ public fun buy_animacraft_v6_soul_fixed_price_v2(
     buyer_personal_kiosk_cap: &PersonalKioskCap,
     state: &mut SoulState,
     appearance: &mut SoulAppearanceStateV6,
-    listing: &mut SoulListing,
-    snapshot: &mut AnimacraftV6SoulListingSnapshot,
+    listing: &mut AnimacraftV6SoulListing,
     selections: vector<LoadoutSelectionV6>,
     payment: Coin<USDC>,
     ctx: &mut TxContext,
@@ -2990,14 +3701,13 @@ public fun buy_animacraft_v6_soul_fixed_price_v2(
         state,
         appearance,
         listing,
-        snapshot,
         payment,
         ctx,
     );
 }
 
 fun buy_animacraft_v6_soul_fixed_price_impl(
-    config: &MarketConfigV2,
+    config: &MarketConfigV6,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     provenance: &AnimacraftProvenance,
@@ -3006,43 +3716,109 @@ fun buy_animacraft_v6_soul_fixed_price_impl(
     buyer_personal_kiosk_cap: &PersonalKioskCap,
     state: &mut SoulState,
     appearance: &mut SoulAppearanceStateV6,
-    listing: &mut SoulListing,
-    snapshot: &mut AnimacraftV6SoulListingSnapshot,
+    listing: &mut AnimacraftV6SoulListing,
     payment: Coin<USDC>,
     ctx: &mut TxContext,
 ) {
-    assert_animacraft_v6_listing_snapshot(
+    assert_animacraft_v6_listing(
         state,
         appearance,
         listing,
-        snapshot,
     );
-    let previous_ownership_epoch = snapshot.ownership_epoch;
-    let appearance_revision = snapshot.appearance_revision;
-    buy_animacraft_v5_soul_fixed_price_impl(
-        config,
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
+    assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    assert!(listing.creator == soul::state_creator(state), EListingStateMismatch);
+    assert!(listing.creator_royalty_bps == soul::creator_royalty_bps(state), EAnimacraftV5CreatorRoyaltyMismatch);
+    assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
+    assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
+    animacraft_provenance::assert_matches_soul(provenance, state);
+
+    let buyer_kiosk_id = object::id(buyer_kiosk);
+    assert_registered_personal_kiosk(
         registry,
-        soul_policy,
-        provenance,
-        seller_kiosk,
-        buyer_kiosk,
-        buyer_personal_kiosk_cap,
-        state,
-        listing,
-        payment,
-        ctx,
+        ctx.sender(),
+        buyer_kiosk_id,
+        object::id(buyer_personal_kiosk_cap),
     );
+    let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
+    let maker_source_recipient = animacraft_provenance::maker_creator(provenance);
+    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
+        quote_animacraft_v5_soul_sale_for_state(
+            state,
+            listing.price,
+            maker_source_royalty_bps,
+        );
+    assert!(payment.value() == listing.price, EIncorrectPaymentAmount);
+
+    let purchase_cap = take_animacraft_v6_soul_purchase_cap(listing);
+    let (soul_obj, mut request) = kiosk::purchase_with_cap<Soul>(
+        seller_kiosk,
+        purchase_cap,
+        coin::zero<SUI>(ctx),
+    );
+    assert!(object::id(&soul_obj) == listing.soul_id, EListingSoulMismatch);
+
+    let mut seller_payment = payment;
+    if (protocol_fee > 0) {
+        let fee_payment = coin::split(&mut seller_payment, protocol_fee, ctx);
+        transfer::public_transfer(fee_payment, config.fee_recipient);
+    };
+    if (soul_creator_royalty > 0) {
+        let royalty_payment = coin::split(&mut seller_payment, soul_creator_royalty, ctx);
+        transfer::public_transfer(royalty_payment, listing.creator);
+    };
+    if (maker_source_royalty > 0) {
+        let royalty_payment = coin::split(&mut seller_payment, maker_source_royalty, ctx);
+        transfer::public_transfer(royalty_payment, maker_source_recipient);
+    };
+    transfer::public_transfer(seller_payment, listing.seller);
+
+    grant::invalidate_all_for_owner_rotation(state, ctx.sender(), ctx.sender());
+    soul::rotate_owner(state, ctx.sender(), buyer_kiosk_id);
+    soul::set_listed(state, false);
+    kiosk::lock<Soul>(
+        buyer_kiosk,
+        personal_kiosk::borrow(buyer_personal_kiosk_cap),
+        soul_policy,
+        soul_obj,
+    );
+    kiosk_lock_rule::prove(&mut request, buyer_kiosk);
+    personal_kiosk_rule::prove(buyer_kiosk, &mut request);
+    witness_rule::prove(SoulMarketProof {}, soul_policy, &mut request);
+    transfer_policy::confirm_request(soul_policy, request);
+
+    let previous_ownership_epoch = listing.ownership_epoch;
+    let appearance_revision = listing.appearance_revision;
     appearance_v6::sync_ownership_after_transfer(
         state,
         appearance,
         appearance_revision,
     );
-    snapshot.is_active = false;
+    listing.is_active = false;
+    event::emit(AnimacraftV5SoulPurchased {
+        listing_id: object::id(listing),
+        soul_id: listing.soul_id,
+        provenance_id: animacraft_provenance::provenance_id(provenance),
+        seller: listing.seller,
+        buyer: ctx.sender(),
+        maker_source_recipient,
+        price: listing.price,
+        seller_payout,
+        protocol_fee,
+        soul_creator_royalty_bps: listing.creator_royalty_bps,
+        soul_creator_royalty,
+        maker_source_royalty_bps,
+        maker_source_royalty,
+    });
     event::emit(AnimacraftV6SoulPurchased {
         listing_id: object::id(listing),
-        listing_snapshot_id: object::id(snapshot),
-        soul_id: snapshot.soul_id,
-        appearance_state_id: snapshot.appearance_state_id,
+        soul_id: listing.soul_id,
+        appearance_state_id: listing.appearance_state_id,
         appearance_revision,
         previous_ownership_epoch,
         ownership_epoch: soul::ownership_epoch(state),
@@ -3052,7 +3828,7 @@ fun buy_animacraft_v6_soul_fixed_price_impl(
 
 #[test_only]
 public fun buy_animacraft_v6_soul_fixed_price_for_testing(
-    config: &MarketConfigV2,
+    config: &MarketConfigV6,
     registry: &KioskRegistry,
     soul_policy: &TransferPolicy<Soul>,
     provenance: &AnimacraftProvenance,
@@ -3061,8 +3837,7 @@ public fun buy_animacraft_v6_soul_fixed_price_for_testing(
     buyer_personal_kiosk_cap: &PersonalKioskCap,
     state: &mut SoulState,
     appearance: &mut SoulAppearanceStateV6,
-    listing: &mut SoulListing,
-    snapshot: &mut AnimacraftV6SoulListingSnapshot,
+    listing: &mut AnimacraftV6SoulListing,
     payment: Coin<USDC>,
     ctx: &mut TxContext,
 ) {
@@ -3077,7 +3852,6 @@ public fun buy_animacraft_v6_soul_fixed_price_for_testing(
         state,
         appearance,
         listing,
-        snapshot,
         payment,
         ctx,
     );
@@ -3158,6 +3932,46 @@ public fun list_collection_right_fixed_price_v2(
     listing
 }
 
+public fun list_collection_right_fixed_price_v6(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    collection_obj: &SoulCollection,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    price: u64,
+    ctx: &mut TxContext,
+): CollectionListing {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(price > 0, EInvalidPrice);
+    assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    collection::assert_tradeable(collection_obj);
+    assert!(collection::current_holder(collection_obj) == ctx.sender(), ESoulOwnerMismatch);
+    assert!(collection::current_holder_kiosk_id(collection_obj) == object::id(kiosk_obj), ECollectionMismatch);
+
+    let right_id = collection::right_id(collection_obj);
+    let seller = personal_kiosk::owner(kiosk_obj);
+    let kiosk_id = object::id(kiosk_obj);
+    assert_registered_personal_kiosk(registry, seller, kiosk_id, object::id(personal_kiosk_cap));
+    let listing = create_collection_listing(
+        kiosk_obj,
+        personal_kiosk_cap,
+        collection_obj,
+        right_id,
+        price,
+        ctx,
+    );
+    let listing_id = object::id(&listing);
+    event::emit(CollectionListed {
+        listing_id,
+        collection_id: object::id(collection_obj),
+        right_id,
+        seller,
+        kiosk_id,
+        price,
+    });
+    listing
+}
+
 public fun cancel_collection_listing(
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -3211,6 +4025,35 @@ public fun buy_collection_right_fixed_price(
 /// collection listings that existed before the irreversible v1 retirement.
 public fun buy_collection_right_fixed_price_v2(
     config: &MarketConfigV2,
+    registry: &KioskRegistry,
+    collection_policy: &TransferPolicy<SoulCollectionRight>,
+    collection_obj: &mut SoulCollection,
+    seller_kiosk: &mut Kiosk,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    listing: &mut CollectionListing,
+    payment: Coin<USDC>,
+    ctx: &mut TxContext,
+) {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    buy_collection_right_fixed_price_impl(
+        false,
+        config.fee_recipient,
+        config.platform_fee_bps,
+        registry,
+        collection_policy,
+        collection_obj,
+        seller_kiosk,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        listing,
+        payment,
+        ctx,
+    );
+}
+
+public fun buy_collection_right_fixed_price_v6(
+    config: &MarketConfigV6,
     registry: &KioskRegistry,
     collection_policy: &TransferPolicy<SoulCollectionRight>,
     collection_obj: &mut SoulCollection,
@@ -3580,24 +4423,38 @@ public fun delete_soul_listing(listing: SoulListing, ctx: &TxContext) {
     });
 }
 
-public fun delete_animacraft_v6_soul_listing_snapshot(
-    snapshot: AnimacraftV6SoulListingSnapshot,
+public fun delete_animacraft_v6_soul_listing(
+    listing: AnimacraftV6SoulListing,
+    ctx: &TxContext,
 ) {
-    assert!(!snapshot.is_active, EListingStillActive);
-    let AnimacraftV6SoulListingSnapshot {
+    assert!(!listing.is_active, EListingStillActive);
+    let listing_id = object::id(&listing);
+    let AnimacraftV6SoulListing {
         id,
         version: _,
-        soul_listing_id: _,
-        soul_id: _,
+        soul_id,
         state_id: _,
+        seller,
+        seller_kiosk_id: _,
+        price: _,
+        creator: _,
+        creator_royalty_bps: _,
+        purchase_cap,
         appearance_state_id: _,
         appearance_revision: _,
         ownership_epoch: _,
         loadout_hash: _,
         transfer_safe: _,
         is_active: _,
-    } = snapshot;
+    } = listing;
+    purchase_cap.destroy_none();
     id.delete();
+    event::emit(SoulListingDeleted {
+        listing_id,
+        soul_id,
+        seller,
+        deleted_by: ctx.sender(),
+    });
 }
 
 /// Reclaim storage for a fully-settled `CollectionListing`.
@@ -3881,10 +4738,10 @@ public fun finalize_soul_listing(listing: SoulListing) {
     transfer::share_object(listing)
 }
 
-public fun finalize_animacraft_v6_soul_listing_snapshot(
-    snapshot: AnimacraftV6SoulListingSnapshot,
+public fun finalize_animacraft_v6_soul_listing(
+    listing: AnimacraftV6SoulListing,
 ) {
-    transfer::share_object(snapshot)
+    transfer::share_object(listing)
 }
 
 public fun finalize_collection_listing(listing: CollectionListing) {
@@ -3943,8 +4800,10 @@ fun list_animacraft_soul_after_validation(
     listing
 }
 
-fun list_soul_after_validation_v2(
-    config: &MarketConfigV2,
+fun list_soul_after_validation_successor(
+    secondary_enabled: bool,
+    platform_fee_bps: u16,
+    listing_version: u64,
     registry: &KioskRegistry,
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -3955,7 +4814,7 @@ fun list_soul_after_validation_v2(
     ctx: &mut TxContext,
 ): SoulListing {
     assert_legacy_listing_has_no_v6_appearance(state);
-    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(secondary_enabled, ESecondaryPausedV2);
     assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
     assert!(soul::current_owner(state) == ctx.sender(), ESoulOwnerMismatch);
     assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), ESoulCurrentKioskMismatch);
@@ -3972,7 +4831,7 @@ fun list_soul_after_validation_v2(
         soul_id,
     );
     let (_, _, _, _, _) = quote_soul_purchase_with_fee_bps(
-        config.platform_fee_bps,
+        platform_fee_bps,
         price,
         soul::creator_royalty_bps(state),
         collection_royalty_bps,
@@ -3986,7 +4845,7 @@ fun list_soul_after_validation_v2(
     );
     let listing = SoulListing {
         id: object::new(ctx),
-        version: MARKET_VERSION_V2,
+        version: listing_version,
         soul_id,
         state_id: object::id(state),
         seller,
@@ -4311,6 +5170,13 @@ fun take_soul_purchase_cap(listing: &mut SoulListing): kiosk::PurchaseCap<Soul> 
     option::extract(&mut listing.purchase_cap)
 }
 
+fun take_animacraft_v6_soul_purchase_cap(
+    listing: &mut AnimacraftV6SoulListing,
+): kiosk::PurchaseCap<Soul> {
+    assert!(listing.purchase_cap.is_some(), EMissingPurchaseCap);
+    option::extract(&mut listing.purchase_cap)
+}
+
 fun take_collection_purchase_cap(
     listing: &mut CollectionListing,
 ): kiosk::PurchaseCap<SoulCollectionRight> {
@@ -4423,29 +5289,26 @@ fun assert_legacy_listing_has_no_v6_appearance(state: &SoulState) {
     );
 }
 
-fun assert_animacraft_v6_listing_snapshot(
+fun assert_animacraft_v6_listing(
     state: &SoulState,
     appearance: &SoulAppearanceStateV6,
-    listing: &SoulListing,
-    snapshot: &AnimacraftV6SoulListingSnapshot,
+    listing: &AnimacraftV6SoulListing,
 ) {
-    assert!(snapshot.is_active, EAnimacraftV6ListingSnapshotInactive);
+    assert!(listing.is_active, EAnimacraftV6ListingSnapshotInactive);
     assert!(
-        snapshot.version == MARKET_VERSION_ANIMACRAFT_V6
-            && snapshot.soul_listing_id == object::id(listing)
-            && snapshot.soul_id == listing.soul_id
-            && snapshot.soul_id == soul::soul_id(state)
-            && snapshot.state_id == object::id(state)
-            && snapshot.appearance_state_id == object::id(appearance)
-            && snapshot.transfer_safe,
+        listing.version == MARKET_VERSION_ANIMACRAFT_V6
+            && listing.soul_id == soul::soul_id(state)
+            && listing.state_id == object::id(state)
+            && listing.appearance_state_id == object::id(appearance)
+            && listing.transfer_safe,
         EAnimacraftV6ListingSnapshotMismatch,
     );
     appearance_v6::assert_active_listing_snapshot(
         state,
         appearance,
-        snapshot.appearance_revision,
-        snapshot.ownership_epoch,
-        &snapshot.loadout_hash,
+        listing.appearance_revision,
+        listing.ownership_epoch,
+        &listing.loadout_hash,
     );
 }
 

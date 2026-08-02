@@ -21,6 +21,33 @@ export function buildDelistSoulTx(params: {
   return tx
 }
 
+/**
+ * Recovery path for the dedicated v6 listing. It intentionally takes no
+ * MarketConfig, so an owner can always cancel while every release gate is
+ * paused. The live appearance prevents cancelling a mismatched listing.
+ */
+export function buildDelistAnimacraftV6SoulTx(params: {
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  stateObjectId: string
+  appearanceObjectId: string
+  listingObjectId: string
+}) {
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::market::cancel_animacraft_v6_soul_listing`,
+    arguments: [
+      tx.object(params.currentKioskId),
+      tx.object(params.currentKioskCapOnChainId),
+      tx.object(params.stateObjectId),
+      tx.object(params.appearanceObjectId),
+      tx.object(params.listingObjectId),
+    ],
+  })
+  return tx
+}
+
 export function buildDelistCollectionTx(params: {
   currentKioskId: string
   currentKioskCapOnChainId: string

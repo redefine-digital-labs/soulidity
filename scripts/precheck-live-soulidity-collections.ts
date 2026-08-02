@@ -142,7 +142,10 @@ async function checkSuiEvents(client: SuiGraphQLClient, packageId: string) {
     // Page until we either prove non-empty (one page is enough) or cleanly
     // exhaust the stream. Hard cap at 5 pages so we never spin forever.
     for (let page = 0; page < 5; page++) {
-      const res = await client.query<
+      const res: {
+        data?: CollectionEventsQuery
+        errors?: ReadonlyArray<unknown>
+      } = await client.query<
         CollectionEventsQuery,
         { type: string; after: string | null }
       >({

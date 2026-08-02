@@ -1,4 +1,5 @@
 /node_modules
+/.soulidity-state/
 /.next
 /web/node_modules
 /web/.next

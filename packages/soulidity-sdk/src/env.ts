@@ -3,6 +3,7 @@ import {
   getSoulidityAnimacraftProvenancePackageId,
   getSoulidityDeployment,
   getSoulidityMarketConfigV2PackageId,
+  getSoulidityMarketConfigV6PackageId,
   getSoulidityOriginalPackageId,
 } from './deployment'
 
@@ -15,6 +16,8 @@ export type SoulidityPublicEnvName =
   | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID'
   | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'
   | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'
+  | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'
+  | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'
   | 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID'
@@ -51,6 +54,10 @@ function readPublicEnv(name: SoulidityPublicEnvName): string | undefined {
       return deployment.marketConfigV2Id
     case 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID':
       return getSoulidityMarketConfigV2PackageId()
+    case 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID':
+      return deployment.marketConfigV6Id
+    case 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID':
+      return getSoulidityMarketConfigV6PackageId()
     case 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID':
       return deployment.kioskRegistryId
     case 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID':

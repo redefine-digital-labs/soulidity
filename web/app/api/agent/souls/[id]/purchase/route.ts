@@ -8,7 +8,7 @@ import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import {
   getAnimacraftProvenanceForState,
-  getMarketConfigV2,
+  getMarketConfigV6,
   getSoulListingObject,
   ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
   quoteAnimacraftSoulPurchase,
@@ -80,9 +80,9 @@ export async function POST(
     const isAnimacraftV5 = animacraftProvenance?.animacraftVersion === 5
     const quote = isAnimacraftV5
       ? await (async () => {
-          const config = await getMarketConfigV2(
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+          const config = await getMarketConfigV6(
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
           )
           if (!config.secondaryEnabled || config.platformFeeBps !== ANIMACRAFT_V5_PROTOCOL_FEE_BPS) {
             throw new Error('Animacraft v5 secondary trading is unavailable')
@@ -117,9 +117,9 @@ export async function POST(
         })()
       : animacraftProvenance
       ? await (async () => {
-          const config = await getMarketConfigV2(
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+          const config = await getMarketConfigV6(
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
           )
           const makerQuote = quoteAnimacraftSoulPurchase(config, {
             priceAtomic: listedPriceAtomic,
@@ -133,9 +133,9 @@ export async function POST(
           }
         })()
       : await (async () => {
-          const config = await getMarketConfigV2(
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+          const config = await getMarketConfigV6(
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
+            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
           )
           return {
             ...quoteSoulPurchase(config, {

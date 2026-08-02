@@ -5,10 +5,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID,
-  ANIMACRAFT_COMMERCE_V5_SOURCE_COMMIT,
+  ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+  ANIMACRAFT_COMPOSABLE_V6_SOURCE_COMMIT,
   ANIMACRAFT_MAINNET_ORIGINAL_PACKAGE_ID,
   ANIMACRAFT_PRE_COMMERCE_MAINNET_PACKAGE_ID,
   REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS,
+  REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS,
   assertReviewedAnimacraftDependencies,
   assertReviewedAnimacraftMainnetAbi,
 } from '../../scripts/lib/reviewed-move-dependencies'
@@ -22,8 +24,8 @@ describe('reviewed Animacraft Move dependency binding', () => {
 
   it('accepts one already-reviewed Mainnet dependency', () => {
     expect(assertReviewedAnimacraftDependencies('mainnet', [
-      ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID,
-    ])).toEqual([ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID])
+      ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+    ])).toEqual([ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID])
   })
 
   it('rejects missing, duplicate, or ambiguous Mainnet bindings', () => {
@@ -35,8 +37,11 @@ describe('reviewed Animacraft Move dependency binding', () => {
     ])).toThrow(/exactly one reviewed/)
     expect(() => assertReviewedAnimacraftDependencies('mainnet', [
       ANIMACRAFT_PRE_COMMERCE_MAINNET_PACKAGE_ID,
+      ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+    ])).toThrow(/superseded/)
+    expect(() => assertReviewedAnimacraftDependencies('mainnet', [
       ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID,
-    ])).toThrow(/stale pre-Commerce/)
+    ])).toThrow(/superseded/)
   })
 
   it('does not apply Mainnet release policy to testnet builds', () => {
@@ -51,13 +56,13 @@ describe('reviewed Animacraft Move dependency binding', () => {
     )?.[1]
     expect(mainnetReplacement).toBeDefined()
     expect(mainnetReplacement).toContain(
-      `published-at = "${ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID}"`,
+      `published-at = "${ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID}"`,
     )
     expect(mainnetReplacement).toContain(
       `original-id = "${ANIMACRAFT_MAINNET_ORIGINAL_PACKAGE_ID}"`,
     )
     expect(manifest).toContain(
-      `rev = "${ANIMACRAFT_COMMERCE_V5_SOURCE_COMMIT}"`,
+      `rev = "${ANIMACRAFT_COMPOSABLE_V6_SOURCE_COMMIT}"`,
     )
   })
 
@@ -71,7 +76,10 @@ describe('reviewed Animacraft Move dependency binding', () => {
         function: string
       }) => {
         calls.push(input)
-        const expected = REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS.find(
+        const expected = [
+          ...REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS,
+          ...REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS,
+        ].find(
           (candidate) => candidate.name === input.function,
         )!
         return {
@@ -89,30 +97,44 @@ describe('reviewed Animacraft Move dependency binding', () => {
       }) => {
         structCalls.push(input)
         return {
-          definingId: ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID,
-          module: 'commerce_v5',
+          definingId: input.module === 'commerce_v5'
+            ? ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID
+            : ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+          module: input.module,
           name: input.struct,
         }
       },
     }
     await expect(assertReviewedAnimacraftMainnetAbi({
       client,
-      dependencies: [ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID],
+      dependencies: [ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID],
     })).resolves.toBeUndefined()
     expect(calls.map((call) => call.function)).toEqual(
-      REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS.map(({ name }) => name),
+      [
+        ...REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS,
+        ...REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS,
+      ].map(({ name }) => name),
     )
     expect(structCalls.map((call) => call.struct)).toEqual([
       'MakerRootV5',
       'CommerceProtocolConfigV5',
       'CommerceV5SoulMintAuthorization',
+      'CompositionProtocolConfigV6',
+      'CompositionProtocolTreasuryV6',
+      'CompositionRegistryV6',
+      'InitialLoadoutAuthorizationV6',
+      'ItemProductV6',
+      'LoadoutAuthorizationV6',
+      'LoadoutSelectionV6',
+      'MakerProfileV6',
+      'OwnedItemV6',
     ])
   })
 
   it('covers every Animacraft Commerce v5 function used by production Move', () => {
     const sourceDir = 'move/soulidity/sources'
     const source = readdirSync(sourceDir)
-      .filter((name) => name.endsWith('.move') && name !== 'protocol_tests.move')
+      .filter((name) => name.endsWith('.move') && !name.endsWith('_tests.move'))
       .map((name) => readFileSync(join(sourceDir, name), 'utf8'))
       .join('\n')
     const usedFunctions = [...source.matchAll(
@@ -120,6 +142,22 @@ describe('reviewed Animacraft Move dependency binding', () => {
     )].map((match) => match[1])
     expect([...new Set(usedFunctions)].sort()).toEqual(
       REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS
+        .map(({ name }) => name)
+        .sort(),
+    )
+  })
+
+  it('covers every Animacraft Composition v6 function used by production Move', () => {
+    const sourceDir = 'move/soulidity/sources'
+    const source = readdirSync(sourceDir)
+      .filter((name) => name.endsWith('.move') && !name.endsWith('_tests.move'))
+      .map((name) => readFileSync(join(sourceDir, name), 'utf8'))
+      .join('\n')
+    const usedFunctions = [...source.matchAll(
+      /(?:composition_v6|animacraft_composition_v6)::([a-zA-Z0-9_]+)/g,
+    )].map((match) => match[1])
+    expect([...new Set(usedFunctions)].sort()).toEqual(
+      REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS
         .map(({ name }) => name)
         .sort(),
     )
@@ -136,7 +174,7 @@ describe('reviewed Animacraft Move dependency binding', () => {
     }
     await expect(assertReviewedAnimacraftMainnetAbi({
       client: missingClient,
-      dependencies: [ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID],
+      dependencies: [ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID],
     })).rejects.toThrow(/ABI is unavailable.*Module not found/)
     await expect(assertReviewedAnimacraftMainnetAbi({
       client: missingClient,

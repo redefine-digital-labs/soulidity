@@ -23,12 +23,12 @@ export function buildListSoulTx(params: {
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const isAnimacraft = Boolean(params.animacraftProvenanceObjectId)
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const tx = new Transaction()
 
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -40,7 +40,7 @@ export function buildListSoulTx(params: {
   if (params.animacraftProvenanceObjectId) {
     listing = params.collectionObjectId
       ? tx.moveCall({
-          target: `${packageId}::market::list_animacraft_soul_fixed_price_with_collection_v2`,
+          target: `${packageId}::market::list_animacraft_soul_fixed_price_with_collection_v6`,
           arguments: [
             tx.object(marketConfigId),
             tx.object(kioskRegistryId),
@@ -53,7 +53,7 @@ export function buildListSoulTx(params: {
           ],
         })
       : tx.moveCall({
-          target: `${packageId}::market::list_animacraft_soul_fixed_price_v2`,
+          target: `${packageId}::market::list_animacraft_soul_fixed_price_v6`,
           arguments: [
             tx.object(marketConfigId),
             tx.object(kioskRegistryId),
@@ -67,7 +67,7 @@ export function buildListSoulTx(params: {
   } else {
     listing = params.collectionObjectId
       ? tx.moveCall({
-          target: `${packageId}::market::list_soul_fixed_price_with_collection_v2`,
+          target: `${packageId}::market::list_soul_fixed_price_with_collection_v6`,
           arguments: [
             tx.object(marketConfigId),
             tx.object(kioskRegistryId),
@@ -79,7 +79,7 @@ export function buildListSoulTx(params: {
           ],
         })
       : tx.moveCall({
-          target: `${packageId}::market::list_soul_fixed_price_v2`,
+          target: `${packageId}::market::list_soul_fixed_price_v6`,
           arguments: [
             tx.object(marketConfigId),
             tx.object(kioskRegistryId),
@@ -116,12 +116,12 @@ export function buildListCollectionTx(params: {
   }
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const tx = new Transaction()
 
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -129,7 +129,7 @@ export function buildListCollectionTx(params: {
     ],
   })
   const listing = tx.moveCall({
-    target: `${packageId}::market::list_collection_right_fixed_price_v2`,
+    target: `${packageId}::market::list_collection_right_fixed_price_v6`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

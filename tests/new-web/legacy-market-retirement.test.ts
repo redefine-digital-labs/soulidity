@@ -34,17 +34,20 @@ describe('legacy market retirement security boundary', () => {
     expect(retirement).toContain('secondary_enabled: false')
   })
 
-  it('keeps every Animacraft mint/list/buy SDK path on the successor config and v2 ABI', () => {
-    for (const source of [animacraftSdk, listSdk, updatePriceSdk]) {
-      expect(source).toContain('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
-    }
+  it('keeps primary mint on V2 and every secondary SDK path on isolated V6', () => {
+    expect(animacraftSdk).toContain('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
     expect(animacraftSdk).toContain('mint_animacraft_in_personal_kiosk_v2')
-    expect(animacraftSdk).toContain('buy_animacraft_soul_fixed_price_v2')
-    expect(animacraftSdk).toContain('buy_animacraft_soul_fixed_price_with_collection_v2')
-    expect(listSdk).toContain('list_animacraft_soul_fixed_price_v2')
-    expect(listSdk).toContain('list_animacraft_soul_fixed_price_with_collection_v2')
-    expect(updatePriceSdk).toContain('list_animacraft_soul_fixed_price_v2')
-    expect(updatePriceSdk).toContain('list_animacraft_soul_fixed_price_with_collection_v2')
+    for (const source of [animacraftSdk, listSdk, updatePriceSdk]) {
+      expect(source).toContain('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
+    }
+    expect(animacraftSdk).toContain('buy_animacraft_soul_fixed_price_v6')
+    expect(animacraftSdk).toContain('buy_animacraft_soul_fixed_price_with_collection_v6')
+    expect(listSdk).toContain('list_animacraft_soul_fixed_price_v6')
+    expect(listSdk).toContain('list_animacraft_soul_fixed_price_with_collection_v6')
+    expect(updatePriceSdk).toContain('list_animacraft_soul_fixed_price_v6')
+    expect(updatePriceSdk).toContain('list_animacraft_soul_fixed_price_with_collection_v6')
+    expect(listSdk).not.toContain('list_animacraft_soul_fixed_price_v2')
+    expect(updatePriceSdk).not.toContain('list_animacraft_soul_fixed_price_v2')
   })
 
   it('does not mistake application routing for the old-bytecode security control', () => {

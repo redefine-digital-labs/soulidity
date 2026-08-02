@@ -162,11 +162,20 @@ describe('Soulidity operational script package routing', () => {
     const text = source('scripts/preflight-animacraft-market-retirement.ts')
     expect(text).toContain('assertMainnetDeploymentRecord(snapshot.mainnet)')
     expect(text).toContain("objectAddressOwner(upgradeCap, 'Soulidity UpgradeCap')")
-    expect(text).toContain('successorFields.primary_enabled !== false')
+    expect(text).toContain("import { verifyRetiredState } from './retire-soulidity-legacy-market'")
+    expect(text).toContain('await verifyRetiredState(client, {')
+    expect(text).toContain('marketConfigV2PackageId,')
+    expect(text).toContain('marketConfigV6PackageId,')
+    expect(text).toContain('marketConfigV2Id: successorConfigId')
+    expect(text).toContain('marketAdminCapV2Id: successorAdminCapId')
+    expect(text).toContain('marketConfigV6Id: successorConfigV6Id')
+    expect(text).toContain('marketAdminCapV6Id: successorAdminCapV6Id')
+    expect(text).toContain('v2SecondaryEnabled: false')
+    expect(text).toContain('v6SecondaryEnabled: args.expectSecondaryEnabled')
     expect(text).not.toContain('SOULIDITY_MAINNET_ADMIN')
-    expect(text).toContain('`${marketConfigV2PackageId}::market::MarketConfigV2`')
-    expect(text).toContain('`${marketConfigV2PackageId}::market::MarketAdminCapV2`')
     expect(text).toContain("module: 'animacraft_provenance'")
+    expect(text).toContain("struct: 'MarketConfigV2'")
+    expect(text).toContain("struct: 'MarketConfigV6'")
     expect(text).not.toContain("module: 'soul',\n      struct: 'AnimacraftProvenance'")
   })
 
@@ -194,14 +203,14 @@ describe('Soulidity operational script package routing', () => {
     'web/app/api/souls/[id]/route.ts',
     'web/app/api/agent/souls/[id]/route.ts',
     'web/app/api/agent/souls/[id]/purchase/route.ts',
-  ])('%s reads MarketConfigV2 using its defining-package type origin', (path) => {
+  ])('%s reads MarketConfigV6 using its defining-package type origin', (path) => {
     const text = source(path)
     const configRead = text.slice(
-      text.indexOf('getMarketConfigV2('),
-      text.indexOf('getMarketConfigV2(') + 300,
+      text.indexOf('getMarketConfigV6('),
+      text.indexOf('getMarketConfigV6(') + 300,
     )
     expect(configRead).toContain(
-      "getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID')",
+      "getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID')",
     )
   })
 

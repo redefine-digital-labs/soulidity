@@ -12,8 +12,11 @@ import {
   buildAnimacraftCompleteOutputSealApprovalTx,
   buildBuyAnimacraftSoulTx,
   buildBuyAnimacraftV5SoulTx,
+  buildBuyAnimacraftV6SoulTx,
+  buildDelistAnimacraftV6SoulTx,
   buildListSoulTx,
   buildListAnimacraftV5SoulTx,
+  buildListAnimacraftV6SoulTx,
   buildMintAnimacraftSoulTx,
   buildUpdateListingPriceTx,
   appendAnimacraftCommerceV5Authorization,
@@ -32,6 +35,7 @@ const ORIGINAL_PACKAGE_ID = id('0')
 const ANIMACRAFT_PACKAGE_ID = id('2')
 const MARKET_CONFIG_ID = id('3')
 const MARKET_CONFIG_V2_ID = id('9')
+const MARKET_CONFIG_V6_ID = id('e')
 const KIND_REGISTRY_ID = id('4')
 const KIOSK_REGISTRY_ID = id('5')
 const TRANSFER_POLICY_ID = id('6')
@@ -72,6 +76,7 @@ beforeEach(() => {
     'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
     MARKET_CONFIG_V2_ID,
   )
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID', MARKET_CONFIG_V6_ID)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', KIND_REGISTRY_ID)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID', KIOSK_REGISTRY_ID)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID', TRANSFER_POLICY_ID)
@@ -215,7 +220,7 @@ describe('buildBuyAnimacraftSoulTx', () => {
   it('uses the dedicated royalty-aware solo purchase entry', () => {
     const calls = moveCalls(buildBuyAnimacraftSoulTx(base))
     const purchase = calls.find(
-      (call) => call.function === 'buy_animacraft_soul_fixed_price_v2',
+      (call) => call.function === 'buy_animacraft_soul_fixed_price_v6',
     )
     expect(purchase).toBeDefined()
     expect(purchase?.arguments).toHaveLength(12)
@@ -227,7 +232,7 @@ describe('buildBuyAnimacraftSoulTx', () => {
       collectionObjectId: id('b'),
     }))
     const purchase = calls.find(
-      (call) => call.function === 'buy_animacraft_soul_fixed_price_with_collection_v2',
+      (call) => call.function === 'buy_animacraft_soul_fixed_price_with_collection_v6',
     )
     expect(purchase).toBeDefined()
     expect(purchase?.arguments).toHaveLength(13)
@@ -253,9 +258,9 @@ describe('Animacraft listing builders', () => {
   it('uses the provenance-aware solo listing entry', () => {
     const calls = moveCalls(buildListSoulTx(base))
     expect(calls.map((call) => call.function))
-      .toContain('list_animacraft_soul_fixed_price_v2')
+      .toContain('list_animacraft_soul_fixed_price_v6')
     expect(calls.map((call) => call.function))
-      .toContain('ensure_personal_kiosk_registered_v2')
+      .toContain('ensure_personal_kiosk_registered_v6')
     expect(calls.map((call) => call.function)).not.toContain('list_soul_fixed_price')
   })
 
@@ -265,17 +270,17 @@ describe('Animacraft listing builders', () => {
       collectionObjectId: id('e'),
     }))
     expect(calls.map((call) => call.function)).toContain(
-      'list_animacraft_soul_fixed_price_with_collection_v2',
+      'list_animacraft_soul_fixed_price_with_collection_v6',
     )
   })
 
-  it('routes native Souls through the unified v2 listing ABI', () => {
+  it('routes native Souls through the isolated v6 secondary ABI', () => {
     const calls = moveCalls(buildListSoulTx({
       ...base,
       animacraftProvenanceObjectId: null,
     }))
-    expect(calls.map((call) => call.function)).toContain('list_soul_fixed_price_v2')
-    expect(calls.map((call) => call.function)).toContain('ensure_personal_kiosk_registered_v2')
+    expect(calls.map((call) => call.function)).toContain('list_soul_fixed_price_v6')
+    expect(calls.map((call) => call.function)).toContain('ensure_personal_kiosk_registered_v6')
     expect(calls.map((call) => call.function))
       .not.toContain('ensure_personal_kiosk_registered')
   })
@@ -291,7 +296,7 @@ describe('Animacraft listing builders', () => {
     }))
     const functions = calls.map((call) => call.function)
     expect(functions).toContain('cancel_soul_listing')
-    expect(functions).toContain('list_animacraft_soul_fixed_price_v2')
+    expect(functions).toContain('list_animacraft_soul_fixed_price_v6')
   })
 
   it('keeps an Animacraft v5 price update on the dedicated gross-price route', () => {
@@ -306,9 +311,9 @@ describe('Animacraft listing builders', () => {
     }))
     const functions = calls.map((call) => call.function)
     expect(functions).toContain('cancel_soul_listing')
-    expect(functions).toContain('list_animacraft_v5_soul_fixed_price_v2')
-    expect(functions).not.toContain('list_animacraft_soul_fixed_price_v2')
-    expect(functions).not.toContain('list_soul_fixed_price_v2')
+    expect(functions).toContain('list_animacraft_v5_soul_fixed_price_v6')
+    expect(functions).not.toContain('list_animacraft_soul_fixed_price_v6')
+    expect(functions).not.toContain('list_soul_fixed_price_v6')
   })
 
   it('fails closed when a v5 price update is collection-bound', () => {
@@ -570,7 +575,7 @@ describe('Animacraft v5 commerce builders', () => {
   it('uses the isolated gross-price listing entry with the protocol-default creator share', () => {
     const calls = moveCalls(buildListAnimacraftV5SoulTx(listingBase))
     const listing = calls.find(
-      (call) => call.function === 'list_animacraft_v5_soul_fixed_price_v2',
+      (call) => call.function === 'list_animacraft_v5_soul_fixed_price_v6',
     )
     expect(listing).toBeDefined()
     expect(listing?.arguments).toHaveLength(7)
@@ -583,12 +588,12 @@ describe('Animacraft v5 commerce builders', () => {
       frozenSoulCreatorRoyaltyBps: 450,
     }))
     const listing = calls.find(
-      (call) => call.function === 'list_animacraft_v5_soul_fixed_price_v2',
+      (call) => call.function === 'list_animacraft_v5_soul_fixed_price_v6',
     )
     expect(listing).toBeDefined()
     expect(listing?.arguments).toHaveLength(7)
     expect(calls.map((call) => call.function))
-      .not.toContain('list_animacraft_v5_soul_fixed_price_with_creator_royalty_v2')
+      .not.toContain('list_animacraft_v5_soul_fixed_price_with_creator_royalty_v6')
   })
 
   it('rejects an invalid frozen v5 creator royalty before requesting a signature', () => {
@@ -674,10 +679,93 @@ describe('Animacraft v5 commerce builders', () => {
       buyerKioskCapOnChainId: KIOSK_CAP_ID,
     }))
     const purchase = calls.find(
-      (call) => call.function === 'buy_animacraft_v5_soul_fixed_price_v2',
+      (call) => call.function === 'buy_animacraft_v5_soul_fixed_price_v6',
     )
     expect(purchase).toBeDefined()
     expect(purchase?.arguments).toHaveLength(10)
-    expect(calls.map((call) => call.function)).not.toContain('buy_animacraft_soul_fixed_price_v2')
+    expect(calls.map((call) => call.function)).not.toContain('buy_animacraft_soul_fixed_price_v6')
+  })
+})
+
+describe('Animacraft v6 transfer-safe secondary builders', () => {
+  const v6 = {
+    animacraftCallablePackageId: id('a'),
+    animacraftCompositionTypeOriginPackageId: id('b'),
+    compositionRegistryObjectId: id('c'),
+    compositionConfigObjectId: id('d'),
+    commerceConfigObjectId: id('e'),
+    makerProfileObjectId: id('f'),
+    makerRootObjectId: id('1'),
+    appearanceObjectId: id('2'),
+    selections: [{
+      productId: id('3'),
+      slotKey: 'hair',
+      subjectKind: 1 as const,
+      ownedInstanceId: null,
+    }],
+  }
+
+  it('constructs canonical selections and finalizes the dedicated listing type', () => {
+    const calls = moveCalls(buildListAnimacraftV6SoulTx({
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      stateObjectId: id('4'),
+      provenanceObjectId: id('5'),
+      priceAtomic: 1_000_000n,
+      v6,
+    }))
+    expect(calls.map((call) => call.function)).toEqual(expect.arrayContaining([
+      'ensure_personal_kiosk_registered_v6',
+      'new_loadout_selection_v6',
+      'list_animacraft_v6_soul_fixed_price_v6',
+      'finalize_animacraft_v6_soul_listing',
+    ]))
+  })
+
+  it('settles through the dedicated v6 listing and rechecks the loadout', () => {
+    const calls = moveCalls(buildBuyAnimacraftV6SoulTx({
+      sellerKioskId: id('6'),
+      stateObjectId: id('4'),
+      listingObjectId: id('7'),
+      provenanceObjectId: id('5'),
+      priceAtomic: 1_000_000n,
+      paymentCoinObjectIds: [id('8')],
+      buyerKioskId: KIOSK_ID,
+      buyerKioskCapOnChainId: KIOSK_CAP_ID,
+      v6,
+    }))
+    expect(calls.map((call) => call.function)).toEqual(expect.arrayContaining([
+      'ensure_personal_kiosk_registered_v6',
+      'new_loadout_selection_v6',
+      'buy_animacraft_v6_soul_fixed_price_v6',
+    ]))
+  })
+
+  it('keeps cancellation config-free for emergency recovery', () => {
+    const calls = moveCalls(buildDelistAnimacraftV6SoulTx({
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      stateObjectId: id('4'),
+      appearanceObjectId: v6.appearanceObjectId,
+      listingObjectId: id('7'),
+    }))
+    expect(calls.map((call) => call.function)).toEqual([
+      'cancel_animacraft_v6_soul_listing',
+    ])
+    expect(JSON.stringify(calls[0]?.arguments)).not.toContain(MARKET_CONFIG_V6_ID.slice(2))
+  })
+
+  it('rejects wallet-owned selections before a signature', () => {
+    expect(() => buildListAnimacraftV6SoulTx({
+      currentKioskId: KIOSK_ID,
+      currentKioskCapOnChainId: KIOSK_CAP_ID,
+      stateObjectId: id('4'),
+      provenanceObjectId: id('5'),
+      priceAtomic: 1_000_000n,
+      v6: {
+        ...v6,
+        selections: [{ productId: id('3'), slotKey: 'hair', subjectKind: 0 }],
+      },
+    })).toThrow(/only Soul-bound or embedded/)
   })
 })
