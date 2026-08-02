@@ -10,6 +10,12 @@ const VALID_PUBLIC_SEAL_CONFIG = JSON.stringify([{
   objectId: `0x${'9'.repeat(64)}`,
   weight: 1,
 }])
+const REQUIRED_HISTORICAL_SEAL_ROUTES = JSON.stringify([{
+  sealPackageId: '0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0',
+  callablePackageId: '0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0',
+}])
+const ACTIVE_SOULIDITY_PACKAGE_ID =
+  '0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d'
 
 const tempDirs: string[] = []
 const productionSupportEnv = {
@@ -28,7 +34,11 @@ function writeEnvFile(extra: Record<string, string>) {
     DIRECT_URL: 'postgres://user:pass@example.com:5432/db',
     AUTH_SECRET: 'test-auth-secret',
     NEXT_PUBLIC_KIOSK_PACKAGE_ID: `0x${'1'.repeat(64)}`,
-    NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: '[]',
+    NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: REQUIRED_HISTORICAL_SEAL_ROUTES,
     NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED: 'false',
     NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED: 'false',
     DEFAULT_PROVIDER: 'deepseek',
@@ -88,7 +98,7 @@ describe('Vercel production env sync guardrails', () => {
 
     const result = runSync(envFile)
 
-    expect(result.status).toBe(0)
+    expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('- UPSTASH_REDIS_REST_URL (sensitive)')
     expect(result.stdout).toContain('- UPSTASH_REDIS_REST_TOKEN (sensitive)')
     expect(result.stdout).toContain('- NEXT_PUBLIC_POSTHOG_KEY')
@@ -216,7 +226,7 @@ describe('Vercel production env sync guardrails', () => {
     const result = runSync(writeEnvFile({
       ...productionSupportEnv,
       NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-    }))
+    }), writeDeploymentHistory([]))
 
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('Dry run only')
