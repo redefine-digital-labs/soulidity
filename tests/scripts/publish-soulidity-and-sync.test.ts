@@ -12,8 +12,10 @@ import {
   assertMainnetFreshPublishAllowed,
   extractDeploymentFromPublishResult,
   parseArgs,
+  persistReconciledFreshPublishRecords,
   readReleaseAttempt,
   readPublishedTomlSections,
+  reconcileFreshPublishResult,
   verifyCapTransferOwners,
   verifyFreshDeploymentOnChain,
   writePublishedTomlSection,
@@ -220,6 +222,40 @@ describe('extractDeploymentFromPublishResult', () => {
     expect(deployment.collectionDisplayId).toBe('0xcollectiondisplay')
   })
 
+  it('accepts gRPC Core object types with fully padded framework addresses', () => {
+    const pkg = '0xabc123'
+    const paddedFramework = `0x${'0'.repeat(63)}2`
+    const deployment = extractDeploymentFromPublishResult({
+      digest: '0xdigest',
+      objectChanges: completePublishObjectChanges(pkg).map((change) => ({
+        ...change,
+        objectType: change.objectType?.replace(/^0x2::/, `${paddedFramework}::`),
+      })),
+      events: [
+        {
+          type: `${pkg}::market::MarketInitialized`,
+          parsedJson: {
+            config_id: '0xconfig',
+            registry_id: '0xregistry',
+            soul_policy_id: '0xsoulpolicy',
+            collection_policy_id: '0xcollectionpolicy',
+          },
+        },
+        {
+          type: `${pkg}::kind_registry::KindRegistryCreated`,
+          parsedJson: {
+            registry_id: '0xkindregistry',
+            admin_cap_id: '0xkindadmincap',
+          },
+        },
+      ],
+    }, { paymentCoinType: '0x2::coin::COIN' })
+
+    expect(deployment.upgradeCapId).toBe('0xupgradecap')
+    expect(deployment.soulPolicyCapId).toBe('0xsoulpolicycap')
+    expect(deployment.soulDisplayId).toBe('0xsouldisplay')
+  })
+
   it('rejects a publish response that omits a governance object', () => {
     const packageId = '0xpackage'
     expect(() => extractDeploymentFromPublishResult({
@@ -417,6 +453,139 @@ describe('finalized fresh deployment readback', () => {
   })
 })
 
+describe('fresh-publish reconciliation', () => {
+  it('reconciles a submitted digest using reads and verifies every deployment object', async () => {
+    const client = readbackClient(readbackObjects())
+    const deployment = await reconcileFreshPublishResult({
+      client: client as never,
+      attempt: {
+        operation: 'fresh-publish',
+        network: 'mainnet',
+        status: 'submitted',
+        startedAt: '2026-08-02T00:00:00.000Z',
+        deployerAddr: READBACK_DEPLOYER,
+        priorPackageId: '0x10',
+        digest: 'digest',
+      },
+      result: {
+        digest: 'digest',
+        effects: { status: { status: 'success' } },
+        objectChanges: [
+          { type: 'published', packageId: READBACK_PACKAGE },
+          { objectType: '0x2::package::UpgradeCap', objectId: readbackDeployment.upgradeCapId },
+          { objectType: `${READBACK_PACKAGE}::market::MarketAdminCap`, objectId: readbackDeployment.marketAdminCapId },
+          { objectType: `${READBACK_PACKAGE}::kind_registry::KindAdminCap`, objectId: readbackDeployment.kindAdminCapId },
+          { objectType: `0x2::transfer_policy::TransferPolicyCap<${READBACK_PACKAGE}::soul::Soul>`, objectId: readbackDeployment.soulPolicyCapId },
+          { objectType: `0x2::transfer_policy::TransferPolicyCap<${READBACK_PACKAGE}::collection::SoulCollectionRight>`, objectId: readbackDeployment.collectionPolicyCapId },
+          { objectType: `0x2::display::Display<${READBACK_PACKAGE}::soul::Soul>`, objectId: readbackDeployment.soulDisplayId },
+          { objectType: `0x2::display::Display<${READBACK_PACKAGE}::collection::SoulCollectionRight>`, objectId: readbackDeployment.collectionDisplayId },
+        ],
+        events: [
+          {
+            type: `${READBACK_PACKAGE}::market::MarketInitialized`,
+            parsedJson: {
+              config_id: readbackDeployment.marketConfigId,
+              registry_id: readbackDeployment.kioskRegistryId,
+              soul_policy_id: readbackDeployment.soulTransferPolicyId,
+              collection_policy_id: readbackDeployment.collectionTransferPolicyId,
+            },
+          },
+          {
+            type: `${READBACK_PACKAGE}::kind_registry::KindRegistryCreated`,
+            parsedJson: {
+              registry_id: readbackDeployment.kindRegistryId,
+              admin_cap_id: readbackDeployment.kindAdminCapId,
+            },
+          },
+        ],
+      },
+      previousDeployment: {
+        callablePackageId: '0x10',
+        paymentCoinType: '0x2::sui::SUI',
+      },
+    })
+
+    expect(deployment).toEqual(readbackDeployment)
+    expect(client.getObject).toHaveBeenCalledTimes(12)
+  })
+
+  it('persists only the target environment and archives the prior family exactly once', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'soulidity-reconcile-records-'))
+    try {
+      const manifestFile = join(dir, 'deployment-manifest.json')
+      const historyFile = join(dir, 'deployment-manifest-history.json')
+      const publishedTomlFile = join(dir, 'Published.toml')
+      const previousDeployment = {
+        ...readbackDeployment,
+        callablePackageId: '0x10',
+        originalPackageId: '0x10',
+        animacraftProvenancePackageId: '0x10',
+        packageId: '0x10',
+        publishTxDigest: 'old-digest',
+      }
+      const testnetDeployment = {
+        ...readbackDeployment,
+        callablePackageId: '0x12',
+        originalPackageId: '0x12',
+        animacraftProvenancePackageId: '0x12',
+        packageId: '0x12',
+      }
+      writeFileSync(manifestFile, `${JSON.stringify({
+        mainnet: previousDeployment,
+        testnet: testnetDeployment,
+      }, null, 2)}\n`)
+      writeFileSync(historyFile, '[]\n')
+      writeFileSync(publishedTomlFile, [
+        '# Generated by Move',
+        '[published.testnet]',
+        'chain-id = "testnet-chain"',
+        'published-at = "0x12"',
+        'original-id = "0x12"',
+        'version = 1',
+        'toolchain-version = "1.76.1"',
+        'build-config = { flavor = "sui", edition = "2024" }',
+        'upgrade-capability = "0x26"',
+        '',
+      ].join('\n'))
+
+      const first = persistReconciledFreshPublishRecords({
+        network: 'mainnet',
+        deployment: readbackDeployment,
+        previousDeployment,
+        chainId: '35834a8a',
+        toolchainVersion: '1.76.1',
+        manifestFile,
+        historyFile,
+        publishedTomlFile,
+      })
+      const second = persistReconciledFreshPublishRecords({
+        network: 'mainnet',
+        deployment: readbackDeployment,
+        previousDeployment,
+        chainId: '35834a8a',
+        toolchainVersion: '1.76.1',
+        manifestFile,
+        historyFile,
+        publishedTomlFile,
+      })
+
+      expect(first.archivedPrevious).toBe(true)
+      expect(second.archivedPrevious).toBe(false)
+      const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
+      expect(manifest.mainnet).toEqual(readbackDeployment)
+      expect(manifest.testnet).toEqual(testnetDeployment)
+      const history = JSON.parse(readFileSync(historyFile, 'utf8'))
+      expect(history).toHaveLength(1)
+      expect(history[0].deployment.packageId).toBe('0x10')
+      expect(readPublishedTomlSections(publishedTomlFile).testnet).toContain(
+        'published-at = "0x12"',
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('finalized capability handoff readback', () => {
   it('accepts only after every transferred object belongs to the target', async () => {
     const client = readbackClient(readbackObjects(READBACK_MULTISIG))
@@ -452,6 +621,7 @@ describe('parseArgs', () => {
       dryRun: false,
       dryRunTransferOnly: false,
       resumeCapTransferFromManifest: false,
+      reconcileFreshPublishFromJournal: false,
       useEnvKey: false,
       mainnetE2e: false,
       gasBudget: null,
@@ -466,6 +636,11 @@ describe('parseArgs', () => {
   it('parses --mainnet-e2e', () => {
     expect(parseArgs(['--mainnet-e2e']).mainnetE2e).toBe(true)
     expect(parseArgs([]).mainnetE2e).toBe(false)
+  })
+
+  it('parses isolated fresh-publish reconciliation mode', () => {
+    expect(parseArgs(['--reconcile-fresh-publish-from-journal'])
+      .reconcileFreshPublishFromJournal).toBe(true)
   })
 
   it('parses --transfer-caps-to in both = and space forms', () => {

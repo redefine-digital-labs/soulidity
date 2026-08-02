@@ -145,18 +145,31 @@ function transactionBytes(value: string | Uint8Array): Uint8Array {
   return typeof value === 'string' ? fromBase64(value) : value
 }
 
+/**
+ * Core API Move types use fully padded account addresses, while the legacy
+ * JSON-RPC surface used the shortest hexadecimal spelling (notably `0x2`).
+ * Keep this compatibility adapter faithful at its boundary so downstream
+ * callers do not have to know which transport produced an object type.
+ */
+function legacyMoveType(type: string | undefined): string | undefined {
+  return type?.replace(/0x[0-9a-fA-F]+(?=::)/g, (address) => {
+    const compact = address.slice(2).replace(/^0+/, '')
+    return `0x${compact || '0'}`
+  })
+}
+
 function legacyObjectData(object: CoreObject, options?: LegacyOptions) {
   return {
     objectId: object.objectId,
     version: object.version,
     digest: object.digest,
-    type: object.type,
+    type: legacyMoveType(object.type),
     owner: object.owner,
     previousTransaction: object.previousTransaction ?? null,
     content: options?.showContent
       ? {
           dataType: 'moveObject',
-          type: object.type,
+          type: legacyMoveType(object.type),
           hasPublicTransfer: true,
           fields: object.json ?? {},
         }
@@ -189,7 +202,7 @@ function legacyObjectChange(
   }
   const common = {
     objectId: change.objectId,
-    objectType: objectTypes[change.objectId],
+    objectType: legacyMoveType(objectTypes[change.objectId]),
     version: change.outputVersion,
     digest: change.outputDigest,
     owner: change.outputOwner,

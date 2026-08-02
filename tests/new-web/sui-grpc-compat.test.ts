@@ -116,4 +116,41 @@ describe('Sui gRPC JSON-RPC compatibility boundary', () => {
       expect.objectContaining({ type: 'deleted', objectId: '0xdeleted' }),
     ])
   })
+
+  it('projects padded Core Move addresses using the legacy compact spelling', async () => {
+    const paddedFramework = `0x${'0'.repeat(63)}2`
+    const client = compatWithCore({
+      getTransaction: vi.fn().mockResolvedValue({
+        Transaction: {
+          digest: 'tx-digest',
+          status: { success: true, error: null },
+          effects: {
+            transactionDigest: 'tx-digest',
+            status: { success: true, error: null },
+            gasUsed: {},
+            changedObjects: [{
+              objectId: '0xcap',
+              inputState: 'DoesNotExist',
+              outputState: 'ObjectWrite',
+              outputVersion: '1',
+              outputDigest: 'digest',
+              outputOwner: { $kind: 'AddressOwner', AddressOwner: '0x1' },
+              idOperation: 'Created',
+            }],
+          },
+          objectTypes: {
+            '0xcap': `${paddedFramework}::package::UpgradeCap`,
+          },
+        },
+      }),
+    })
+
+    const result = await client.getTransactionBlock({
+      digest: 'tx-digest',
+      options: { showObjectChanges: true },
+    })
+    expect(result.objectChanges).toEqual([
+      expect.objectContaining({ objectType: '0x2::package::UpgradeCap' }),
+    ])
+  })
 })
