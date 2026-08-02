@@ -19,15 +19,15 @@
     "upgradeCapId": "0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b"
   },
   "mainnet": {
-    "callablePackageId": "0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d",
+    "callablePackageId": "0x60bf39455f90e2af94381f2434d2c013c4e38a12fd16873ac296a26660f92ecd",
     "originalPackageId": "0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d",
     "animacraftProvenancePackageId": "0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d",
     "packageId": "0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d",
     "marketConfigId": "0xbed4c9d143d9b499b82dfbfe2b9db0a429cd62c5db0df1c1779cd57640aa686d",
     "marketConfigV2PackageId": "0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d",
-    "marketConfigV6PackageId": "",
-    "marketConfigV6Id": "",
-    "marketAdminCapV6Id": "",
+    "marketConfigV6PackageId": "0x60bf39455f90e2af94381f2434d2c013c4e38a12fd16873ac296a26660f92ecd",
+    "marketConfigV6Id": "0x1cf4bf0b0cdca60246eb81c549fc51005afaf5ba72090cd76ec68da66253fe07",
+    "marketAdminCapV6Id": "0xd82f94ae1d38692dda81f1b1c02a2915fb53c9595134677a118b26d6d58126c1",
     "kioskRegistryId": "0x444d496592416f696d0e6d7514e3741773115513a015425b96c0d79d9e0f1168",
     "kindRegistryId": "0x2aac8f3c89bcd18f12b514c59164341ba41ef8f88ea21b545942962b89ced048",
     "soulTransferPolicyId": "0x3af19e45ed36a3c93bdcfa110ad61f48c7857a6241a128473bee2065a6cfa7eb",
@@ -40,6 +40,10 @@
     "soulPolicyCapId": "0x6bf413a92118521f959e7bd47636d8ca34e935af127012c6cb0999144f581f14",
     "collectionPolicyCapId": "0xb3b5ba9107c03adfeddce769e5f8ddd185a1ad2da6d64c0b9dbac4ab11555ffa",
     "soulDisplayId": "0x175ae0457ac6270fa14d9678fa48491bcccb798be87b38fb5608268fe82c892c",
-    "collectionDisplayId": "0xa5fbcbf19d6a4f6c61fde4565d6679598739dfbf83b20ad893c9b33eeefc1d78"
+    "collectionDisplayId": "0xa5fbcbf19d6a4f6c61fde4565d6679598739dfbf83b20ad893c9b33eeefc1d78",
+    "upgradeTxDigest": "4YP6XzdtMSYNZGuSfm5iK2Bg3yC3HXJx3oTfnbCbJb6q",
+    "marketConfigV2Id": "0x836da4241f186074cb189c00c2ed118f0d3ff063718f779badafaa4553441da3",
+    "marketAdminCapV2Id": "0xc8ab185ad145d8b8b63b58f1905eb5544303580cb2bfc64d45adfb308d6e7611",
+    "legacyMarketRetirementTxDigest": "GENUjHCEo1TckbCQaH8TLuqDfGE3xr9Z9knjStmgJa9r"
   }
 }

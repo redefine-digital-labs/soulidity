@@ -620,7 +620,11 @@ export async function verifyRetiredState(
   if (!nestedV2 || typeof nestedV2 !== 'object') {
     throw new Error('MarketAdminCapV6 does not contain the wrapped MarketAdminCapV2')
   }
-  const nestedV2Fields = (nestedV2 as { fields?: unknown }).fields
+  // Sui JSON-RPC historically wrapped nested Move structs in `{ fields }`,
+  // while the current gRPC compatibility response flattens their fields.
+  // Accept both canonical encodings, then apply the same exact ID checks.
+  const nestedV2Record = nestedV2 as Record<string, unknown>
+  const nestedV2Fields = nestedV2Record.fields ?? nestedV2Record
   if (!nestedV2Fields || typeof nestedV2Fields !== 'object') {
     throw new Error('MarketAdminCapV6.v2_admin_cap has no parsed fields')
   }
@@ -771,14 +775,14 @@ export async function reconcileMarketMutationFromJournal(input: {
     context.marketConfigV2PackageId,
     context.marketConfigV6PackageId,
   )
-  if (
-    ids.marketConfigV2Id !== context.simulatedMarketConfigV2Id
-    || ids.marketAdminCapV2Id !== context.simulatedMarketAdminCapV2Id
-    || ids.marketConfigV6Id !== context.simulatedMarketConfigV6Id
-    || ids.marketAdminCapV6Id !== context.simulatedMarketAdminCapV6Id
-  ) {
-    throw new Error('Finalized retirement object IDs differ from the journaled dry-run')
-  }
+  // `devInspectTransactionBlock` assigns ephemeral IDs to objects created by
+  // the simulated execution. Those IDs are useful operator diagnostics, but
+  // Sui does not guarantee that they match the IDs produced by the finalized
+  // transaction. The signed transaction digest, finalized events and object
+  // changes are the authority here. The checks below bind every finalized ID
+  // to both events, its exact TypeOrigin, the cross-object references, owner,
+  // wrapped admin capability and all three disabled gates before the journal
+  // may be cleared.
   assertRetirementEvent(
     finalized as MigrationResult,
     context.marketConfigV2PackageId,

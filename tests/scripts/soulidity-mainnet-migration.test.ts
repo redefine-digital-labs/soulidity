@@ -61,6 +61,10 @@ const CONFIG_V2 = `0x${'a'.repeat(64)}`
 const ADMIN_V2 = `0x${'b'.repeat(64)}`
 const CONFIG_V6 = `0x${'c'.repeat(64)}`
 const ADMIN_V6 = `0x${'d'.repeat(64)}`
+const SIMULATED_CONFIG_V2 = `0x${'e'.repeat(64)}`
+const SIMULATED_ADMIN_V2 = `0x${'f'.repeat(64)}`
+const SIMULATED_CONFIG_V6 = `0x${'1'.repeat(64)}`
+const SIMULATED_ADMIN_V6 = `0x${'2'.repeat(64)}`
 const JOURNAL_BYTES_BASE64 = 'AA=='
 const JOURNAL_SIGNATURE = 'AA=='
 const JOURNAL_DIGEST = TransactionDataBuilder.getDigestFromBytes(
@@ -532,10 +536,13 @@ describe('durable mainnet mutation journal', () => {
         marketConfigV2PackageId: CALLABLE,
         marketConfigV6PackageId: CALLABLE,
         animacraftProvenancePackageId: SOULIDITY_MAINNET_ORIGINAL_PACKAGE,
-        simulatedMarketConfigV2Id: CONFIG_V2,
-        simulatedMarketAdminCapV2Id: ADMIN_V2,
-        simulatedMarketConfigV6Id: CONFIG_V6,
-        simulatedMarketAdminCapV6Id: ADMIN_V6,
+        // devInspect-created IDs are ephemeral and may differ from the IDs in
+        // the finalized transaction. Recovery must verify final chain state
+        // rather than rejecting a safe, already-submitted transaction.
+        simulatedMarketConfigV2Id: SIMULATED_CONFIG_V2,
+        simulatedMarketAdminCapV2Id: SIMULATED_ADMIN_V2,
+        simulatedMarketConfigV6Id: SIMULATED_CONFIG_V6,
+        simulatedMarketAdminCapV6Id: SIMULATED_ADMIN_V6,
         writeManifest: false,
         priorManifestSha256: 'prior',
       },
@@ -621,10 +628,12 @@ describe('durable mainnet mutation journal', () => {
         marketConfigV2PackageId: CALLABLE,
         marketConfigV6PackageId: CALLABLE,
         animacraftProvenancePackageId: SOULIDITY_MAINNET_ORIGINAL_PACKAGE,
-        simulatedMarketConfigV2Id: CONFIG_V2,
-        simulatedMarketAdminCapV2Id: ADMIN_V2,
-        simulatedMarketConfigV6Id: CONFIG_V6,
-        simulatedMarketAdminCapV6Id: ADMIN_V6,
+        // The finalized event/object IDs may legitimately differ from the
+        // ephemeral IDs returned by devInspect for the same transaction.
+        simulatedMarketConfigV2Id: SIMULATED_CONFIG_V2,
+        simulatedMarketAdminCapV2Id: SIMULATED_ADMIN_V2,
+        simulatedMarketConfigV6Id: SIMULATED_CONFIG_V6,
+        simulatedMarketAdminCapV6Id: SIMULATED_ADMIN_V6,
         writeManifest: true,
         priorManifestSha256: 'prior-manifest',
       },
@@ -700,7 +709,9 @@ describe('durable mainnet mutation journal', () => {
             fields: {
               config_v2_id: CONFIG_V2,
               config_v6_id: CONFIG_V6,
-              v2_admin_cap: { fields: { id: { id: ADMIN_V2 }, config_id: CONFIG_V2 } },
+              // Current gRPC compatibility output flattens nested Move struct
+              // fields instead of wrapping them in `{ fields }`.
+              v2_admin_cap: { id: ADMIN_V2, config_id: CONFIG_V2 },
             },
           },
         },
