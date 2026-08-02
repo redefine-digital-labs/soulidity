@@ -1,11 +1,9 @@
 import './lib/dotenv'
 
-import {
-  getJsonRpcFullnodeUrl,
-  SuiJsonRpcClient,
-} from '@mysten/sui/jsonRpc'
 import { Transaction } from '@mysten/sui/transactions'
+import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { createSuiGrpcCompatClient } from '../packages/soulidity-sdk/src/sui-grpc-compat'
 
 import { loadKeypairFromEnv } from './lib/keypair'
 import {
@@ -388,10 +386,7 @@ async function main() {
     )
   }
 
-  const client = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl('mainnet'),
-    network: 'mainnet',
-  })
+  const client = createSuiGrpcCompatClient('mainnet')
   await assertMainnetRpc(client)
   const [upgradeCapResponse, legacyConfigResponse, legacyAdminResponse] =
     await Promise.all([

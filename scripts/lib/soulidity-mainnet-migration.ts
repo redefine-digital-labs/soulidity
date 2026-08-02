@@ -16,6 +16,8 @@ import {
 } from '@mysten/sui/utils'
 
 export const SOULIDITY_MAINNET_CHAIN_IDENTIFIER = '35834a8a'
+export const SOULIDITY_MAINNET_GENESIS_DIGEST =
+  '4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S'
 export const SOULIDITY_MAINNET_ADMIN =
   '0x840221acb5a4bd05dfd1cfd696c070773270125012f9c7e67e5c334e406712da'
 export const SOULIDITY_MAINNET_ORIGINAL_PACKAGE =
@@ -219,10 +221,13 @@ export function assertMainnetDeploymentRecord(
 }
 
 export async function assertMainnetRpc(client: SuiJsonRpcClient): Promise<void> {
-  const chainIdentifier = (await client.getChainIdentifier()).trim().toLowerCase()
-  if (chainIdentifier !== SOULIDITY_MAINNET_CHAIN_IDENTIFIER) {
+  const chainIdentifier = (await client.getChainIdentifier()).trim()
+  if (
+    chainIdentifier.toLowerCase() !== SOULIDITY_MAINNET_CHAIN_IDENTIFIER
+    && chainIdentifier !== SOULIDITY_MAINNET_GENESIS_DIGEST
+  ) {
     throw new Error(
-      `Refusing RPC chain ${chainIdentifier}; expected Sui mainnet ${SOULIDITY_MAINNET_CHAIN_IDENTIFIER}`,
+      `Refusing RPC chain ${chainIdentifier}; expected Sui mainnet ${SOULIDITY_MAINNET_GENESIS_DIGEST}`,
     )
   }
 }

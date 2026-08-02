@@ -29,6 +29,7 @@ export * from './personal-kiosk'
 
 // ── Sui + Walrus runtime helpers ─────────────────────────────────────────
 export * from './sui-client'
+export * from './sui-grpc-compat'
 export * from './sui-network'
 export * from './tx-result'
 export * from './walrus'

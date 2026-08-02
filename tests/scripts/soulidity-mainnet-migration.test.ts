@@ -6,6 +6,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
 
 import {
   afterEach,
@@ -17,9 +18,12 @@ import {
 import {
   assertCanonicalMainnetDeployment,
   assertExecutionConfirmation,
+  assertMainnetRpc,
   atomicPatchMainnetDeployment,
   readDeploymentSnapshot,
+  SOULIDITY_MAINNET_CHAIN_IDENTIFIER,
   SOULIDITY_MAINNET_CONFIRM_UPGRADE,
+  SOULIDITY_MAINNET_GENESIS_DIGEST,
   SOULIDITY_MAINNET_LEGACY_ADMIN_CAP,
   SOULIDITY_MAINNET_LEGACY_CONFIG,
   SOULIDITY_MAINNET_ORIGINAL_PACKAGE,
@@ -85,6 +89,35 @@ describe('controlled Soulidity mainnet upgrade args', () => {
     expect(() => parseUpgradeArgs([
       '--record-animacraft-provenance-origin',
     ])).toThrow(/Unknown argument/)
+  })
+})
+
+describe('mainnet transport binding', () => {
+  function clientFor(identifier: string) {
+    return {
+      getChainIdentifier: async () => identifier,
+    } as unknown as SuiJsonRpcClient
+  }
+
+  it('accepts the exact legacy short identifier and the gRPC genesis digest', async () => {
+    await expect(assertMainnetRpc(
+      clientFor(SOULIDITY_MAINNET_CHAIN_IDENTIFIER),
+    )).resolves.toBeUndefined()
+    await expect(assertMainnetRpc(
+      clientFor(SOULIDITY_MAINNET_GENESIS_DIGEST),
+    )).resolves.toBeUndefined()
+  })
+
+  it('rejects partial or different chain identifiers', async () => {
+    await expect(assertMainnetRpc(
+      clientFor(`${SOULIDITY_MAINNET_GENESIS_DIGEST}x`),
+    )).rejects.toThrow(/Refusing RPC chain/)
+    await expect(assertMainnetRpc(clientFor('testnet'))).rejects.toThrow(
+      /Refusing RPC chain/,
+    )
+    await expect(assertMainnetRpc(
+      clientFor(SOULIDITY_MAINNET_GENESIS_DIGEST.toLowerCase()),
+    )).rejects.toThrow(/Refusing RPC chain/)
   })
 })
 

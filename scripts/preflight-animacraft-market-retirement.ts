@@ -1,8 +1,5 @@
-import {
-  getJsonRpcFullnodeUrl,
-  SuiJsonRpcClient,
-} from '@mysten/sui/jsonRpc'
 import { Transaction } from '@mysten/sui/transactions'
+import { createSuiGrpcCompatClient } from '../packages/soulidity-sdk/src/sui-grpc-compat'
 
 import {
   assertDeletedObject,
@@ -112,10 +109,7 @@ async function main() {
     'mainnet.kioskRegistryId',
   )
 
-  const client = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl('mainnet'),
-    network: 'mainnet',
-  })
+  const client = createSuiGrpcCompatClient('mainnet')
   await assertMainnetRpc(client)
 
   const [

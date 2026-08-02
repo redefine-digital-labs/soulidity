@@ -13,14 +13,11 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
-  getJsonRpcFullnodeUrl,
-  SuiJsonRpcClient,
-} from '@mysten/sui/jsonRpc'
-import {
   Transaction,
   UpgradePolicy,
 } from '@mysten/sui/transactions'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { createSuiGrpcCompatClient } from '../packages/soulidity-sdk/src/sui-grpc-compat'
 
 import { loadKeypairFromEnv } from './lib/keypair'
 import {
@@ -332,10 +329,7 @@ async function main() {
   const snapshot = readDeploymentSnapshot()
   const publishedTomlSnapshot = readFileSync(publishedTomlPath, 'utf8')
   const deployment = assertMainnetDeploymentRecord(snapshot.mainnet)
-  const client = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl('mainnet'),
-    network: 'mainnet',
-  })
+  const client = createSuiGrpcCompatClient('mainnet')
   await assertMainnetRpc(client)
 
   const [upgradeCapResponse, legacyConfigResponse, legacyAdminResponse] =
