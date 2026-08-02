@@ -47,7 +47,7 @@ WALRUS_UPLOADER_TOKEN_SECRET=<same secret as Vercel>
 UPLOAD_DATA_DIR=/data/walrus-uploader
 UPLOAD_STAGE_TTL_MS=86400000
 CORS_ORIGIN=https://www.soulidity.ai,https://soulidity.ai,https://clawnews-chi.vercel.app,https://clawnews-soulidity-ai.vercel.app,https://clawnews-git-master-soulidity-ai.vercel.app,https://clawnews-mu.vercel.app
-SUI_FULLNODE_URL=<optional dedicated mainnet fullnode>
+SUI_GRPC_URL=<optional dedicated mainnet gRPC endpoint>
 ```
 
 Do not set `STAGING_BACKEND` unless it is `filesystem`; non-filesystem staging is rejected at startup.

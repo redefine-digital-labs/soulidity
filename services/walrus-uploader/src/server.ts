@@ -2,7 +2,7 @@ import 'dotenv/config'
 
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
-import { getJsonRpcFullnodeUrl, SuiJsonRpcClient } from '@mysten/sui/jsonRpc'
+import { SuiGrpcClient } from '@mysten/sui/grpc'
 import { WalrusClient, blobIdFromInt } from '@mysten/walrus'
 import {
   createInMemoryTokenUsageGuard,
@@ -13,6 +13,10 @@ import {
 import { createFilesystemWalrusUploadStaging } from './staging.js'
 
 const WALRUS_STORAGE_NODE_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
+const SUI_GRPC_FULLNODE_URL = {
+  mainnet: 'https://fullnode.mainnet.sui.io:443',
+  testnet: 'https://fullnode.testnet.sui.io:443',
+} as const
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim()
@@ -25,9 +29,12 @@ function getNetwork(): 'testnet' | 'mainnet' {
 }
 
 function getSuiClient(network: 'testnet' | 'mainnet') {
-  return new SuiJsonRpcClient({
+  return new SuiGrpcClient({
     network,
-    url: process.env.SUI_FULLNODE_URL?.trim() || getJsonRpcFullnodeUrl(network),
+    baseUrl:
+      process.env.SUI_GRPC_URL?.trim()
+      || process.env.SUI_FULLNODE_URL?.trim()
+      || SUI_GRPC_FULLNODE_URL[network],
   })
 }
 
@@ -53,26 +60,34 @@ async function validateRegister(params: RegisterValidationParams) {
     getBlobType: () => string | Promise<string>
     getBlobObject: (id: string) => Promise<{ id: string; blob_id: string; deletable?: boolean }>
   }
-  await suiClient.waitForTransaction({ digest: params.digest })
-  const tx = await suiClient.getTransactionBlock({
+  const response = await suiClient.core.waitForTransaction({
     digest: params.digest,
-    options: { showObjectChanges: true, showEffects: true, showInput: true },
+    include: {
+      effects: true,
+      transaction: true,
+      objectTypes: true,
+    },
   })
-  if (tx.effects?.status?.status !== 'success') {
+  const tx = response.Transaction ?? response.FailedTransaction
+  if (!tx) {
+    throw Object.assign(new Error(`Sui returned no transaction payload. Digest: ${params.digest}`), { status: 502 })
+  }
+  const executionStatus = tx.effects?.status ?? tx.status
+  if (!executionStatus.success) {
     throw Object.assign(new Error(`Register transaction did not succeed. Digest: ${params.digest}`), { status: 422 })
   }
-  const sender = tx.transaction?.data.sender
+  const sender = tx.transaction?.sender
   if (!sender || sender.toLowerCase() !== params.walletAddress.toLowerCase()) {
     throw Object.assign(new Error('Register transaction sender does not match uploader token wallet'), { status: 403 })
   }
 
   const expectedBlobType = await walrusClient.getBlobType()
   const created = new Set<string>()
-  for (const change of tx.objectChanges ?? []) {
+  for (const change of tx.effects?.changedObjects ?? []) {
     if (
-      change.type === 'created'
-      && change.objectType === expectedBlobType
-      && typeof change.objectId === 'string'
+      change.idOperation === 'Created'
+      && change.outputState !== 'DoesNotExist'
+      && tx.objectTypes?.[change.objectId] === expectedBlobType
     ) {
       created.add(change.objectId)
     }
