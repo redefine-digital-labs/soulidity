@@ -14,6 +14,10 @@ import { createSuiGrpcCompatClient } from '../packages/soulidity-sdk/src/sui-grp
 
 import { loadKeypairFromEnv } from './lib/keypair'
 import {
+  assertReviewedAnimacraftMainnetAbi,
+  assertReviewedAnimacraftDependencies,
+} from './lib/reviewed-move-dependencies'
+import {
   assertLegacyAdminCap,
   assertLegacyMarketConfig,
   assertObjectAddressOwner,
@@ -1282,7 +1286,29 @@ async function runMainnetTsSdkFlow(args: ParsedArgs, network: 'mainnet' | 'testn
     // `PublishUpgradeMissingDependency` if any transitively-reachable package is
     // missing from the dep list (e.g. USDC → stablecoin → two_step_role on
     // mainnet). Walk the linkage tables and union them in.
-    const fullDependencies = expandTransitiveDependencies(suiBin, network, built.dependencies)
+    let reviewedDependencies: string[]
+    try {
+      reviewedDependencies = assertReviewedAnimacraftDependencies(
+        network,
+        built.dependencies,
+      )
+      if (network === 'mainnet') {
+        await assertReviewedAnimacraftMainnetAbi({
+          client,
+          dependencies: reviewedDependencies,
+        })
+      }
+    } catch (error) {
+      exitWithError(
+        EXIT_PREFLIGHT_FAILED,
+        `Pre-flight: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    const fullDependencies = expandTransitiveDependencies(
+      suiBin,
+      network,
+      reviewedDependencies,
+    )
 
     // Publish PTB
     const gasBudget = args.gasBudget ? BigInt(args.gasBudget) : DEFAULT_PUBLISH_GAS_BUDGET
