@@ -23,6 +23,7 @@ on:
       - 'scripts/smoke-soulidity.ts'
       - 'scripts/phase2-testnet-smoke.ts'
       - 'scripts/lib/soulidity-mainnet-migration.ts'
+      - 'scripts/lib/reviewed-move-dependencies.ts'
       - 'scripts/preflight-animacraft-market-retirement.ts'
       - 'scripts/publish-soulidity-and-sync.ts'
       - 'scripts/retire-soulidity-legacy-market.ts'
@@ -34,6 +35,7 @@ on:
       - 'tests/new-web/sui-grpc-compat.test.ts'
       - 'tests/scripts/soulidity-mainnet-migration.test.ts'
       - 'tests/scripts/publish-soulidity-and-sync.test.ts'
+      - 'tests/scripts/reviewed-move-dependencies.test.ts'
       - '.github/workflows/soulidity-fast-path-smoke.yml'
   workflow_dispatch:
     inputs:

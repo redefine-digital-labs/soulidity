@@ -21,6 +21,10 @@ import { createSuiGrpcCompatClient } from '../packages/soulidity-sdk/src/sui-grp
 
 import { loadKeypairFromEnv } from './lib/keypair'
 import {
+  assertReviewedAnimacraftDependencies,
+  assertReviewedAnimacraftMainnetAbi,
+} from './lib/reviewed-move-dependencies'
+import {
   assertCanonicalSigner,
   assertDeploymentSnapshotUnchanged,
   assertExecutionConfirmation,
@@ -386,6 +390,14 @@ async function main() {
   const suiBin = resolveSuiBin()
   const { built, temporaryPackageDir } = buildMovePackage(suiBin)
   try {
+    const reviewedDependencies = assertReviewedAnimacraftDependencies(
+      'mainnet',
+      built.dependencies,
+    )
+    await assertReviewedAnimacraftMainnetAbi({
+      client,
+      dependencies: reviewedDependencies,
+    })
     const tx = buildUpgradeTransaction({
       currentPackageId: upgradeCap.packageId,
       upgradeCapId: deployment.upgradeCapId,
