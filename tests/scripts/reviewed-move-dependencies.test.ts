@@ -11,6 +11,7 @@ import {
   ANIMACRAFT_PRE_COMMERCE_MAINNET_PACKAGE_ID,
   REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS,
   REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS,
+  REVIEWED_ANIMACRAFT_PHYSICAL_V7_FUNCTIONS,
   assertReviewedAnimacraftDependencies,
   assertReviewedAnimacraftMainnetAbi,
 } from '../../scripts/lib/reviewed-move-dependencies'
@@ -79,6 +80,7 @@ describe('reviewed Animacraft Move dependency binding', () => {
         const expected = [
           ...REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS,
           ...REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS,
+          ...REVIEWED_ANIMACRAFT_PHYSICAL_V7_FUNCTIONS,
         ].find(
           (candidate) => candidate.name === input.function,
         )!
@@ -113,6 +115,7 @@ describe('reviewed Animacraft Move dependency binding', () => {
       [
         ...REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS,
         ...REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS,
+        ...REVIEWED_ANIMACRAFT_PHYSICAL_V7_FUNCTIONS,
       ].map(({ name }) => name),
     )
     expect(structCalls.map((call) => call.struct)).toEqual([
@@ -128,6 +131,13 @@ describe('reviewed Animacraft Move dependency binding', () => {
       'LoadoutSelectionV6',
       'MakerProfileV6',
       'OwnedItemV6',
+      'InitialPhysicalLoadoutAuthorizationV7',
+      'MakerPhysicalProfileV7',
+      'PhysicalProtocolConfigV7',
+      'PhysicalRegistryV7',
+      'SoulWardrobeV7',
+      'StyleAssetV7',
+      'StyleProductV7',
     ])
   })
 
@@ -158,6 +168,22 @@ describe('reviewed Animacraft Move dependency binding', () => {
     )].map((match) => match[1])
     expect([...new Set(usedFunctions)].sort()).toEqual(
       REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS
+        .map(({ name }) => name)
+        .sort(),
+    )
+  })
+
+  it('covers every Animacraft Physical v7 function used by production Move', () => {
+    const sourceDir = 'move/soulidity/sources'
+    const source = readdirSync(sourceDir)
+      .filter((name) => name.endsWith('.move') && !name.endsWith('_tests.move'))
+      .map((name) => readFileSync(join(sourceDir, name), 'utf8'))
+      .join('\n')
+    const usedFunctions = [...source.matchAll(
+      /(?:physical_v7|animacraft_physical_v7)::([a-zA-Z0-9_]+)/g,
+    )].map((match) => match[1])
+    expect([...new Set(usedFunctions)].sort()).toEqual(
+      REVIEWED_ANIMACRAFT_PHYSICAL_V7_FUNCTIONS
         .map(({ name }) => name)
         .sort(),
     )

@@ -13,10 +13,17 @@ use animacraft::commerce_v5::{
     MakerRootV5,
 };
 use animacraft::composition_v6::{
+    Self as composition_v6,
     CompositionProtocolConfigV6,
     CompositionRegistryV6,
     LoadoutSelectionV6,
     MakerProfileV6,
+};
+use animacraft::physical_composition_v7::{
+    Self as physical_v7,
+    MakerPhysicalProfileV7,
+    PhysicalProtocolConfigV7,
+    SoulWardrobeV7,
 };
 use std::string::{Self as string, String};
 use std::type_name;
@@ -125,10 +132,15 @@ const EAnimacraftV5CreatorRoyaltyMismatch: u64 = 67;
 const EAnimacraftV6ListingPathRequired: u64 = 68;
 const EAnimacraftV6ListingSnapshotMismatch: u64 = 69;
 const EAnimacraftV6ListingSnapshotInactive: u64 = 70;
+const EAnimacraftV7WardrobeListingUnsupported: u64 = 71;
+const EAnimacraftV7WardrobeMissing: u64 = 72;
+const EAnimacraftV7ListingSnapshotMismatch: u64 = 73;
+const EAnimacraftV7ListingSnapshotInactive: u64 = 74;
 const VERSION: u64 = 1;
 const MARKET_VERSION_V2: u64 = 2;
 const MARKET_VERSION_ANIMACRAFT_V5: u64 = 5;
 const MARKET_VERSION_ANIMACRAFT_V6: u64 = 6;
+const MARKET_VERSION_ANIMACRAFT_V7: u64 = 7;
 
 public struct MARKET has drop {}
 
@@ -233,6 +245,29 @@ public struct AnimacraftV6SoulListing has key {
     is_active: bool,
 }
 
+/// Dedicated listing for a physical-v7 Soul. The immutable snapshot binds the
+/// exact wardrobe, Profile, post-lock revision, and Soul ownership epoch. Old
+/// listing entrypoints cannot accept this TypeOrigin and continue to reject a
+/// v7-bound Soul.
+public struct AnimacraftV7SoulListing has key {
+    id: UID,
+    version: u64,
+    soul_id: ID,
+    state_id: ID,
+    seller: address,
+    seller_kiosk_id: ID,
+    price: u64,
+    creator: address,
+    creator_royalty_bps: u16,
+    purchase_cap: Option<kiosk::PurchaseCap<Soul>>,
+    wardrobe_id: ID,
+    physical_profile_id: ID,
+    wardrobe_revision: u64,
+    ownership_epoch: u64,
+    transfer_safe: bool,
+    is_active: bool,
+}
+
 public struct CollectionListing has key {
     id: UID,
     version: u64,
@@ -260,6 +295,11 @@ public struct PersonalKioskRegistration has copy, drop, store {
 }
 
 public struct SoulMarketProof has drop {}
+
+/// The PhysicalProtocolConfigV7 listing proof is bound once to this exact
+/// TypeOrigin. Fields and constructors remain private to `market`, so callers
+/// cannot independently unlock a listed wardrobe or bypass Soul settlement.
+public struct PhysicalWardrobeListingProofV7 has drop {}
 
 public struct CollectionMarketProof has drop {}
 
@@ -459,6 +499,33 @@ public struct AnimacraftV6SoulPurchased has copy, drop {
     buyer: address,
 }
 
+public struct AnimacraftV7SoulListed has copy, drop {
+    listing_id: ID,
+    soul_id: ID,
+    wardrobe_id: ID,
+    physical_profile_id: ID,
+    wardrobe_revision: u64,
+    ownership_epoch: u64,
+}
+
+public struct AnimacraftV7SoulListingCancelled has copy, drop {
+    listing_id: ID,
+    soul_id: ID,
+    wardrobe_id: ID,
+    wardrobe_revision: u64,
+}
+
+public struct AnimacraftV7SoulPurchased has copy, drop {
+    listing_id: ID,
+    soul_id: ID,
+    wardrobe_id: ID,
+    previous_wardrobe_revision: u64,
+    wardrobe_revision: u64,
+    previous_ownership_epoch: u64,
+    ownership_epoch: u64,
+    buyer: address,
+}
+
 public struct CollectionMintedToKiosk has copy, drop {
     collection_id: ID,
     right_id: ID,
@@ -557,6 +624,30 @@ public fun animacraft_v6_listing_loadout_hash(
 
 public fun animacraft_v6_listing_is_active(
     self: &AnimacraftV6SoulListing,
+): bool { self.is_active }
+
+public fun animacraft_v7_listing_version(
+    self: &AnimacraftV7SoulListing,
+): u64 { self.version }
+
+public fun animacraft_v7_listing_wardrobe_id(
+    self: &AnimacraftV7SoulListing,
+): ID { self.wardrobe_id }
+
+public fun animacraft_v7_listing_physical_profile_id(
+    self: &AnimacraftV7SoulListing,
+): ID { self.physical_profile_id }
+
+public fun animacraft_v7_listing_revision(
+    self: &AnimacraftV7SoulListing,
+): u64 { self.wardrobe_revision }
+
+public fun animacraft_v7_listing_ownership_epoch(
+    self: &AnimacraftV7SoulListing,
+): u64 { self.ownership_epoch }
+
+public fun animacraft_v7_listing_is_active(
+    self: &AnimacraftV7SoulListing,
 ): bool { self.is_active }
 
 public fun collection_listing_version(self: &CollectionListing): u64 {
@@ -1699,6 +1790,76 @@ public fun mint_animacraft_v5_in_personal_kiosk_v2(
         root,
         output_seal_id,
         ctx,
+    );
+    state
+}
+
+/// Canonical physical-composition-v7 Complete boundary. The trusted
+/// Root/v6/v7 Profile tuple is fixed here, while the authenticated v5
+/// Complete authorization is consumed, so a later public wardrobe call can
+/// never bind an unrelated Maker or Profile to this Soul.
+public fun mint_animacraft_v7_in_personal_kiosk_v2(
+    config: &MarketConfigV2,
+    kind_registry_obj: &KindRegistry,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    root: &mut MakerRootV5,
+    commerce_protocol_config: &CommerceProtocolConfigV5,
+    composition_profile: &MakerProfileV6,
+    physical_profile: &MakerPhysicalProfileV7,
+    authorization: CommerceV5SoulMintAuthorization,
+    description: String,
+    initial_content: vector<InitialContentEntry>,
+    initial_state_config: vector<StateConfigEntry>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): SoulState {
+    let root_id = animacraft_commerce_v5::root_id_v5(root);
+    let composition_profile_id = composition_v6::profile_id_v6(
+        composition_profile,
+    );
+    physical_v7::assert_physical_profile_binding_v7(
+        physical_profile,
+        root_id,
+        composition_profile_id,
+        composition_v6::profile_slot_schema_commitment_v6(
+            composition_profile,
+        ),
+        composition_v6::profile_renderer_commitment_v6(
+            composition_profile,
+        ),
+    );
+    // Snapshot only the hash already authenticated inside v5 Complete before
+    // that non-droppable authorization is consumed by the canonical mint.
+    // No handoff/client hash is accepted by this boundary.
+    let authenticated_recipe_hash =
+        *animacraft_commerce_v5::complete_authorization_recipe_hash_v5(
+            &authorization,
+        );
+    let mut state = mint_animacraft_v5_in_personal_kiosk_v2(
+        config,
+        kind_registry_obj,
+        registry,
+        soul_policy,
+        kiosk_obj,
+        personal_kiosk_cap,
+        root,
+        commerce_protocol_config,
+        authorization,
+        description,
+        initial_content,
+        initial_state_config,
+        clock,
+        ctx,
+    );
+    soul::bind_animacraft_physical_v7_profile(
+        &mut state,
+        root_id,
+        composition_profile_id,
+        physical_v7::physical_profile_id_v7(physical_profile),
+        authenticated_recipe_hash,
     );
     state
 }
@@ -2849,6 +3010,15 @@ fun list_animacraft_v6_soul_fixed_price_impl(
     price: u64,
     ctx: &mut TxContext,
 ): AnimacraftV6SoulListing {
+    // v7-bound Souls require a dedicated market ABI that receives and checks
+    // the exact wardrobe in the same PTB. Until that reviewed path exists,
+    // fail closed rather than allowing the v6 listing to bypass external
+    // Style custody.
+    assert!(
+        !soul::has_animacraft_physical_v7_profile(state)
+            && !soul::has_animacraft_wardrobe_v7(state),
+        EAnimacraftV7WardrobeListingUnsupported,
+    );
     assert!(config.secondary_enabled, ESecondaryPausedV2);
     assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
@@ -2955,6 +3125,114 @@ public fun list_animacraft_v6_soul_fixed_price_for_testing(
     )
 }
 
+/// The only listing creation path for a physical-v7 Soul. Animacraft locks
+/// the exact bound wardrobe in this PTB and aborts when any wallet-owned
+/// external Style remains in Soul custody. Soul-local Included Styles remain
+/// attached to the Soul and are safe to transfer with it.
+public fun list_animacraft_v7_soul_fixed_price_v7(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    provenance: &AnimacraftProvenance,
+    physical_config: &PhysicalProtocolConfigV7,
+    physical_profile: &MakerPhysicalProfileV7,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    wardrobe: &mut SoulWardrobeV7,
+    price: u64,
+    expected_wardrobe_revision: u64,
+    ctx: &mut TxContext,
+): AnimacraftV7SoulListing {
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
+    assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    animacraft_provenance::assert_matches_soul(provenance, state);
+    let soul_creator_royalty_bps = soul::creator_royalty_bps(state);
+    let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
+    let (_, _, _, _) = quote_animacraft_v5_soul_sale_for_state(
+        state,
+        price,
+        maker_source_royalty_bps,
+    );
+    assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    assert!(soul::current_owner(state) == ctx.sender(), ESoulOwnerMismatch);
+    assert!(soul::current_kiosk_id(state) == object::id(kiosk_obj), ESoulCurrentKioskMismatch);
+    assert_animacraft_v7_wardrobe_binding(state, wardrobe, physical_profile);
+
+    let soul_id = soul::soul_id(state);
+    let seller = personal_kiosk::owner(kiosk_obj);
+    let seller_kiosk_id = object::id(kiosk_obj);
+    assert_registered_personal_kiosk(
+        registry,
+        seller,
+        seller_kiosk_id,
+        object::id(personal_kiosk_cap),
+    );
+    let _soul_ref = kiosk::borrow<Soul>(
+        kiosk_obj,
+        personal_kiosk::borrow(personal_kiosk_cap),
+        soul_id,
+    );
+    physical_v7::set_wardrobe_listed_v7(
+        wardrobe,
+        physical_config,
+        physical_profile,
+        soul_id,
+        true,
+        PhysicalWardrobeListingProofV7 {},
+        expected_wardrobe_revision,
+    );
+    let purchase_cap = kiosk::list_with_purchase_cap<Soul>(
+        kiosk_obj,
+        personal_kiosk::borrow(personal_kiosk_cap),
+        soul_id,
+        0,
+        ctx,
+    );
+    let wardrobe_id = physical_v7::wardrobe_id_v7(wardrobe);
+    let physical_profile_id = physical_v7::physical_profile_id_v7(physical_profile);
+    let wardrobe_revision = physical_v7::wardrobe_revision_v7(wardrobe);
+    let ownership_epoch = soul::ownership_epoch(state);
+    let listing = AnimacraftV7SoulListing {
+        id: object::new(ctx),
+        version: MARKET_VERSION_ANIMACRAFT_V7,
+        soul_id,
+        state_id: object::id(state),
+        seller,
+        seller_kiosk_id,
+        price,
+        creator: soul::state_creator(state),
+        creator_royalty_bps: soul_creator_royalty_bps,
+        purchase_cap: option::some(purchase_cap),
+        wardrobe_id,
+        physical_profile_id,
+        wardrobe_revision,
+        ownership_epoch,
+        transfer_safe: true,
+        is_active: true,
+    };
+    let listing_id = object::id(&listing);
+    soul::set_listed(state, true);
+    event::emit(SoulListed {
+        listing_id,
+        soul_id,
+        seller,
+        kiosk_id: seller_kiosk_id,
+        price,
+    });
+    event::emit(AnimacraftV7SoulListed {
+        listing_id,
+        soul_id,
+        wardrobe_id,
+        physical_profile_id,
+        wardrobe_revision,
+        ownership_epoch,
+    });
+    listing
+}
+
 public fun cancel_soul_listing(
     kiosk_obj: &mut Kiosk,
     personal_kiosk_cap: &PersonalKioskCap,
@@ -3023,6 +3301,48 @@ public fun cancel_animacraft_v6_soul_listing(
         listing_id: object::id(listing),
         soul_id: listing.soul_id,
         appearance_revision: listing.appearance_revision,
+    });
+}
+
+/// Cancel and unlock a physical-v7 listing atomically. The exact wardrobe,
+/// Profile and post-lock revision are pinned by the listing snapshot.
+public fun cancel_animacraft_v7_soul_listing(
+    physical_config: &PhysicalProtocolConfigV7,
+    physical_profile: &MakerPhysicalProfileV7,
+    kiosk_obj: &mut Kiosk,
+    personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    wardrobe: &mut SoulWardrobeV7,
+    listing: &mut AnimacraftV7SoulListing,
+) {
+    assert_animacraft_v7_listing(state, wardrobe, physical_profile, listing);
+    assert!(kiosk::has_access(kiosk_obj, personal_kiosk::borrow(personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    assert!(object::id(kiosk_obj) == listing.seller_kiosk_id, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(kiosk_obj) == listing.seller, EKioskOwnerMismatch);
+    physical_v7::set_wardrobe_listed_v7(
+        wardrobe,
+        physical_config,
+        physical_profile,
+        listing.soul_id,
+        false,
+        PhysicalWardrobeListingProofV7 {},
+        listing.wardrobe_revision,
+    );
+    let purchase_cap = take_animacraft_v7_soul_purchase_cap(listing);
+    kiosk::return_purchase_cap<Soul>(kiosk_obj, purchase_cap);
+    listing.is_active = false;
+    soul::set_listed(state, false);
+    let wardrobe_revision = physical_v7::wardrobe_revision_v7(wardrobe);
+    event::emit(SoulListingCancelled {
+        listing_id: object::id(listing),
+        soul_id: listing.soul_id,
+        seller: listing.seller,
+    });
+    event::emit(AnimacraftV7SoulListingCancelled {
+        listing_id: object::id(listing),
+        soul_id: listing.soul_id,
+        wardrobe_id: listing.wardrobe_id,
+        wardrobe_revision,
     });
 }
 
@@ -3857,6 +4177,135 @@ public fun buy_animacraft_v6_soul_fixed_price_for_testing(
     );
 }
 
+/// Dedicated physical-v7 settlement. Unlocking the wardrobe, transferring the
+/// Soul, rotating the canonical owner and clearing the listing are one atomic
+/// PTB. No independent wardrobe-unlock transaction is exposed.
+public fun buy_animacraft_v7_soul_fixed_price_v7(
+    config: &MarketConfigV6,
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    provenance: &AnimacraftProvenance,
+    physical_config: &PhysicalProtocolConfigV7,
+    physical_profile: &MakerPhysicalProfileV7,
+    seller_kiosk: &mut Kiosk,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    wardrobe: &mut SoulWardrobeV7,
+    listing: &mut AnimacraftV7SoulListing,
+    payment: Coin<USDC>,
+    ctx: &mut TxContext,
+) {
+    assert_animacraft_v7_listing(state, wardrobe, physical_profile, listing);
+    assert!(config.secondary_enabled, ESecondaryPausedV2);
+    assert!(config.platform_fee_bps == ANIMACRAFT_V5_PROTOCOL_FEE_BPS, EAnimacraftV5ProtocolFeeMismatch);
+    assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
+    assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
+    assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
+    assert!(listing.creator == soul::state_creator(state), EListingStateMismatch);
+    assert!(listing.creator_royalty_bps == soul::creator_royalty_bps(state), EAnimacraftV5CreatorRoyaltyMismatch);
+    assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
+    assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
+    assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
+    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
+    animacraft_provenance::assert_matches_soul(provenance, state);
+
+    let buyer_kiosk_id = object::id(buyer_kiosk);
+    assert_registered_personal_kiosk(
+        registry,
+        ctx.sender(),
+        buyer_kiosk_id,
+        object::id(buyer_personal_kiosk_cap),
+    );
+    let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
+    let maker_source_recipient = animacraft_provenance::maker_creator(provenance);
+    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
+        quote_animacraft_v5_soul_sale_for_state(
+            state,
+            listing.price,
+            maker_source_royalty_bps,
+        );
+    assert!(payment.value() == listing.price, EIncorrectPaymentAmount);
+
+    let previous_wardrobe_revision = listing.wardrobe_revision;
+    physical_v7::set_wardrobe_listed_v7(
+        wardrobe,
+        physical_config,
+        physical_profile,
+        listing.soul_id,
+        false,
+        PhysicalWardrobeListingProofV7 {},
+        previous_wardrobe_revision,
+    );
+    physical_v7::assert_wardrobe_transferable_v7(wardrobe, physical_profile);
+    let wardrobe_revision = physical_v7::wardrobe_revision_v7(wardrobe);
+
+    let purchase_cap = take_animacraft_v7_soul_purchase_cap(listing);
+    let (soul_obj, mut request) = kiosk::purchase_with_cap<Soul>(
+        seller_kiosk,
+        purchase_cap,
+        coin::zero<SUI>(ctx),
+    );
+    assert!(object::id(&soul_obj) == listing.soul_id, EListingSoulMismatch);
+
+    let mut seller_payment = payment;
+    if (protocol_fee > 0) {
+        let fee_payment = coin::split(&mut seller_payment, protocol_fee, ctx);
+        transfer::public_transfer(fee_payment, config.fee_recipient);
+    };
+    if (soul_creator_royalty > 0) {
+        let royalty_payment = coin::split(&mut seller_payment, soul_creator_royalty, ctx);
+        transfer::public_transfer(royalty_payment, listing.creator);
+    };
+    if (maker_source_royalty > 0) {
+        let royalty_payment = coin::split(&mut seller_payment, maker_source_royalty, ctx);
+        transfer::public_transfer(royalty_payment, maker_source_recipient);
+    };
+    transfer::public_transfer(seller_payment, listing.seller);
+
+    let previous_ownership_epoch = listing.ownership_epoch;
+    grant::invalidate_all_for_owner_rotation(state, ctx.sender(), ctx.sender());
+    soul::rotate_owner(state, ctx.sender(), buyer_kiosk_id);
+    soul::set_listed(state, false);
+    kiosk::lock<Soul>(
+        buyer_kiosk,
+        personal_kiosk::borrow(buyer_personal_kiosk_cap),
+        soul_policy,
+        soul_obj,
+    );
+    kiosk_lock_rule::prove(&mut request, buyer_kiosk);
+    personal_kiosk_rule::prove(buyer_kiosk, &mut request);
+    witness_rule::prove(SoulMarketProof {}, soul_policy, &mut request);
+    transfer_policy::confirm_request(soul_policy, request);
+
+    listing.is_active = false;
+    event::emit(AnimacraftV5SoulPurchased {
+        listing_id: object::id(listing),
+        soul_id: listing.soul_id,
+        provenance_id: animacraft_provenance::provenance_id(provenance),
+        seller: listing.seller,
+        buyer: ctx.sender(),
+        maker_source_recipient,
+        price: listing.price,
+        seller_payout,
+        protocol_fee,
+        soul_creator_royalty_bps: listing.creator_royalty_bps,
+        soul_creator_royalty,
+        maker_source_royalty_bps,
+        maker_source_royalty,
+    });
+    event::emit(AnimacraftV7SoulPurchased {
+        listing_id: object::id(listing),
+        soul_id: listing.soul_id,
+        wardrobe_id: listing.wardrobe_id,
+        previous_wardrobe_revision,
+        wardrobe_revision,
+        previous_ownership_epoch,
+        ownership_epoch: soul::ownership_epoch(state),
+        buyer: ctx.sender(),
+    });
+}
+
 public fun list_collection_right_fixed_price(
     config: &MarketConfig,
     registry: &KioskRegistry,
@@ -4457,6 +4906,40 @@ public fun delete_animacraft_v6_soul_listing(
     });
 }
 
+public fun delete_animacraft_v7_soul_listing(
+    listing: AnimacraftV7SoulListing,
+    ctx: &TxContext,
+) {
+    assert!(!listing.is_active, EListingStillActive);
+    let listing_id = object::id(&listing);
+    let AnimacraftV7SoulListing {
+        id,
+        version: _,
+        soul_id,
+        state_id: _,
+        seller,
+        seller_kiosk_id: _,
+        price: _,
+        creator: _,
+        creator_royalty_bps: _,
+        purchase_cap,
+        wardrobe_id: _,
+        physical_profile_id: _,
+        wardrobe_revision: _,
+        ownership_epoch: _,
+        transfer_safe: _,
+        is_active: _,
+    } = listing;
+    purchase_cap.destroy_none();
+    id.delete();
+    event::emit(SoulListingDeleted {
+        listing_id,
+        soul_id,
+        seller,
+        deleted_by: ctx.sender(),
+    });
+}
+
 /// Reclaim storage for a fully-settled `CollectionListing`.
 public fun delete_collection_listing(listing: CollectionListing, ctx: &TxContext) {
     assert!(!listing.is_active, EListingStillActive);
@@ -4727,6 +5210,11 @@ fun initial_entry_name(entry: &InitialContentEntry): &String {
 // ── Finalize wrappers ─────────────────────────────────────────────────
 
 public fun finalize_soul_state(state: SoulState) {
+    assert!(
+        !soul::has_animacraft_physical_v7_profile(&state)
+            || soul::has_animacraft_wardrobe_v7(&state),
+        EAnimacraftV7WardrobeMissing,
+    );
     soul::share_state(state)
 }
 
@@ -4740,6 +5228,12 @@ public fun finalize_soul_listing(listing: SoulListing) {
 
 public fun finalize_animacraft_v6_soul_listing(
     listing: AnimacraftV6SoulListing,
+) {
+    transfer::share_object(listing)
+}
+
+public fun finalize_animacraft_v7_soul_listing(
+    listing: AnimacraftV7SoulListing,
 ) {
     transfer::share_object(listing)
 }
@@ -5177,6 +5671,13 @@ fun take_animacraft_v6_soul_purchase_cap(
     option::extract(&mut listing.purchase_cap)
 }
 
+fun take_animacraft_v7_soul_purchase_cap(
+    listing: &mut AnimacraftV7SoulListing,
+): kiosk::PurchaseCap<Soul> {
+    assert!(listing.purchase_cap.is_some(), EMissingPurchaseCap);
+    option::extract(&mut listing.purchase_cap)
+}
+
 fun take_collection_purchase_cap(
     listing: &mut CollectionListing,
 ): kiosk::PurchaseCap<SoulCollectionRight> {
@@ -5287,6 +5788,11 @@ fun assert_legacy_listing_has_no_v6_appearance(state: &SoulState) {
         !soul::has_animacraft_appearance_v6(state),
         EAnimacraftV6ListingPathRequired,
     );
+    assert!(
+        !soul::has_animacraft_physical_v7_profile(state)
+            && !soul::has_animacraft_wardrobe_v7(state),
+        EAnimacraftV7WardrobeListingUnsupported,
+    );
 }
 
 fun assert_animacraft_v6_listing(
@@ -5309,6 +5815,52 @@ fun assert_animacraft_v6_listing(
         listing.appearance_revision,
         listing.ownership_epoch,
         &listing.loadout_hash,
+    );
+}
+
+fun assert_animacraft_v7_wardrobe_binding(
+    state: &SoulState,
+    wardrobe: &SoulWardrobeV7,
+    profile: &MakerPhysicalProfileV7,
+) {
+    assert!(
+        soul::has_animacraft_physical_v7_profile(state)
+            && soul::has_animacraft_wardrobe_v7(state)
+            && soul::animacraft_wardrobe_v7_id(state)
+                == physical_v7::wardrobe_id_v7(wardrobe)
+            && soul::animacraft_physical_v7_profile_id(state)
+                == physical_v7::physical_profile_id_v7(profile)
+            && soul::animacraft_physical_v7_root_id(state)
+                == physical_v7::wardrobe_root_id_v7(wardrobe)
+            && physical_v7::wardrobe_profile_id_v7(wardrobe)
+                == physical_v7::physical_profile_id_v7(profile)
+            && physical_v7::wardrobe_soul_id_v7(wardrobe)
+                == soul::soul_id(state),
+        EAnimacraftV7ListingSnapshotMismatch,
+    );
+}
+
+fun assert_animacraft_v7_listing(
+    state: &SoulState,
+    wardrobe: &SoulWardrobeV7,
+    profile: &MakerPhysicalProfileV7,
+    listing: &AnimacraftV7SoulListing,
+) {
+    assert!(listing.is_active, EAnimacraftV7ListingSnapshotInactive);
+    assert_animacraft_v7_wardrobe_binding(state, wardrobe, profile);
+    assert!(
+        listing.version == MARKET_VERSION_ANIMACRAFT_V7
+            && listing.soul_id == soul::soul_id(state)
+            && listing.state_id == object::id(state)
+            && listing.wardrobe_id == physical_v7::wardrobe_id_v7(wardrobe)
+            && listing.physical_profile_id
+                == physical_v7::physical_profile_id_v7(profile)
+            && listing.wardrobe_revision
+                == physical_v7::wardrobe_revision_v7(wardrobe)
+            && listing.ownership_epoch == soul::ownership_epoch(state)
+            && listing.transfer_safe
+            && physical_v7::wardrobe_listed_v7(wardrobe),
+        EAnimacraftV7ListingSnapshotMismatch,
     );
 }
 

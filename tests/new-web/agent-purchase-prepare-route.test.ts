@@ -23,6 +23,8 @@ const mockedQuoteAnimacraftSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedQuoteAnimacraftV5SoulSale = vi.hoisted(() => vi.fn())
 const mockedGetAnimacraftProvenanceForState = vi.hoisted(() => vi.fn())
 const mockedGetSoulListingObject = vi.hoisted(() => vi.fn())
+const mockedGetAnimacraftWardrobeV7Id = vi.hoisted(() => vi.fn())
+const mockedGetAnimacraftPhysicalProfileV7Id = vi.hoisted(() => vi.fn())
 const mockedResolveOwnedPersonalKiosk = vi.hoisted(() => vi.fn())
 const MockSoulidityPersonalKioskInvariantError = vi.hoisted(
   () => class MockSoulidityPersonalKioskInvariantError extends Error {
@@ -77,6 +79,8 @@ vi.mock('@soulidity/sdk', async (importOriginal) => {
     quoteAnimacraftV5SoulSale: mockedQuoteAnimacraftV5SoulSale,
     getAnimacraftProvenanceForState: mockedGetAnimacraftProvenanceForState,
     getSoulListingObject: mockedGetSoulListingObject,
+    getAnimacraftWardrobeV7Id: mockedGetAnimacraftWardrobeV7Id,
+    getAnimacraftPhysicalProfileV7Id: mockedGetAnimacraftPhysicalProfileV7Id,
     resolveOwnedPersonalKiosk: mockedResolveOwnedPersonalKiosk,
     SoulidityPersonalKioskInvariantError: MockSoulidityPersonalKioskInvariantError,
     buildBuySoulTx: mockedBuildBuySoulTx,
@@ -140,6 +144,8 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
       platformFeeBps: 0,
       secondaryEnabled: true,
     })
+    mockedGetAnimacraftWardrobeV7Id.mockResolvedValue(null)
+    mockedGetAnimacraftPhysicalProfileV7Id.mockResolvedValue(null)
     mockedQuoteSoulPurchase.mockReturnValue({
       platformFeeAtomic: '0',
       creatorRoyaltyAtomic: '0',

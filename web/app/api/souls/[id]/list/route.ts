@@ -39,7 +39,6 @@ export async function POST(
   if (!soul) {
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
-
   const body = await request.json().catch(() => null) as Record<string, unknown> | null
   const txDigest = parseRequiredTxDigest(body?.txDigest)
   if (!txDigest) {

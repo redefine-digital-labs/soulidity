@@ -972,6 +972,10 @@ export async function getSoulStateObject(
     ? await readActiveGrantSlots(fields, ownershipEpoch, activeGrantCount)
     : []
   const animacraftAppearanceV6Id = await getAnimacraftAppearanceV6Id(objectId)
+  const animacraftWardrobeV7Id = await getAnimacraftWardrobeV7Id(objectId)
+  const animacraftPhysicalProfileV7Id = await getAnimacraftPhysicalProfileV7Id(
+    objectId,
+  )
   return {
     objectId,
     packageId: resolvedPackageId,
@@ -990,7 +994,68 @@ export async function getSoulStateObject(
     collectionId: readNestedObjectId(fields.collection_id, 'SoulState collection_id'),
     isListed: Boolean(fields.is_listed),
     animacraftAppearanceV6Id,
+    animacraftWardrobeV7Id,
+    animacraftPhysicalProfileV7Id,
   }
+}
+
+type DynamicFieldClient = Pick<typeof suiClient, 'getDynamicFieldObject'>
+
+async function getSoulStateBoundObjectId(
+  client: DynamicFieldClient,
+  stateObjectId: string,
+  key: number,
+  label: string,
+): Promise<string | null> {
+  try {
+    const response = await client.getDynamicFieldObject({
+      parentId: stateObjectId,
+      name: { type: 'u8', value: key },
+    })
+    if (!response.data) {
+      if (isDynamicFieldNotFound(response.error)) return null
+      throw new OnChainVerificationError(`${label} binding is missing on chain`)
+    }
+    const content = response.data.content
+    if (!content || !('fields' in content)) {
+      throw new OnChainVerificationError(`${label} binding is malformed on chain`)
+    }
+    const fields = readMoveStructFields(content.fields, `${label} dynamic field`)
+    const objectId = readNestedObjectId(fields.value, `${label} object id`)
+    if (!objectId) {
+      throw new OnChainVerificationError(`${label} object id is malformed on chain`)
+    }
+    return objectId
+  } catch (error) {
+    if (isDynamicFieldNotFound(error)) return null
+    throw error
+  }
+}
+
+/** Resolve the exact SoulWardrobeV7 bound to SoulState key u8=4. */
+export async function getAnimacraftWardrobeV7Id(
+  stateObjectId: string,
+  client: DynamicFieldClient = suiClient,
+): Promise<string | null> {
+  return getSoulStateBoundObjectId(
+    client,
+    stateObjectId,
+    4,
+    'Animacraft v7 wardrobe',
+  )
+}
+
+/** Resolve the trusted physical Profile marker written by canonical v7 Complete. */
+export async function getAnimacraftPhysicalProfileV7Id(
+  stateObjectId: string,
+  client: DynamicFieldClient = suiClient,
+): Promise<string | null> {
+  return getSoulStateBoundObjectId(
+    client,
+    stateObjectId,
+    7,
+    'Animacraft v7 physical Profile',
+  )
 }
 
 /**

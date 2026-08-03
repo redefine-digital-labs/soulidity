@@ -21,6 +21,7 @@ import {
   hashAnimacraftCompleteSelectionV5,
   normalizeTags,
   parseAnimacraftRecipeHashHex,
+  physicalWardrobeV7RuntimeFromPublicEnv,
   selectCoinObjectIdsForAmountAcrossPages,
   simulateAnimacraftCompleteQuoteV5,
   tryExtractAnimacraftOutputProvenanceV5CreatedEvent,
@@ -750,6 +751,64 @@ export function useAnimacraftMint(
           input.handoff.protocolVersion === 5
             ? input.commerceV5!.protocol.objectId
             : null,
+        physicalWardrobeV7: (() => {
+          const runtime = physicalWardrobeV7RuntimeFromPublicEnv()
+          if (!runtime.enabled) return null
+          if (input.handoff.protocolVersion !== 5 || !input.commerceV5) {
+            throw new Error('Physical Wardrobe v7 requires a commerce-v5 Complete')
+          }
+          const physical = input.handoff.physicalV7
+          if (!physical) {
+            throw new Error(
+              'This v7 release is missing its authenticated physical Profile and initial Styles',
+            )
+          }
+          if (
+            normalizeSuiAddress(physical.makerRootObjectId)
+            !== normalizeSuiAddress(input.commerceV5.root.objectId)
+          ) {
+            throw new Error(
+              'Physical v7 projection MakerRoot does not match this Complete',
+            )
+          }
+          if (
+            normalizeSuiAddress(physical.physicalProtocolConfigObjectId)
+              !== normalizeSuiAddress(runtime.physicalProtocolConfigObjectId)
+            || normalizeSuiAddress(physical.physicalRegistryObjectId)
+              !== normalizeSuiAddress(runtime.physicalRegistryObjectId)
+          ) {
+            throw new Error(
+              'Physical v7 projection does not match this deployment configuration',
+            )
+          }
+          if (
+            physical.recipeHash
+            !== normalizeAnimacraftRecoveryHash(input.recipeHashHex)
+          ) {
+            throw new Error(
+              'Physical v7 initial loadout does not match the authenticated Complete Recipe',
+            )
+          }
+          return {
+            runtime,
+            maker: {
+              physicalProfileObjectId: physical.physicalProfileObjectId,
+              compositionProfileObjectId: physical.v6ProfileObjectId,
+              makerRootObjectId: input.commerceV5.root.objectId,
+            },
+            recipe: input.handoff.recipe,
+            styleSelections: input.handoff.styleSelections,
+            initialRows: physical.initialAuthorizationRows.map((row) => (
+              row.rowKind === 'VISUAL'
+                ? {
+                    kind: 'visual' as const,
+                    familyObjectId: row.familyObjectId,
+                    styleProductObjectId: row.styleProductObjectId,
+                  }
+                : { kind: 'logical' as const }
+            )),
+          }
+        })(),
         description: input.handoff.description,
         initialContent,
         initialStateConfig,

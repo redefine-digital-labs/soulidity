@@ -358,3 +358,23 @@ export async function uploadPublic(buffer: Buffer, options?: WalrusUploadOptions
 export function getBlobUrl(blobId: string): string {
   return `${getWalrusRuntimeConfig().aggregatorUrl}/v1/blobs/${encodeURIComponent(assertWalrusBlobId(blobId))}`
 }
+
+/**
+ * Resolve one immutable file inside a Walrus Quilt by its published identifier.
+ *
+ * Quilt identifiers are part of the signed Maker manifest. Keep this helper
+ * strict: callers must not be able to smuggle a second path, query, fragment,
+ * or control character into an aggregator URL.
+ */
+export function getQuiltFileUrl(quiltId: string, identifier: string): string {
+  const normalizedIdentifier = identifier.trim()
+  const byteLength = new TextEncoder().encode(normalizedIdentifier).byteLength
+  if (
+    !normalizedIdentifier
+    || byteLength > 512
+    || /[\u0000-\u001F\u007F]/.test(normalizedIdentifier)
+  ) {
+    throw new Error('Invalid Walrus Quilt file identifier')
+  }
+  return `${getWalrusRuntimeConfig().aggregatorUrl}/v1/blobs/by-quilt-id/${encodeURIComponent(assertWalrusBlobId(quiltId, 'quiltId'))}/${encodeURIComponent(normalizedIdentifier)}`
+}

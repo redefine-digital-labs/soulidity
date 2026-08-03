@@ -7,9 +7,14 @@ import { selectCoinObjectIdsForAmountAcrossPages } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import {
+  assertPhysicalWardrobeV7Runtime,
+  fetchPhysicalWardrobeV7Snapshot,
   getAnimacraftProvenanceForState,
+  getAnimacraftPhysicalProfileV7Id,
+  getAnimacraftWardrobeV7Id,
   getMarketConfigV6,
   getSoulListingObject,
+  physicalWardrobeV7RuntimeFromEnv,
   ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
   quoteAnimacraftSoulPurchase,
   quoteAnimacraftV5SoulSale,
@@ -20,6 +25,7 @@ import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from 
 import {
   buildBuyAnimacraftSoulTx,
   buildBuyAnimacraftV5SoulTx,
+  buildBuyAnimacraftV7SoulTx,
   buildBuySoulTx,
 } from '@soulidity/sdk'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
@@ -65,6 +71,34 @@ export async function POST(
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
 
   try {
+    const [wardrobeV7Id, physicalProfileV7Id] = await Promise.all([
+      getAnimacraftWardrobeV7Id(soul.stateOnChainId),
+      getAnimacraftPhysicalProfileV7Id(soul.stateOnChainId),
+    ])
+    if (Boolean(wardrobeV7Id) !== Boolean(physicalProfileV7Id)) {
+      return NextResponse.json(
+        { error: 'Physical Wardrobe v7 binding is incomplete; purchase is blocked' },
+        { status: 409 },
+      )
+    }
+    const physicalRuntime = physicalWardrobeV7RuntimeFromEnv()
+    const physicalSnapshot = wardrobeV7Id && physicalProfileV7Id
+      ? await fetchPhysicalWardrobeV7Snapshot(
+          suiClient as never,
+          assertPhysicalWardrobeV7Runtime(physicalRuntime),
+          {
+            soulObjectId: soul.onChainId,
+            soulStateObjectId: soul.stateOnChainId,
+            walletAddress: agentAddress,
+          },
+        )
+      : null
+    if ((wardrobeV7Id || physicalProfileV7Id) && !physicalSnapshot) {
+      return NextResponse.json(
+        { error: 'Physical Wardrobe v7 could not be verified; purchase is blocked' },
+        { status: 409 },
+      )
+    }
     const animacraftProvenance = soul.provenanceKind === 'animacraft'
       ? await getAnimacraftProvenanceForState(
         soul.stateOnChainId,
@@ -175,7 +209,24 @@ export async function POST(
       buyerKioskId,
       buyerKioskCapOnChainId,
     }
-    const tx = isAnimacraftV5
+    const tx = physicalSnapshot
+      ? buildBuyAnimacraftV7SoulTx({
+          sellerKioskId: soul.currentKioskId,
+          stateObjectId: soul.stateOnChainId,
+          listingObjectId: soul.listingObjectOnChainId,
+          provenanceObjectId: animacraftProvenance!.objectId,
+          priceAtomic: totalRequired,
+          paymentCoinObjectIds: coinIds,
+          buyerKioskId,
+          buyerKioskCapOnChainId,
+          v7: {
+            physicalConfigObjectId: physicalRuntime.physicalProtocolConfigObjectId,
+            physicalProfileObjectId: physicalSnapshot.maker.physicalProfileObjectId,
+            wardrobeObjectId: physicalSnapshot.wardrobe.objectId,
+            expectedWardrobeRevision: physicalSnapshot.wardrobe.revision,
+          },
+        })
+      : isAnimacraftV5
       ? buildBuyAnimacraftV5SoulTx({
           sellerKioskId: soul.currentKioskId,
           stateObjectId: soul.stateOnChainId,
