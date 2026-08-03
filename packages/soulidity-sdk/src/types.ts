@@ -136,6 +136,10 @@ export interface SoulStateObject {
   isListed: boolean
   /** SoulAppearanceStateV6 bound through the SoulState dynamic-field key u8=3. */
   animacraftAppearanceV6Id: string | null
+  /** SoulWardrobeV7 bound through the SoulState dynamic-field key u8=4. */
+  animacraftWardrobeV7Id: string | null
+  /** Trusted MakerPhysicalProfileV7 marker at SoulState key u8=7. */
+  animacraftPhysicalProfileV7Id: string | null
 }
 
 /**

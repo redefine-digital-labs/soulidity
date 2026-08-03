@@ -22,6 +22,7 @@ import { useGrant } from '@/lib/hooks/use-grant'
 import { usePaidAccess } from '@/lib/hooks/use-paid-access'
 import { useSoulContentActions, useSoulContentSyncReplay } from '@/lib/hooks/use-soul-content-actions'
 import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
+import { PhysicalWardrobeV7Panel } from '@/components/souls/physical-wardrobe-v7'
 import { parsePersonaSpriteConfig, PERSONA_SPRITE_CONFIG_ERROR, validateSelectedSkillBundle } from '@soulidity/sdk'
 import { MAX_GRANT_CAPACITY, SOUL_GRANT_SCOPE_ASSETS, SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
 import type {
@@ -512,7 +513,7 @@ function QuickStats({ soul }: { soul: SoulAssetDetail }) {
 }
 
 // ── Workspace tabs ───────────────────────────────────────────────────
-type TabId = 'info' | 'sprite' | 'skills' | 'memory' | 'grants'
+type TabId = 'info' | 'wardrobe' | 'sprite' | 'skills' | 'memory' | 'grants'
 
 function Workspace({
   soul,
@@ -542,6 +543,9 @@ function Workspace({
 
   const tabs: Array<{ id: TabId; label: string; count: number | null }> = [
     { id: 'info', label: 'Info', count: null },
+    ...(soul.provenanceKind === 'animacraft'
+      ? [{ id: 'wardrobe' as const, label: 'Wardrobe', count: null }]
+      : []),
     { id: 'sprite', label: 'Persona Sprite', count: counts.sprite },
     { id: 'skills', label: 'Skills', count: counts.skills },
     { id: 'memory', label: 'Memory', count: counts.memory },
@@ -581,6 +585,15 @@ function Workspace({
       </div>
 
       {tab === 'info' && <InfoPanel soul={soul} />}
+      {tab === 'wardrobe' && (
+        <PhysicalWardrobeV7Panel
+          soulObjectId={soul.onChainId}
+          soulStateObjectId={soul.stateOnChainId}
+          currentOwnerAddress={soul.currentOwnerAddress}
+          role={role}
+          listed={soul.listingStatus === 'listed'}
+        />
+      )}
       {tab === 'sprite' && <SpritePanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
       {tab === 'skills' && <SkillsPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
       {tab === 'memory' && <MemoryPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}

@@ -3,9 +3,22 @@
 import { useState } from 'react'
 import type { AnimacraftV6SecondaryContext, SoulAssetDetail } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
-import { assertObjectInputsExist, getAnimacraftAppearanceV6Id } from '@soulidity/sdk'
+import {
+  assertPhysicalWardrobeV7Runtime,
+  assertObjectInputsExist,
+  fetchPhysicalWardrobeV7Snapshot,
+  getAnimacraftAppearanceV6Id,
+  getAnimacraftPhysicalProfileV7Id,
+  getAnimacraftWardrobeV7Id,
+  physicalWardrobeV7RuntimeFromPublicEnv,
+} from '@soulidity/sdk'
 import { buildBuySoulTx } from '@soulidity/sdk'
-import { buildBuyAnimacraftSoulTx, buildBuyAnimacraftV5SoulTx, buildBuyAnimacraftV6SoulTx } from '@soulidity/sdk'
+import {
+  buildBuyAnimacraftSoulTx,
+  buildBuyAnimacraftV5SoulTx,
+  buildBuyAnimacraftV6SoulTx,
+  buildBuyAnimacraftV7SoulTx,
+} from '@soulidity/sdk'
 import { quoteAnimacraftV5SoulSale } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -62,11 +75,35 @@ export function usePurchase(soul: SoulAssetDetail | null) {
       const animacraftVersion = soul.animacraftProvenance?.animacraftVersion
       const isAnimacraftV5 = animacraftVersion === 5
       const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
+      const [wardrobeV7Id, physicalProfileV7Id] = await Promise.all([
+        getAnimacraftWardrobeV7Id(soul.stateOnChainId),
+        getAnimacraftPhysicalProfileV7Id(soul.stateOnChainId),
+      ])
+      if (Boolean(wardrobeV7Id) !== Boolean(physicalProfileV7Id)) {
+        throw new Error('Physical Wardrobe v7 binding is incomplete; purchase is blocked')
+      }
+      const physicalRuntime = physicalWardrobeV7RuntimeFromPublicEnv()
+      const physicalSnapshot = wardrobeV7Id && physicalProfileV7Id
+        ? await fetchPhysicalWardrobeV7Snapshot(
+            suiClient as never,
+            assertPhysicalWardrobeV7Runtime(physicalRuntime),
+            {
+              soulObjectId: soul.onChainId,
+              soulStateObjectId: soul.stateOnChainId,
+              walletAddress: suiWallet.address,
+            },
+          )
+        : null
+      if ((wardrobeV7Id || physicalProfileV7Id) && !physicalSnapshot) {
+        throw new Error('Physical Wardrobe v7 could not be verified; purchase is blocked')
+      }
       const v6Context = (soul as SoulWithV6SecondaryContext).animacraftV6SecondaryContext ?? null
       if (appearanceV6Id && (!v6Context || v6Context.appearanceObjectId !== appearanceV6Id)) {
         throw new Error('Animacraft v6 appearance is bound, but its verified Maker loadout context is unavailable; purchase is blocked')
       }
       if (
+        !physicalSnapshot
+        &&
         soul.provenanceKind === 'animacraft'
         && animacraftVersion !== 4
         && !isAnimacraftV5
@@ -138,6 +175,11 @@ export function usePurchase(soul: SoulAssetDetail | null) {
         'Animacraft v6 commerce config': v6Context?.commerceConfigObjectId ?? null,
         'Animacraft v6 Maker profile': v6Context?.makerProfileObjectId ?? null,
         'Animacraft v6 Maker root': v6Context?.makerRootObjectId ?? null,
+        'Animacraft v7 physical config': physicalSnapshot
+          ? physicalRuntime.physicalProtocolConfigObjectId
+          : null,
+        'Animacraft v7 physical profile': physicalSnapshot?.maker.physicalProfileObjectId ?? null,
+        'Animacraft v7 wardrobe': physicalSnapshot?.wardrobe.objectId ?? null,
         'Animacraft Maker': isAnimacraftV5
           ? null
           : soul.animacraftProvenance?.makerId ?? null,
@@ -156,7 +198,24 @@ export function usePurchase(soul: SoulAssetDetail | null) {
         buyerKioskId: personalKiosk?.currentKioskId ?? null,
         buyerKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
       }
-      const tx = appearanceV6Id
+      const tx = physicalSnapshot
+        ? buildBuyAnimacraftV7SoulTx({
+            sellerKioskId: soul.currentKioskId,
+            stateObjectId: soul.stateOnChainId,
+            listingObjectId: soul.listingObjectOnChainId,
+            provenanceObjectId: soul.animacraftProvenance!.objectId,
+            priceAtomic: requiredAtomic,
+            paymentCoinObjectIds: selectedCoinIds,
+            buyerKioskId: personalKiosk?.currentKioskId ?? null,
+            buyerKioskCapOnChainId: personalKiosk?.currentKioskCapOnChainId ?? null,
+            v7: {
+              physicalConfigObjectId: physicalRuntime.physicalProtocolConfigObjectId,
+              physicalProfileObjectId: physicalSnapshot.maker.physicalProfileObjectId,
+              wardrobeObjectId: physicalSnapshot.wardrobe.objectId,
+              expectedWardrobeRevision: physicalSnapshot.wardrobe.revision,
+            },
+          })
+        : appearanceV6Id
         ? buildBuyAnimacraftV6SoulTx({
             sellerKioskId: soul.currentKioskId,
             stateObjectId: soul.stateOnChainId,

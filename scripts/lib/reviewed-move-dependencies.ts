@@ -23,7 +23,7 @@ export const ANIMACRAFT_MAINNET_ORIGINAL_PACKAGE_ID =
   '0x9678afa6b008ddd0637b7723e30beac1c2a1d096b39c76b103f1a1841dc1ffea'
 
 export const ANIMACRAFT_COMPOSABLE_V6_SOURCE_COMMIT =
-  'b3cb0e8493f52dd60912bc662fa6757590203b78'
+  '7cc6cbf93db984bfc285cf3c99b3e79a7ce8259b'
 
 export function assertReviewedAnimacraftDependencies(
   network: 'mainnet' | 'testnet',
@@ -89,6 +89,7 @@ export const REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS:
     parameters: 1,
     returns: 3,
   },
+  { name: 'complete_authorization_recipe_hash_v5', typeParameters: 0, parameters: 1, returns: 1 },
   {
     name: 'bind_complete_output_to_soul_v5',
     typeParameters: 1,
@@ -135,6 +136,7 @@ export const REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS:
   { name: 'profile_id_v6', typeParameters: 0, parameters: 1, returns: 1 },
   { name: 'profile_loadout_mutable_v6', typeParameters: 0, parameters: 1, returns: 1 },
   { name: 'profile_mode_v6', typeParameters: 0, parameters: 1, returns: 1 },
+  { name: 'profile_renderer_commitment_v6', typeParameters: 0, parameters: 1, returns: 1 },
   { name: 'profile_root_id_v6', typeParameters: 0, parameters: 1, returns: 1 },
   { name: 'profile_slot_schema_commitment_v6', typeParameters: 0, parameters: 1, returns: 1 },
   { name: 'purchase_soul_item_v6', typeParameters: 2, parameters: 12, returns: 0 },
@@ -142,6 +144,30 @@ export const REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS:
   { name: 'subject_soul_v6', typeParameters: 0, parameters: 0, returns: 1 },
   { name: 'subject_wallet_v6', typeParameters: 0, parameters: 0, returns: 1 },
   { name: 'unlock_owned_item_from_soul_v6', typeParameters: 1, parameters: 9, returns: 0 },
+]
+
+export const REVIEWED_ANIMACRAFT_PHYSICAL_V7_FUNCTIONS:
+  ReadonlyArray<ReviewedFunctionShape> = [
+  { name: 'assert_physical_profile_binding_v7', typeParameters: 0, parameters: 5, returns: 0 },
+  { name: 'assert_wardrobe_transferable_v7', typeParameters: 0, parameters: 2, returns: 0 },
+  { name: 'claim_initial_included_style_v7', typeParameters: 0, parameters: 8, returns: 0 },
+  { name: 'create_soul_wardrobe_v7', typeParameters: 1, parameters: 12, returns: 1 },
+  { name: 'deposit_and_equip_style_v7', typeParameters: 1, parameters: 13, returns: 0 },
+  { name: 'deposit_and_swap_style_v7', typeParameters: 1, parameters: 14, returns: 0 },
+  { name: 'emergency_unequip_and_withdraw_style_v7', typeParameters: 1, parameters: 7, returns: 0 },
+  { name: 'equip_style_v7', typeParameters: 1, parameters: 12, returns: 0 },
+  { name: 'finalize_soul_wardrobe_v7', typeParameters: 1, parameters: 6, returns: 0 },
+  { name: 'physical_profile_id_v7', typeParameters: 0, parameters: 1, returns: 1 },
+  { name: 'set_wardrobe_listed_v7', typeParameters: 1, parameters: 7, returns: 0 },
+  { name: 'swap_style_v7', typeParameters: 1, parameters: 13, returns: 0 },
+  { name: 'unequip_style_v7', typeParameters: 1, parameters: 11, returns: 0 },
+  { name: 'wardrobe_id_v7', typeParameters: 0, parameters: 1, returns: 1 },
+  { name: 'wardrobe_listed_v7', typeParameters: 0, parameters: 1, returns: 1 },
+  { name: 'wardrobe_profile_id_v7', typeParameters: 0, parameters: 1, returns: 1 },
+  { name: 'wardrobe_revision_v7', typeParameters: 0, parameters: 1, returns: 1 },
+  { name: 'wardrobe_root_id_v7', typeParameters: 0, parameters: 1, returns: 1 },
+  { name: 'wardrobe_soul_id_v7', typeParameters: 0, parameters: 1, returns: 1 },
+  { name: 'withdraw_style_v7', typeParameters: 1, parameters: 7, returns: 0 },
 ]
 
 const REVIEWED_ANIMACRAFT_COMMERCE_V5_STRUCTS = [
@@ -160,6 +186,16 @@ const REVIEWED_ANIMACRAFT_COMPOSITION_V6_STRUCTS = [
   'LoadoutSelectionV6',
   'MakerProfileV6',
   'OwnedItemV6',
+] as const
+
+const REVIEWED_ANIMACRAFT_PHYSICAL_V7_STRUCTS = [
+  'InitialPhysicalLoadoutAuthorizationV7',
+  'MakerPhysicalProfileV7',
+  'PhysicalProtocolConfigV7',
+  'PhysicalRegistryV7',
+  'SoulWardrobeV7',
+  'StyleAssetV7',
+  'StyleProductV7',
 ] as const
 
 function assertReviewedFunctionShape(
@@ -221,7 +257,14 @@ export async function assertReviewedAnimacraftMainnetAbi(input: {
   }
 
   try {
-    const [v5Functions, v5Structs, v6Functions, v6Structs] = await Promise.all([
+    const [
+      v5Functions,
+      v5Structs,
+      v6Functions,
+      v6Structs,
+      v7Functions,
+      v7Structs,
+    ] = await Promise.all([
       Promise.all(REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS.map(
         async (expected) => ({
           expected,
@@ -262,8 +305,32 @@ export async function assertReviewedAnimacraftMainnetAbi(input: {
           }),
         }),
       )),
+      Promise.all(REVIEWED_ANIMACRAFT_PHYSICAL_V7_FUNCTIONS.map(
+        async (expected) => ({
+          expected,
+          value: await input.client.getNormalizedMoveFunction({
+            package: reviewedPackage,
+            module: 'physical_v7',
+            function: expected.name,
+          }),
+        }),
+      )),
+      Promise.all(REVIEWED_ANIMACRAFT_PHYSICAL_V7_STRUCTS.map(
+        async (name) => ({
+          name,
+          value: await input.client.getNormalizedMoveStruct({
+            package: reviewedPackage,
+            module: 'physical_v7',
+            struct: name,
+          }),
+        }),
+      )),
     ])
-    for (const { expected, value } of [...v5Functions, ...v6Functions]) {
+    for (const { expected, value } of [
+      ...v5Functions,
+      ...v6Functions,
+      ...v7Functions,
+    ]) {
       assertReviewedFunctionShape(value, expected)
     }
     for (const { name, value } of v5Structs) {
@@ -280,9 +347,16 @@ export async function assertReviewedAnimacraftMainnetAbi(input: {
         definingPackage: ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
       })
     }
+    for (const { name, value } of v7Structs) {
+      assertReviewedStructOrigin(value, {
+        name,
+        module: 'physical_v7',
+        definingPackage: reviewedPackage,
+      })
+    }
   } catch (cause) {
     throw new Error(
-      `Reviewed Animacraft v5/v6 ABI is unavailable on Mainnet: ${
+      `Reviewed Animacraft v5/v6/v7 ABI is unavailable on Mainnet: ${
         cause instanceof Error ? cause.message : String(cause)
       }`,
     )

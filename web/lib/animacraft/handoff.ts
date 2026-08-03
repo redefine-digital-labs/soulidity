@@ -37,6 +37,38 @@ export interface ParsedAnimacraftHandoff {
   memoryMd: string
   skillMd: string
   skillName: string
+  physicalV7: {
+    schemaVersion: 'animacraft.physical-initial-loadout.v7'
+    version: 7
+    physicalProtocolConfigObjectId: string
+    physicalRegistryObjectId: string
+    physicalProfileObjectId: string
+    v6ProfileObjectId: string
+    makerRootObjectId: string
+    recipeHash: string
+    initialAuthorizationRows: Array<
+      | {
+          recipeIndex: number
+          rowKind: 'VISUAL'
+          partKey: string
+          recipeItemKey: string
+          styleKey: string
+          familyObjectId: string
+          styleProductObjectId: string
+          v6ProductObjectId: string
+        }
+      | {
+          recipeIndex: number
+          rowKind: 'LOGICAL_NONE' | 'LOGICAL_COLOR'
+          partKey: string
+          recipeItemKey: string
+          styleKey: string
+        }
+    >
+    visualRecipeIndices: number[]
+    initialStyleProductObjectIds: string[]
+    authorizationCommitment: string
+  } | null
 }
 
 export interface AnimacraftMakerState {
@@ -344,6 +376,15 @@ function parseU64(value: unknown, label: string): bigint {
   throw new Error(`${label} is not a valid unsigned integer`)
 }
 
+function parseHashHex(value: unknown, label: string): string {
+  if (typeof value !== 'string') throw new Error(`${label} must be a 32-byte hash`)
+  const normalized = value.trim().replace(/^0x/i, '').toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error(`${label} must be a 32-byte hash`)
+  }
+  return normalized
+}
+
 function parseSkillName(markdown: string): string {
   const frontmatter = /^---\s*\n([\s\S]*?)\n---/m.exec(markdown)?.[1] ?? ''
   const name = /^name:\s*([^\s]+)\s*$/m.exec(frontmatter)?.[1] ?? ''
@@ -553,6 +594,205 @@ export function parseAnimacraftOcPackage(
     throw new Error('Soul creator royalty must be 0%-5% in 0.5% tiers')
   }
 
+  const rawPhysicalV7 = suiSummary?.physicalV7
+  const physicalV7 = rawPhysicalV7 == null
+    ? null
+    : (() => {
+        const projection = asRecord(
+          rawPhysicalV7,
+          'Animacraft physical v7 projection',
+        )
+        if (projection.version !== 7) {
+          throw new Error('Animacraft physical projection version must be 7')
+        }
+        if (
+          projection.schemaVersion
+          !== 'animacraft.physical-initial-loadout.v7'
+        ) {
+          throw new Error('Animacraft physical projection schema is unsupported')
+        }
+        const physicalProtocolConfigObjectId = normalizeObjectId(
+          projection.physicalProtocolConfigObjectId,
+          'Physical v7 protocol config object id',
+        )
+        const physicalRegistryObjectId = normalizeObjectId(
+          projection.physicalRegistryObjectId,
+          'Physical v7 Registry object id',
+        )
+        const physicalProfileObjectId = normalizeObjectId(
+          projection.physicalProfileObjectId,
+          'Physical v7 Profile object id',
+        )
+        const v6ProfileObjectId = normalizeObjectId(
+          projection.v6ProfileObjectId,
+          'Physical v7 composition Profile object id',
+        )
+        const makerRootObjectId = normalizeObjectId(
+          projection.makerRootObjectId,
+          'Physical v7 MakerRoot object id',
+        )
+        const recipeHash = parseHashHex(
+          projection.recipeHash,
+          'Physical v7 Recipe hash',
+        )
+        const integrity = root.integrity == null
+          ? null
+          : asRecord(root.integrity, 'Animacraft package integrity')
+        if (
+          integrity?.recipeHash !== undefined
+          && parseHashHex(integrity.recipeHash, 'Animacraft package Recipe hash')
+            !== recipeHash
+        ) {
+          throw new Error('Physical v7 Recipe hash does not match the OC package')
+        }
+        const authorizationCommitment = parseHashHex(
+          projection.authorizationCommitment,
+          'Physical v7 authorization commitment',
+        )
+        if (
+          !Array.isArray(projection.initialAuthorizationRows)
+          || projection.initialAuthorizationRows.length !== recipe.length
+        ) {
+          throw new Error(
+            'Physical v7 projection must cover every Recipe row in exact order',
+          )
+        }
+        const initialAuthorizationRows = projection.initialAuthorizationRows
+          .map((rawRow, index) => {
+            const row = asRecord(
+              rawRow,
+              `Physical v7 initial authorization row ${index + 1}`,
+            )
+            const recipeIndex = Number(parseU64(
+              row.recipeIndex,
+              `Physical v7 row ${index + 1} Recipe index`,
+            ))
+            if (!Number.isSafeInteger(recipeIndex) || recipeIndex !== index) {
+              throw new Error('Physical v7 Recipe indices must be contiguous and exact')
+            }
+            const partKey = requiredText(
+              row.partKey,
+              `Physical v7 row ${index + 1} Part`,
+              128,
+            )
+            const recipeItemKey = requiredText(
+              row.recipeItemKey,
+              `Physical v7 row ${index + 1} Recipe Item`,
+              128,
+            )
+            const styleKey = requiredText(
+              row.styleKey,
+              `Physical v7 row ${index + 1} Style`,
+              128,
+            )
+            if (
+              !SAFE_KEY.test(partKey)
+              || !SAFE_KEY.test(recipeItemKey)
+              || !SAFE_KEY.test(styleKey)
+              || recipe[index]?.partKey !== partKey
+              || recipe[index]?.itemKey !== recipeItemKey
+              || styleSelections[index]?.styleKey !== styleKey
+            ) {
+              throw new Error(
+                `Physical v7 row ${index + 1} does not match its exact v5 selection`,
+              )
+            }
+            if (row.rowKind === 'VISUAL') {
+              return {
+                recipeIndex,
+                rowKind: 'VISUAL' as const,
+                partKey,
+                recipeItemKey,
+                styleKey,
+                familyObjectId: normalizeObjectId(
+                  row.familyObjectId,
+                  `Physical v7 row ${index + 1} Item Family`,
+                ),
+                styleProductObjectId: normalizeObjectId(
+                  row.styleProductObjectId,
+                  `Physical v7 row ${index + 1} Style Product`,
+                ),
+                v6ProductObjectId: normalizeObjectId(
+                  row.v6ProductObjectId,
+                  `Physical v7 row ${index + 1} v6 Product`,
+                ),
+              }
+            }
+            if (
+              row.rowKind !== 'LOGICAL_NONE'
+              && row.rowKind !== 'LOGICAL_COLOR'
+            ) {
+              throw new Error(`Physical v7 row ${index + 1} kind is unsupported`)
+            }
+            return {
+              recipeIndex,
+              rowKind: row.rowKind as 'LOGICAL_NONE' | 'LOGICAL_COLOR',
+              partKey,
+              recipeItemKey,
+              styleKey,
+            }
+          })
+        const visualRows = initialAuthorizationRows.filter(
+          (row): row is Extract<
+            (typeof initialAuthorizationRows)[number],
+            { rowKind: 'VISUAL' }
+          > => row.rowKind === 'VISUAL',
+        )
+        if (visualRows.length === 0) {
+          throw new Error('Physical v7 projection requires an initial visual Style')
+        }
+        const derivedVisualRecipeIndices = visualRows.map((row) => row.recipeIndex)
+        const derivedStyleProductObjectIds = visualRows.map(
+          (row) => row.styleProductObjectId,
+        )
+        if (
+          new Set(derivedStyleProductObjectIds).size
+          !== derivedStyleProductObjectIds.length
+        ) {
+          throw new Error('Physical v7 initial Style products contain duplicates')
+        }
+        if (
+          !Array.isArray(projection.visualRecipeIndices)
+          || projection.visualRecipeIndices.length !== derivedVisualRecipeIndices.length
+          || projection.visualRecipeIndices.some((value, index) => (
+            Number(value) !== derivedVisualRecipeIndices[index]
+          ))
+        ) {
+          throw new Error('Physical v7 visual Recipe index projection is inconsistent')
+        }
+        if (
+          !Array.isArray(projection.initialStyleProductObjectIds)
+          || projection.initialStyleProductObjectIds.length
+            !== derivedStyleProductObjectIds.length
+        ) {
+          throw new Error('Physical v7 initial Style projection is inconsistent')
+        }
+        const initialStyleProductObjectIds = projection.initialStyleProductObjectIds
+          .map((value, index) => normalizeObjectId(
+            value,
+            `Physical v7 initial Style product ${index + 1}`,
+          ))
+        if (initialStyleProductObjectIds.some(
+          (value, index) => value !== derivedStyleProductObjectIds[index],
+        )) {
+          throw new Error('Physical v7 initial Style projection is inconsistent')
+        }
+        return {
+          schemaVersion: 'animacraft.physical-initial-loadout.v7' as const,
+          version: 7 as const,
+          physicalProtocolConfigObjectId,
+          physicalRegistryObjectId,
+          physicalProfileObjectId,
+          v6ProfileObjectId,
+          makerRootObjectId,
+          recipeHash,
+          initialAuthorizationRows,
+          visualRecipeIndices: derivedVisualRecipeIndices,
+          initialStyleProductObjectIds,
+          authorizationCommitment,
+        }
+      })()
+
   return {
     protocolVersion: commerceDeclared ? 5 : 4,
     name,
@@ -568,6 +808,7 @@ export function parseAnimacraftOcPackage(
     memoryMd,
     skillMd,
     skillName,
+    physicalV7,
   }
 }
 

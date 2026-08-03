@@ -24,6 +24,11 @@ const EAnimacraftProvenanceAlreadyBound: u64 = 19;
 const EAnimacraftProvenanceMissing: u64 = 20;
 const EAnimacraftAppearanceV6AlreadyBound: u64 = 21;
 const EAnimacraftAppearanceV6Missing: u64 = 22;
+const EAnimacraftWardrobeV7AlreadyBound: u64 = 23;
+const EAnimacraftWardrobeV7Missing: u64 = 24;
+const EAnimacraftPhysicalV7ProfileAlreadyBound: u64 = 25;
+const EAnimacraftPhysicalV7ProfileMissing: u64 = 26;
+const EAnimacraftPhysicalV7RecipeHashInvalid: u64 = 27;
 
 const PROVENANCE_NATIVE: u8 = 0;
 const PROVENANCE_IMPORTED: u8 = 1;
@@ -40,6 +45,21 @@ const ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY: u8 = 2;
 /// Composable-assets-v6 companion state. As with the v5 provenance binding,
 /// the primitive key deliberately preserves the deployed `SoulState` layout.
 const ANIMACRAFT_APPEARANCE_V6_KEY: u8 = 3;
+/// Physical-composition-v7 companion. The exact shared wardrobe object ID is
+/// bound atomically during canonical mint without changing deployed state
+/// layout. Legacy market entry points use this marker to fail closed instead
+/// of bypassing the wardrobe's external-asset transfer invariant.
+const ANIMACRAFT_WARDROBE_V7_KEY: u8 = 4;
+/// Trusted physical-composition-v7 mint identity. These three primitive
+/// fields are written only by the dedicated canonical Complete boundary;
+/// the public wardrobe adapter may verify them but cannot create them.
+const ANIMACRAFT_PHYSICAL_V7_ROOT_KEY: u8 = 5;
+const ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY: u8 = 6;
+const ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY: u8 = 7;
+/// Exact Complete selection hash authenticated by CommerceV5. This is copied
+/// from the non-droppable authorization by the canonical v7 mint boundary;
+/// neither the wallet nor the later wardrobe adapter can substitute it.
+const ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY: u8 = 8;
 const VERSION: u64 = 1;
 
 public struct SOUL has drop {}
@@ -287,6 +307,91 @@ public fun animacraft_appearance_v6_id(self: &SoulState): ID {
     )
 }
 
+public fun has_animacraft_wardrobe_v7(self: &SoulState): bool {
+    df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_WARDROBE_V7_KEY)
+}
+
+public fun animacraft_wardrobe_v7_id(self: &SoulState): ID {
+    assert!(
+        df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_WARDROBE_V7_KEY),
+        EAnimacraftWardrobeV7Missing,
+    );
+    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_WARDROBE_V7_KEY)
+}
+
+public fun has_animacraft_physical_v7_profile(self: &SoulState): bool {
+    df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_PHYSICAL_V7_ROOT_KEY)
+        && df::exists_with_type<u8, ID>(
+            &self.id,
+            ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
+        )
+        && df::exists_with_type<u8, ID>(
+            &self.id,
+            ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY,
+        )
+        && df::exists_with_type<u8, vector<u8>>(
+            &self.id,
+            ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
+        )
+}
+
+public fun animacraft_physical_v7_root_id(self: &SoulState): ID {
+    assert!(
+        df::exists_with_type<u8, ID>(
+            &self.id,
+            ANIMACRAFT_PHYSICAL_V7_ROOT_KEY,
+        ),
+        EAnimacraftPhysicalV7ProfileMissing,
+    );
+    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_PHYSICAL_V7_ROOT_KEY)
+}
+
+public fun animacraft_physical_v7_composition_profile_id(
+    self: &SoulState,
+): ID {
+    assert!(
+        df::exists_with_type<u8, ID>(
+            &self.id,
+            ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
+        ),
+        EAnimacraftPhysicalV7ProfileMissing,
+    );
+    *df::borrow<u8, ID>(
+        &self.id,
+        ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
+    )
+}
+
+public fun animacraft_physical_v7_profile_id(self: &SoulState): ID {
+    assert!(
+        df::exists_with_type<u8, ID>(
+            &self.id,
+            ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY,
+        ),
+        EAnimacraftPhysicalV7ProfileMissing,
+    );
+    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY)
+}
+
+/// Package-private because this value is a cross-package authorization input,
+/// not client metadata. The public RPC can still audit the primitive dynamic
+/// field, while only Soulidity code can feed it to Animacraft wardrobe mint.
+public(package) fun animacraft_physical_v7_recipe_hash(
+    self: &SoulState,
+): &vector<u8> {
+    assert!(
+        df::exists_with_type<u8, vector<u8>>(
+            &self.id,
+            ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
+        ),
+        EAnimacraftPhysicalV7ProfileMissing,
+    );
+    df::borrow<u8, vector<u8>>(
+        &self.id,
+        ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
+    )
+}
+
 public fun has_state_config(self: &SoulState, key: String): bool {
     self.config_ext.contains(key)
 }
@@ -454,6 +559,62 @@ public(package) fun bind_animacraft_appearance_v6(
         &mut state.id,
         ANIMACRAFT_APPEARANCE_V6_KEY,
         appearance_state_id,
+    );
+}
+
+public(package) fun bind_animacraft_wardrobe_v7(
+    state: &mut SoulState,
+    wardrobe_id: ID,
+) {
+    assert!(
+        !df::exists_with_type<u8, ID>(&state.id, ANIMACRAFT_WARDROBE_V7_KEY),
+        EAnimacraftWardrobeV7AlreadyBound,
+    );
+    df::add(&mut state.id, ANIMACRAFT_WARDROBE_V7_KEY, wardrobe_id);
+}
+
+public(package) fun bind_animacraft_physical_v7_profile(
+    state: &mut SoulState,
+    root_id: ID,
+    composition_profile_id: ID,
+    physical_profile_id: ID,
+    authenticated_recipe_hash: vector<u8>,
+) {
+    assert!(
+        authenticated_recipe_hash.length() == 32,
+        EAnimacraftPhysicalV7RecipeHashInvalid,
+    );
+    assert!(
+        !df::exists_with_type<u8, ID>(
+            &state.id,
+            ANIMACRAFT_PHYSICAL_V7_ROOT_KEY,
+        ) && !df::exists_with_type<u8, ID>(
+            &state.id,
+            ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
+        ) && !df::exists_with_type<u8, ID>(
+            &state.id,
+            ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY,
+        ) && !df::exists_with_type<u8, vector<u8>>(
+            &state.id,
+            ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
+        ),
+        EAnimacraftPhysicalV7ProfileAlreadyBound,
+    );
+    df::add(&mut state.id, ANIMACRAFT_PHYSICAL_V7_ROOT_KEY, root_id);
+    df::add(
+        &mut state.id,
+        ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
+        composition_profile_id,
+    );
+    df::add(
+        &mut state.id,
+        ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY,
+        physical_profile_id,
+    );
+    df::add(
+        &mut state.id,
+        ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
+        authenticated_recipe_hash,
     );
 }
 

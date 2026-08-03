@@ -23,6 +23,10 @@ import {
   validateInitialStateConfigEntries,
 } from './shared'
 import { buildExactPaymentCoin } from './buy'
+import {
+  appendPhysicalSoulWardrobeV7,
+  type PhysicalWardrobeV7MintContext,
+} from './physical-wardrobe-v7'
 
 const SUI_CLOCK_OBJECT_ID = '0x6'
 
@@ -98,6 +102,13 @@ export interface MintAnimacraftSoulTxParams extends MintPtbInputs {
    * so the initial content Blob objects can be consumed in the same signature.
    */
   attachBeforeMint?: (tx: Transaction) => void | Promise<void>
+  /**
+   * Optional only while the deployment gate is closed. When supplied, the
+   * Complete PTB must create, populate, bind and finalize the exact physical
+   * wardrobe before SoulState is shared. An empty initial Style list aborts
+   * client-side and Animacraft independently validates required Parts/rules.
+   */
+  physicalWardrobeV7?: PhysicalWardrobeV7MintContext | null
 }
 
 export interface AnimacraftCompleteOutputSealApprovalTxParams {
@@ -194,6 +205,35 @@ export interface BuyAnimacraftV6SoulTxParams {
   buyerKioskId?: string | null
   buyerKioskCapOnChainId?: string | null
   v6: AnimacraftV6SecondaryContext
+}
+
+/** Exact immutable/shared objects pinned by the physical-v7 listing ABI. */
+export interface AnimacraftV7SecondaryContext {
+  physicalConfigObjectId: string
+  physicalProfileObjectId: string
+  wardrobeObjectId: string
+  expectedWardrobeRevision: number | bigint
+}
+
+export interface ListAnimacraftV7SoulTxParams {
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  stateObjectId: string
+  provenanceObjectId: string
+  priceAtomic: bigint
+  v7: AnimacraftV7SecondaryContext
+}
+
+export interface BuyAnimacraftV7SoulTxParams {
+  sellerKioskId: string
+  stateObjectId: string
+  listingObjectId: string
+  provenanceObjectId: string
+  priceAtomic: bigint
+  paymentCoinObjectIds: string[]
+  buyerKioskId?: string | null
+  buyerKioskCapOnChainId?: string | null
+  v7: AnimacraftV7SecondaryContext
 }
 
 export interface AnimacraftRecipeSlotInput {
@@ -812,6 +852,9 @@ export async function buildMintAnimacraftSoulTx(
       'commerce v5 protocol config object id',
     )
   }
+  if (params.physicalWardrobeV7 && animacraftProtocolVersion !== 5) {
+    throw new Error('Physical Wardrobe v7 requires an Animacraft commerce-v5 Complete')
+  }
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
 
@@ -849,14 +892,26 @@ export async function buildMintAnimacraftSoulTx(
     personalKiosk.buyerKioskCap,
   ]
   const soulState = tx.moveCall({
-    target: animacraftProtocolVersion === 5
-      ? `${packageId}::market::mint_animacraft_v5_in_personal_kiosk_v2`
-      : `${packageId}::market::mint_animacraft_in_personal_kiosk_v2`,
+    target: params.physicalWardrobeV7
+      ? `${packageId}::market::mint_animacraft_v7_in_personal_kiosk_v2`
+      : animacraftProtocolVersion === 5
+        ? `${packageId}::market::mint_animacraft_v5_in_personal_kiosk_v2`
+        : `${packageId}::market::mint_animacraft_in_personal_kiosk_v2`,
     arguments: animacraftProtocolVersion === 5
       ? [
           ...mintPrefix,
           tx.object(params.makerRootV5ObjectId!),
           tx.object(params.commerceV5ProtocolConfigObjectId!),
+          ...(params.physicalWardrobeV7
+            ? [
+                tx.object(
+                  params.physicalWardrobeV7.maker.compositionProfileObjectId,
+                ),
+                tx.object(
+                  params.physicalWardrobeV7.maker.physicalProfileObjectId,
+                ),
+              ]
+            : []),
           authorization,
           tx.pure.string(params.description),
           initialContentVec,
@@ -873,6 +928,12 @@ export async function buildMintAnimacraftSoulTx(
         ],
   })
 
+  if (params.physicalWardrobeV7) {
+    await appendPhysicalSoulWardrobeV7(tx, {
+      ...params.physicalWardrobeV7,
+      soulState,
+    })
+  }
   appendFinalizeSoulState(tx, packageId, soulState)
   finishBuyerKioskArgs(tx, personalKiosk)
   return tx
@@ -1202,6 +1263,112 @@ export function buildBuyAnimacraftV6SoulTx(
       tx.object(params.v6.appearanceObjectId),
       tx.object(params.listingObjectId),
       selections,
+      payment,
+    ],
+  })
+  finishBuyerKioskArgs(tx, buyerKiosk)
+  return tx
+}
+
+function validateAnimacraftV7SecondaryContext(
+  context: AnimacraftV7SecondaryContext,
+): bigint {
+  requireNonEmpty(context.physicalConfigObjectId, 'v7 physical config object id')
+  requireNonEmpty(context.physicalProfileObjectId, 'v7 physical Profile object id')
+  requireNonEmpty(context.wardrobeObjectId, 'v7 wardrobe object id')
+  return requireU64(
+    BigInt(context.expectedWardrobeRevision),
+    'v7 expected wardrobe revision',
+  )
+}
+
+/**
+ * Build the only v7-safe listing path. Move locks the exact wardrobe and
+ * rejects the transaction when `external_asset_count > 0` or a required
+ * Soul-local slot is incomplete.
+ */
+export function buildListAnimacraftV7SoulTx(
+  params: ListAnimacraftV7SoulTxParams,
+): Transaction {
+  requireNonEmpty(params.currentKioskId, 'currentKioskId')
+  requireNonEmpty(params.currentKioskCapOnChainId, 'currentKioskCapOnChainId')
+  requireNonEmpty(params.stateObjectId, 'stateObjectId')
+  requireNonEmpty(params.provenanceObjectId, 'provenanceObjectId')
+  if (params.priceAtomic <= 0n) throw new Error('priceAtomic must be positive')
+  const revision = validateAnimacraftV7SecondaryContext(params.v7)
+
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v6`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      tx.object(params.currentKioskCapOnChainId),
+    ],
+  })
+  const listing = tx.moveCall({
+    target: `${packageId}::market::list_animacraft_v7_soul_fixed_price_v7`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      tx.object(params.provenanceObjectId),
+      tx.object(params.v7.physicalConfigObjectId),
+      tx.object(params.v7.physicalProfileObjectId),
+      tx.object(params.currentKioskId),
+      tx.object(params.currentKioskCapOnChainId),
+      tx.object(params.stateObjectId),
+      tx.object(params.v7.wardrobeObjectId),
+      tx.pure.u64(params.priceAtomic),
+      tx.pure.u64(revision),
+    ],
+  })
+  tx.moveCall({
+    target: `${packageId}::market::finalize_animacraft_v7_soul_listing`,
+    arguments: [listing],
+  })
+  return tx
+}
+
+/** Build atomic v7 wardrobe unlock + Soul settlement + ownership rotation. */
+export function buildBuyAnimacraftV7SoulTx(
+  params: BuyAnimacraftV7SoulTxParams,
+): Transaction {
+  requireNonEmpty(params.sellerKioskId, 'sellerKioskId')
+  requireNonEmpty(params.stateObjectId, 'stateObjectId')
+  requireNonEmpty(params.listingObjectId, 'listingObjectId')
+  requireNonEmpty(params.provenanceObjectId, 'provenanceObjectId')
+  if (params.priceAtomic <= 0n) throw new Error('priceAtomic must be positive')
+  validateAnimacraftV7SecondaryContext(params.v7)
+
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
+  const transferPolicyId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
+  const tx = new Transaction()
+  const buyerKiosk = buildBuyerKioskArgs(tx, {
+    buyerKioskId: params.buyerKioskId,
+    buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
+    registrationMarket: 'secondary-v6',
+  })
+  const payment = buildExactPaymentCoin(tx, params.paymentCoinObjectIds, params.priceAtomic)
+  tx.moveCall({
+    target: `${packageId}::market::buy_animacraft_v7_soul_fixed_price_v7`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      tx.object(transferPolicyId),
+      tx.object(params.provenanceObjectId),
+      tx.object(params.v7.physicalConfigObjectId),
+      tx.object(params.v7.physicalProfileObjectId),
+      tx.object(params.sellerKioskId),
+      buyerKiosk.buyerKiosk,
+      buyerKiosk.buyerKioskCap,
+      tx.object(params.stateObjectId),
+      tx.object(params.v7.wardrobeObjectId),
+      tx.object(params.listingObjectId),
       payment,
     ],
   })
