@@ -22,6 +22,8 @@ import {
   assertNoPendingMainnetMutationAttempt,
   assertCanonicalMainnetDeployment,
   assertExecutionConfirmation,
+  assertMarketAdminCapV6,
+  assertMarketConfigV6,
   assertMainnetRpc,
   atomicPatchMainnetDeployment,
   beginMainnetMutationAttempt,
@@ -171,6 +173,77 @@ describe('mainnet transport binding', () => {
     await expect(assertMainnetRpc(
       clientFor(SOULIDITY_MAINNET_GENESIS_DIGEST.toLowerCase()),
     )).rejects.toThrow(/Refusing RPC chain/)
+  })
+})
+
+describe('active v6 market capability validation', () => {
+  const adminCap = {
+    data: {
+      objectId: ADMIN_V6,
+      type: `${CALLABLE}::market::MarketAdminCapV6`,
+      owner: { AddressOwner: SOULIDITY_MAINNET_ADMIN },
+      content: {
+        dataType: 'moveObject',
+        type: `${CALLABLE}::market::MarketAdminCapV6`,
+        fields: { config_v2_id: CONFIG_V2, config_v6_id: CONFIG_V6 },
+      },
+    },
+  }
+  const config = {
+    data: {
+      objectId: CONFIG_V6,
+      type: `${CALLABLE}::market::MarketConfigV6`,
+      owner: { Shared: { initial_shared_version: '1' } },
+      content: {
+        dataType: 'moveObject',
+        type: `${CALLABLE}::market::MarketConfigV6`,
+        fields: {
+          secondary_enabled: false,
+          legacy_config_id: SOULIDITY_MAINNET_LEGACY_CONFIG,
+          config_v2_id: CONFIG_V2,
+          fee_recipient: SOULIDITY_MAINNET_ADMIN,
+          platform_fee_bps: 1000,
+        },
+      },
+    },
+  }
+
+  it('binds the live admin cap to both recorded configs', () => {
+    expect(() => assertMarketAdminCapV6(
+      adminCap,
+      CALLABLE,
+      CONFIG_V2,
+      CONFIG_V6,
+      SOULIDITY_MAINNET_ADMIN,
+    )).not.toThrow()
+    expect(() => assertMarketAdminCapV6(
+      adminCap,
+      CALLABLE,
+      CONFIG_V2,
+      ADMIN_V6,
+      SOULIDITY_MAINNET_ADMIN,
+    )).toThrow(/does not control/)
+  })
+
+  it('reads the live shared config and rejects mismatched lineage', () => {
+    expect(assertMarketConfigV6(
+      config,
+      CALLABLE,
+      SOULIDITY_MAINNET_LEGACY_CONFIG,
+      CONFIG_V2,
+    )).toEqual({
+      secondaryEnabled: false,
+      legacyConfigId: SOULIDITY_MAINNET_LEGACY_CONFIG,
+      configV2Id: CONFIG_V2,
+      feeRecipient: SOULIDITY_MAINNET_ADMIN,
+      platformFeeBps: 1000,
+    })
+    expect(() => assertMarketConfigV6(
+      config,
+      CALLABLE,
+      CONFIG_V6,
+      CONFIG_V2,
+    )).toThrow(/does not reference/)
   })
 })
 

@@ -19,7 +19,7 @@ use animacraft::composition_v6::{
     LoadoutSelectionV6,
     MakerProfileV6,
 };
-use animacraft::physical_composition_v7::{
+use animacraft_physical_v7::physical_composition_v7::{
     Self as physical_v7,
     MakerPhysicalProfileV7,
     PhysicalProtocolConfigV7,
@@ -49,7 +49,7 @@ use sui::event;
 use sui::kiosk::{Self as kiosk, Kiosk};
 use sui::package::{Self as package, Publisher};
 use sui::sui::SUI;
-use sui::transfer_policy::{Self as transfer_policy, TransferPolicy};
+use sui::transfer_policy::{Self as transfer_policy, TransferPolicy, TransferRequest};
 use usdc::usdc::USDC;
 use walrus::blob::Blob;
 
@@ -140,7 +140,6 @@ const VERSION: u64 = 1;
 const MARKET_VERSION_V2: u64 = 2;
 const MARKET_VERSION_ANIMACRAFT_V5: u64 = 5;
 const MARKET_VERSION_ANIMACRAFT_V6: u64 = 6;
-const MARKET_VERSION_ANIMACRAFT_V7: u64 = 7;
 
 public struct MARKET has drop {}
 
@@ -251,20 +250,14 @@ public struct AnimacraftV6SoulListing has key {
 /// v7-bound Soul.
 public struct AnimacraftV7SoulListing has key {
     id: UID,
-    version: u64,
     soul_id: ID,
-    state_id: ID,
     seller: address,
     seller_kiosk_id: ID,
     price: u64,
-    creator: address,
-    creator_royalty_bps: u16,
     purchase_cap: Option<kiosk::PurchaseCap<Soul>>,
     wardrobe_id: ID,
-    physical_profile_id: ID,
     wardrobe_revision: u64,
     ownership_epoch: u64,
-    transfer_safe: bool,
     is_active: bool,
 }
 
@@ -499,33 +492,6 @@ public struct AnimacraftV6SoulPurchased has copy, drop {
     buyer: address,
 }
 
-public struct AnimacraftV7SoulListed has copy, drop {
-    listing_id: ID,
-    soul_id: ID,
-    wardrobe_id: ID,
-    physical_profile_id: ID,
-    wardrobe_revision: u64,
-    ownership_epoch: u64,
-}
-
-public struct AnimacraftV7SoulListingCancelled has copy, drop {
-    listing_id: ID,
-    soul_id: ID,
-    wardrobe_id: ID,
-    wardrobe_revision: u64,
-}
-
-public struct AnimacraftV7SoulPurchased has copy, drop {
-    listing_id: ID,
-    soul_id: ID,
-    wardrobe_id: ID,
-    previous_wardrobe_revision: u64,
-    wardrobe_revision: u64,
-    previous_ownership_epoch: u64,
-    ownership_epoch: u64,
-    buyer: address,
-}
-
 public struct CollectionMintedToKiosk has copy, drop {
     collection_id: ID,
     right_id: ID,
@@ -624,30 +590,6 @@ public fun animacraft_v6_listing_loadout_hash(
 
 public fun animacraft_v6_listing_is_active(
     self: &AnimacraftV6SoulListing,
-): bool { self.is_active }
-
-public fun animacraft_v7_listing_version(
-    self: &AnimacraftV7SoulListing,
-): u64 { self.version }
-
-public fun animacraft_v7_listing_wardrobe_id(
-    self: &AnimacraftV7SoulListing,
-): ID { self.wardrobe_id }
-
-public fun animacraft_v7_listing_physical_profile_id(
-    self: &AnimacraftV7SoulListing,
-): ID { self.physical_profile_id }
-
-public fun animacraft_v7_listing_revision(
-    self: &AnimacraftV7SoulListing,
-): u64 { self.wardrobe_revision }
-
-public fun animacraft_v7_listing_ownership_epoch(
-    self: &AnimacraftV7SoulListing,
-): u64 { self.ownership_epoch }
-
-public fun animacraft_v7_listing_is_active(
-    self: &AnimacraftV7SoulListing,
 ): bool { self.is_active }
 
 public fun collection_listing_version(self: &CollectionListing): u64 {
@@ -938,6 +880,87 @@ fun assert_animacraft_v5_royalty_schedule(
     let total_add_on_bps =
         (ANIMACRAFT_V5_PROTOCOL_FEE_BPS as u64) + rights_pool_bps;
     assert!(total_add_on_bps <= (ANIMACRAFT_V5_MAX_ADD_ON_BPS as u64), ECombinedFeesTooHigh);
+}
+
+fun settle_animacraft_v5_payment(
+    payment: Coin<USDC>,
+    price: u64,
+    fee_recipient: address,
+    soul_creator: address,
+    maker_source_recipient: address,
+    seller: address,
+    state: &SoulState,
+    maker_source_royalty_bps: u16,
+    ctx: &mut TxContext,
+): (u64, u64, u64, u64) {
+    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
+        quote_animacraft_v5_soul_sale_for_state(
+            state,
+            price,
+            maker_source_royalty_bps,
+        );
+    assert!(payment.value() == price, EIncorrectPaymentAmount);
+    let mut seller_payment = payment;
+    if (protocol_fee > 0) {
+        transfer::public_transfer(
+            coin::split(&mut seller_payment, protocol_fee, ctx),
+            fee_recipient,
+        );
+    };
+    if (soul_creator_royalty > 0) {
+        transfer::public_transfer(
+            coin::split(&mut seller_payment, soul_creator_royalty, ctx),
+            soul_creator,
+        );
+    };
+    if (maker_source_royalty > 0) {
+        transfer::public_transfer(
+            coin::split(&mut seller_payment, maker_source_royalty, ctx),
+            maker_source_recipient,
+        );
+    };
+    transfer::public_transfer(seller_payment, seller);
+    (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty)
+}
+
+fun finish_animacraft_soul_purchase(
+    registry: &KioskRegistry,
+    soul_policy: &TransferPolicy<Soul>,
+    buyer_kiosk: &mut Kiosk,
+    buyer_personal_kiosk_cap: &PersonalKioskCap,
+    state: &mut SoulState,
+    soul_obj: Soul,
+    mut request: TransferRequest<Soul>,
+    ctx: &TxContext,
+) {
+    assert!(
+        kiosk::has_access(
+            buyer_kiosk,
+            personal_kiosk::borrow(buyer_personal_kiosk_cap),
+        ),
+        EUnauthorizedKioskAccess,
+    );
+    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
+    let buyer_kiosk_id = object::id(buyer_kiosk);
+    assert_registered_personal_kiosk(
+        registry,
+        ctx.sender(),
+        buyer_kiosk_id,
+        object::id(buyer_personal_kiosk_cap),
+    );
+    grant::invalidate_all_for_owner_rotation(state, ctx.sender(), ctx.sender());
+    soul::rotate_owner(state, ctx.sender(), buyer_kiosk_id);
+    soul::set_listed(state, false);
+    kiosk::lock<Soul>(
+        buyer_kiosk,
+        personal_kiosk::borrow(buyer_personal_kiosk_cap),
+        soul_policy,
+        soul_obj,
+    );
+    kiosk_lock_rule::prove(&mut request, buyer_kiosk);
+    personal_kiosk_rule::prove(buyer_kiosk, &mut request);
+    witness_rule::prove(SoulMarketProof {}, soul_policy, &mut request);
+    let (_, _, _) = transfer_policy::confirm_request(soul_policy, request);
 }
 
 #[test_only]
@@ -3149,7 +3172,6 @@ public fun list_animacraft_v7_soul_fixed_price_v7(
     assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
     animacraft_provenance::assert_matches_soul(provenance, state);
-    let soul_creator_royalty_bps = soul::creator_royalty_bps(state);
     let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
     let (_, _, _, _) = quote_animacraft_v5_soul_sale_for_state(
         state,
@@ -3192,25 +3214,18 @@ public fun list_animacraft_v7_soul_fixed_price_v7(
         ctx,
     );
     let wardrobe_id = physical_v7::wardrobe_id_v7(wardrobe);
-    let physical_profile_id = physical_v7::physical_profile_id_v7(physical_profile);
     let wardrobe_revision = physical_v7::wardrobe_revision_v7(wardrobe);
     let ownership_epoch = soul::ownership_epoch(state);
     let listing = AnimacraftV7SoulListing {
         id: object::new(ctx),
-        version: MARKET_VERSION_ANIMACRAFT_V7,
         soul_id,
-        state_id: object::id(state),
         seller,
         seller_kiosk_id,
         price,
-        creator: soul::state_creator(state),
-        creator_royalty_bps: soul_creator_royalty_bps,
         purchase_cap: option::some(purchase_cap),
         wardrobe_id,
-        physical_profile_id,
         wardrobe_revision,
         ownership_epoch,
-        transfer_safe: true,
         is_active: true,
     };
     let listing_id = object::id(&listing);
@@ -3221,14 +3236,6 @@ public fun list_animacraft_v7_soul_fixed_price_v7(
         seller,
         kiosk_id: seller_kiosk_id,
         price,
-    });
-    event::emit(AnimacraftV7SoulListed {
-        listing_id,
-        soul_id,
-        wardrobe_id,
-        physical_profile_id,
-        wardrobe_revision,
-        ownership_epoch,
     });
     listing
 }
@@ -3332,17 +3339,10 @@ public fun cancel_animacraft_v7_soul_listing(
     kiosk::return_purchase_cap<Soul>(kiosk_obj, purchase_cap);
     listing.is_active = false;
     soul::set_listed(state, false);
-    let wardrobe_revision = physical_v7::wardrobe_revision_v7(wardrobe);
     event::emit(SoulListingCancelled {
         listing_id: object::id(listing),
         soul_id: listing.soul_id,
         seller: listing.seller,
-    });
-    event::emit(AnimacraftV7SoulListingCancelled {
-        listing_id: object::id(listing),
-        soul_id: listing.soul_id,
-        wardrobe_id: listing.wardrobe_id,
-        wardrobe_revision,
     });
 }
 
@@ -3899,66 +3899,42 @@ fun buy_animacraft_v5_soul_fixed_price_impl(
     );
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
     assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
-    assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
-    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
     animacraft_provenance::assert_matches_soul(provenance, state);
-
-    let buyer_kiosk_id = object::id(buyer_kiosk);
-    assert_registered_personal_kiosk(
-        registry,
-        ctx.sender(),
-        buyer_kiosk_id,
-        object::id(buyer_personal_kiosk_cap),
-    );
     let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
     // v5 source royalties belong to the original Maker author frozen into
     // immutable provenance at canonical mint. They must not follow a later
     // Maker operator, Maker transfer, or caller-supplied treasury object.
     let maker_source_recipient = animacraft_provenance::maker_creator(provenance);
-    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
-        quote_animacraft_v5_soul_sale_for_state(
-            state,
-            listing.price,
-            maker_source_royalty_bps,
-        );
-    assert!(payment.value() == listing.price, EIncorrectPaymentAmount);
-
     let purchase_cap = take_soul_purchase_cap(listing);
-    let (soul_obj, mut request) = kiosk::purchase_with_cap<Soul>(
+    let (soul_obj, request) = kiosk::purchase_with_cap<Soul>(
         seller_kiosk,
         purchase_cap,
         coin::zero<SUI>(ctx),
     );
     assert!(object::id(&soul_obj) == listing.soul_id, EListingSoulMismatch);
 
-    let mut seller_payment = payment;
-    if (protocol_fee > 0) {
-        let fee_payment = coin::split(&mut seller_payment, protocol_fee, ctx);
-        transfer::public_transfer(fee_payment, fee_recipient);
-    };
-    if (soul_creator_royalty > 0) {
-        let royalty_payment = coin::split(&mut seller_payment, soul_creator_royalty, ctx);
-        transfer::public_transfer(royalty_payment, listing.creator);
-    };
-    if (maker_source_royalty > 0) {
-        let royalty_payment = coin::split(&mut seller_payment, maker_source_royalty, ctx);
-        transfer::public_transfer(royalty_payment, maker_source_recipient);
-    };
-    transfer::public_transfer(seller_payment, listing.seller);
-
-    grant::invalidate_all_for_owner_rotation(state, ctx.sender(), ctx.sender());
-    soul::rotate_owner(state, ctx.sender(), buyer_kiosk_id);
-    soul::set_listed(state, false);
-    kiosk::lock<Soul>(
-        buyer_kiosk,
-        personal_kiosk::borrow(buyer_personal_kiosk_cap),
+    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
+        settle_animacraft_v5_payment(
+            payment,
+            listing.price,
+            fee_recipient,
+            listing.creator,
+            maker_source_recipient,
+            listing.seller,
+            state,
+            maker_source_royalty_bps,
+            ctx,
+        );
+    finish_animacraft_soul_purchase(
+        registry,
         soul_policy,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        state,
         soul_obj,
+        request,
+        ctx,
     );
-    kiosk_lock_rule::prove(&mut request, buyer_kiosk);
-    personal_kiosk_rule::prove(buyer_kiosk, &mut request);
-    witness_rule::prove(SoulMarketProof {}, soul_policy, &mut request);
-    transfer_policy::confirm_request(soul_policy, request);
 
     listing.is_active = false;
     event::emit(AnimacraftV5SoulPurchased {
@@ -4051,66 +4027,45 @@ fun buy_animacraft_v6_soul_fixed_price_impl(
     assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
     assert!(listing.creator == soul::state_creator(state), EListingStateMismatch);
-    assert!(listing.creator_royalty_bps == soul::creator_royalty_bps(state), EAnimacraftV5CreatorRoyaltyMismatch);
+    assert!(
+        listing.creator_royalty_bps == soul::creator_royalty_bps(state),
+        EAnimacraftV5CreatorRoyaltyMismatch,
+    );
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
     assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
-    assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
-    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
     animacraft_provenance::assert_matches_soul(provenance, state);
-
-    let buyer_kiosk_id = object::id(buyer_kiosk);
-    assert_registered_personal_kiosk(
-        registry,
-        ctx.sender(),
-        buyer_kiosk_id,
-        object::id(buyer_personal_kiosk_cap),
-    );
     let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
     let maker_source_recipient = animacraft_provenance::maker_creator(provenance);
-    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
-        quote_animacraft_v5_soul_sale_for_state(
-            state,
-            listing.price,
-            maker_source_royalty_bps,
-        );
-    assert!(payment.value() == listing.price, EIncorrectPaymentAmount);
-
     let purchase_cap = take_animacraft_v6_soul_purchase_cap(listing);
-    let (soul_obj, mut request) = kiosk::purchase_with_cap<Soul>(
+    let (soul_obj, request) = kiosk::purchase_with_cap<Soul>(
         seller_kiosk,
         purchase_cap,
         coin::zero<SUI>(ctx),
     );
     assert!(object::id(&soul_obj) == listing.soul_id, EListingSoulMismatch);
 
-    let mut seller_payment = payment;
-    if (protocol_fee > 0) {
-        let fee_payment = coin::split(&mut seller_payment, protocol_fee, ctx);
-        transfer::public_transfer(fee_payment, config.fee_recipient);
-    };
-    if (soul_creator_royalty > 0) {
-        let royalty_payment = coin::split(&mut seller_payment, soul_creator_royalty, ctx);
-        transfer::public_transfer(royalty_payment, listing.creator);
-    };
-    if (maker_source_royalty > 0) {
-        let royalty_payment = coin::split(&mut seller_payment, maker_source_royalty, ctx);
-        transfer::public_transfer(royalty_payment, maker_source_recipient);
-    };
-    transfer::public_transfer(seller_payment, listing.seller);
-
-    grant::invalidate_all_for_owner_rotation(state, ctx.sender(), ctx.sender());
-    soul::rotate_owner(state, ctx.sender(), buyer_kiosk_id);
-    soul::set_listed(state, false);
-    kiosk::lock<Soul>(
-        buyer_kiosk,
-        personal_kiosk::borrow(buyer_personal_kiosk_cap),
+    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
+        settle_animacraft_v5_payment(
+            payment,
+            listing.price,
+            config.fee_recipient,
+            soul::state_creator(state),
+            maker_source_recipient,
+            listing.seller,
+            state,
+            maker_source_royalty_bps,
+            ctx,
+        );
+    finish_animacraft_soul_purchase(
+        registry,
         soul_policy,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        state,
         soul_obj,
+        request,
+        ctx,
     );
-    kiosk_lock_rule::prove(&mut request, buyer_kiosk);
-    personal_kiosk_rule::prove(buyer_kiosk, &mut request);
-    witness_rule::prove(SoulMarketProof {}, soul_policy, &mut request);
-    transfer_policy::confirm_request(soul_policy, request);
 
     let previous_ownership_epoch = listing.ownership_epoch;
     let appearance_revision = listing.appearance_revision;
@@ -4130,7 +4085,7 @@ fun buy_animacraft_v6_soul_fixed_price_impl(
         price: listing.price,
         seller_payout,
         protocol_fee,
-        soul_creator_royalty_bps: listing.creator_royalty_bps,
+        soul_creator_royalty_bps: soul::creator_royalty_bps(state),
         soul_creator_royalty,
         maker_source_royalty_bps,
         maker_source_royalty,
@@ -4202,31 +4157,11 @@ public fun buy_animacraft_v7_soul_fixed_price_v7(
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
     assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
-    assert!(listing.creator == soul::state_creator(state), EListingStateMismatch);
-    assert!(listing.creator_royalty_bps == soul::creator_royalty_bps(state), EAnimacraftV5CreatorRoyaltyMismatch);
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
     assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
-    assert!(kiosk::has_access(buyer_kiosk, personal_kiosk::borrow(buyer_personal_kiosk_cap)), EUnauthorizedKioskAccess);
-    assert!(personal_kiosk::owner(buyer_kiosk) == ctx.sender(), EKioskOwnerMismatch);
     animacraft_provenance::assert_matches_soul(provenance, state);
-
-    let buyer_kiosk_id = object::id(buyer_kiosk);
-    assert_registered_personal_kiosk(
-        registry,
-        ctx.sender(),
-        buyer_kiosk_id,
-        object::id(buyer_personal_kiosk_cap),
-    );
     let maker_source_royalty_bps = animacraft_provenance::royalty_bps(provenance);
     let maker_source_recipient = animacraft_provenance::maker_creator(provenance);
-    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
-        quote_animacraft_v5_soul_sale_for_state(
-            state,
-            listing.price,
-            maker_source_royalty_bps,
-        );
-    assert!(payment.value() == listing.price, EIncorrectPaymentAmount);
-
     let previous_wardrobe_revision = listing.wardrobe_revision;
     physical_v7::set_wardrobe_listed_v7(
         wardrobe,
@@ -4238,45 +4173,36 @@ public fun buy_animacraft_v7_soul_fixed_price_v7(
         previous_wardrobe_revision,
     );
     physical_v7::assert_wardrobe_transferable_v7(wardrobe, physical_profile);
-    let wardrobe_revision = physical_v7::wardrobe_revision_v7(wardrobe);
-
     let purchase_cap = take_animacraft_v7_soul_purchase_cap(listing);
-    let (soul_obj, mut request) = kiosk::purchase_with_cap<Soul>(
+    let (soul_obj, request) = kiosk::purchase_with_cap<Soul>(
         seller_kiosk,
         purchase_cap,
         coin::zero<SUI>(ctx),
     );
     assert!(object::id(&soul_obj) == listing.soul_id, EListingSoulMismatch);
 
-    let mut seller_payment = payment;
-    if (protocol_fee > 0) {
-        let fee_payment = coin::split(&mut seller_payment, protocol_fee, ctx);
-        transfer::public_transfer(fee_payment, config.fee_recipient);
-    };
-    if (soul_creator_royalty > 0) {
-        let royalty_payment = coin::split(&mut seller_payment, soul_creator_royalty, ctx);
-        transfer::public_transfer(royalty_payment, listing.creator);
-    };
-    if (maker_source_royalty > 0) {
-        let royalty_payment = coin::split(&mut seller_payment, maker_source_royalty, ctx);
-        transfer::public_transfer(royalty_payment, maker_source_recipient);
-    };
-    transfer::public_transfer(seller_payment, listing.seller);
-
-    let previous_ownership_epoch = listing.ownership_epoch;
-    grant::invalidate_all_for_owner_rotation(state, ctx.sender(), ctx.sender());
-    soul::rotate_owner(state, ctx.sender(), buyer_kiosk_id);
-    soul::set_listed(state, false);
-    kiosk::lock<Soul>(
-        buyer_kiosk,
-        personal_kiosk::borrow(buyer_personal_kiosk_cap),
+    let (seller_payout, protocol_fee, soul_creator_royalty, maker_source_royalty) =
+        settle_animacraft_v5_payment(
+            payment,
+            listing.price,
+            config.fee_recipient,
+            soul::state_creator(state),
+            maker_source_recipient,
+            listing.seller,
+            state,
+            maker_source_royalty_bps,
+            ctx,
+        );
+    finish_animacraft_soul_purchase(
+        registry,
         soul_policy,
+        buyer_kiosk,
+        buyer_personal_kiosk_cap,
+        state,
         soul_obj,
+        request,
+        ctx,
     );
-    kiosk_lock_rule::prove(&mut request, buyer_kiosk);
-    personal_kiosk_rule::prove(buyer_kiosk, &mut request);
-    witness_rule::prove(SoulMarketProof {}, soul_policy, &mut request);
-    transfer_policy::confirm_request(soul_policy, request);
 
     listing.is_active = false;
     event::emit(AnimacraftV5SoulPurchased {
@@ -4289,20 +4215,10 @@ public fun buy_animacraft_v7_soul_fixed_price_v7(
         price: listing.price,
         seller_payout,
         protocol_fee,
-        soul_creator_royalty_bps: listing.creator_royalty_bps,
+        soul_creator_royalty_bps: soul::creator_royalty_bps(state),
         soul_creator_royalty,
         maker_source_royalty_bps,
         maker_source_royalty,
-    });
-    event::emit(AnimacraftV7SoulPurchased {
-        listing_id: object::id(listing),
-        soul_id: listing.soul_id,
-        wardrobe_id: listing.wardrobe_id,
-        previous_wardrobe_revision,
-        wardrobe_revision,
-        previous_ownership_epoch,
-        ownership_epoch: soul::ownership_epoch(state),
-        buyer: ctx.sender(),
     });
 }
 
@@ -4914,20 +4830,14 @@ public fun delete_animacraft_v7_soul_listing(
     let listing_id = object::id(&listing);
     let AnimacraftV7SoulListing {
         id,
-        version: _,
         soul_id,
-        state_id: _,
         seller,
         seller_kiosk_id: _,
         price: _,
-        creator: _,
-        creator_royalty_bps: _,
         purchase_cap,
         wardrobe_id: _,
-        physical_profile_id: _,
         wardrobe_revision: _,
         ownership_epoch: _,
-        transfer_safe: _,
         is_active: _,
     } = listing;
     purchase_cap.destroy_none();
@@ -5849,16 +5759,11 @@ fun assert_animacraft_v7_listing(
     assert!(listing.is_active, EAnimacraftV7ListingSnapshotInactive);
     assert_animacraft_v7_wardrobe_binding(state, wardrobe, profile);
     assert!(
-        listing.version == MARKET_VERSION_ANIMACRAFT_V7
-            && listing.soul_id == soul::soul_id(state)
-            && listing.state_id == object::id(state)
+        listing.soul_id == soul::soul_id(state)
             && listing.wardrobe_id == physical_v7::wardrobe_id_v7(wardrobe)
-            && listing.physical_profile_id
-                == physical_v7::physical_profile_id_v7(profile)
             && listing.wardrobe_revision
                 == physical_v7::wardrobe_revision_v7(wardrobe)
             && listing.ownership_epoch == soul::ownership_epoch(state)
-            && listing.transfer_safe
             && physical_v7::wardrobe_listed_v7(wardrobe),
         EAnimacraftV7ListingSnapshotMismatch,
     );

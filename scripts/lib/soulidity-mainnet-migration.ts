@@ -119,6 +119,14 @@ export interface LegacyMarketState {
   platformFeeBps: number
 }
 
+export interface MarketV6State {
+  secondaryEnabled: boolean
+  legacyConfigId: string
+  configV2Id: string
+  feeRecipient: string
+  platformFeeBps: number
+}
+
 export function deploymentManifestPath(cwd = process.cwd()): string {
   return resolve(cwd, 'packages/soulidity-sdk/src/deployment-manifest.json')
 }
@@ -217,7 +225,10 @@ export function assertMainnetDeploymentRecord(
   legacyAdminCapId: string
   upgradeCapId: string
   marketConfigV2PackageId: string
+  marketConfigV2Id: string
   marketConfigV6PackageId: string | null
+  marketConfigV6Id: string | null
+  marketAdminCapV6Id: string | null
   animacraftProvenancePackageId: string
 } {
   const originalPackageId = requiredAddress(
@@ -231,6 +242,26 @@ export function assertMainnetDeploymentRecord(
   if (deployment.packageId
     && requiredAddress(deployment.packageId, 'mainnet.packageId') !== originalPackageId) {
     throw new Error('mainnet.packageId must remain the immutable original package id')
+  }
+
+  const marketConfigV6PackageId = deployment.marketConfigV6PackageId?.trim()
+    ? requiredAddress(
+        deployment.marketConfigV6PackageId,
+        'mainnet.marketConfigV6PackageId',
+      )
+    : null
+  const marketConfigV6Id = deployment.marketConfigV6Id?.trim()
+    ? requiredAddress(deployment.marketConfigV6Id, 'mainnet.marketConfigV6Id')
+    : null
+  const marketAdminCapV6Id = deployment.marketAdminCapV6Id?.trim()
+    ? requiredAddress(deployment.marketAdminCapV6Id, 'mainnet.marketAdminCapV6Id')
+    : null
+  if (
+    [marketConfigV6PackageId, marketConfigV6Id, marketAdminCapV6Id]
+      .filter(Boolean).length !== 0
+    && (!marketConfigV6PackageId || !marketConfigV6Id || !marketAdminCapV6Id)
+  ) {
+    throw new Error('mainnet v6 market package, config and admin cap must be recorded together')
   }
 
   return {
@@ -252,12 +283,13 @@ export function assertMainnetDeploymentRecord(
       deployment.marketConfigV2PackageId?.trim() || originalPackageId,
       'mainnet.marketConfigV2PackageId',
     ),
-    marketConfigV6PackageId: deployment.marketConfigV6PackageId?.trim()
-      ? requiredAddress(
-          deployment.marketConfigV6PackageId,
-          'mainnet.marketConfigV6PackageId',
-        )
-      : null,
+    marketConfigV2Id: requiredAddress(
+      deployment.marketConfigV2Id,
+      'mainnet.marketConfigV2Id',
+    ),
+    marketConfigV6PackageId,
+    marketConfigV6Id,
+    marketAdminCapV6Id,
     animacraftProvenancePackageId: requiredAddress(
       deployment.animacraftProvenancePackageId?.trim() || originalPackageId,
       'mainnet.animacraftProvenancePackageId',
@@ -441,6 +473,67 @@ export function assertLegacyAdminCap(
     'legacy MarketAdminCap',
   )
   assertObjectAddressOwner(response, expectedOwner, 'legacy MarketAdminCap')
+}
+
+export function assertMarketAdminCapV6(
+  response: ObjectResponse,
+  typeOriginPackageId: string,
+  expectedConfigV2Id: string,
+  expectedConfigV6Id: string,
+  expectedOwner: string,
+): void {
+  const fields = moveFields(
+    response,
+    `${typeOriginPackageId}::market::MarketAdminCapV6`,
+    'MarketAdminCapV6',
+  )
+  assertObjectAddressOwner(response, expectedOwner, 'MarketAdminCapV6')
+  if (
+    objectIdFromMoveField(fields.config_v2_id, 'MarketAdminCapV6.config_v2_id')
+      !== requiredAddress(expectedConfigV2Id, 'expected MarketConfigV2')
+    || objectIdFromMoveField(fields.config_v6_id, 'MarketAdminCapV6.config_v6_id')
+      !== requiredAddress(expectedConfigV6Id, 'expected MarketConfigV6')
+  ) {
+    throw new Error('MarketAdminCapV6 does not control the recorded v2/v6 market configs')
+  }
+}
+
+export function assertMarketConfigV6(
+  response: ObjectResponse,
+  typeOriginPackageId: string,
+  expectedLegacyConfigId: string,
+  expectedConfigV2Id: string,
+): MarketV6State {
+  const fields = moveFields(
+    response,
+    `${typeOriginPackageId}::market::MarketConfigV6`,
+    'MarketConfigV6',
+  )
+  assertSharedOwner(response, 'MarketConfigV6')
+  if (typeof fields.secondary_enabled !== 'boolean') {
+    throw new Error('MarketConfigV6.secondary_enabled is not a boolean')
+  }
+  const legacyConfigId = objectIdFromMoveField(
+    fields.legacy_config_id,
+    'MarketConfigV6.legacy_config_id',
+  )
+  const configV2Id = objectIdFromMoveField(
+    fields.config_v2_id,
+    'MarketConfigV6.config_v2_id',
+  )
+  if (
+    legacyConfigId !== requiredAddress(expectedLegacyConfigId, 'expected legacy MarketConfig')
+    || configV2Id !== requiredAddress(expectedConfigV2Id, 'expected MarketConfigV2')
+  ) {
+    throw new Error('MarketConfigV6 does not reference the recorded legacy/v2 configs')
+  }
+  return {
+    secondaryEnabled: fields.secondary_enabled,
+    legacyConfigId,
+    configV2Id,
+    feeRecipient: requiredAddress(fields.fee_recipient, 'MarketConfigV6.fee_recipient'),
+    platformFeeBps: finiteInteger(fields.platform_fee_bps, 'MarketConfigV6.platform_fee_bps'),
+  }
 }
 
 export function assertLegacyMarketConfig(
