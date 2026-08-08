@@ -17,13 +17,19 @@ export const ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID =
   '0xcf369b8b02ac1e997146fc3be3f03870db14eaccf3d2cb7a9b93724be463108e'
 
 export const ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID =
+  '0x3863f5c037d6f8827e0e2401eebb6d0f91ff95f394f5f1c9376a3f4c87b6ce84'
+
+export const ANIMACRAFT_COMPOSABLE_V6_TYPE_ORIGIN_PACKAGE_ID =
   '0x2221610b5513ef3f926433229b7f0b565e850d56020e344266737cdca078af3b'
+
+export const ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID =
+  '0x1568f13b3c8f5b2246d8ba421ff83510417fc0d492eef1e1ce12e76c5304ed71'
 
 export const ANIMACRAFT_MAINNET_ORIGINAL_PACKAGE_ID =
   '0x9678afa6b008ddd0637b7723e30beac1c2a1d096b39c76b103f1a1841dc1ffea'
 
 export const ANIMACRAFT_COMPOSABLE_V6_SOURCE_COMMIT =
-  '7cc6cbf93db984bfc285cf3c99b3e79a7ce8259b'
+  'fde2d617bc0dba74f27ec255fd12434f632adc23'
 
 export function assertReviewedAnimacraftDependencies(
   network: 'mainnet' | 'testnet',
@@ -37,6 +43,9 @@ export function assertReviewedAnimacraftDependencies(
   const reviewedPackage = normalizeSuiAddress(
     ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
   )
+  const reviewedPhysicalPackage = normalizeSuiAddress(
+    ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
+  )
   const supersededPackages = new Set([
     normalizeSuiAddress(ANIMACRAFT_PRE_COMMERCE_MAINNET_PACKAGE_ID),
     normalizeSuiAddress(ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID),
@@ -47,11 +56,18 @@ export function assertReviewedAnimacraftDependencies(
   const reviewedIndexes = normalized.flatMap((dependency, index) =>
     dependency === reviewedPackage ? [index] : [],
   )
+  const reviewedPhysicalIndexes = normalized.flatMap((dependency, index) =>
+    dependency === reviewedPhysicalPackage ? [index] : [],
+  )
 
-  if (reviewedIndexes.length !== 1 || staleIndexes.length !== 0) {
+  if (
+    reviewedIndexes.length !== 1
+    || reviewedPhysicalIndexes.length !== 1
+    || staleIndexes.length !== 0
+  ) {
     throw new Error(
       'Soulidity build does not contain exactly one reviewed Animacraft '
-        + 'Composable v6 Mainnet dependency, or still contains a superseded '
+        + 'Core package and one reviewed Physical v7 companion package, or still contains a superseded '
         + 'Animacraft callable package. Refusing to rewrite build output; update '
         + 'the pinned source/deployment record first.',
     )
@@ -246,13 +262,19 @@ export async function assertReviewedAnimacraftMainnetAbi(input: {
   const reviewedPackage = normalizeSuiAddress(
     ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
   )
-  const matches = input.dependencies.filter(
+  const reviewedPhysicalPackage = normalizeSuiAddress(
+    ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
+  )
+  const coreMatches = input.dependencies.filter(
     (dependency) => normalizeSuiAddress(dependency) === reviewedPackage,
   )
-  if (matches.length !== 1) {
+  const physicalMatches = input.dependencies.filter(
+    (dependency) => normalizeSuiAddress(dependency) === reviewedPhysicalPackage,
+  )
+  if (coreMatches.length !== 1 || physicalMatches.length !== 1) {
     throw new Error(
       'Final Soulidity publish dependencies do not contain exactly one '
-        + 'reviewed Animacraft Composable v6 package.',
+        + 'reviewed Animacraft Core package and one Physical v7 companion package.',
     )
   }
 
@@ -309,8 +331,8 @@ export async function assertReviewedAnimacraftMainnetAbi(input: {
         async (expected) => ({
           expected,
           value: await input.client.getNormalizedMoveFunction({
-            package: reviewedPackage,
-            module: 'physical_v7',
+            package: reviewedPhysicalPackage,
+            module: 'physical_composition_v7',
             function: expected.name,
           }),
         }),
@@ -319,8 +341,8 @@ export async function assertReviewedAnimacraftMainnetAbi(input: {
         async (name) => ({
           name,
           value: await input.client.getNormalizedMoveStruct({
-            package: reviewedPackage,
-            module: 'physical_v7',
+            package: reviewedPhysicalPackage,
+            module: 'physical_composition_v7',
             struct: name,
           }),
         }),
@@ -344,14 +366,14 @@ export async function assertReviewedAnimacraftMainnetAbi(input: {
       assertReviewedStructOrigin(value, {
         name,
         module: 'composition_v6',
-        definingPackage: ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+        definingPackage: ANIMACRAFT_COMPOSABLE_V6_TYPE_ORIGIN_PACKAGE_ID,
       })
     }
     for (const { name, value } of v7Structs) {
       assertReviewedStructOrigin(value, {
         name,
-        module: 'physical_v7',
-        definingPackage: reviewedPackage,
+        module: 'physical_composition_v7',
+        definingPackage: ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
       })
     }
   } catch (cause) {

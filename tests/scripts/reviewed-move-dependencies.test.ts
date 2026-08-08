@@ -7,7 +7,9 @@ import {
   ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID,
   ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
   ANIMACRAFT_COMPOSABLE_V6_SOURCE_COMMIT,
+  ANIMACRAFT_COMPOSABLE_V6_TYPE_ORIGIN_PACKAGE_ID,
   ANIMACRAFT_MAINNET_ORIGINAL_PACKAGE_ID,
+  ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
   ANIMACRAFT_PRE_COMMERCE_MAINNET_PACKAGE_ID,
   REVIEWED_ANIMACRAFT_COMMERCE_V5_FUNCTIONS,
   REVIEWED_ANIMACRAFT_COMPOSITION_V6_FUNCTIONS,
@@ -23,10 +25,14 @@ describe('reviewed Animacraft Move dependency binding', () => {
     ])).toThrow(/Refusing to rewrite build output/)
   })
 
-  it('accepts one already-reviewed Mainnet dependency', () => {
+  it('accepts exactly one reviewed Core and one Physical v7 dependency', () => {
     expect(assertReviewedAnimacraftDependencies('mainnet', [
       ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
-    ])).toEqual([ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID])
+      ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
+    ])).toEqual([
+      ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+      ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
+    ])
   })
 
   it('rejects missing, duplicate, or ambiguous Mainnet bindings', () => {
@@ -39,6 +45,7 @@ describe('reviewed Animacraft Move dependency binding', () => {
     expect(() => assertReviewedAnimacraftDependencies('mainnet', [
       ANIMACRAFT_PRE_COMMERCE_MAINNET_PACKAGE_ID,
       ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+      ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
     ])).toThrow(/superseded/)
     expect(() => assertReviewedAnimacraftDependencies('mainnet', [
       ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID,
@@ -61,6 +68,15 @@ describe('reviewed Animacraft Move dependency binding', () => {
     )
     expect(mainnetReplacement).toContain(
       `original-id = "${ANIMACRAFT_MAINNET_ORIGINAL_PACKAGE_ID}"`,
+    )
+    const physicalReplacement = manifest.match(
+      /\[dep-replacements\.mainnet\][\s\S]*?^animacraft_physical_v7\s*=\s*\{([^\n]+)\}/m,
+    )?.[1]
+    expect(physicalReplacement).toContain(
+      `published-at = "${ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID}"`,
+    )
+    expect(physicalReplacement).toContain(
+      `original-id = "${ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID}"`,
     )
     expect(manifest).toContain(
       `rev = "${ANIMACRAFT_COMPOSABLE_V6_SOURCE_COMMIT}"`,
@@ -101,7 +117,9 @@ describe('reviewed Animacraft Move dependency binding', () => {
         return {
           definingId: input.module === 'commerce_v5'
             ? ANIMACRAFT_COMMERCE_V5_MAINNET_PACKAGE_ID
-            : ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+            : input.module === 'composition_v6'
+              ? ANIMACRAFT_COMPOSABLE_V6_TYPE_ORIGIN_PACKAGE_ID
+              : ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
           module: input.module,
           name: input.struct,
         }
@@ -109,7 +127,10 @@ describe('reviewed Animacraft Move dependency binding', () => {
     }
     await expect(assertReviewedAnimacraftMainnetAbi({
       client,
-      dependencies: [ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID],
+      dependencies: [
+        ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+        ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
+      ],
     })).resolves.toBeUndefined()
     expect(calls.map((call) => call.function)).toEqual(
       [
@@ -180,7 +201,7 @@ describe('reviewed Animacraft Move dependency binding', () => {
       .map((name) => readFileSync(join(sourceDir, name), 'utf8'))
       .join('\n')
     const usedFunctions = [...source.matchAll(
-      /(?:physical_v7|animacraft_physical_v7)::([a-zA-Z0-9_]+)/g,
+      /\bphysical_v7::([a-zA-Z0-9_]+)/g,
     )].map((match) => match[1])
     expect([...new Set(usedFunctions)].sort()).toEqual(
       REVIEWED_ANIMACRAFT_PHYSICAL_V7_FUNCTIONS
@@ -200,7 +221,10 @@ describe('reviewed Animacraft Move dependency binding', () => {
     }
     await expect(assertReviewedAnimacraftMainnetAbi({
       client: missingClient,
-      dependencies: [ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID],
+      dependencies: [
+        ANIMACRAFT_COMPOSABLE_V6_MAINNET_PACKAGE_ID,
+        ANIMACRAFT_PHYSICAL_V7_MAINNET_PACKAGE_ID,
+      ],
     })).rejects.toThrow(/ABI is unavailable.*Module not found/)
     await expect(assertReviewedAnimacraftMainnetAbi({
       client: missingClient,

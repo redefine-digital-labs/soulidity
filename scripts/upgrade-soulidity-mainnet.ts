@@ -30,6 +30,8 @@ import {
   assertExecutionConfirmation,
   assertLegacyAdminCap,
   assertLegacyMarketConfig,
+  assertMarketAdminCapV6,
+  assertMarketConfigV6,
   assertMainnetDeploymentRecord,
   assertMainnetRpc,
   assertNoPendingMainnetMutationAttempt,
@@ -663,7 +665,8 @@ async function main() {
   const client = createSuiGrpcCompatClient('mainnet')
   await assertMainnetRpc(client)
 
-  const [upgradeCapResponse, legacyConfigResponse, legacyAdminResponse] =
+  const activeAdminCapId = deployment.marketAdminCapV6Id ?? deployment.legacyAdminCapId
+  const [upgradeCapResponse, legacyConfigResponse, activeAdminResponse, marketV6Response] =
     await Promise.all([
       client.getObject({
         id: deployment.upgradeCapId,
@@ -674,14 +677,20 @@ async function main() {
         options: { showContent: true, showOwner: true, showType: true },
       }),
       client.getObject({
-        id: deployment.legacyAdminCapId,
+        id: activeAdminCapId,
         options: { showContent: true, showOwner: true, showType: true },
       }),
+      deployment.marketConfigV6Id
+        ? client.getObject({
+            id: deployment.marketConfigV6Id,
+            options: { showContent: true, showOwner: true, showType: true },
+          })
+        : Promise.resolve(null),
     ])
 
   const capabilityOwner = objectAddressOwner(
-    legacyAdminResponse,
-    'legacy MarketAdminCap',
+    activeAdminResponse,
+    deployment.marketAdminCapV6Id ? 'MarketAdminCapV6' : 'legacy MarketAdminCap',
   )
   const upgradeCapOwner = objectAddressOwner(
     upgradeCapResponse,
@@ -690,7 +699,7 @@ async function main() {
   if (upgradeCapOwner !== capabilityOwner) {
     throw new Error(
       `Soulidity capability owners differ: UpgradeCap=${upgradeCapOwner}, `
-        + `MarketAdminCap=${capabilityOwner}`,
+        + `active MarketAdminCap=${capabilityOwner}`,
     )
   }
   const upgradeCap = assertUpgradeCap(
@@ -698,11 +707,32 @@ async function main() {
     deployment.callablePackageId,
     capabilityOwner,
   )
-  assertLegacyAdminCap(
-    legacyAdminResponse,
-    deployment.originalPackageId,
-    capabilityOwner,
-  )
+  if (
+    deployment.marketConfigV6PackageId
+    && deployment.marketConfigV6Id
+    && deployment.marketAdminCapV6Id
+    && marketV6Response
+  ) {
+    assertMarketAdminCapV6(
+      activeAdminResponse,
+      deployment.marketConfigV6PackageId,
+      deployment.marketConfigV2Id,
+      deployment.marketConfigV6Id,
+      capabilityOwner,
+    )
+    assertMarketConfigV6(
+      marketV6Response,
+      deployment.marketConfigV6PackageId,
+      deployment.legacyConfigId,
+      deployment.marketConfigV2Id,
+    )
+  } else {
+    assertLegacyAdminCap(
+      activeAdminResponse,
+      deployment.originalPackageId,
+      capabilityOwner,
+    )
+  }
   const legacyMarket = assertLegacyMarketConfig(
     legacyConfigResponse,
     deployment.originalPackageId,
