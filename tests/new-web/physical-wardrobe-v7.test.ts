@@ -6,13 +6,22 @@ import {
   fetchPhysicalWardrobeV7Snapshot,
   parsePhysicalSoulWardrobeV7Object,
   parsePhysicalStyleAssetV7Object,
+  physicalPartPolicyV7AcceptsAsset,
+  physicalPartPolicyV7CanUnequip,
+  physicalWardrobeV7OperationReadbackMatches,
+  physicalWardrobeV7SlotKeys,
   physicalWardrobeV7CreatedEventType,
   type PhysicalWardrobeV7Runtime,
 } from '../../packages/soulidity-sdk/src/physical-wardrobe-v7'
 import {
   buildCreatePhysicalSoulWardrobeV7Tx,
   buildDepositAndEquipPhysicalStyleV7Tx,
+  buildDepositAndSwapPhysicalStyleV7Tx,
+  buildEmergencyWithdrawPhysicalStyleV7Tx,
+  buildEquipPhysicalStyleV7Tx,
+  buildSwapPhysicalStyleV7Tx,
   buildTransferOwnedPhysicalStyleV7Tx,
+  buildUnequipPhysicalStyleV7Tx,
   buildWithdrawPhysicalStyleV7Tx,
 } from '../../packages/soulidity-sdk/src/tx/physical-wardrobe-v7'
 import {
@@ -118,6 +127,76 @@ describe('physical wardrobe v7 runtime', () => {
     expect(JSON.stringify(commands[1])).toContain('deposit_and_equip_style_v7')
     expect(JSON.stringify(commands[2])).toContain('withdraw_style_v7')
     expect(JSON.stringify(commands)).not.toContain('physical_composition_v7::deposit')
+  })
+
+  it('builds every reviewed wardrobe mutation against the Soulidity owner-proof adapter', () => {
+    const transactions = [
+      buildDepositAndSwapPhysicalStyleV7Tx({
+        runtime,
+        maker,
+        soul,
+        styleProductObjectId: id(13),
+        walletStyleAssetObjectId: id(14),
+        equippedStyleAssetObjectId: id(15),
+      }),
+      buildEquipPhysicalStyleV7Tx({
+        runtime,
+        maker,
+        soul,
+        styleProductObjectId: id(13),
+        wardrobeStyleAssetObjectId: id(14),
+      }),
+      buildSwapPhysicalStyleV7Tx({
+        runtime,
+        maker,
+        soul,
+        styleProductObjectId: id(13),
+        wardrobeStyleAssetObjectId: id(14),
+        equippedStyleAssetObjectId: id(15),
+      }),
+      buildUnequipPhysicalStyleV7Tx({
+        runtime,
+        maker,
+        soul,
+        equippedStyleAssetObjectId: id(15),
+      }),
+      buildEmergencyWithdrawPhysicalStyleV7Tx({
+        runtime,
+        maker,
+        soul,
+        equippedStyleAssetObjectId: id(15),
+      }),
+    ]
+    const targets = [
+      'deposit_and_swap_style_v7',
+      'equip_style_v7',
+      'swap_style_v7',
+      'unequip_style_v7',
+      'emergency_unequip_and_withdraw_style_v7',
+    ]
+
+    transactions.forEach((tx, index) => {
+      const commands = tx.getData().commands
+      expect(commands).toHaveLength(1)
+      expect(JSON.stringify(commands)).toContain('animacraft_wardrobe_adapter_v7')
+      expect(JSON.stringify(commands)).toContain(targets[index])
+    })
+  })
+
+  it('rejects stale or malformed mutation inputs before wallet signing', () => {
+    expect(() => buildEquipPhysicalStyleV7Tx({
+      runtime,
+      maker,
+      soul: { ...soul, expectedRevision: -1 },
+      styleProductObjectId: id(13),
+      wardrobeStyleAssetObjectId: id(14),
+    })).toThrow('expectedRevision')
+    expect(() => buildWithdrawPhysicalStyleV7Tx({
+      runtime,
+      maker,
+      soul,
+      wardrobeStyleAssetObjectId: '',
+    })).toThrow('wardrobeStyleAssetObjectId is required')
   })
 
   it('rejects incomplete initial row projections before mint construction', async () => {
@@ -229,13 +308,38 @@ describe('physical wardrobe v7 object parsing', () => {
           root_id: id(9),
           slot_schema_commitment: [1, 2, 3],
           renderer_commitment: [4, 5, 6],
+          part_policies: { fields: { id: { id: id(23) }, size: '2' } },
           required_slot_keys: ['hair.front'],
-          part_policy_count: '1',
+          part_policy_count: '2',
           sealed: true,
         },
       },
     },
   }
+
+  const partPolicyFixture = (
+    objectId: string,
+    slotKey: string,
+    required: boolean,
+  ) => ({
+    data: {
+      objectId,
+      content: {
+        dataType: 'moveObject',
+        fields: {
+          name: { fields: { slot_key: slotKey } },
+          value: {
+            fields: {
+              slot_key: slotKey,
+              behavior: '3',
+              required,
+              max_source_kind: '2',
+            },
+          },
+        },
+      },
+    },
+  })
 
   it('uses the exact SoulWardrobeCreatedV7 event type', () => {
     expect(physicalWardrobeV7CreatedEventType(runtime)).toContain(
@@ -266,7 +370,6 @@ describe('physical wardrobe v7 object parsing', () => {
 
   it('derives equipped/loadout state by joining equipped_asset_ids to child assets', async () => {
     let ownedCall = 0
-    let objectCall = 0
     const snapshot = await fetchPhysicalWardrobeV7Snapshot({
       getDynamicFieldObject: async ({ name }: { name: { value: number } }) => ({
         data: name.value === 4 ? {
@@ -276,10 +379,22 @@ describe('physical wardrobe v7 object parsing', () => {
           },
         } : null,
       }),
-      getObject: async () => {
-        objectCall += 1
-        return objectCall === 1 ? wardrobeFixture : physicalProfileFixture
+      getObject: async ({ id: objectId }: { id: string }) => {
+        if (normalizeSuiAddress(objectId) === normalizeSuiAddress(id(12))) return wardrobeFixture
+        if (normalizeSuiAddress(objectId) === normalizeSuiAddress(id(8))) return physicalProfileFixture
+        if (normalizeSuiAddress(objectId) === normalizeSuiAddress(id(24))) {
+          return partPolicyFixture(id(24), 'hair.front', true)
+        }
+        if (normalizeSuiAddress(objectId) === normalizeSuiAddress(id(25))) {
+          return partPolicyFixture(id(25), 'accessory', false)
+        }
+        throw new Error(`Unexpected object ${objectId}`)
       },
+      getDynamicFields: async () => ({
+        data: [{ objectId: id(24) }, { objectId: id(25) }],
+        hasNextPage: false,
+        nextCursor: null,
+      }),
       getOwnedObjects: async () => {
         ownedCall += 1
         return {
@@ -296,10 +411,127 @@ describe('physical wardrobe v7 object parsing', () => {
 
     expect(snapshot?.wardrobeAssets[0]?.equipped).toBe(true)
     expect(snapshot?.maker.compositionProfileObjectId).toBe(normalizeSuiAddress(id(20)))
+    expect(snapshot?.maker.partPolicies).toEqual([
+      expect.objectContaining({ slotKey: 'accessory', required: false, behavior: 3 }),
+      expect.objectContaining({ slotKey: 'hair.front', required: true, behavior: 3 }),
+    ])
+    expect(physicalWardrobeV7SlotKeys(snapshot!)).toEqual(['accessory', 'hair.front'])
     expect(snapshot?.wardrobe.loadout).toEqual([expect.objectContaining({
       slotKey: 'hair.front',
       soulLocal: true,
     })])
+    const hairPolicy = snapshot?.maker.partPolicies.find((policy) => policy.slotKey === 'hair.front')
+    const accessoryPolicy = snapshot?.maker.partPolicies.find((policy) => policy.slotKey === 'accessory')
+    expect(physicalPartPolicyV7AcceptsAsset(hairPolicy, snapshot!.wardrobeAssets[0]!)).toBe(true)
+    expect(physicalPartPolicyV7AcceptsAsset(
+      { slotKey: 'hair.front', behavior: 0, required: true, maxSourceKind: 0 },
+      snapshot!.wardrobeAssets[0]!,
+    )).toBe(false)
+    expect(physicalPartPolicyV7AcceptsAsset(
+      hairPolicy,
+      { ...snapshot!.wardrobeAssets[0]!, slotKey: 'another.slot' },
+    )).toBe(false)
+    expect(physicalPartPolicyV7CanUnequip(hairPolicy)).toBe(false)
+    expect(physicalPartPolicyV7CanUnequip(accessoryPolicy)).toBe(true)
+    expect(physicalWardrobeV7OperationReadbackMatches(
+      snapshot!,
+      'equip',
+      id(14),
+      3n,
+    )).toBe(true)
+
+    const replacementAsset = {
+      ...snapshot!.wardrobeAssets[0]!,
+      objectId: normalizeSuiAddress(id(16)),
+      styleProductObjectId: normalizeSuiAddress(id(17)),
+      equipped: true,
+    }
+    const swappedSnapshot = {
+      ...snapshot!,
+      wardrobe: {
+        ...snapshot!.wardrobe,
+        revision: 5n,
+        equippedAssetObjectIds: [replacementAsset.objectId],
+        loadout: snapshot!.wardrobe.loadout.map((row) => ({
+          ...row,
+          styleAssetObjectId: replacementAsset.objectId,
+        })),
+      },
+      wardrobeAssets: [
+        { ...snapshot!.wardrobeAssets[0]!, equipped: false },
+        replacementAsset,
+      ],
+      walletAssets: [],
+    }
+    expect(physicalWardrobeV7OperationReadbackMatches(
+      swappedSnapshot,
+      'swap',
+      replacementAsset.objectId,
+      4n,
+      id(14),
+    )).toBe(true)
+    expect(physicalWardrobeV7OperationReadbackMatches(
+      swappedSnapshot,
+      'swap',
+      replacementAsset.objectId,
+      4n,
+    )).toBe(false)
+    expect(physicalWardrobeV7OperationReadbackMatches(
+      {
+        ...swappedSnapshot,
+        wardrobeAssets: [replacementAsset],
+      },
+      'swap',
+      replacementAsset.objectId,
+      4n,
+      id(14),
+    )).toBe(false)
+
+    const unequippedSnapshot = {
+      ...snapshot!,
+      wardrobe: {
+        ...snapshot!.wardrobe,
+        revision: 5n,
+        equippedCount: 0,
+        equippedAssetObjectIds: [],
+        loadout: [],
+      },
+      wardrobeAssets: snapshot!.wardrobeAssets.map((asset) => ({ ...asset, equipped: false })),
+    }
+    expect(physicalWardrobeV7OperationReadbackMatches(
+      unequippedSnapshot,
+      'unequip',
+      id(14),
+      4n,
+    )).toBe(true)
+
+    const withdrawnSnapshot = {
+      ...unequippedSnapshot,
+      wardrobe: { ...unequippedSnapshot.wardrobe, revision: 6n },
+      wardrobeAssets: [],
+      walletAssets: snapshot!.wardrobeAssets.map((asset) => ({ ...asset, equipped: false })),
+    }
+    expect(physicalWardrobeV7OperationReadbackMatches(
+      withdrawnSnapshot,
+      'withdraw',
+      id(14),
+      5n,
+    )).toBe(true)
+    expect(physicalWardrobeV7OperationReadbackMatches(
+      withdrawnSnapshot,
+      'withdraw',
+      id(14),
+      6n,
+    )).toBe(false)
+    expect(physicalWardrobeV7OperationReadbackMatches(
+      {
+        ...withdrawnSnapshot,
+        wardrobe: { ...withdrawnSnapshot.wardrobe, listed: true, revision: 7n },
+      },
+      'withdraw',
+      id(14),
+      6n,
+    )).toBe(false)
   })
 })
 
@@ -548,6 +780,16 @@ async function rendererFixture() {
       physicalProfileObjectId,
       compositionProfileObjectId,
       makerRootObjectId,
+      sealed: true,
+      partPoliciesTableObjectId: id(41),
+      requiredSlotKeys: [],
+      partPolicyCount: 1,
+      partPolicies: [{
+        slotKey: 'body',
+        behavior: 3 as const,
+        required: false,
+        maxSourceKind: 2 as const,
+      }],
     },
     wardrobeAssets: [{
       objectId: styleAssetObjectId,

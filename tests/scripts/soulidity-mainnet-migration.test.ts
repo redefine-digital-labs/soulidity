@@ -55,6 +55,7 @@ import {
   parseUpgradeArgs,
   reconcileUpgradeFromJournal,
   renderUpdatedPublishedToml,
+  resolveMarketConfigV6TypeOriginForUpgrade,
   validateBuiltMovePackage,
 } from '../../scripts/upgrade-soulidity-mainnet'
 
@@ -63,6 +64,8 @@ const CONFIG_V2 = `0x${'a'.repeat(64)}`
 const ADMIN_V2 = `0x${'b'.repeat(64)}`
 const CONFIG_V6 = `0x${'c'.repeat(64)}`
 const ADMIN_V6 = `0x${'d'.repeat(64)}`
+const MARKET_V6_TYPE_ORIGIN = `0x${'6'.repeat(64)}`
+const NEXT_CALLABLE = `0x${'7'.repeat(64)}`
 const SIMULATED_CONFIG_V2 = `0x${'e'.repeat(64)}`
 const SIMULATED_ADMIN_V2 = `0x${'f'.repeat(64)}`
 const SIMULATED_CONFIG_V6 = `0x${'1'.repeat(64)}`
@@ -144,6 +147,61 @@ describe('controlled Soulidity mainnet upgrade args', () => {
     expect(() => parseUpgradeArgs(['--initialize-mutation-journal'])).toThrow(
       SOULIDITY_MAINNET_CONFIRM_INITIALIZE_JOURNAL,
     )
+  })
+})
+
+describe('v6 market TypeOrigin upgrade preservation', () => {
+  type UpgradeDeployment = Parameters<typeof resolveMarketConfigV6TypeOriginForUpgrade>[0]
+
+  function deploymentWithV6(
+    marketConfigV6PackageId: string | null = MARKET_V6_TYPE_ORIGIN,
+  ): UpgradeDeployment {
+    return {
+      originalPackageId: SOULIDITY_MAINNET_ORIGINAL_PACKAGE,
+      callablePackageId: CALLABLE,
+      legacyConfigId: SOULIDITY_MAINNET_LEGACY_CONFIG,
+      legacyAdminCapId: SOULIDITY_MAINNET_LEGACY_ADMIN_CAP,
+      upgradeCapId: SOULIDITY_MAINNET_UPGRADE_CAP,
+      marketConfigV2PackageId: CALLABLE,
+      marketConfigV2Id: CONFIG_V2,
+      marketConfigV6PackageId,
+      marketConfigV6Id: CONFIG_V6,
+      marketAdminCapV6Id: ADMIN_V6,
+      animacraftProvenancePackageId: SOULIDITY_MAINNET_ORIGINAL_PACKAGE,
+    }
+  }
+
+  it('keeps the package that defined existing v6 objects across a later callable upgrade', () => {
+    expect(resolveMarketConfigV6TypeOriginForUpgrade(
+      deploymentWithV6(),
+      NEXT_CALLABLE,
+    )).toBe(MARKET_V6_TYPE_ORIGIN)
+    expect(MARKET_V6_TYPE_ORIGIN).not.toBe(NEXT_CALLABLE)
+  })
+
+  it('uses the durable journal origin for recovery and rejects conflicting local state', () => {
+    expect(resolveMarketConfigV6TypeOriginForUpgrade(
+      deploymentWithV6(null),
+      NEXT_CALLABLE,
+      MARKET_V6_TYPE_ORIGIN,
+    )).toBe(MARKET_V6_TYPE_ORIGIN)
+    expect(() => resolveMarketConfigV6TypeOriginForUpgrade(
+      deploymentWithV6(MARKET_V6_TYPE_ORIGIN),
+      NEXT_CALLABLE,
+      CALLABLE,
+    )).toThrow(/conflicts with journal TypeOrigin/)
+  })
+
+  it('infers the new package only when v6 objects do not exist', () => {
+    expect(resolveMarketConfigV6TypeOriginForUpgrade({
+      ...deploymentWithV6(null),
+      marketConfigV6Id: null,
+      marketAdminCapV6Id: null,
+    }, NEXT_CALLABLE)).toBe(NEXT_CALLABLE)
+    expect(() => resolveMarketConfigV6TypeOriginForUpgrade(
+      deploymentWithV6(null),
+      NEXT_CALLABLE,
+    )).toThrow(/missing their immutable defining-package TypeOrigin/)
   })
 })
 

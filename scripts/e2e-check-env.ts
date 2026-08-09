@@ -19,10 +19,10 @@
  *   8. MAINNET_WAL_COIN_TYPE looks like "0x…::module::SYM"
  *   9. NEXT_PUBLIC_SEAL_SERVER_CONFIGS is JSON list with ≥ NEXT_PUBLIC_SEAL_THRESHOLD entries
  *  10. NEXT_PUBLIC_KIOSK_PACKAGE_ID present
- *  11. NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL is https URL
- *  12. Manifest .mainnet packageId / marketConfigId / kindRegistryId / paymentCoinType
+ *  11. Canonical Animacraft, commerce v5 and Physical v7 gates/identities are complete
+ *  12. NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL is https URL
+ *  13. Manifest .mainnet packageId / marketConfigId / kindRegistryId / paymentCoinType
  *      consistent with what `@soulidity/sdk` resolves
- *  13. Canonical Animacraft mint gate and all three package/shared-object IDs agree
  *
  * Live runtime probes (Seal `/v1/service`, Walrus relay tip-config) are
  * intentionally out of scope here — those are Phase -1.5 / -1.8 of the
@@ -302,6 +302,36 @@ function main() {
     'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_TYPE_ORIGIN_PACKAGE_ID',
     'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_CONFIG_ID',
     'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_TREASURY_ID',
+  ] as const) {
+    const value = v.checkPresent(name, name)
+    if (value && !isNonZeroSuiId(value)) {
+      v.fail(name, `not a valid non-zero Sui object id ("${value}")`)
+    } else if (value) {
+      v.pass(`${name} = ${value}`)
+    }
+  }
+
+  const physicalV7Gate = v.checkPresent(
+    'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED',
+    'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED',
+  )
+  if (physicalV7Gate && physicalV7Gate !== 'true') {
+    v.fail('NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED', 'expected "true" for mainnet E2E')
+  } else if (physicalV7Gate) {
+    v.pass('NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED = true')
+  }
+  if (physicalV7Gate === 'true' && commerceV5Gate !== 'true') {
+    v.fail(
+      'Animacraft Physical v7 dependency',
+      'Physical v7 requires NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED=true',
+    )
+  }
+  for (const name of [
+    'NEXT_PUBLIC_ANIMACRAFT_V7_CALLABLE_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_V7_TYPE_ORIGIN_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_REGISTRY_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_CONFIG_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_COMPOSITION_V6_CONFIG_ID',
   ] as const) {
     const value = v.checkPresent(name, name)
     if (value && !isNonZeroSuiId(value)) {

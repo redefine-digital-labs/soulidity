@@ -158,6 +158,31 @@ describe('Soulidity operational script package routing', () => {
     expect(e2e).toContain('if (value && !isNonZeroSuiId(value))')
   })
 
+  it('fails closed unless the complete Physical v7 production identity is synchronized', () => {
+    const sync = source('scripts/sync-vercel-production-env.ts')
+    const e2e = source('scripts/e2e-check-env.ts')
+    for (const key of [
+      'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED',
+      'NEXT_PUBLIC_ANIMACRAFT_V7_CALLABLE_PACKAGE_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_V7_TYPE_ORIGIN_PACKAGE_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_REGISTRY_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_CONFIG_ID',
+      'NEXT_PUBLIC_ANIMACRAFT_COMPOSITION_V6_CONFIG_ID',
+    ]) {
+      expect(sync).toContain(`'${key}',`)
+      expect(e2e).toContain(`'${key}'`)
+    }
+    expect(sync).toContain('guarded v5/v6/v7 rollout')
+    expect(sync).toContain(
+      'Physical v7 requires NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED=true',
+    )
+    expect(sync).toContain('else if (animacraftPhysicalV7Enabled && !value)')
+    expect(e2e).toContain(
+      'Physical v7 requires NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED=true',
+    )
+    expect(e2e).toContain('const physicalV7Gate = v.checkPresent(')
+  })
+
   it('verifies successor objects against their stable defining-package TypeOrigin', () => {
     const text = source('scripts/preflight-animacraft-market-retirement.ts')
     expect(text).toContain('assertMainnetDeploymentRecord(snapshot.mainnet)')

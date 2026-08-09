@@ -22,6 +22,11 @@ const REQUIRED_HISTORICAL_SEAL_ROUTES = JSON.stringify([{
 }])
 const ACTIVE_SOULIDITY_PACKAGE_ID =
   '0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d'
+const ANIMACRAFT_V7_CALLABLE_PACKAGE_ID = `0x${'7'.repeat(64)}`
+const ANIMACRAFT_V7_TYPE_ORIGIN_PACKAGE_ID = `0x${'6'.repeat(64)}`
+const ANIMACRAFT_PHYSICAL_V7_REGISTRY_ID = `0x${'5'.repeat(64)}`
+const ANIMACRAFT_PHYSICAL_V7_CONFIG_ID = `0x${'4'.repeat(64)}`
+const ANIMACRAFT_COMPOSITION_V6_CONFIG_ID = `0x${'3'.repeat(64)}`
 
 const tempDirs: string[] = []
 const productionSupportEnv = {
@@ -49,6 +54,12 @@ function writeEnvFile(extra: Record<string, string>) {
     NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: REQUIRED_HISTORICAL_SEAL_ROUTES,
     NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED: 'false',
     NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED: 'false',
+    NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED: 'false',
+    NEXT_PUBLIC_ANIMACRAFT_V7_CALLABLE_PACKAGE_ID: ANIMACRAFT_V7_CALLABLE_PACKAGE_ID,
+    NEXT_PUBLIC_ANIMACRAFT_V7_TYPE_ORIGIN_PACKAGE_ID: ANIMACRAFT_V7_TYPE_ORIGIN_PACKAGE_ID,
+    NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_REGISTRY_ID: ANIMACRAFT_PHYSICAL_V7_REGISTRY_ID,
+    NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_CONFIG_ID: ANIMACRAFT_PHYSICAL_V7_CONFIG_ID,
+    NEXT_PUBLIC_ANIMACRAFT_COMPOSITION_V6_CONFIG_ID: ANIMACRAFT_COMPOSITION_V6_CONFIG_ID,
     DEFAULT_PROVIDER: 'deepseek',
     DEEPSEEK_API_KEY: 'test-deepseek-key',
     NEXT_PUBLIC_SEAL_SERVER_CONFIGS: VALID_PUBLIC_SEAL_CONFIG,
@@ -221,21 +232,26 @@ describe('Vercel production env sync guardrails', () => {
     expect(guarded.status).toBe(0)
     expect(guarded.stdout).toContain('- NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED')
     expect(guarded.stdout).toContain('- NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED')
+    expect(guarded.stdout).toContain('- NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED')
+    expect(guarded.stdout).toContain('- NEXT_PUBLIC_ANIMACRAFT_V7_CALLABLE_PACKAGE_ID')
+    expect(guarded.stdout).toContain('- NEXT_PUBLIC_ANIMACRAFT_COMPOSITION_V6_CONFIG_ID')
 
     const omitted = runSync(writeEnvFile({
       ...productionSupportEnv,
       NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED: '',
       NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED: '',
+      NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED: '',
     }))
     expect(omitted.status).toBe(1)
     expect(omitted.stderr).toContain(
-      'Missing required production env keys: NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED, NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+      'Missing required production env keys: NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED, NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED, NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED',
     )
 
     for (const key of [
       'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
       'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+      'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED',
     ]) {
       const enabled = runSync(writeEnvFile({
         ...productionSupportEnv,
@@ -244,7 +260,7 @@ describe('Vercel production env sync guardrails', () => {
       }))
       expect(enabled.status).toBe(1)
       expect(enabled.stderr).toContain(
-        `${key} must be exactly false for the guarded v5/v6 rollout`,
+        `${key} must be exactly false for the guarded v5/v6/v7 rollout`,
       )
     }
   })
