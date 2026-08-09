@@ -103,6 +103,11 @@ interface UpgradeAttemptContext {
   toolchainVersion: string
   priorManifestSha256: string
   priorPublishedTomlSha256: string
+  /**
+   * Immutable defining package for the already-created v6 market objects.
+   * Later callable-package upgrades must never rewrite this TypeOrigin.
+   */
+  marketConfigV6PackageId: string | null
 }
 
 function sha256(value: string): string {
@@ -142,7 +147,45 @@ function upgradeAttemptContext(attempt: MainnetMutationAttempt): UpgradeAttemptC
       attempt.context,
       'priorPublishedTomlSha256',
     ),
+    marketConfigV6PackageId:
+      typeof attempt.context.marketConfigV6PackageId === 'string'
+        && attempt.context.marketConfigV6PackageId.trim()
+        ? normalizeSuiAddress(attempt.context.marketConfigV6PackageId.trim())
+        : null,
   }
+}
+
+export function resolveMarketConfigV6TypeOriginForUpgrade(
+  deployment: ReturnType<typeof assertMainnetDeploymentRecord>,
+  expectedCallablePackageId: string,
+  recordedTypeOrigin: string | null = null,
+): string {
+  const configuredLocalTypeOrigin = deployment.marketConfigV6PackageId?.trim() ?? ''
+  const localTypeOrigin = configuredLocalTypeOrigin
+    ? normalizeSuiAddress(configuredLocalTypeOrigin)
+    : null
+  const journalTypeOrigin = recordedTypeOrigin?.trim()
+    ? normalizeSuiAddress(recordedTypeOrigin)
+    : null
+
+  if (localTypeOrigin && journalTypeOrigin && localTypeOrigin !== journalTypeOrigin) {
+    throw new Error(
+      `Local v6 market TypeOrigin ${localTypeOrigin} conflicts with journal TypeOrigin `
+        + journalTypeOrigin,
+    )
+  }
+  if (journalTypeOrigin) return journalTypeOrigin
+  if (localTypeOrigin) return localTypeOrigin
+
+  if (deployment.marketConfigV6Id || deployment.marketAdminCapV6Id) {
+    throw new Error(
+      'Existing v6 market objects are missing their immutable defining-package TypeOrigin',
+    )
+  }
+
+  // Only the first upgrade that introduces the v6 market objects may define
+  // their TypeOrigin from its newly published callable package.
+  return normalizeSuiAddress(expectedCallablePackageId)
 }
 
 function valueFor(argv: string[], index: number, flag: string) {
@@ -471,6 +514,11 @@ export function persistUpgradeRecordsFromAttempt(
   const snapshot = readDeploymentSnapshot()
   const deployment = assertMainnetDeploymentRecord(snapshot.mainnet)
   const context = assertUpgradeRecordIdentity(attempt, deployment)
+  const marketConfigV6PackageId = resolveMarketConfigV6TypeOriginForUpgrade(
+    deployment,
+    context.expectedCallablePackageId,
+    context.marketConfigV6PackageId,
+  )
 
   if (deployment.callablePackageId === context.currentPackageId) {
     if (sha256(snapshot.serializedMainnet) !== context.priorManifestSha256) {
@@ -480,19 +528,12 @@ export function persistUpgradeRecordsFromAttempt(
     }
     atomicPatchMainnetDeployment(snapshot, {
       callablePackageId: context.expectedCallablePackageId,
-      // MarketConfigV6/MarketAdminCapV6 are introduced by this upgrade, so
-      // their immutable TypeOrigin is the finalized upgrade package.
-      marketConfigV6PackageId: context.expectedCallablePackageId,
+      // MarketConfigV6/MarketAdminCapV6 keep the defining package where they
+      // were first created. A later v7+ callable upgrade must not rewrite it.
+      marketConfigV6PackageId,
       upgradeTxDigest: digest,
     })
   } else if (deployment.callablePackageId === context.expectedCallablePackageId) {
-    if (deployment.marketConfigV6PackageId
-      && deployment.marketConfigV6PackageId !== context.expectedCallablePackageId) {
-      throw new Error(
-        `Local v6 market TypeOrigin ${deployment.marketConfigV6PackageId} conflicts with `
-          + `journal package ${context.expectedCallablePackageId}`,
-      )
-    }
     if (snapshot.mainnet.upgradeTxDigest
       && snapshot.mainnet.upgradeTxDigest !== digest) {
       throw new Error(
@@ -501,11 +542,11 @@ export function persistUpgradeRecordsFromAttempt(
     }
     if (
       snapshot.mainnet.upgradeTxDigest !== digest
-      || snapshot.mainnet.marketConfigV6PackageId !== context.expectedCallablePackageId
+      || snapshot.mainnet.marketConfigV6PackageId !== marketConfigV6PackageId
     ) {
       const current = readDeploymentSnapshot()
       atomicPatchMainnetDeployment(current, {
-        marketConfigV6PackageId: context.expectedCallablePackageId,
+        marketConfigV6PackageId,
         upgradeTxDigest: digest,
       })
     }
@@ -549,7 +590,7 @@ export function persistUpgradeRecordsFromAttempt(
   const recordReadback = readDeploymentSnapshot().mainnet
   if (
     recordReadback.callablePackageId !== context.expectedCallablePackageId
-    || recordReadback.marketConfigV6PackageId !== context.expectedCallablePackageId
+    || recordReadback.marketConfigV6PackageId !== marketConfigV6PackageId
     || recordReadback.upgradeTxDigest !== digest
   ) {
     throw new Error('Upgrade deployment record failed final readback')
@@ -818,6 +859,10 @@ async function main() {
         toolchainVersion: toolchainVersion(suiBin),
         priorManifestSha256: sha256(snapshot.serializedMainnet),
         priorPublishedTomlSha256: sha256(publishedTomlSnapshot),
+        // Snapshot the immutable v6 TypeOrigin into the durable journal. This
+        // lets recovery distinguish it from the new callable package even if
+        // the process stops after the chain upgrade succeeds.
+        marketConfigV6PackageId: deployment.marketConfigV6PackageId ?? null,
       },
     })
 

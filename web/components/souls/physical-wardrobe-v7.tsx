@@ -12,14 +12,18 @@ import {
   buildUnequipPhysicalStyleV7Tx,
   buildWithdrawPhysicalStyleV7Tx,
   fetchPhysicalWardrobeV7Snapshot,
+  physicalPartPolicyV7AcceptsAsset,
+  physicalPartPolicyV7CanUnequip,
+  physicalWardrobeV7OperationReadbackMatches,
+  physicalWardrobeV7SlotKeys,
   physicalWardrobeV7RuntimeFromPublicEnv,
   renderPhysicalRendererV7Scene,
   resolvePhysicalRendererV7Scene,
   type PhysicalRendererV7AssetMetadata,
   type PhysicalRendererV7Scene,
+  type PhysicalPartPolicyV7View,
   type PhysicalStyleAssetV7View,
   type PhysicalWardrobeV7Operation,
-  type PhysicalWardrobeV7Snapshot,
 } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { Button } from '@/components/ui/button'
@@ -42,18 +46,19 @@ function operationLabel(operation: PhysicalWardrobeV7Operation | null) {
   if (operation === 'deposit-and-equip') return 'Deposit & equip'
   if (operation === 'deposit-and-swap') return 'Deposit & replace'
   if (operation === 'equip') return 'Equip Style'
+  if (operation === 'swap') return 'Replace equipped Style'
   if (operation === 'unequip') return 'Unequip to Soul wardrobe'
   if (operation === 'withdraw') return 'Withdraw to wallet'
   if (operation === 'emergency-withdraw') return 'Emergency recover to wallet'
   return 'Replace Style'
 }
 
-function slotKeys(snapshot: PhysicalWardrobeV7Snapshot): string[] {
-  return Array.from(new Set([
-    ...snapshot.wardrobe.loadout.map((row) => row.slotKey),
-    ...snapshot.wardrobeAssets.map((asset) => asset.slotKey),
-    ...snapshot.walletAssets.map((asset) => asset.slotKey),
-  ].filter(Boolean))).sort((left, right) => left.localeCompare(right))
+function partPolicyLabel(policy: PhysicalPartPolicyV7View | null) {
+  if (!policy) return 'Verified Part'
+  if (policy.behavior === 0) return 'Fixed'
+  if (policy.behavior === 1) return 'Soul wardrobe only'
+  if (policy.behavior === 2) return 'External Styles'
+  return 'Soul + external Styles'
 }
 
 function StyleCard({
@@ -62,6 +67,7 @@ function StyleCard({
   source,
   equipped,
   selected,
+  disabled = false,
   onSelect,
 }: {
   asset: PhysicalStyleAssetV7View
@@ -69,12 +75,14 @@ function StyleCard({
   source: AssetSource
   equipped: boolean
   selected: boolean
+  disabled?: boolean
   onSelect: () => void
 }) {
   return (
     <button
       type="button"
-      className={`min-w-0 rounded-xl border p-3 text-left transition ${
+      disabled={disabled}
+      className={`min-w-0 rounded-xl border p-3 text-left transition disabled:cursor-wait disabled:opacity-60 ${
         selected
           ? 'border-purple bg-[var(--ui-soft-action)] shadow-[0_0_0_1px_var(--purple)]'
           : 'border-[var(--border-soft)] bg-[var(--ui-surface)] hover:border-purple/60'
@@ -179,6 +187,7 @@ export function PhysicalWardrobeV7Panel({
   const [currentSlot, setCurrentSlot] = useState<string | null>(null)
   const [selected, setSelected] = useState<SelectedStyle | null>(null)
   const [pending, setPending] = useState<PhysicalWardrobeV7Operation | null>(null)
+  const [actionStatus, setActionStatus] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const walletAddress = suiWallet?.address ?? currentOwnerAddress
 
@@ -261,21 +270,28 @@ export function PhysicalWardrobeV7Panel({
     )
   }
 
-  const slots = slotKeys(snapshot)
+  const slots = physicalWardrobeV7SlotKeys(snapshot)
   const rendererMetadata = rendererQuery.data?.assetMetadata ?? {}
   const activeSlot = currentSlot && slots.includes(currentSlot) ? currentSlot : (slots[0] ?? null)
+  const activePolicy = activeSlot
+    ? snapshot.maker.partPolicies.find((policy) => policy.slotKey === activeSlot) ?? null
+    : null
   const equippedRow = activeSlot
     ? snapshot.wardrobe.loadout.find((row) => row.slotKey === activeSlot) ?? null
     : null
   const equippedAsset = equippedRow
     ? snapshot.wardrobeAssets.find((asset) => asset.objectId === equippedRow.styleAssetObjectId) ?? null
     : null
-  const wardrobeAssets = snapshot.wardrobeAssets.filter((asset) => asset.slotKey === activeSlot)
+  const wardrobeAssets = snapshot.wardrobeAssets.filter((asset) =>
+    asset.slotKey === activeSlot && !asset.equipped,
+  )
   const walletAssets = snapshot.walletAssets.filter((asset) =>
     asset.slotKey === activeSlot
     && asset.profileObjectId === snapshot.wardrobe.profileObjectId,
   )
   const isOwner = role === 'owner' && suiWallet?.address?.toLowerCase() === currentOwnerAddress.toLowerCase()
+  const chainListed = snapshot.wardrobe.listed
+  const listingMirrorMismatch = listed !== chainListed
 
   const maker = snapshot.maker
   const soul = {
@@ -284,11 +300,77 @@ export function PhysicalWardrobeV7Panel({
     wardrobeObjectId: snapshot.wardrobe.objectId,
     expectedRevision: snapshot.wardrobe.revision,
   }
+  const currentRevision = snapshot.wardrobe.revision
 
   async function execute(operation: PhysicalWardrobeV7Operation) {
     if (!isOwner || !selected) return
+    if (chainListed) {
+      setActionError('This Soul is listed on chain. Delist it before changing the wardrobe.')
+      return
+    }
+    if (wardrobeQuery.isFetching) {
+      setActionError('The latest wardrobe revision is still loading. Try again in a moment.')
+      return
+    }
+    if (
+      (operation === 'deposit-and-equip'
+        || operation === 'deposit-and-swap'
+        || operation === 'equip'
+        || operation === 'swap')
+      && !selectedFitsPart
+    ) {
+      setActionError('The sealed Maker Part policy does not accept this Style.')
+      return
+    }
+    if (operation === 'unequip' && !canUnequipCurrent) {
+      setActionError('A fixed or required Part cannot be left empty. Equip a replacement instead.')
+      return
+    }
+    if (
+      (operation === 'deposit-and-equip' || operation === 'deposit-and-swap')
+      && selected.source !== 'wallet'
+    ) {
+      setActionError('Only a wallet Style can be deposited into the Soul wardrobe.')
+      return
+    }
+    if (
+      (operation === 'equip' || operation === 'swap' || operation === 'unequip' || operation === 'withdraw')
+      && selected.source !== 'wardrobe'
+    ) {
+      setActionError('This action requires a Style already held by the Soul wardrobe.')
+      return
+    }
+    if (
+      (operation === 'deposit-and-equip' || operation === 'equip')
+      && equippedRow
+    ) {
+      setActionError('This Part is occupied. Use the atomic replacement action instead.')
+      return
+    }
+    if (
+      (operation === 'deposit-and-swap' || operation === 'swap')
+      && !equippedRow
+    ) {
+      setActionError('This Part is empty. Use the equip action instead.')
+      return
+    }
+    if (operation === 'unequip' && !selectedIsEquipped) {
+      setActionError('Only the currently equipped Style can be unequipped.')
+      return
+    }
+    if (operation === 'withdraw' && !canWithdraw) {
+      setActionError('Only an unequipped external Style can be withdrawn to the wallet.')
+      return
+    }
     const styleProductObjectId = selected.asset.styleProductObjectId
+    const styleAssetObjectId = selected.asset.objectId
+    const replacedStyleAssetObjectId =
+      operation === 'deposit-and-swap' || operation === 'swap'
+        ? equippedRow?.styleAssetObjectId ?? null
+        : null
+    const previousRevision = currentRevision
     setPending(operation)
+    setActionStatus('Waiting for the owner wallet signature…')
     setActionError(null)
     try {
       let tx
@@ -307,16 +389,18 @@ export function PhysicalWardrobeV7Panel({
         })
       } else if (operation === 'equip') {
         if (!styleProductObjectId) throw new Error('Style asset is missing its immutable product ID')
-        tx = equippedRow
-          ? buildSwapPhysicalStyleV7Tx({
-              runtime, maker, soul, styleProductObjectId,
-              wardrobeStyleAssetObjectId: selected.asset.objectId,
-              equippedStyleAssetObjectId: equippedRow.styleAssetObjectId,
-            })
-          : buildEquipPhysicalStyleV7Tx({
-              runtime, maker, soul, styleProductObjectId,
-              wardrobeStyleAssetObjectId: selected.asset.objectId,
-            })
+        if (equippedRow) throw new Error('This Part is occupied; use the atomic replace action')
+        tx = buildEquipPhysicalStyleV7Tx({
+          runtime, maker, soul, styleProductObjectId,
+          wardrobeStyleAssetObjectId: selected.asset.objectId,
+        })
+      } else if (operation === 'swap') {
+        if (!styleProductObjectId || !equippedRow) throw new Error('Replacement input is incomplete')
+        tx = buildSwapPhysicalStyleV7Tx({
+          runtime, maker, soul, styleProductObjectId,
+          wardrobeStyleAssetObjectId: selected.asset.objectId,
+          equippedStyleAssetObjectId: equippedRow.styleAssetObjectId,
+        })
       } else if (operation === 'unequip') {
         if (!equippedRow) throw new Error('This Part has no equipped Style')
         tx = buildUnequipPhysicalStyleV7Tx({
@@ -339,11 +423,38 @@ export function PhysicalWardrobeV7Panel({
       } else {
         throw new Error(`Unsupported wardrobe operation: ${operation}`)
       }
-      await signAndExecute(tx)
+      const result = await signAndExecute(tx)
+      setActionStatus(`Transaction ${shortId(result.digest)} confirmed. Reading the new wardrobe revision…`)
+      let readbackRevision: bigint | null = null
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const readback = await wardrobeQuery.refetch()
+        if (readback.error) throw readback.error
+        if (
+          readback.data
+          && physicalWardrobeV7OperationReadbackMatches(
+            readback.data,
+            operation as Exclude<PhysicalWardrobeV7Operation, 'create'>,
+            styleAssetObjectId,
+            previousRevision,
+            replacedStyleAssetObjectId,
+          )
+        ) {
+          readbackRevision = readback.data.wardrobe.revision
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 750))
+      }
+      if (readbackRevision == null) {
+        throw new Error(
+          `Transaction ${shortId(result.digest)} was confirmed, but the wardrobe readback is delayed. Refresh before submitting another action.`,
+        )
+      }
       setSelected(null)
-      await queryClient.invalidateQueries({ queryKey })
+      setActionStatus(`Confirmed on chain · wardrobe revision ${readbackRevision.toString()}`)
+      await queryClient.invalidateQueries({ queryKey: [...queryKey, 'canonical-renderer'] })
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Wardrobe transaction failed')
+      setActionStatus(null)
     } finally {
       setPending(null)
     }
@@ -352,13 +463,19 @@ export function PhysicalWardrobeV7Panel({
   const selectedIsEquipped = Boolean(
     selected && equippedRow?.styleAssetObjectId === selected.asset.objectId,
   )
+  const selectedFitsPart = Boolean(
+    selected && physicalPartPolicyV7AcceptsAsset(activePolicy, selected.asset),
+  )
+  const canUnequipCurrent = physicalPartPolicyV7CanUnequip(activePolicy)
   const primaryOperation: PhysicalWardrobeV7Operation | null = !selected
     ? null
     : selectedIsEquipped
-      ? 'unequip'
-      : selected.source === 'wallet'
-        ? (equippedRow ? 'deposit-and-swap' : 'deposit-and-equip')
-        : 'equip'
+      ? (canUnequipCurrent ? 'unequip' : null)
+      : !selectedFitsPart
+        ? null
+          : selected.source === 'wallet'
+            ? (equippedRow ? 'deposit-and-swap' : 'deposit-and-equip')
+            : (equippedRow ? 'swap' : 'equip')
   const canWithdraw = Boolean(
     selected
     && selected.source === 'wardrobe'
@@ -382,9 +499,14 @@ export function PhysicalWardrobeV7Panel({
         </div>
       </div>
 
-      {listed && (
+      {chainListed && (
         <div className="rounded-xl border border-gold/40 bg-[var(--ui-soft-value)] p-3 text-[12px] text-muted">
-          This Soul is listed. Wardrobe mutations are locked until it is delisted. Listing is only valid when external assets are zero.
+          This Soul is listed on chain. Wardrobe mutations are locked until it is delisted. Listing is only valid when external assets are zero.
+        </div>
+      )}
+      {listingMirrorMismatch && (
+        <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--ui-surface-muted)] p-3 text-[11px] text-muted">
+          The indexer listing status is still synchronizing. The verified on-chain wardrobe state controls every action.
         </div>
       )}
 
@@ -415,9 +537,15 @@ export function PhysicalWardrobeV7Panel({
                   type="button"
                   role="tab"
                   aria-selected={slot === activeSlot}
+                  disabled={pending !== null || wardrobeQuery.isFetching}
                   key={slot}
-                  onClick={() => { setCurrentSlot(slot); setSelected(null) }}
-                  className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[12px] font-bold transition ${
+                  onClick={() => {
+                    setCurrentSlot(slot)
+                    setSelected(null)
+                    setActionError(null)
+                    setActionStatus(null)
+                  }}
+                  className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[12px] font-bold transition disabled:cursor-wait disabled:opacity-60 ${
                     slot === activeSlot
                       ? 'border-purple bg-[var(--ui-soft-action)] text-foreground'
                       : 'border-[var(--border-soft)] text-muted hover:text-foreground'
@@ -435,18 +563,47 @@ export function PhysicalWardrobeV7Panel({
                 <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-action-label">Current Part</div>
                 <div className="mt-1 text-base font-bold text-foreground">{activeSlot}</div>
               </div>
-              <Tag color={equippedRow ? 'success' : 'muted'}>{equippedRow ? 'Equipped' : 'Empty'}</Tag>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <Tag color={activePolicy?.required ? 'gold' : 'muted'}>
+                  {activePolicy?.required ? 'Required' : 'Optional'}
+                </Tag>
+                <Tag color="teal">{partPolicyLabel(activePolicy)}</Tag>
+              </div>
             </div>
-            <div className="text-[12px] text-muted">
-              {equippedAsset
-                ? `${rendererMetadata[equippedAsset.objectId]?.name ?? equippedAsset.name} · ${shortId(equippedAsset.objectId)}`
-                : 'No Style is equipped in this Part.'}
-            </div>
+            <div className="text-[12px] text-muted">Every Part comes from the sealed Maker policy, so an empty configurable slot stays visible before you own a Style for it.</div>
           </section>
 
-          <section>
+          <section className="rounded-xl border border-[var(--border-soft)] bg-[var(--ui-surface)] p-4">
             <div className="mb-2.5 flex items-center justify-between">
-              <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">Inside this Soul</div>
+              <div>
+                <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-action-label">Currently equipped</div>
+                <div className="mt-1 text-[11px] text-muted">The Style currently rendered on this Soul.</div>
+              </div>
+              <Tag color={equippedAsset ? 'success' : 'muted'}>{equippedAsset ? 'Equipped' : 'Empty'}</Tag>
+            </div>
+            {equippedAsset ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                <StyleCard
+                  asset={equippedAsset}
+                  metadata={rendererMetadata[equippedAsset.objectId]}
+                  source="wardrobe"
+                  equipped
+                  selected={selected?.asset.objectId === equippedAsset.objectId}
+                  disabled={pending !== null || wardrobeQuery.isFetching}
+                  onSelect={() => setSelected({ source: 'wardrobe', asset: equippedAsset })}
+                />
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-[var(--border-soft)] p-4 text-[12px] text-muted">Nothing is equipped in this Part.</div>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-[var(--border-soft)] bg-[var(--ui-surface)] p-4">
+            <div className="mb-2.5 flex items-center justify-between">
+              <div>
+                <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-action-label">Soul wardrobe</div>
+                <div className="mt-1 text-[11px] text-muted">Unequipped Styles held safely inside this Soul.</div>
+              </div>
               <span className="text-[11px] text-[var(--text-faint)]">{wardrobeAssets.length} Style asset(s)</span>
             </div>
             {wardrobeAssets.length > 0 ? (
@@ -457,24 +614,28 @@ export function PhysicalWardrobeV7Panel({
                     asset={asset}
                     metadata={rendererMetadata[asset.objectId]}
                     source="wardrobe"
-                    equipped={equippedRow?.styleAssetObjectId === asset.objectId}
+                    equipped={false}
                     selected={selected?.asset.objectId === asset.objectId}
+                    disabled={pending !== null || wardrobeQuery.isFetching}
                     onSelect={() => setSelected({ source: 'wardrobe', asset })}
                   />
                 ))}
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-[var(--border-soft)] p-4 text-[12px] text-muted">No Style for this Part is inside the Soul wardrobe.</div>
+              <div className="rounded-xl border border-dashed border-[var(--border-soft)] p-4 text-[12px] text-muted">No unequipped Style for this Part is stored in the Soul wardrobe.</div>
             )}
           </section>
 
-          {isOwner && (
-            <section>
-              <div className="mb-2.5 flex items-center justify-between">
-                <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">Your wallet</div>
-                <span className="text-[11px] text-[var(--text-faint)]">Compatible exact Styles only</span>
+          <section className="rounded-xl border border-[var(--border-soft)] bg-[var(--ui-surface)] p-4">
+            <div className="mb-2.5 flex items-center justify-between">
+              <div>
+                <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-action-label">Wallet backpack</div>
+                <div className="mt-1 text-[11px] text-muted">Compatible exact Styles held by the connected owner wallet.</div>
               </div>
-              {walletAssets.length > 0 ? (
+              <span className="text-[11px] text-[var(--text-faint)]">{walletAssets.length} Style asset(s)</span>
+            </div>
+            {isOwner ? (
+              walletAssets.length > 0 ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                   {walletAssets.map((asset) => (
                     <StyleCard
@@ -484,27 +645,53 @@ export function PhysicalWardrobeV7Panel({
                       source="wallet"
                       equipped={false}
                       selected={selected?.asset.objectId === asset.objectId}
+                      disabled={pending !== null || wardrobeQuery.isFetching}
                       onSelect={() => setSelected({ source: 'wallet', asset })}
                     />
                   ))}
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed border-[var(--border-soft)] p-4 text-[12px] text-muted">No compatible wallet Style is available for this Part.</div>
-              )}
-            </section>
-          )}
+              )
+            ) : (
+              <div className="rounded-xl border border-dashed border-[var(--border-soft)] p-4 text-[12px] text-muted">Connect the current owner wallet to view its compatible backpack Styles.</div>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-[var(--border-soft)] bg-[var(--ui-surface)] p-4">
+            <div className="mb-2.5 flex items-center justify-between">
+              <div>
+                <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-action-label">Available products</div>
+                <div className="mt-1 text-[11px] text-muted">Free claims and paid Styles admitted to this exact Maker Profile.</div>
+              </div>
+              <Tag color="muted">Catalog</Tag>
+            </div>
+            <div className="rounded-xl border border-dashed border-[var(--border-soft)] p-4 text-[12px] text-muted">
+              No additional on-chain product catalog is connected to this view yet. Styles already owned by your wallet remain available in Wallet backpack.
+            </div>
+          </section>
 
           {selected && (
             <section className="rounded-xl border border-purple/40 bg-[var(--ui-soft-action)] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-action-label">Previewed change</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-action-label">Selected Style</div>
                   <div className="mt-1 text-[14px] font-bold text-foreground">
                     {rendererMetadata[selected.asset.objectId]?.name ?? selected.asset.name}
                   </div>
                   <div className="mt-1 text-[12px] text-muted">
-                    {selected.source === 'wallet' ? 'Wallet → Soul wardrobe → equipped' : 'Already in Soul wardrobe'}
+                    {selectedIsEquipped
+                      ? 'Currently equipped on this Soul'
+                      : selected.source === 'wallet'
+                        ? 'Wallet backpack → Soul wardrobe → equipped'
+                        : 'Stored in the Soul wardrobe'}
                   </div>
+                  {!selectedFitsPart && !selectedIsEquipped && (
+                    <div className="mt-1 text-[12px] text-danger">The sealed Part policy does not accept this Style.</div>
+                  )}
+                  {selectedIsEquipped && !canUnequipCurrent && (
+                    <div className="mt-1 text-[12px] text-muted">This required or fixed Part cannot be left empty. Select a compatible replacement instead.</div>
+                  )}
                 </div>
                 {isOwner && (
                   <div className="flex flex-wrap gap-2">
@@ -512,7 +699,7 @@ export function PhysicalWardrobeV7Panel({
                       <Button
                         variant="primary"
                         size="sm"
-                        disabled={pending !== null || listed}
+                        disabled={pending !== null || wardrobeQuery.isFetching || chainListed}
                         onClick={() => void execute(primaryOperation)}
                       >
                         {pending === primaryOperation ? 'Waiting for wallet…' : operationLabel(primaryOperation)}
@@ -522,7 +709,7 @@ export function PhysicalWardrobeV7Panel({
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={pending !== null || listed}
+                        disabled={pending !== null || wardrobeQuery.isFetching || chainListed}
                         onClick={() => void execute('withdraw')}
                       >
                         {pending === 'withdraw' ? 'Waiting for wallet…' : 'Withdraw to wallet'}
@@ -532,7 +719,7 @@ export function PhysicalWardrobeV7Panel({
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={pending !== null || listed}
+                        disabled={pending !== null || wardrobeQuery.isFetching || chainListed}
                         onClick={() => void execute('emergency-withdraw')}
                       >
                         {pending === 'emergency-withdraw'
@@ -550,6 +737,11 @@ export function PhysicalWardrobeV7Panel({
 
       {!isOwner && role === 'owner' && (
         <div className="text-[12px] text-danger">Connect the current owner wallet to change this wardrobe.</div>
+      )}
+      {actionStatus && (
+        <div className="rounded-xl border border-teal/30 bg-teal/10 p-3 text-[12px] text-foreground" role="status">
+          {actionStatus}
+        </div>
       )}
       {actionError && <div className="text-[12px] text-danger">{actionError}</div>}
       <div className="text-[11px] leading-5 text-[var(--text-faint)]">

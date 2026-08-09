@@ -24,6 +24,12 @@ const PRODUCTION_ENV_ALLOWLIST = [
   'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_TYPE_ORIGIN_PACKAGE_ID',
   'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_CONFIG_ID',
   'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_TREASURY_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED',
+  'NEXT_PUBLIC_ANIMACRAFT_V7_CALLABLE_PACKAGE_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_V7_TYPE_ORIGIN_PACKAGE_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_REGISTRY_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_CONFIG_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_COMPOSITION_V6_CONFIG_ID',
   'NEXT_PUBLIC_SEAL_SERVER_CONFIGS',
   'SEAL_SERVER_CONFIGS',
   'NEXT_PUBLIC_SEAL_THRESHOLD',
@@ -82,11 +88,20 @@ const REQUIRED_PRODUCTION_KEYS = [
   // first package family. Omitting it during a later fresh-family rollout can
   // make historical Souls undecryptable after the active package IDs change.
   'NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES',
-  // Guarded v5/v6 rollout: these flags must be written explicitly so an old
+  // Guarded v5/v6/v7 rollout: these flags must be written explicitly so an old
   // Vercel value of `true` cannot survive merely because a local env omitted
   // the key.
   'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
   'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+  // Physical v7 is a separate release gate, but its complete identity is
+  // required even while false so the sync can clear stale Vercel state and a
+  // later reviewed activation cannot inherit preview IDs.
+  'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED',
+  'NEXT_PUBLIC_ANIMACRAFT_V7_CALLABLE_PACKAGE_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_V7_TYPE_ORIGIN_PACKAGE_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_REGISTRY_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_CONFIG_ID',
+  'NEXT_PUBLIC_ANIMACRAFT_COMPOSITION_V6_CONFIG_ID',
   'DATABASE_URL',
   'DIRECT_URL',
   'AUTH_SECRET',
@@ -351,9 +366,10 @@ function assertProductionEnv(
   for (const key of [
     'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
     'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
+    'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED',
   ] as const) {
     if (env[key]?.trim() !== 'false') {
-      errors.push(`${key} must be exactly false for the guarded v5/v6 rollout`)
+      errors.push(`${key} must be exactly false for the guarded v5/v6/v7 rollout`)
     }
   }
 
@@ -596,6 +612,26 @@ function assertProductionEnv(
       errors.push(`${key} must be a valid non-zero Sui object ID when configured`)
     } else if (animacraftCommerceV5Enabled && !value) {
       errors.push(`${key} is required when Animacraft commerce v5 is enabled`)
+    }
+  }
+
+  const animacraftPhysicalV7Enabled =
+    env.NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_ENABLED?.trim() === 'true'
+  if (animacraftPhysicalV7Enabled && !animacraftCommerceV5Enabled) {
+    errors.push('Physical v7 requires NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED=true')
+  }
+  for (const key of [
+    'NEXT_PUBLIC_ANIMACRAFT_V7_CALLABLE_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_V7_TYPE_ORIGIN_PACKAGE_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_REGISTRY_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_PHYSICAL_V7_CONFIG_ID',
+    'NEXT_PUBLIC_ANIMACRAFT_COMPOSITION_V6_CONFIG_ID',
+  ] as const) {
+    const value = env[key]?.trim() ?? ''
+    if (value && !isNonZeroSuiId(value)) {
+      errors.push(`${key} must be a valid non-zero Sui object ID when configured`)
+    } else if (animacraftPhysicalV7Enabled && !value) {
+      errors.push(`${key} is required when Animacraft Physical v7 is enabled`)
     }
   }
 
