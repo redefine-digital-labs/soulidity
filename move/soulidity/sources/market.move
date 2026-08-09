@@ -4026,11 +4026,6 @@ fun buy_animacraft_v6_soul_fixed_price_impl(
     assert!(soul::has_animacraft_provenance(state), EAnimacraftAuthorizationMismatch);
     assert!(animacraft_provenance::is_v5_commerce_compatible(provenance), EAnimacraftV5CommercePathRequired);
     assert!(soul::collection_id(state).is_none(), ECollectionMismatch);
-    assert!(listing.creator == soul::state_creator(state), EListingStateMismatch);
-    assert!(
-        listing.creator_royalty_bps == soul::creator_royalty_bps(state),
-        EAnimacraftV5CreatorRoyaltyMismatch,
-    );
     assert!(object::id(seller_kiosk) == listing.seller_kiosk_id, EListingKioskMismatch);
     assert!(personal_kiosk::owner(seller_kiosk) == listing.seller, EListingSellerMismatch);
     animacraft_provenance::assert_matches_soul(provenance, state);
@@ -5716,6 +5711,8 @@ fun assert_animacraft_v6_listing(
             && listing.soul_id == soul::soul_id(state)
             && listing.state_id == object::id(state)
             && listing.appearance_state_id == object::id(appearance)
+            && listing.creator == soul::state_creator(state)
+            && listing.creator_royalty_bps == soul::creator_royalty_bps(state)
             && listing.transfer_safe,
         EAnimacraftV6ListingSnapshotMismatch,
     );
