@@ -25,10 +25,7 @@ use animacraft_physical_v7::physical_composition_v7::{
     StyleAssetV7,
     StyleProductV7,
 };
-use soulidity::animacraft_soul_owner_proof_v6::{
-    Self as owner_proof_v6,
-    AnimacraftSoulOwnerProofV6,
-};
+use soulidity::animacraft_soul_owner_proof_v6 as owner_proof_v6;
 use soulidity::soul::{Self as soul, SoulState};
 use sui::transfer::Receiving;
 
@@ -71,15 +68,6 @@ fun assert_bound_wardrobe(state: &SoulState, wardrobe: &SoulWardrobeV7) {
             && soul::soul_id(state) == physical_v7::wardrobe_soul_id_v7(wardrobe),
         EWardrobeStateMismatch,
     );
-}
-
-fun bound_owner_proof(
-    state: &SoulState,
-    wardrobe: &SoulWardrobeV7,
-    ctx: &TxContext,
-): AnimacraftSoulOwnerProofV6 {
-    assert_bound_wardrobe(state, wardrobe);
-    owner_proof_v6::new(state, ctx)
 }
 
 /// Start a canonical wardrobe in the same PTB that created SoulState. The
@@ -131,7 +119,8 @@ public fun claim_initial_included_style_v7(
     expected_revision: u64,
     ctx: &mut TxContext,
 ) {
-    let _owner_check = bound_owner_proof(state, wardrobe, ctx);
+    assert_bound_wardrobe(state, wardrobe);
+    let _owner_check = owner_proof_v6::new(state, ctx);
     physical_v7::claim_initial_included_style_v7(
         wardrobe,
         config,
@@ -153,7 +142,8 @@ public fun finalize_soul_wardrobe_v7(
     expected_revision: u64,
     ctx: &TxContext,
 ) {
-    let proof = bound_owner_proof(state, &wardrobe, ctx);
+    assert_bound_wardrobe(state, &wardrobe);
+    let proof = owner_proof_v6::new(state, ctx);
     physical_v7::finalize_soul_wardrobe_v7(
         wardrobe,
         config,
@@ -178,7 +168,8 @@ public fun deposit_and_equip_style_v7(
     expected_revision: u64,
     ctx: &TxContext,
 ) {
-    let proof = bound_owner_proof(state, wardrobe, ctx);
+    assert_bound_wardrobe(state, wardrobe);
+    let proof = owner_proof_v6::new(state, ctx);
     physical_v7::deposit_and_equip_style_v7(
         wardrobe,
         config,
@@ -211,7 +202,8 @@ public fun deposit_and_swap_style_v7(
     expected_revision: u64,
     ctx: &TxContext,
 ) {
-    let proof = bound_owner_proof(state, wardrobe, ctx);
+    assert_bound_wardrobe(state, wardrobe);
+    let proof = owner_proof_v6::new(state, ctx);
     physical_v7::deposit_and_swap_style_v7(
         wardrobe,
         config,
@@ -244,7 +236,8 @@ public fun equip_style_v7(
     expected_revision: u64,
     ctx: &TxContext,
 ) {
-    let proof = bound_owner_proof(state, wardrobe, ctx);
+    assert_bound_wardrobe(state, wardrobe);
+    let proof = owner_proof_v6::new(state, ctx);
     physical_v7::equip_style_v7(
         wardrobe,
         config,
@@ -276,7 +269,8 @@ public fun swap_style_v7(
     expected_revision: u64,
     ctx: &TxContext,
 ) {
-    let proof = bound_owner_proof(state, wardrobe, ctx);
+    assert_bound_wardrobe(state, wardrobe);
+    let proof = owner_proof_v6::new(state, ctx);
     physical_v7::swap_style_v7(
         wardrobe,
         config,
@@ -307,7 +301,8 @@ public fun unequip_style_v7(
     expected_revision: u64,
     ctx: &TxContext,
 ) {
-    let proof = bound_owner_proof(state, wardrobe, ctx);
+    assert_bound_wardrobe(state, wardrobe);
+    let proof = owner_proof_v6::new(state, ctx);
     physical_v7::unequip_style_v7(
         wardrobe,
         config,
@@ -333,7 +328,8 @@ public fun withdraw_style_v7(
     expected_revision: u64,
     ctx: &TxContext,
 ) {
-    let proof = bound_owner_proof(state, wardrobe, ctx);
+    assert_bound_wardrobe(state, wardrobe);
+    let proof = owner_proof_v6::new(state, ctx);
     physical_v7::withdraw_style_v7(
         wardrobe,
         config,
@@ -355,7 +351,8 @@ public fun emergency_unequip_and_withdraw_style_v7(
     expected_revision: u64,
     ctx: &TxContext,
 ) {
-    let proof = bound_owner_proof(state, wardrobe, ctx);
+    assert_bound_wardrobe(state, wardrobe);
+    let proof = owner_proof_v6::new(state, ctx);
     physical_v7::emergency_unequip_and_withdraw_style_v7(
         wardrobe,
         config,
