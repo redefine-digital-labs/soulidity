@@ -319,7 +319,7 @@ function PortfolioStrip({ data }: { data: NonNullable<ReturnType<typeof useMySou
     {
       label: 'Listed value',
       value: listedTotalAtomic ? formatAtomicAmountForDisplay(listedTotalAtomic) : '—',
-      color: 'text-gold',
+      color: 'text-value-text',
       hint: `${listedCount} listed`,
     },
     {
@@ -347,14 +347,15 @@ function PortfolioStrip({ data }: { data: NonNullable<ReturnType<typeof useMySou
       {items.map((item) => (
         <div
           key={item.label}
-          className="rounded-xl border border-border bg-[rgba(26,16,64,0.55)] px-3.5 py-3 backdrop-blur-[8px]"
+          data-portfolio-stat={item.label}
+          className="rounded-xl border border-border bg-[var(--ui-panel-translucent)] px-3.5 py-3 backdrop-blur-[8px]"
         >
           <div className={'font-display text-[22px] font-extrabold leading-none tracking-[-0.02em] ' + item.color}>
             {item.value}
           </div>
           <div className="mt-1.5 flex items-center justify-between gap-2 text-[10.5px] uppercase tracking-[0.08em] text-muted">
             <span className="font-semibold">{item.label}</span>
-            <span className="normal-case tracking-normal text-muted/70">{item.hint}</span>
+            <span className="normal-case tracking-normal">{item.hint}</span>
           </div>
         </div>
       ))}

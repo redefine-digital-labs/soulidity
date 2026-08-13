@@ -25,6 +25,14 @@ const providerSource = readFileSync(
   ),
   'utf8',
 )
+const mySoulsSource = readFileSync(
+  fileURLToPath(new URL('../../app/my-souls/page.tsx', import.meta.url)),
+  'utf8',
+)
+const buttonSource = readFileSync(
+  fileURLToPath(new URL('../../components/ui/button.tsx', import.meta.url)),
+  'utf8',
+)
 
 function hexToRgb(hex: string): [number, number, number] {
   const normalized = hex.replace('#', '')
@@ -205,6 +213,59 @@ describe('visual theme contract', () => {
     expect(contrastRatio(action, surface)).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(brandText, background)).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(brandText, surface)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('keeps My Souls portfolio text AA-readable on both theme surfaces', () => {
+    for (const theme of ['animacraft', 'soulidity'] as const) {
+      const surface = readThemeToken(theme, 'ui-surface')
+      const text = readThemeToken(theme, 'ui-text')
+      const muted = readThemeToken(theme, 'ui-muted')
+      const actionLabel = readThemeToken(theme, 'ui-action-label')
+      const valueText = readThemeToken(theme, 'ui-value-text')
+
+      expect(contrastRatio(text, surface)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(muted, surface)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(actionLabel, surface)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(valueText, surface)).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('uses theme-safe portfolio surfaces and semantic value text', () => {
+    expect(mySoulsSource).toContain(
+      'bg-[var(--ui-panel-translucent)]',
+    )
+    expect(mySoulsSource).toContain("color: 'text-value-text'")
+    expect(mySoulsSource).not.toContain('bg-[rgba(26,16,64,0.55)]')
+    expect(mySoulsSource).not.toContain('tracking-normal text-muted/70')
+  })
+
+  it('lets Tailwind button text utilities override the link reset', () => {
+    expect(globalsSource).toContain('@import "tailwindcss"')
+    expect(globalsSource).not.toMatch(/^a \{/m)
+  })
+
+  it('keeps shared header actions clear across hover, focus, and disabled states', () => {
+    for (const theme of ['animacraft', 'soulidity'] as const) {
+      const surface = readThemeToken(theme, 'ui-surface')
+      const text = readThemeToken(theme, 'ui-text')
+      const action = readThemeToken(theme, 'ui-action')
+      const actionHover = readThemeToken(theme, 'ui-action-hover')
+      const actionText = readThemeToken(theme, 'ui-action-text')
+      const actionLabel = readThemeToken(theme, 'ui-action-label')
+      const focus = readThemeToken(theme, 'ui-focus')
+
+      expect(contrastRatio(text, surface)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(actionLabel, surface)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(actionText, action)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(actionText, actionHover)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(focus, surface)).toBeGreaterThanOrEqual(3)
+    }
+
+    expect(buttonSource).toContain('hover:bg-[var(--ui-soft-action)]')
+    expect(buttonSource).toContain('hover:text-[var(--ui-action-label)]')
+    expect(globalsSource).toContain('outline: 2px solid var(--ui-focus)')
+    expect(buttonSource).toContain("disabled && 'cursor-not-allowed opacity-50 grayscale-[25%]'")
+    expect(buttonSource).not.toContain('pointer-events-none cursor-not-allowed')
   })
 
   it('keeps Soulidity action labels readable while using the protocol action fill', () => {
