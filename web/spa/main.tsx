@@ -1,3 +1,4 @@
+import '../instrumentation-client'
 import { createRoot } from 'react-dom/client'
 import { AppProviders } from '../components/providers/app-providers'
 import { AppShell } from '../components/layout/app-shell'

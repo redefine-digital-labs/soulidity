@@ -23,3 +23,29 @@
 /web/generated
 /move/*/build
 /*.key
+# Vercel upload rules are independent of .gitignore. Never upload local release
+# state or paired-test links; static output is rebuilt from these public inputs.
+**/.env*
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/.git/**
+**/.vercel/**
+**/node_modules/**
+**/_paired/**
+/_paired
+/web/dist-spa
+/test
+/tests
+/.github
+/move
+/reports
+/tasks
+/handoff
+/source-cas
+**/*.log
+**/release-wal.json*
+**/release-plan.json
+**/release-certificate.json
+**/animacraft-mainnet-v8-config.json
