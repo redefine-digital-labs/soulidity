@@ -35,9 +35,13 @@ function fixture() {
     NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID: id(15), NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID: id(16),
     NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
     NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON: JSON.stringify(target),
-    DATABASE_URL: 'postgres://SECRET_DATABASE_VALUE', DIRECT_URL: 'postgres://SECRET_DIRECT_VALUE',
-    AUTH_SECRET: 'SECRET_AUTH_VALUE', DEFAULT_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'SECRET_LLM_VALUE',
-    UPSTASH_REDIS_REST_URL: 'https://example.upstash.io', UPSTASH_REDIS_REST_TOKEN: 'SECRET_RATE_VALUE',
+    NEXT_PUBLIC_SOULIDITY_PROFILE_REGISTRY_ID: id(31), NEXT_PUBLIC_SOULIDITY_SOCIAL_REGISTRY_ID: id(32),
+    NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID: id(33), NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTE_REGISTRY_ID: id(34),
+    NEXT_PUBLIC_WALRUS_BLOB_TYPE: '0xfdc88f7d7cf30afab2f82e8380d11ee8f70efb90e863d1de8616fae1bb09ea77::blob::Blob',
+    NEXT_PUBLIC_SUI_CHAIN_IDENTIFIER: '35834a8a', NEXT_PUBLIC_WALRUS_AGGREGATOR_URL: 'https://aggregator.example',
+    NEXT_PUBLIC_SOULIDITY_PROFILE_WRITES_ENABLED: 'false', NEXT_PUBLIC_SOULIDITY_SOCIAL_WRITES_ENABLED: 'false',
+    NEXT_PUBLIC_SOULIDITY_COMMUNITY_WRITES_ENABLED: 'false', NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTES_WRITES_ENABLED: 'false',
+    NEXT_PUBLIC_POSTHOG_HOST: 'https://us.i.posthog.com',
     NEXT_PUBLIC_POSTHOG_KEY: 'phc_PUBLIC_VALUE',
     NEXT_PUBLIC_SEAL_SERVER_CONFIGS: JSON.stringify([{ objectId: id(17), weight: 1 }]), NEXT_PUBLIC_SEAL_THRESHOLD: '1',
   }
@@ -48,6 +52,62 @@ function source(env: Record<string, string>) { return Buffer.from(Object.entries
 beforeEach(() => { vi.restoreAllMocks(); io.spawn.mockReset(); io.read.mockReset(); io.spawn.mockReturnValue({ status: 0 }) })
 
 describe('fresh native production configuration (local, not chain acceptance)', () => {
+  it('accepts a static deployment without business backend credentials', () => {
+    const { env } = fixture()
+    for (const key of Object.keys(env)) if (!key.startsWith('NEXT_PUBLIC_')) delete env[key]
+    expect(() => assertProductionEnv(env)).not.toThrow()
+    expect(PRODUCTION_ENV_ALLOWLIST.every(key => key.startsWith('NEXT_PUBLIC_'))).toBe(true)
+  })
+  it.each(['SEAL_SERVER_CONFIGS', 'WALRUS_AGGREGATOR_URL', 'DATABASE_URL', 'DIRECT_URL',
+    'AUTH_SECRET', 'ADMIN_EMAILS', 'ADMIN_WALLET_ADDRESSES', 'TG_BOT_TOKEN', 'TG_CHANNEL_ID',
+    'TG_GROUP_ID', 'TG_BOT_USERNAME', 'X_DATABASE_URL', 'DEFAULT_PROVIDER', 'DEEPSEEK_API_KEY',
+    'DEEPSEEK_MODEL', 'DEEPSEEK_BASE_URL', 'APP_DOMAIN', 'SOULIDITY_WEB_URL', 'TRUST_PROXY_HEADERS',
+    'DESKTOP_MANIFEST_URL', 'POSTHOG_API_KEY', 'POSTHOG_SERVER_KEY', 'UPSTASH_REDIS_REST_URL',
+    'UPSTASH_REDIS_REST_TOKEN', 'KV_REST_API_URL', 'KV_REST_API_TOKEN'])('rejects retired backend %s before writes without leaking its value', key => {
+    const { env } = fixture(); env[key] = 'PRIVATE_SENTINEL_DO_NOT_PRINT'
+    io.read.mockReturnValue(source(env))
+    let message = ''; try { runProductionEnvSync([...args, '--apply']) } catch (error) { message = (error as Error).message }
+    expect(message).toContain(`forbidden production env keys: ${key}`)
+    expect(message).not.toContain(env[key])
+    expect(PRODUCTION_ENV_ALLOWLIST).not.toContain(key)
+    expect(io.spawn).not.toHaveBeenCalled()
+  })
+  it.each(['NEXT_PUBLIC_SOULIDITY_PROFILE_REGISTRY_ID', 'NEXT_PUBLIC_SOULIDITY_SOCIAL_REGISTRY_ID',
+    'NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID', 'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTE_REGISTRY_ID'])('requires canonical new registry %s', key => {
+    for (const value of ['', '0x1', id(0), id(44).toUpperCase(), `${id(44)} `]) {
+      const { env } = fixture(); env[key] = value
+      expect(() => assertProductionEnv(env)).toThrow(key)
+    }
+  })
+  it.each(['', `${id(31)}::blob::Blob`, `${id(31)}::blob::Wrong`])('rejects wrong Walrus original type %s', value => {
+    const { env } = fixture(); env.NEXT_PUBLIC_WALRUS_BLOB_TYPE = value
+    expect(() => assertProductionEnv(env)).toThrow('NEXT_PUBLIC_WALRUS_BLOB_TYPE')
+  })
+  it.each(['NEXT_PUBLIC_SOULIDITY_PROFILE_WRITES_ENABLED', 'NEXT_PUBLIC_SOULIDITY_SOCIAL_WRITES_ENABLED',
+    'NEXT_PUBLIC_SOULIDITY_COMMUNITY_WRITES_ENABLED', 'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTES_WRITES_ENABLED'])('validates explicit %s without choosing or changing its value', key => {
+    const { env } = fixture()
+    for (const value of ['true', 'false']) {
+      env[key] = value; const before = { ...env }
+      expect(() => assertProductionEnv(env)).not.toThrow(); expect(env).toEqual(before)
+    }
+    for (const value of ['', '1', 'TRUE', ' false ']) {
+      env[key] = value; expect(() => assertProductionEnv(env)).toThrow(key)
+    }
+  })
+  it('retains actual static integrations, not private metadata or build-injected WASM version', () => {
+    for (const key of ['NEXT_PUBLIC_DESKTOP_MANIFEST_URL', 'NEXT_PUBLIC_SUI_GRAPHQL_URL',
+      'NEXT_PUBLIC_ANIMACRAFT_ORIGIN', 'NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL']) expect(PRODUCTION_ENV_ALLOWLIST).toContain(key)
+    for (const key of ['VERCEL_ENV', 'CLAWNEWS_LOAD_ENV_LOCAL', 'NEXT_PUBLIC_WALRUS_WASM_VERSION',
+      'NEXT_PUBLIC_E2E_TEST_MODE']) expect(PRODUCTION_ENV_ALLOWLIST).not.toContain(key)
+  })
+  it.each(['NEXT_PUBLIC_WALRUS_AGGREGATOR_URL', 'NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL',
+    'NEXT_PUBLIC_SUI_GRAPHQL_URL', 'NEXT_PUBLIC_POSTHOG_HOST'])('rejects backend-relative or credential-bearing %s', key => {
+    for (const value of ['/ingest', 'http://service.example', 'https://PRIVATE_SENTINEL@service.example', 'https://service.example?token=PRIVATE_SENTINEL']) {
+      const { env } = fixture(); env[key] = value
+      let message = ''; try { assertProductionEnv(env) } catch (error) { message = (error as Error).message }
+      expect(message).toContain(key); expect(message).not.toContain('PRIVATE_SENTINEL')
+    }
+  })
   it('accepts the complete current tuple without historical routes or V5/V6 flags and does not enable writes', () => {
     const { env } = fixture(), before = structuredClone(env)
     expect(() => assertProductionEnv(env)).not.toThrow()
@@ -66,7 +126,7 @@ describe('fresh native production configuration (local, not chain acceptance)', 
     'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID', 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID',
     'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID',
     'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID', 'NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE',
-    'NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON', 'DATABASE_URL', 'DIRECT_URL', 'AUTH_SECRET'])('requires explicit %s, never SDK fallback', key => {
+    'NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON', 'NEXT_PUBLIC_SUI_CHAIN_IDENTIFIER', 'NEXT_PUBLIC_WALRUS_AGGREGATOR_URL'])('requires explicit %s, never SDK fallback', key => {
     const { env } = fixture(); delete env[key]
     expect(() => assertProductionEnv(env)).toThrow(key)
     expect(PRODUCTION_ENV_ALLOWLIST).toContain(key)
@@ -229,7 +289,7 @@ describe('explicit production target and secret-safe process boundary', () => {
     expect(text).toContain('remove NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES')
     expect(text).toContain('remove NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
     expect(text).toContain('not inspected or deleted')
-    for (const value of [env.DATABASE_URL, env.AUTH_SECRET, env.NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON, env.NEXT_PUBLIC_POSTHOG_KEY]) expect(text).not.toContain(value)
+    for (const value of [env.NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON, env.NEXT_PUBLIC_POSTHOG_KEY]) expect(text).not.toContain(value)
   })
   it('mocked apply pins every command to the exact project and sends values only through stdin', () => {
     const { env } = fixture(); io.read.mockReturnValue(source(env)); const log = vi.spyOn(console, 'log').mockImplementation(() => {})

@@ -14,52 +14,51 @@ export const PRODUCTION_ENV_ALLOWLIST = [
   'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
   'NEXT_PUBLIC_ANIMACRAFT_APP_URL',
   'NEXT_PUBLIC_SEAL_SERVER_CONFIGS',
-  'SEAL_SERVER_CONFIGS',
   'NEXT_PUBLIC_SEAL_THRESHOLD',
   'NEXT_PUBLIC_SEAL_VERIFY_KEY_SERVERS',
   'NEXT_PUBLIC_SEAL_SESSION_TTL_MIN',
   'NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL',
   'NEXT_PUBLIC_WALRUS_AGGREGATOR_URL',
   'NEXT_PUBLIC_WALRUS_WASM_URL',
-  'WALRUS_AGGREGATOR_URL',
-  'DATABASE_URL',
-  'DIRECT_URL',
-  'AUTH_SECRET',
-  'ADMIN_EMAILS',
-  'ADMIN_WALLET_ADDRESSES',
-  'TG_BOT_TOKEN',
-  'TG_CHANNEL_ID',
-  'TG_GROUP_ID',
-  'TG_BOT_USERNAME',
-  'X_DATABASE_URL',
-  'DEFAULT_PROVIDER',
-  'DEEPSEEK_API_KEY',
-  'DEEPSEEK_MODEL',
-  'DEEPSEEK_BASE_URL',
   'NEXT_PUBLIC_BASE_URL',
-  'APP_DOMAIN',
-  'SOULIDITY_WEB_URL',
-  'TRUST_PROXY_HEADERS',
-  'DESKTOP_MANIFEST_URL',
+  'NEXT_PUBLIC_DESKTOP_MANIFEST_URL',
   'NEXT_PUBLIC_DESKTOP_MAC_ARM64_URL',
   'NEXT_PUBLIC_DESKTOP_VERSION',
-  'POSTHOG_API_KEY',
   'NEXT_PUBLIC_POSTHOG_KEY',
   'NEXT_PUBLIC_POSTHOG_HOST',
   'NEXT_PUBLIC_POSTHOG_SESSION_REPLAY',
-  'POSTHOG_SERVER_KEY',
-  'UPSTASH_REDIS_REST_URL',
-  'UPSTASH_REDIS_REST_TOKEN',
-  'KV_REST_API_URL',
-  'KV_REST_API_TOKEN',
   'NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON',
   'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID',
   'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID',
   'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID',
   'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID',
   'NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE',
+  'NEXT_PUBLIC_SOULIDITY_PROFILE_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_SOCIAL_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTE_REGISTRY_ID',
+  'NEXT_PUBLIC_WALRUS_BLOB_TYPE',
+  'NEXT_PUBLIC_SUI_CHAIN_IDENTIFIER',
+  'NEXT_PUBLIC_SUI_GRAPHQL_URL',
+  'NEXT_PUBLIC_ANIMACRAFT_ORIGIN',
+  'NEXT_PUBLIC_SOULIDITY_PROFILE_WRITES_ENABLED',
+  'NEXT_PUBLIC_SOULIDITY_SOCIAL_WRITES_ENABLED',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_WRITES_ENABLED',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTES_WRITES_ENABLED',
 ] as const
 
+// Static builds expose only NEXT_PUBLIC_. VERCEL_ENV is host-managed and
+// CLAWNEWS_LOAD_ENV_LOCAL=false is supplied by build:web:production-env, not
+// remote application configuration. Never upload obsolete server credentials.
+const RETIRED_BACKEND_ENV_KEYS = [
+  'SEAL_SERVER_CONFIGS', 'WALRUS_AGGREGATOR_URL', 'DATABASE_URL', 'DIRECT_URL',
+  'AUTH_SECRET', 'ADMIN_EMAILS', 'ADMIN_WALLET_ADDRESSES', 'TG_BOT_TOKEN',
+  'TG_CHANNEL_ID', 'TG_GROUP_ID', 'TG_BOT_USERNAME', 'X_DATABASE_URL',
+  'DEFAULT_PROVIDER', 'DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'DEEPSEEK_BASE_URL',
+  'APP_DOMAIN', 'SOULIDITY_WEB_URL', 'TRUST_PROXY_HEADERS', 'DESKTOP_MANIFEST_URL',
+  'POSTHOG_API_KEY', 'POSTHOG_SERVER_KEY', 'UPSTASH_REDIS_REST_URL',
+  'UPSTASH_REDIS_REST_TOKEN', 'KV_REST_API_URL', 'KV_REST_API_TOKEN',
+] as const
 const FORBIDDEN_ENV_KEYS = new Set([
   // The native tuple is public and has one browser-compatible name.
   'ANIMACRAFT_V8_RECEIVE_TARGET_JSON',
@@ -93,6 +92,11 @@ export const PRODUCTION_VERCEL_PROJECT_ID = 'prj_TkRy8sVX44TBPB71sDfN03vF1A7S'
 /** Exact public chain projection produced by Animacraft export-config
  * --format soulidity-env. Service credentials never belong in this file. */
 export const PRODUCTION_CHAIN_ENV_KEYS = [
+  'NEXT_PUBLIC_SOULIDITY_PROFILE_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_SOCIAL_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTE_REGISTRY_ID',
+  'NEXT_PUBLIC_WALRUS_BLOB_TYPE',
   'NEXT_PUBLIC_SUI_NETWORK',
   'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID',
@@ -125,6 +129,10 @@ export function mergeProductionChainEnv(base: Record<string, string>, source: st
   return { ...base, ...chain }
 }
 const REQUIRED_ID_KEYS = [
+  'NEXT_PUBLIC_SOULIDITY_PROFILE_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_SOCIAL_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTE_REGISTRY_ID',
   'NEXT_PUBLIC_KIOSK_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID',
@@ -140,7 +148,9 @@ const REQUIRED_PRODUCTION_KEYS = [
   ...REQUIRED_ID_KEYS,
   'NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON',
   'NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE',
-  'DATABASE_URL', 'DIRECT_URL', 'AUTH_SECRET', 'DEFAULT_PROVIDER', 'DEEPSEEK_API_KEY',
+  'NEXT_PUBLIC_SUI_CHAIN_IDENTIFIER', 'NEXT_PUBLIC_WALRUS_AGGREGATOR_URL',
+  'NEXT_PUBLIC_SOULIDITY_PROFILE_WRITES_ENABLED', 'NEXT_PUBLIC_SOULIDITY_SOCIAL_WRITES_ENABLED',
+  'NEXT_PUBLIC_SOULIDITY_COMMUNITY_WRITES_ENABLED', 'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTES_WRITES_ENABLED',
 ] as const
 
 type CliOptions = { apply: boolean; envFile: string; project: string; chainEnvFile?: string }
@@ -166,10 +176,6 @@ export function parseCliOptions(argv: string[]): CliOptions {
     throw new Error('Explicit --project must select the verified Soulidity production project')
   }
   return options
-}
-
-function isSensitiveKey(key: string) {
-  return !key.startsWith('NEXT_PUBLIC_')
 }
 
 function isHttpsOrigin(value: string): boolean {
@@ -269,12 +275,11 @@ export function assertNativeProductionTarget(env: Record<string, string>): void 
 type ValidatedSealServerConfig = {
   objectId: string
   weight: number
-  weightWasProvided: boolean
 }
 
 export function parseSealServerConfigs(
   raw: string | undefined,
-  envName: 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' | 'SEAL_SERVER_CONFIGS',
+  envName: 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS',
   errors: string[],
 ): ValidatedSealServerConfig[] {
   const configured = raw?.trim()
@@ -285,7 +290,7 @@ export function parseSealServerConfigs(
     if (!Array.isArray(parsed)) {
       throw new Error('must be a JSON array')
     }
-    if (envName === 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' && parsed.length > 64) {
+    if (parsed.length > 64) {
       throw new Error('must contain at most 64 public services')
     }
 
@@ -296,8 +301,8 @@ export function parseSealServerConfigs(
       }
       const value = entry as Record<string, unknown>
       const publicKeys = ['objectId', 'weight', 'aggregatorUrl']
-      const allowedKeys = envName === 'SEAL_SERVER_CONFIGS' ? [...publicKeys, 'apiKeyName', 'apiKey'] : publicKeys
-      if (envName === 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' && (Object.hasOwn(value, 'apiKeyName') || Object.hasOwn(value, 'apiKey'))) {
+      const allowedKeys = publicKeys
+      if (Object.hasOwn(value, 'apiKeyName') || Object.hasOwn(value, 'apiKey')) {
         throw new Error(`server ${index} must not expose API credentials in a NEXT_PUBLIC env`)
       }
       if (Object.keys(value).some(key => !allowedKeys.includes(key))) {
@@ -306,7 +311,7 @@ export function parseSealServerConfigs(
       const objectId = typeof value.objectId === 'string'
         ? normalizeNonZeroSuiId(value.objectId)
         : null
-      if (!objectId || (envName === 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' && !canonicalId(value.objectId))) {
+      if (!objectId || !canonicalId(value.objectId)) {
         throw new Error(`server ${index}.objectId must be a non-zero Sui object ID`)
       }
       if (seenObjectIds.has(objectId)) {
@@ -319,21 +324,7 @@ export function parseSealServerConfigs(
         throw new Error(`server ${index}.weight must be a positive integer`)
       }
 
-      const hasApiKeyName = typeof value.apiKeyName === 'string'
-        && value.apiKeyName.trim().length > 0
-      const hasApiKey = typeof value.apiKey === 'string'
-        && value.apiKey.trim().length > 0
-      if (envName === 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' && (hasApiKeyName || hasApiKey)) {
-        throw new Error(`server ${index} must not expose API credentials in a NEXT_PUBLIC env`)
-      }
-      if (envName === 'SEAL_SERVER_CONFIGS' && hasApiKeyName !== hasApiKey) {
-        throw new Error(`server ${index} must set apiKeyName and apiKey together`)
-      }
-      if (envName === 'SEAL_SERVER_CONFIGS' && (Object.hasOwn(value, 'apiKeyName') || Object.hasOwn(value, 'apiKey'))
-        && (!hasApiKeyName || !hasApiKey)) {
-        throw new Error(`server ${index} must set apiKeyName and apiKey together`)
-      }
-      if (value.aggregatorUrl !== undefined && (envName === 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' || value.aggregatorUrl !== null)) {
+      if (value.aggregatorUrl !== undefined) {
         if (typeof value.aggregatorUrl !== 'string') {
           throw new Error(`server ${index}.aggregatorUrl must be an HTTPS URL`)
         }
@@ -342,8 +333,8 @@ export function parseSealServerConfigs(
           if (aggregatorUrl.protocol !== 'https:' || aggregatorUrl.username || aggregatorUrl.password || aggregatorUrl.search || aggregatorUrl.hash) {
             throw new Error('invalid')
           }
-          if (envName === 'NEXT_PUBLIC_SEAL_SERVER_CONFIGS' && (aggregatorUrl.hostname === 'localhost'
-            || /^\d+(?:\.\d+){3}$/.test(aggregatorUrl.hostname) || aggregatorUrl.hostname.includes(':'))) {
+          if (aggregatorUrl.hostname === 'localhost'
+            || /^\d+(?:\.\d+){3}$/.test(aggregatorUrl.hostname) || aggregatorUrl.hostname.includes(':')) {
             throw new Error('invalid')
           }
         } catch {
@@ -354,7 +345,6 @@ export function parseSealServerConfigs(
       return {
         objectId,
         weight,
-        weightWasProvided: value.weight != null,
       }
     })
   } catch (error) {
@@ -390,6 +380,9 @@ export function assertProductionChainEnv(env: Record<string, string>) {
   if (env.NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE !== '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC') {
     errors.push('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE must be the native mainnet USDC type')
   }
+  if (env.NEXT_PUBLIC_WALRUS_BLOB_TYPE !== '0xfdc88f7d7cf30afab2f82e8380d11ee8f70efb90e863d1de8616fae1bb09ea77::blob::Blob') {
+    errors.push('NEXT_PUBLIC_WALRUS_BLOB_TYPE must be the mainnet Walrus original Blob type')
+  }
   try { assertNativeProductionTarget(env) } catch {
     errors.push('NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON is invalid or differs from the explicit SDK release configuration')
   }
@@ -402,39 +395,38 @@ export function assertProductionEnv(env: Record<string, string>) {
   if (env.MAINNET_DEPLOYER_PRIV_KEY?.trim()) {
     errors.push('Refusing to sync forbidden production env keys: MAINNET_DEPLOYER_PRIV_KEY')
   }
+  const retired = RETIRED_BACKEND_ENV_KEYS.filter(key => env[key]?.trim())
+  if (retired.length) errors.push(`Refusing to sync forbidden production env keys: ${retired.join(', ')}`)
   const missingRequired = REQUIRED_PRODUCTION_KEYS
     .filter(key => !(PRODUCTION_CHAIN_ENV_KEYS as readonly string[]).includes(key) && !env[key]?.trim())
   if (missingRequired.length > 0) errors.push(`Missing required production env keys: ${missingRequired.join(', ')}`)
   try { assertProductionChainEnv(env) } catch (error) { errors.push((error as Error).message) }
 
-  const hasUpstashRateLimit = Boolean(env.UPSTASH_REDIS_REST_URL?.trim())
-    && Boolean(env.UPSTASH_REDIS_REST_TOKEN?.trim())
-  const hasKvRateLimit = Boolean(env.KV_REST_API_URL?.trim())
-    && Boolean(env.KV_REST_API_TOKEN?.trim())
-  if (!hasUpstashRateLimit && !hasKvRateLimit) {
-    errors.push('Missing shared rate limiter env pair: set UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN or KV_REST_API_URL/KV_REST_API_TOKEN')
-  }
-
   const publicPostHogKey = env.NEXT_PUBLIC_POSTHOG_KEY?.trim()
-  if (!publicPostHogKey) {
-    errors.push('Missing NEXT_PUBLIC_POSTHOG_KEY for browser analytics ingestion')
-  } else if (!publicPostHogKey.startsWith('phc_')) {
+  if (publicPostHogKey && !publicPostHogKey.startsWith('phc_')) {
     errors.push('NEXT_PUBLIC_POSTHOG_KEY must be a PostHog project API key that starts with phc_')
   }
 
-  const adminDefaultProvider = env.DEFAULT_PROVIDER?.trim()
-  if (adminDefaultProvider !== 'deepseek' && !adminDefaultProvider?.startsWith('deepseek-')) {
-    errors.push('DEFAULT_PROVIDER must be deepseek or a DeepSeek model id for Vercel Production admin LLM')
+  if (env.NEXT_PUBLIC_SUI_CHAIN_IDENTIFIER !== '35834a8a') {
+    errors.push('NEXT_PUBLIC_SUI_CHAIN_IDENTIFIER must be the mainnet chain identifier')
+  }
+  for (const key of ['NEXT_PUBLIC_SOULIDITY_PROFILE_WRITES_ENABLED', 'NEXT_PUBLIC_SOULIDITY_SOCIAL_WRITES_ENABLED',
+    'NEXT_PUBLIC_SOULIDITY_COMMUNITY_WRITES_ENABLED', 'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTES_WRITES_ENABLED']) {
+    if (env[key] !== 'true' && env[key] !== 'false') errors.push(`${key} must be explicitly true or false`)
+  }
+  for (const key of ['NEXT_PUBLIC_WALRUS_AGGREGATOR_URL', 'NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL',
+    'NEXT_PUBLIC_SUI_GRAPHQL_URL', 'NEXT_PUBLIC_POSTHOG_HOST']) {
+    const value = env[key]
+    if (!value && !(key === 'NEXT_PUBLIC_POSTHOG_HOST' && publicPostHogKey)) continue
+    try {
+      const url = new URL(value)
+      if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error()
+    } catch { errors.push(`${key} must be an HTTPS URL without credentials, query, or fragment`) }
   }
 
   const publicSealConfigs = parseSealServerConfigs(
     env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS,
     'NEXT_PUBLIC_SEAL_SERVER_CONFIGS',
-    errors,
-  )
-  const serverSealConfigs = parseSealServerConfigs(
-    env.SEAL_SERVER_CONFIGS,
-    'SEAL_SERVER_CONFIGS',
     errors,
   )
   if (!env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS?.trim()) {
@@ -451,35 +443,10 @@ export function assertProductionEnv(env: Record<string, string>) {
     (total, config) => total + config.weight,
     0,
   )
-  const mergedSealConfigs = new Map(
-    publicSealConfigs.map((config) => [config.objectId, config] as const),
-  )
-  for (const config of serverSealConfigs) {
-    const publicConfig = mergedSealConfigs.get(config.objectId)
-    if (!publicConfig) {
-      errors.push(
-        `SEAL_SERVER_CONFIGS may only override an objectId present in NEXT_PUBLIC_SEAL_SERVER_CONFIGS`,
-      )
-      continue
-    }
-    if (config.weightWasProvided && config.weight !== publicConfig.weight) {
-      errors.push(
-        `SEAL_SERVER_CONFIGS must preserve public weight`,
-      )
-    }
-    mergedSealConfigs.set(config.objectId, publicConfig)
-  }
-  const mergedSealWeight = Array.from(mergedSealConfigs.values()).reduce(
-    (total, config) => total + config.weight,
-    0,
-  )
   if (publicSealWeight >= 255) {
     errors.push(
       `NEXT_PUBLIC_SEAL_SERVER_CONFIGS total weight must be less than 255`,
     )
-  }
-  if (mergedSealWeight >= 255) {
-    errors.push(`Merged Seal key-server weight must be less than 255`)
   }
 
   const thresholdRaw = env.NEXT_PUBLIC_SEAL_THRESHOLD?.trim() ?? ''
@@ -490,13 +457,13 @@ export function assertProductionEnv(env: Record<string, string>) {
     errors.push(
       `NEXT_PUBLIC_SEAL_SERVER_CONFIGS has weight below threshold`,
     )
-  } else if (mergedSealWeight > 0 && mergedSealWeight < threshold) {
-    errors.push(`Merged Seal key-server weight is below threshold`)
   }
 
-  const animacraftAppUrl = env.NEXT_PUBLIC_ANIMACRAFT_APP_URL?.trim()
-  if (animacraftAppUrl && !isHttpsOrigin(animacraftAppUrl)) {
-    errors.push('NEXT_PUBLIC_ANIMACRAFT_APP_URL must be an HTTPS origin without credentials, path, query, or fragment')
+  for (const key of ['NEXT_PUBLIC_ANIMACRAFT_APP_URL', 'NEXT_PUBLIC_ANIMACRAFT_ORIGIN']) {
+    const origin = env[key]
+    if (origin && !isHttpsOrigin(origin)) {
+      errors.push(`${key} must be an HTTPS origin without credentials, path, query, or fragment`)
+    }
   }
 
   if (errors.length > 0) {
@@ -517,8 +484,8 @@ function syncEnvVar(key: string, value: string, project: string) {
     '--yes',
     // Vercel CLI 56 defaults non-interactive env writes to Sensitive. Public
     // browser configuration must opt out explicitly or later pull/readback is
-    // impossible. Server-only values stay explicitly sensitive.
-    ...(isSensitiveKey(key) ? ['--sensitive'] : ['--no-sensitive']),
+    // impossible. This script only writes explicitly allowlisted public values.
+    '--no-sensitive',
   ]
   const result = spawnSync('npx', args, {
     input: value,
@@ -532,6 +499,12 @@ function syncEnvVar(key: string, value: string, project: string) {
   }
 }
 
+/** Public static base + exact exporter projection; preview without network:
+ * npm run vercel:sync-production-env -- --dry-run --project <verified-project>
+ *   --env-file <public-static.env> --chain-env-file <exported-soulidity.env>
+ * No business backend env file or private deployment credentials are inputs.
+ * --apply remains an explicit, separately authorized remote operation.
+ */
 export function runProductionEnvSync(argv: string[]) {
   const options = parseCliOptions(argv)
   let env: Record<string, string>
@@ -548,9 +521,9 @@ export function runProductionEnvSync(argv: string[]) {
     .map(key => [key, env[key]] as const)
     .filter((entry): entry is readonly [typeof PRODUCTION_ENV_ALLOWLIST[number], string] => Boolean(entry[1]?.trim()))
   console.log(`${options.apply ? 'Syncing' : 'Dry run for'} ${selectedEntries.length} production env keys; project ${PRODUCTION_VERCEL_PROJECT_ID}`)
-  for (const [key] of selectedEntries) console.log(`- ${key}${isSensitiveKey(key) ? ' (sensitive)' : ''}`)
+  for (const [key] of selectedEntries) console.log(`- ${key}`)
   console.log('Retired remote-key removal plan (if present; not inspected or deleted by this script):')
-  for (const key of FORBIDDEN_ENV_KEYS) console.log(`- remove ${key}`)
+  for (const key of [...FORBIDDEN_ENV_KEYS, ...RETIRED_BACKEND_ENV_KEYS]) console.log(`- remove ${key}`)
   console.log('Remove retired remote keys only together with the matching runtime configuration cutover.')
   console.log('Local configuration validation only; not chain publication, release acceptance or write-gate authorization.')
   if (!options.apply) { console.log('Dry run only. No network operation performed.'); return }
