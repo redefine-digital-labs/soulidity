@@ -168,7 +168,9 @@ export function createChainObjectDiscovery(options: ChainObjectDiscoveryOptions)
         ...(config.scope.owner ? { ownerKind: config.scope.owner.kind,
           ...('address' in config.scope.owner ? { owner: config.scope.owner.address } : {}) } : {}) }
       const request = async () => {
-        const response = await config.fetcher(config.endpoint, { method: 'POST', credentials: 'omit', mode: 'cors',
+        // Native browser fetch cannot use this configuration object as its receiver.
+        const { fetcher } = config
+        const response = await fetcher(config.endpoint, { method: 'POST', credentials: 'omit', mode: 'cors',
           redirect: 'error', cache: 'no-store', headers: { 'content-type': 'application/json' }, signal: controller.signal,
           body: JSON.stringify({ query: QUERY, variables: { checkpoint, filter, first, after: cursor } }) })
         try {

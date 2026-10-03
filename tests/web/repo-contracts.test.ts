@@ -86,7 +86,8 @@ describe('repository contract guards', () => {
     expect(deploymentManifest.testnet?.paymentCoinType).toContain('::')
 
     expect(deploymentManifest.mainnet?.packageId).toMatch(/^0x[0-9a-f]+$/)
-    expect(deploymentManifest.mainnet?.marketConfigId).toMatch(/^0x[0-9a-f]+$/)
+    expect(deploymentManifest.mainnet?.marketConfigV2Id).toMatch(/^0x[0-9a-f]{64}$/)
+    expect(deploymentManifest.mainnet).not.toHaveProperty('marketConfigId')
     expect(deploymentManifest.mainnet?.soulTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
     expect(deploymentManifest.mainnet?.collectionTransferPolicyId).toMatch(/^0x[0-9a-f]+$/)
     expect(deploymentManifest.mainnet?.paymentCoinType).toBe(

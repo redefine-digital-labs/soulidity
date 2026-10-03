@@ -184,7 +184,9 @@ export function createChainEventDiscovery(options: ChainEventDiscoveryOptions) {
       const filter = { type: config.scope.type,
         ...(config.scope.afterCheckpoint !== undefined ? { afterCheckpoint: config.scope.afterCheckpoint } : {}) }
       const request = async () => {
-        const response = await config.fetcher(config.endpoint, { method: 'POST', credentials: 'omit', mode: 'cors',
+        // Native browser fetch cannot use this configuration object as its receiver.
+        const { fetcher } = config
+        const response = await fetcher(config.endpoint, { method: 'POST', credentials: 'omit', mode: 'cors',
           redirect: 'error', cache: 'no-store', headers: { 'content-type': 'application/json' }, signal: controller.signal,
           body: JSON.stringify({ query: QUERY, variables: { checkpoint, filter, first, after: cursor } }) })
         try {

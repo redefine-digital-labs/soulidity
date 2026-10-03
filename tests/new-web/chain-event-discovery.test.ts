@@ -29,9 +29,21 @@ async function rejectPage(value: unknown, code = 'RESPONSE_INVALID') {
   await expect(createChainEventDiscovery(options({ fetch: fetcher })).next()).rejects.toMatchObject({ code })
   expect(fetcher).toHaveBeenCalledTimes(1)
 }
-afterEach(() => vi.useRealTimers())
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('event-family and cross-stream snapshot semantics', () => {
+  it.each(['default', 'injected'])('calls %s fetch without a foreign receiver', async mode => {
+    const receivers: unknown[] = []
+    const fetcher: typeof fetch = async function (this: unknown) {
+      receivers.push(this)
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation')
+      return response(page([], false, null))
+    }
+    if (mode === 'default') vi.stubGlobal('fetch', fetcher)
+    const result = await createChainEventDiscovery(options(mode === 'injected' ? { fetch: fetcher } : {})).next()
+    expect(result.page.status).toBe('COMPLETE')
+    expect(receivers).toEqual([undefined])
+  })
   it.each([
     `${id(42)}::_::SoulGrantIssued`, `${id(42)}::grant::_`, `${id(42)}::1grant::SoulGrantIssued`,
     `${id(42)}::grant::1Event`, `${id(42)}::grant::SoulGrantIssued::Extra`,

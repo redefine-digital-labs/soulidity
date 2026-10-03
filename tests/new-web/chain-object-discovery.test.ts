@@ -26,9 +26,21 @@ async function rejectPage(value: unknown, code = 'RESPONSE_INVALID') {
   await expect(createChainObjectDiscovery(options({ fetch: fetcher })).next()).rejects.toMatchObject({ code })
   expect(fetcher).toHaveBeenCalledTimes(1)
 }
-afterEach(() => vi.useRealTimers())
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('explicit release-scoped candidate discovery', () => {
+  it.each(['default', 'injected'])('calls %s fetch without a foreign receiver', async mode => {
+    const receivers: unknown[] = []
+    const fetcher: typeof fetch = async function (this: unknown) {
+      receivers.push(this)
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation')
+      return response(page([], false, null))
+    }
+    if (mode === 'default') vi.stubGlobal('fetch', fetcher)
+    const result = await createChainObjectDiscovery(options(mode === 'injected' ? { fetch: fetcher } : {})).next()
+    expect(result.page.status).toBe('COMPLETE')
+    expect(receivers).toEqual([undefined])
+  })
   it('binds opaque pagination to one checkpoint and reports IDs only, never asset authority', async () => {
     const cursor = 'opaque/+==:不可解析'
     const fetcher = sequence(page([id(1), id(2)], true, cursor), page([id(3)], false, 'opaque:last'))

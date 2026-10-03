@@ -90,7 +90,7 @@ describe('Soulidity deployment manifest', () => {
         || deploymentManifest.mainnet.callablePackageId,
     )
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')).toBe(deploymentManifest.mainnet.packageId)
-    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')).toBe(deploymentManifest.mainnet.marketConfigId)
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')).toBe(deploymentManifest.mainnet.marketConfigV2Id)
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')).toBe(deploymentManifest.mainnet.soulTransferPolicyId)
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID')).toBe(deploymentManifest.mainnet.collectionTransferPolicyId)
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')).toBe(
@@ -112,20 +112,22 @@ describe('Soulidity deployment manifest', () => {
       expect(Object.keys(entry).filter(key => /V6/.test(key))).toEqual([])
     }
     expect(mainnetSection).toContain(
-      `published-at = "${deploymentManifest.mainnet.callablePackageId}"`,
+      'published-at = "0x60bf39455f90e2af94381f2434d2c013c4e38a12fd16873ac296a26660f92ecd"',
     )
     expect(mainnetSection).toContain(
-      `original-id = "${deploymentManifest.mainnet.originalPackageId}"`,
+      'original-id = "0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d"',
     )
     expect(mainnetSection).toMatch(/\nversion = 2\n/)
     expect(deploymentManifest.mainnet).toMatchObject({
-      callablePackageId: '0x60bf39455f90e2af94381f2434d2c013c4e38a12fd16873ac296a26660f92ecd',
-      originalPackageId: '0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d',
-      marketConfigV2Id: '0x836da4241f186074cb189c00c2ed118f0d3ff063718f779badafaa4553441da3',
-      marketAdminCapV2Id: '0xc8ab185ad145d8b8b63b58f1905eb5544303580cb2bfc64d45adfb308d6e7611',
-      upgradeTxDigest: '4YP6XzdtMSYNZGuSfm5iK2Bg3yC3HXJx3oTfnbCbJb6q',
-      legacyMarketRetirementTxDigest: 'GENUjHCEo1TckbCQaH8TLuqDfGE3xr9Z9knjStmgJa9r',
+      callablePackageId: '0x5e3e75de3e1f661ffcad9bd0d53f3ea97e2e48f0765d2b2d9532256806409bb9',
+      originalPackageId: '0x5e3e75de3e1f661ffcad9bd0d53f3ea97e2e48f0765d2b2d9532256806409bb9',
+      marketConfigV2Id: '0x2171d5268a6af1ca7efbc53eaa5bc4a80ab94733f0fadd8da4486bc9bec50f3c',
+      marketAdminCapV2Id: '0xb9000621d325ee895f7cc9e840fac3f849b02961a5538083f6bcb13629c9d90e',
+      publishTxDigest: 'HwE7FJzTEzB1QHucWXBnAjCdBHTQ6kNz6smqiqULM6SN',
     })
+    for (const retired of ['marketConfigId', 'animacraftProvenancePackageId', 'upgradeTxDigest', 'legacyMarketRetirementTxDigest']) {
+      expect(deploymentManifest.mainnet).not.toHaveProperty(retired)
+    }
   })
 
   it('honors explicit env overrides before falling back to the manifest', () => {
@@ -133,7 +135,7 @@ describe('Soulidity deployment manifest', () => {
     process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID = '0x111'
 
     expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')).toBe('0x111')
-    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID')).toBe(deploymentManifest.mainnet.marketConfigId)
+    expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')).toBe(deploymentManifest.mainnet.marketConfigV2Id)
   })
 
   it('uses the V2 config id and honors explicit overrides', () => {
