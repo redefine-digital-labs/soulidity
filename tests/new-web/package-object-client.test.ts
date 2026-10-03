@@ -191,7 +191,11 @@ describe('native package identity transport', () => {
     }
     await expect(wrapped.ledgerService.getObject({ objectId: id(40), readMask: mask })).rejects.toThrow('SESSION_BUDGET')
     expect(f.identity).toHaveBeenCalledTimes(count); expect(count).toBeLessThan(PACKAGE_IDENTITY_LIMITS.attempts)
-  }, 30_000)
+    // This intentionally authenticates the full 512 MiB session budget through
+    // real BCS parse/serialize + BLAKE2b, not mocked accounting. Shared CI exceeded
+    // 30s for the 128 near-4-MiB reads; allow CPU contention without changing the
+    // adapter's per-request deadline, byte ceiling, or expected rejection.
+  }, 120_000)
   it('cancels queued identity work and preserves the actual remote failure', async () => {
     const f = setup(), abort = new AbortController()
     f.identity.mockImplementation(request => f.call(request, new Promise(() => {})))
