@@ -5,6 +5,7 @@ import { deriveDynamicFieldID, fromBase58, normalizeStructTag, toBase58, toBase6
 import { assertKioskItemField, deriveKioskItemFieldId, KIOSK_ITEM_FIELD_TYPE, getSuiGrpcFullnodeUrl } from '@soulidity/sdk'
 import { MAINNET_GENESIS_DIGEST } from './mainnet-chain'
 import { assertExactContentSidecarSlots, parseContentSidecars } from '@/lib/soulidity/mirror/parse-content-sidecars'
+import { withPackageObjectIdentity } from '../sui/package-object-client'
 
 export class NativeReceiveError extends Error {
   constructor(public code: string, message: string, public status = 422) { super(message) }
@@ -91,9 +92,9 @@ export function readNativeReceiveTarget(env: Record<string, string | undefined> 
 export function createNativeReceiveClient(signal?: AbortSignal) {
   // The SDK's baseUrl constructor forwards only baseUrl/fetchInit; RpcOptions
   // such as abort must be installed on the transport itself.
-  return new SuiGrpcClient({ network: 'mainnet', transport: new GrpcWebFetchTransport({
+  return withPackageObjectIdentity(new SuiGrpcClient({ network: 'mainnet', transport: new GrpcWebFetchTransport({
     baseUrl: getSuiGrpcFullnodeUrl('mainnet'), ...(signal ? { abort: signal } : {}),
-  }) })
+  }) }), signal)
 }
 const V = bcs.vector(bcs.u8())
 const T = bcs.struct('TypeName', { name: bcs.string() })
@@ -142,7 +143,7 @@ export async function attestNativeReceiveTarget(client: SuiGrpcClient, target: N
   const keyBytes = new Uint8Array([0])
   const { dynamicField } = await client.core.getDynamicField({ parentId: target.protocolConfigId, name: { type: keyType, bcs: keyBytes } })
   check(dynamicField.$kind === 'DynamicField' && dynamicField.fieldId === deriveDynamicFieldID(target.protocolConfigId, keyType, keyBytes)
-    && normalizeStructTag(dynamicField.valueType) === `${target.coreOriginalPackageId}::protocol_config_v8::SoulidityBindingV8`, 'Protocol native slot mismatch')
+    && normalizeStructTag(dynamicField.value.type) === `${target.coreOriginalPackageId}::protocol_config_v8::SoulidityBindingV8`, 'Protocol native slot mismatch')
   const slot = decode(BindingSlot, dynamicField.value.bcs)
   check(slot.config_id === target.protocolConfigId, 'Protocol binding parent mismatch')
   const stored = ['soul_original', 'soul_defining', 'mint_original', 'mint_defining', 'owner_original', 'owner_defining'] as const

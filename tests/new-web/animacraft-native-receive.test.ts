@@ -7,6 +7,13 @@ import { KioskItemFieldBcs } from '@soulidity/sdk'
 const id = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
 
 describe('native V8 server receive evidence',()=>{
+  it('authenticates the actual SDK getDynamicField value.type, not list-entry metadata', async () => {
+    const f = fixture()
+    expect(f.dynamicField).not.toHaveProperty('valueType')
+    await expect(attestNativeReceiveTarget(f.client, f.target)).resolves.toHaveProperty('soulType')
+    f.dynamicField.value.type = `${id(99)}::protocol_config_v8::SoulidityBindingV8`
+    await expect(attestNativeReceiveTarget(f.client, f.target)).rejects.toThrow('Protocol native slot mismatch')
+  })
   it.each(['11111111111111111111111111111111','35834a8a'])('rejects non-mainnet full digest or compatibility short ID: %s', async chainIdentifier => {
     const f=fixture()
     vi.spyOn(f.client.core,'getChainIdentifier').mockResolvedValue({chainIdentifier})

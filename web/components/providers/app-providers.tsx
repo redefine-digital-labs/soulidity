@@ -14,13 +14,13 @@ import { E2EWalletStub } from './e2e-wallet-stub'
 import { ToastProvider } from '@/components/ui/toast'
 import { UploadCostReviewProvider } from '@/components/upload/upload-cost-review'
 import {
-  createSuiGrpcCompatClient,
   getSuiGrpcFullnodeUrl,
   syncSoulidityDeploymentSession,
 } from '@soulidity/sdk'
 import { VisualThemeProvider } from './visual-theme-provider'
 import { SOULIDITY_DAPP_KIT_THEME } from '@/lib/theme/dapp-kit-theme'
 import { PrivateBookmarksProvider } from '@/lib/hooks/use-private-bookmarks'
+import { createBrowserSuiClient } from '@/lib/sui/browser-client'
 
 // dapp-kit v1 still types its context as SuiJsonRpcClient. The factory keeps
 // that method surface while all network requests use Sui's supported gRPC API.
@@ -32,7 +32,7 @@ const suiNetworks = {
 type SuiNetwork = keyof typeof suiNetworks
 
 function createGrpcClient(name: string) {
-  return createSuiGrpcCompatClient(name as SuiNetwork)
+  return createBrowserSuiClient(name as SuiNetwork)
 }
 
 export function AppProviders({ children }: { children: ReactNode }) {
