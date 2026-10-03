@@ -3,6 +3,7 @@ module soulidity::collection;
 use std::string::String;
 use sui::display::{Self as display, Display};
 use sui::event;
+use sui::dynamic_field;
 use sui::package::{Self as package, Publisher};
 use soulidity::soul::{Self as soul, SoulState};
 
@@ -15,9 +16,15 @@ const ECreatorMismatch: u64 = 3;
 const ECollectionSupplyExceeded: u64 = 4;
 const ESupplyCapInvalid: u64 = 5;
 const ESoulCurrentlyListed: u64 = 6;
+const EFloorPriceInvalid: u64 = 7;
+const MAX_FLOOR_PRICE_ATOMIC: u128 = 99_999_999_999_999_999_999;
 const VERSION: u64 = 1;
 
 public struct COLLECTION has drop {}
+
+/// Immutable app display/listing policy, never a Move trading restriction.
+/// Only this module can construct the versioned singleton key.
+public struct FloorPolicyKeyV1 has copy, drop, store { version: u8 }
 
 public struct SoulCollection has key {
     id: UID,
@@ -120,6 +127,10 @@ public fun current_supply(self: &SoulCollection): u64 {
     self.current_supply
 }
 
+public fun floor_price_atomic(self: &SoulCollection): Option<u128> {
+    *dynamic_field::borrow<FloorPolicyKeyV1, Option<u128>>(&self.id, FloorPolicyKeyV1 { version: 1 })
+}
+
 public fun collection_id(self: &SoulCollectionRight): ID {
     self.collection_id
 }
@@ -131,15 +142,18 @@ public(package) fun create(
     extra_royalty_bps: u16,
     tradeable: bool,
     max_supply: Option<u64>,
+    floor_price_atomic: Option<u128>,
     holder: address,
     holder_kiosk_id: ID,
     ctx: &mut TxContext,
 ): (SoulCollection, SoulCollectionRight) {
     assert!(extra_royalty_bps <= MAX_BPS, EExtraRoyaltyTooHigh);
     assert!(max_supply.is_none() || *max_supply.borrow() >= 1, ESupplyCapInvalid);
+    assert!(floor_price_atomic.is_none() || *floor_price_atomic.borrow() <= MAX_FLOOR_PRICE_ATOMIC, EFloorPriceInvalid);
 
     let creator = ctx.sender();
-    let collection_uid = object::new(ctx);
+    let mut collection_uid = object::new(ctx);
+    dynamic_field::add(&mut collection_uid, FloorPolicyKeyV1 { version: 1 }, floor_price_atomic);
     let collection_id = collection_uid.to_inner();
     let right = SoulCollectionRight {
         id: object::new(ctx),
@@ -251,7 +265,7 @@ public fun init_for_testing(recipient: address, ctx: &mut TxContext) {
 #[test_only]
 public fun destroy_collection_for_testing(self: SoulCollection) {
     let SoulCollection {
-        id,
+        mut id,
         version: _,
         creator: _,
         extra_royalty_bps: _,
@@ -262,6 +276,7 @@ public fun destroy_collection_for_testing(self: SoulCollection) {
         max_supply: _,
         current_supply: _,
     } = self;
+    dynamic_field::remove<FloorPolicyKeyV1, Option<u128>>(&mut id, FloorPolicyKeyV1 { version: 1 });
     id.delete();
 }
 

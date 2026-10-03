@@ -1,5 +1,7 @@
 'use client'
 
+import type { ChainSoulDetail } from '@/lib/soulidity/soul-detail-model'
+
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/modal'
@@ -7,22 +9,16 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
+import { NativeUpdatePriceModal } from '@/components/souls/native-update-price-modal'
+import { NativeDelistModal } from '@/components/souls/native-delist-modal'
 import {
   assertObjectInputsExist,
-  assertPhysicalWardrobeV7Runtime,
-  getAnimacraftAppearanceV6Id,
-  getAnimacraftPhysicalProfileV7Id,
-  getAnimacraftWardrobeV7Id,
-  physicalWardrobeV7RuntimeFromPublicEnv,
 } from '@soulidity/sdk'
 import { buildUpdateListingPriceTx } from '@soulidity/sdk'
 import {
-  buildDelistAnimacraftV6SoulTx,
-  buildDelistAnimacraftV7SoulTx,
   buildDelistSoulTx,
 } from '@soulidity/sdk'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
-import type { SoulAssetDetail } from '@soulidity/sdk'
 
 // Sui wallets (Slush, Suiet, Backpack, Sui Wallet) signal user-initiated
 // cancellation through the thrown Error message. Treat these as a deliberate
@@ -47,12 +43,18 @@ function isWalletUserRejection(error: unknown): boolean {
 /* ------------------------------------------------------------------ */
 
 interface UpdatePriceModalProps {
-  soul: SoulAssetDetail
+  soul: ChainSoulDetail
   open: boolean
   onClose: () => void
 }
 
-export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps) {
+export function UpdatePriceModal(props: UpdatePriceModalProps) {
+  return props.soul.provenanceKind === 'animacraft'
+    ? <NativeUpdatePriceModal {...props} />
+    : <OrdinaryUpdatePriceModal {...props} />
+}
+
+function OrdinaryUpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps) {
   const [price, setPrice] = useState('')
   const [status, setStatus] = useState<'idle' | 'signing' | 'syncing'>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -93,21 +95,6 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
       if (!soulKioskId || !soulKioskCapId) {
         throw new Error('Soul kiosk info is missing - the Soul may not be held in a personal kiosk')
       }
-      if (soul.provenanceKind === 'animacraft' && !soul.animacraftProvenance) {
-        throw new Error('Animacraft provenance is unavailable; price update is blocked')
-      }
-      const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
-      const wardrobeV7Id = await getAnimacraftWardrobeV7Id(soul.stateOnChainId)
-      if (appearanceV6Id) {
-        throw new Error(
-          'Animacraft v6 listings cannot be repriced in place. Delist this Soul, then create a fresh listing.',
-        )
-      }
-      if (wardrobeV7Id) {
-        throw new Error(
-          'Physical Wardrobe v7 listings cannot be repriced in place. Delist this Soul, then create a fresh listing.',
-        )
-      }
       await assertObjectInputsExist(suiClient, {
         'Soul kiosk': soulKioskId,
         'Soul kiosk capability': soulKioskCapId,
@@ -115,7 +102,6 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
         Soul: soul.onChainId,
         'Soul listing': soul.listingObjectOnChainId,
         Collection: soul.collectionOnChainId,
-        'Animacraft provenance': soul.animacraftProvenance?.objectId ?? null,
       })
       const tx = buildUpdateListingPriceTx({
         currentKioskId: soulKioskId,
@@ -124,8 +110,6 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
         listingObjectId: soul.listingObjectOnChainId,
         newPriceAtomic: priceAtomic,
         collectionObjectId: soul.collectionOnChainId,
-        animacraftProvenanceObjectId: soul.animacraftProvenance?.objectId,
-        animacraftVersion: soul.animacraftProvenance?.animacraftVersion,
       })
       const result = await signAndExecute(tx)
 
@@ -212,12 +196,18 @@ export function UpdatePriceModal({ soul, open, onClose }: UpdatePriceModalProps)
 /* ------------------------------------------------------------------ */
 
 interface DelistModalProps {
-  soul: SoulAssetDetail
+  soul: ChainSoulDetail
   open: boolean
   onClose: () => void
 }
 
-export function DelistModal({ soul, open, onClose }: DelistModalProps) {
+export function DelistModal(props: DelistModalProps) {
+  return props.soul.provenanceKind === 'animacraft'
+    ? <NativeDelistModal {...props} />
+    : <OrdinaryDelistModal {...props} />
+}
+
+function OrdinaryDelistModal({ soul, open, onClose }: DelistModalProps) {
   const [status, setStatus] = useState<'idle' | 'signing' | 'syncing'>('idle')
   const [error, setError] = useState<string | null>(null)
   const { signAndExecute, suiClient } = useWalletSign()
@@ -240,46 +230,13 @@ export function DelistModal({ soul, open, onClose }: DelistModalProps) {
       if (!soulKioskId || !soulKioskCapId) {
         throw new Error('Soul kiosk info is missing - the Soul may not be held in a personal kiosk')
       }
-      const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
-      const [wardrobeV7Id, physicalProfileV7Id] = await Promise.all([
-        getAnimacraftWardrobeV7Id(soul.stateOnChainId),
-        getAnimacraftPhysicalProfileV7Id(soul.stateOnChainId),
-      ])
-      if (Boolean(wardrobeV7Id) !== Boolean(physicalProfileV7Id)) {
-        throw new Error('Physical Wardrobe v7 binding is incomplete; delisting is blocked')
-      }
-      const physicalRuntime = wardrobeV7Id
-        ? assertPhysicalWardrobeV7Runtime(physicalWardrobeV7RuntimeFromPublicEnv())
-        : null
       await assertObjectInputsExist(suiClient, {
         'Soul kiosk': soulKioskId,
         'Soul kiosk capability': soulKioskCapId,
         'Soul state': soul.stateOnChainId,
-        'Animacraft v6 appearance': appearanceV6Id,
-        'Animacraft v7 physical config': physicalRuntime?.physicalProtocolConfigObjectId ?? null,
-        'Animacraft v7 physical profile': physicalProfileV7Id,
-        'Animacraft v7 wardrobe': wardrobeV7Id,
         'Soul listing': soul.listingObjectOnChainId,
       })
-      const tx = wardrobeV7Id && physicalProfileV7Id && physicalRuntime
-        ? buildDelistAnimacraftV7SoulTx({
-            physicalConfigObjectId: physicalRuntime.physicalProtocolConfigObjectId,
-            physicalProfileObjectId: physicalProfileV7Id,
-            currentKioskId: soulKioskId,
-            currentKioskCapOnChainId: soulKioskCapId,
-            stateObjectId: soul.stateOnChainId,
-            wardrobeObjectId: wardrobeV7Id,
-            listingObjectId: soul.listingObjectOnChainId,
-          })
-        : appearanceV6Id
-        ? buildDelistAnimacraftV6SoulTx({
-            currentKioskId: soulKioskId,
-            currentKioskCapOnChainId: soulKioskCapId,
-            stateObjectId: soul.stateOnChainId,
-            appearanceObjectId: appearanceV6Id,
-            listingObjectId: soul.listingObjectOnChainId,
-          })
-        : buildDelistSoulTx({
+      const tx = buildDelistSoulTx({
             currentKioskId: soulKioskId,
             currentKioskCapOnChainId: soulKioskCapId,
             stateObjectId: soul.stateOnChainId,

@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
-import { buttonStyles } from '@/components/ui/button'
+import { Button, buttonStyles } from '@/components/ui/button'
+import { useCollectionPublish } from '@/lib/hooks/use-collection-publish'
 import { useCreateCollection, collectionSteps } from '@/components/providers/create-collection-provider'
 
 function formatRoyalty(bps: number) {
@@ -52,11 +53,12 @@ function ConfirmRow({
 export default function LaunchedPage() {
   const router = useRouter()
   const ctx = useCreateCollection()
+  const completion = useCollectionPublish(async () => false)
   const result = ctx.publishResult
 
   useEffect(() => {
     if (ctx.isHydrated && !ctx.publishResult) {
-      router.replace('/collections/create')
+      router.replace('/collections/create/preview')
     }
   }, [ctx.isHydrated, ctx.publishResult, router])
 
@@ -81,7 +83,7 @@ export default function LaunchedPage() {
 
   return (
     <>
-      <FlowBar steps={collectionSteps} currentStep={3} />
+      <FlowBar steps={collectionSteps} currentStep={4} />
 
       <div className="relative z-10 border-t border-purple/20">
         <PageContainer size="sm" className="space-y-6 py-10 text-center sm:py-14">
@@ -185,7 +187,15 @@ export default function LaunchedPage() {
           )}
 
           {/* Action buttons */}
+          {completion.error && <p role="alert" className="text-danger">{completion.error}</p>}
           <div className="flex items-center justify-center gap-3">
+            <Button disabled={completion.loadingRecovery || completion.status === 'building' || completion.status === 'syncing'}
+              onClick={async () => {
+                if (await completion.startAnother(result.txDigest, result.authoringCompletionKey)) {
+                  try { await ctx.reset(); router.push('/collections/create') }
+                  catch { /* Provider displays the local persistence error; retain this result. */ }
+                }
+              }}>Create Another Collection</Button>
             <Link
               href={`/collections/${encodeURIComponent(result.collectionOnChainId)}`}
               className={buttonStyles({

@@ -1,43 +1,13 @@
 import type { Metadata } from 'next'
-import { AnimacraftIntegrationClient } from './integration-client'
+import { Suspense } from 'react'
+import { AnimacraftIntegrationEntry } from './client-entry'
 
 export const metadata: Metadata = {
   title: 'Animacraft Integration',
-  description: 'Continue an Animacraft character as one canonical Soulidity Soul.',
+  description: 'Verify and receive an already completed native Animacraft Soul.',
   robots: { index: false, follow: false },
 }
 
-type SearchValue = string | string[] | undefined
-
-function first(value: SearchValue): string {
-  return Array.isArray(value) ? value[0]?.trim() ?? '' : value?.trim() ?? ''
-}
-
-export default async function AnimacraftIntegrationPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, SearchValue>>
-}) {
-  const params = await searchParams
-  return (
-    <AnimacraftIntegrationClient
-      handoff={{
-        makerId: first(params.maker),
-        profileUrl: first(params.profile),
-        imageUrl: first(params.image),
-        profileBlobId: first(params.profileBlob),
-        imageBlobId: first(params.imageBlob),
-        imagePreviewBlobId: first(params.imagePreviewBlob),
-        recipeHash: first(params.recipeHash),
-        walletHint: first(params.wallet),
-        commerceRootId: first(params.commerceRoot),
-        commerceTreasuryId: first(params.commerceTreasury),
-        returnOrigin: first(params.returnOrigin),
-        returnNonce: first(params.returnNonce),
-        outputSealId: first(params.outputSealId),
-        outputNonce: first(params.outputNonce),
-        outputDigest: first(params.outputDigest),
-      }}
-    />
-  )
+export default function AnimacraftIntegrationPage() {
+  return <Suspense fallback={<p role="status">Loading Animacraft handoff…</p>}><AnimacraftIntegrationEntry /></Suspense>
 }

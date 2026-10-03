@@ -10,7 +10,8 @@ import { useToast } from '@/components/ui/toast'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
 import { usePurchase } from '@/lib/hooks/use-purchase'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import { formatAtomicAmountForDisplay, quoteAnimacraftV8SoulSale } from '@soulidity/sdk'
+import { NativePurchaseRecovery } from '@/components/souls/native-purchase-recovery'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
@@ -21,11 +22,11 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
   const { id } = use(params)
   const { user, loading, getAuthHeaders } = useAuth()
   const login = useLogin()
-  const { data: soul, isLoading, error: loadError } = useSoulDetail(id, getAuthHeaders, user?.id)
-  const { status, error, purchase, txDigest } = usePurchase(soul ?? null)
+  const { data: soul, isLoading, error: loadError } = useSoulDetail(id)
+  const { status, error, purchase, txDigest, native } = usePurchase(soul ?? null)
   const { showToast } = useToast()
 
-  const signing = status === 'building' || status === 'signing' || status === 'syncing'
+  const signing = status === 'building' || status === 'signing' || status === 'syncing' || status === 'recovering'
 
   useEffect(() => {
     if (status === 'done') {
@@ -35,13 +36,14 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
 
   useEffect(() => {
     if (error) {
-      showToast(`Transaction failed: ${error}`, 'danger')
+      showToast(`Purchase needs attention: ${error}`, 'danger')
     }
   }, [error, showToast])
   const signingLabel: Record<string, string> = {
     building: '⟳ Building TX…',
     signing: '⟳ Signing…',
     syncing: '⟳ Syncing…',
+    recovering: '⟳ Checking transaction…',
   }
 
   if (loading || isLoading) {
@@ -83,18 +85,30 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
     )
   }
 
-  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+  const isNative = soul.provenanceKind === 'animacraft'
+  const recovery = native && <NativePurchaseRecovery actions={native} />
+  // The native quote comes from the live verified snapshot, never a legacy
+  // provenance projection. Gross price already includes all three deductions.
+  const nativeQuote = native?.snapshot
+    ? quoteAnimacraftV8SoulSale(BigInt(native.snapshot.priceAtomic), native.snapshot) : null
+  const quote = nativeQuote ? {
+    priceAtomic: nativeQuote.priceAtomic.toString(), totalAtomic: nativeQuote.totalAtomic.toString(),
+    platformFeeAtomic: nativeQuote.protocolFeeAtomic.toString(), creatorRoyaltyAtomic: nativeQuote.soulCreatorRoyaltyAtomic.toString(),
+    makerSourceRoyaltyAtomic: nativeQuote.makerSourceRoyaltyAtomic.toString(), collectionRoyaltyAtomic: '0',
+  } : isNative ? null : soul.quote
 
-  if (status === 'done') {
+  if (status === 'done' || status === 'superseded') {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-8 relative z-10">
         <div className="bg-card border border-border rounded-xl p-6 text-center pt-10">
           <div className="w-[72px] h-[72px] rounded-full bg-success/15 border-2 border-success flex items-center justify-center text-3xl mx-auto mb-5">
             🎉
           </div>
-          <h2 className="font-display text-xl font-bold mb-2">Soul acquired</h2>
+          <h2 className="font-display text-xl font-bold mb-2">{status === 'superseded' ? 'Purchase confirmed' : 'Soul acquired'}</h2>
           <p className="text-muted mb-6">
-            <span className="font-semibold text-foreground">{soul.name}</span> is now synchronized to your wallet state.
+            <span className="font-semibold text-foreground">{soul.name}</span>{status === 'superseded'
+              ? ' has changed ownership or listing state since this purchase. Its current state was preserved.'
+              : ' is verified in your current on-chain wallet custody.'}
           </p>
 
           <div className="bg-card2 border border-border rounded-xl p-4 text-left mb-6 space-y-2 text-sm">
@@ -105,7 +119,7 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
             <div className="flex justify-between">
               <span className="text-muted">Paid</span>
               <span className="text-gold font-semibold">
-                {formatAtomicAmountForDisplay(soul.quote?.totalAtomic ?? soul.listedPriceAtomic)}
+                {formatAtomicAmountForDisplay(native?.record?.snapshot.priceAtomic ?? soul.quote?.totalAtomic ?? soul.listedPriceAtomic)}
               </span>
             </div>
             <div className="flex justify-between">
@@ -113,6 +127,7 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
               <span className="font-mono text-xs text-teal">{formatAddress(txDigest)}</span>
             </div>
           </div>
+          {recovery}
 
           <div className="flex gap-2.5">
             <Link
@@ -133,58 +148,22 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
     )
   }
 
-  if (isAnimacraftV5 && soul.collectionOnChainId) {
-    return (
-      <div className="max-w-[560px] mx-auto px-6 py-10">
-        <EmptyState
-          icon="🔒"
-          label="Animacraft v5 purchase blocked"
-          sublabel="This Soul is still bound to a collection. Animacraft v5 secondary sales cannot combine their frozen Soul-creator and Maker-source royalties with a collection royalty."
-          actionLabel="Back to Soul"
-          onAction={() => {
-            window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
-          }}
-        />
-      </div>
-    )
-  }
-
-  if (soul.listingStatus !== 'listed' || !soul.quote || !soul.listingObjectOnChainId) {
+  if (!quote || (!isNative && (!soul.purchaseAvailable || !soul.listingObjectOnChainId))) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-10">
         <EmptyState
           icon="🚫"
-          label="Soul is not listed"
-          sublabel="Only listed Soulidity assets can be purchased from this route."
+          label={isNative ? native?.loading ? 'Verifying purchase state' : 'Purchase state unavailable'
+            : soul.chainListingStatus === 'LISTED' ? 'Purchase currently unavailable' : 'Soul is not listed'}
+          sublabel={isNative
+            ? 'Connect your wallet and refresh the current listing. Saved purchases remain recoverable even when the listing is no longer available.'
+            : 'Purchases require a live listing, an enabled market and a price that meets the collection floor.'}
           actionLabel="Back to Soul"
           onAction={() => {
             window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
           }}
         />
-      </div>
-    )
-  }
-
-  if (
-    isAnimacraftV5
-    && (
-      soul.quote.totalAtomic !== soul.quote.priceAtomic
-      || soul.quote.collectionRoyaltyAtomic !== '0'
-      || soul.quote.makerRoyaltyAtomic == null
-      || soul.quote.soulCreatorRoyaltyBps == null
-    )
-  ) {
-    return (
-      <div className="max-w-[560px] mx-auto px-6 py-10">
-        <EmptyState
-          icon="🧾"
-          label="Verified v5 quote unavailable"
-          sublabel="The listing is missing its complete gross-price royalty breakdown. Refresh after the on-chain projection catches up; checkout remains blocked until every v5 term is verified."
-          actionLabel="Back to Soul"
-          onAction={() => {
-            window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
-          }}
-        />
+        {recovery}
       </div>
     )
   }
@@ -194,6 +173,7 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
       <TxPending visible={signing} message={
         status === 'building' ? 'Building transaction…' :
         status === 'syncing' ? 'Syncing on-chain state…' :
+        status === 'recovering' ? 'Checking the saved transaction…' :
         'Waiting for wallet signature…'
       } />
       <div className="bg-card2 border-b border-border px-4 sm:px-8 py-2.5 flex items-center gap-0 rounded-t-xl mb-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
@@ -215,60 +195,66 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
         <div className="bg-card2 border border-border rounded-xl p-4 mb-4">
           <div className="flex items-center gap-3 mb-4">
             <SoulCoverImage
+              compact
+              soul={soul}
               imageUrl={soul.imageUrl}
               className="w-12 h-12 rounded-lg border border-border bg-card shrink-0"
               fallback={<span className="text-lg font-semibold">{soul.name.slice(0, 1).toUpperCase()}</span>}
             />
             <div>
               <p className="font-bold text-sm">{soul.name}</p>
-              <p className="text-muted text-xs">Seller {formatAddress(soul.currentOwnerAddress)}</p>
+              <p className="text-muted text-xs">Seller {formatAddress(native?.snapshot?.seller ?? soul.currentOwnerAddress)}</p>
             </div>
           </div>
 
           <div className="flex justify-between text-sm py-2 border-b border-border">
-            <span className="text-muted">{isAnimacraftV5 ? 'Gross sale price' : 'List price'}</span>
-            <span className="font-semibold">{formatAtomicAmountForDisplay(soul.quote.priceAtomic)}</span>
+            <span className="text-muted">{isNative ? 'Gross sale price' : 'List price'}</span>
+            <span className="font-semibold">{formatAtomicAmountForDisplay(quote.priceAtomic)}</span>
           </div>
           <div className="flex justify-between text-sm py-2 border-b border-border">
-            <span className="text-muted">Protocol fee{isAnimacraftV5 ? ' · included' : ''}</span>
-            <span>{formatAtomicAmountForDisplay(soul.quote.platformFeeAtomic)}</span>
+            <span className="text-muted">Protocol fee{isNative ? ' · included' : ''}</span>
+            <span>{formatAtomicAmountForDisplay(quote.platformFeeAtomic)}</span>
           </div>
           <div className="flex justify-between text-sm py-2 border-b border-border">
             <span className="text-muted">
-              {isAnimacraftV5
-                ? 'Soul creator royalty · included'
-                : soul.provenanceKind === 'animacraft'
-                  ? 'Maker royalty'
-                  : 'Creator royalty'}
+              {isNative ? 'Soul creator royalty · included' : 'Creator royalty'}
             </span>
-            <span>{formatAtomicAmountForDisplay(soul.quote.creatorRoyaltyAtomic)}</span>
+            <span>{formatAtomicAmountForDisplay(quote.creatorRoyaltyAtomic)}</span>
           </div>
-          {isAnimacraftV5 ? (
+          {isNative ? (
             <div className="flex justify-between text-sm py-2 border-b border-border">
               <span className="text-muted">Maker-source royalty · included</span>
-              <span>{formatAtomicAmountForDisplay(soul.quote.makerRoyaltyAtomic)}</span>
+              <span>{formatAtomicAmountForDisplay(quote.makerSourceRoyaltyAtomic)}</span>
             </div>
           ) : (
             <div className="flex justify-between text-sm py-2 border-b border-border">
               <span className="text-muted">Collection royalty</span>
-              <span>{formatAtomicAmountForDisplay(soul.quote.collectionRoyaltyAtomic)}</span>
+              <span>{formatAtomicAmountForDisplay(quote.collectionRoyaltyAtomic)}</span>
             </div>
           )}
           <div className="flex justify-between text-sm py-2 font-bold">
             <span>Total</span>
-            <span className="text-gold">{formatAtomicAmountForDisplay(soul.quote.totalAtomic)}</span>
+            <span className="text-gold">{formatAtomicAmountForDisplay(quote.totalAtomic)}</span>
           </div>
         </div>
 
-        {error && (
+        {error && !native && (
           <p className="text-danger text-xs mb-4 bg-danger/10 border border-danger/30 rounded-lg px-3 py-2">
             {error}
           </p>
         )}
 
         <div className="bg-card2 border border-border rounded-xl px-4 py-3 mb-6 text-xs text-muted leading-relaxed">
-          The buyer kiosk is prepared automatically if you do not already have one. The route only marks the purchase complete after the transaction succeeds and the projection is synced.
+          The buyer kiosk is prepared automatically if you do not already have one. {isNative
+            ? 'The purchase is complete only after its transaction receipt and current chain state are verified.'
+            : 'The route only marks the purchase complete after the transaction succeeds and the projection is synced.'}
         </div>
+        {native?.snapshot && !native.snapshot.release.writesEnabled && <p className="mb-4 text-xs text-muted">
+          Purchase signing is disabled until this release is accepted. Saved transaction checks remain available.
+        </p>}
+        {native?.snapshot && !native.snapshot.purchaseAvailable && <p className="mb-4 text-xs text-muted">
+          This listing cannot currently be purchased. Refresh its status before proceeding.
+        </p>}
 
         <div className="flex gap-2.5">
           <Link
@@ -281,12 +267,13 @@ export default function BuyPage({ params }: { params: Promise<{ id: string }> })
             onClick={() => {
               void purchase()
             }}
-            disabled={signing}
+            disabled={signing || Boolean(native && !native.canStart)}
             className="flex-1 bg-gold text-black font-bold text-[15px] px-7 py-3 rounded-lg hover:bg-gold-light transition disabled:opacity-50"
           >
-            {signing ? (signingLabel[status] ?? '⟳ Signing…') : `Buy for ${formatAtomicAmountForDisplay(soul.quote.totalAtomic)}`}
+            {signing ? (signingLabel[status] ?? '⟳ Signing…') : `Buy for ${formatAtomicAmountForDisplay(quote.totalAtomic)}`}
           </button>
         </div>
+        {recovery}
       </div>
     </div>
   )

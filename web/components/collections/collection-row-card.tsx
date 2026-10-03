@@ -4,24 +4,19 @@ import Link from 'next/link'
 import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
-import type { SoulCollectionAssetSummary } from '@soulidity/sdk'
+import type { CollectionPublicSnapshot } from '@soulidity/sdk'
 
 export type CollectionAction = 'list' | 'edit-price' | 'delist'
 
-function formatDate(iso: string) {
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-}
-
 interface CollectionRowCardProps {
-  collection: SoulCollectionAssetSummary
+  collection: CollectionPublicSnapshot
   section: 'created' | 'acquired' | 'sold'
-  onAction: (type: CollectionAction, collection: SoulCollectionAssetSummary) => void
+  onAction: (type: CollectionAction, collection: CollectionPublicSnapshot) => void
 }
 
 export function CollectionRowCard({ collection, section, onAction }: CollectionRowCardProps) {
-  const detailHref = `/collections/${encodeURIComponent(collection.onChainId)}`
-  const isListed = collection.listingStatus === 'listed'
+  const detailHref = `/collections/${encodeURIComponent(collection.collectionId)}`
+  const isListed = collection.status === 'LISTED'
 
   return (
     <div className="overflow-hidden rounded-xl">
@@ -40,7 +35,7 @@ export function CollectionRowCard({ collection, section, onAction }: CollectionR
             <div className="flex items-center gap-2 flex-wrap">
               <span className="truncate text-sm font-bold text-foreground">{collection.name}</span>
               <Tag color="purple" className="text-[10px]">Soul Collection</Tag>
-              {collection.tradeable ? (
+              {collection.rightTradeable ? (
                 <Tag color="teal" className="text-[10px]">Tradeable</Tag>
               ) : (
                 <Tag color="danger" className="text-[10px]">Non-tradeable</Tag>
@@ -48,11 +43,12 @@ export function CollectionRowCard({ collection, section, onAction }: CollectionR
               {isListed && <Tag color="gold" className="text-[10px]">Listed</Tag>}
             </div>
             <div className="mt-0.5 text-xs text-muted">
-              Launched {formatDate(collection.createdAt)} &middot;{' '}
-              {collection.maxSoulSupply == null
-                ? `${collection.currentSoulSupply} Souls`
-                : `${collection.currentSoulSupply} / ${collection.maxSoulSupply} Souls`}
-              {collection.extraRoyaltyBps > 0 && <> &middot; Royalty {(collection.extraRoyaltyBps / 100).toFixed(0)}%</>}
+              Launch date not recorded on chain &middot;{' '}
+              {collection.maxSupply == null
+                ? `${collection.currentSupply} Souls`
+                : `${collection.currentSupply} / ${collection.maxSupply} Souls`}
+              {collection.extraRoyaltyBps > 0 && <> &middot; Royalty {collection.extraRoyaltyBps / 100}%</>}
+              {collection.floorPriceAtomic !== null && <> &middot; Soul floor {formatAtomicAmountForDisplay(collection.floorPriceAtomic)}</>}
             </div>
           </div>
         </Link>
@@ -65,7 +61,7 @@ export function CollectionRowCard({ collection, section, onAction }: CollectionR
           </div>
 
           {/* Action buttons based on state */}
-          {!collection.tradeable ? (
+          {!collection.rightTradeable ? (
             <span className="text-[11px] text-muted italic">Cannot be listed or transferred</span>
           ) : section === 'sold' ? (
             <>
@@ -74,10 +70,13 @@ export function CollectionRowCard({ collection, section, onAction }: CollectionR
                 View
               </Link>
             </>
+          ) : collection.status === 'UNAVAILABLE' ? (
+            <div className="text-xs text-muted"><p>Listing state unavailable. Refresh the portfolio before changing it.</p>
+              <Link href={detailHref} className="text-action-label">View Collection</Link></div>
           ) : isListed ? (
             <>
               <span className="text-sm font-semibold text-gold">
-                {collection.listedPriceAtomic ? formatAtomicAmountForDisplay(collection.listedPriceAtomic) : '\u2014'}
+                {collection.priceAtomic !== null ? formatAtomicAmountForDisplay(collection.priceAtomic) : '\u2014'}
               </span>
               <button onClick={() => onAction('delist', collection)} className={buttonStyles({ variant: 'outline', size: 'sm' })}>
                 Delist
@@ -102,7 +101,7 @@ export function CollectionRowCard({ collection, section, onAction }: CollectionR
         <div className="flex flex-col gap-1 rounded-b-xl border border-t-0 border-success/25 bg-success/[0.06] px-4 py-2 text-[11px] sm:flex-row sm:items-center sm:justify-between">
           <span className="font-semibold text-success">{'\uD83D\uDCB0'} Listed on Market</span>
           <span className="text-muted">
-            {collection.listedPriceAtomic ? formatAtomicAmountForDisplay(collection.listedPriceAtomic) : ''} &middot; royalty rights on {collection.soulCount} Souls
+            {collection.priceAtomic !== null ? formatAtomicAmountForDisplay(collection.priceAtomic) : ''} &middot; royalty rights on {collection.currentSupply} Souls
           </span>
         </div>
       )}

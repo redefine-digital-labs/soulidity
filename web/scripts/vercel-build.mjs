@@ -1,13 +1,8 @@
 import { spawnSync } from 'node:child_process'
 
-export function resolveVercelBuildPlan(env = process.env) {
-  const production = env.VERCEL_ENV === 'production'
-  if (production && !String(env.DIRECT_URL || env.DATABASE_URL || '').trim()) {
-    throw new Error('Production Vercel builds require DIRECT_URL or DATABASE_URL before migrations can run.')
-  }
-  return production
-    ? ['prisma:migrate:deploy', 'build']
-    : ['build']
+export function resolveVercelBuildPlan() {
+  // Both environments publish the same static app. There is no database step.
+  return ['build']
 }
 
 function runStep(step) {

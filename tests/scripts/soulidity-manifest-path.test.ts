@@ -18,11 +18,6 @@ describe('Soulidity manifest script wiring', () => {
     expect(existsSync(resolve(repoRoot, staleManifestPath))).toBe(false)
 
     for (const file of [
-      'scripts/phase2-smoke.ts',
-      'scripts/phase2-mainnet-execute-rest.ts',
-      'scripts/phase2-retry-failed.ts',
-      'scripts/phase2-finish-skipped.ts',
-      'scripts/publish-soulidity-and-sync.ts',
       'web/scripts/e2e-paid-access-lifecycle.ts',
     ]) {
       const contents = source(file)

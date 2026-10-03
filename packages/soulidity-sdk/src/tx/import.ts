@@ -1,3 +1,4 @@
+import { snapshotMintContentIdentity } from '../mint-content-identity'
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '../env'
 import {
@@ -42,6 +43,8 @@ export interface ImportSoulTxParams extends MintPtbInputs {
  * as the unverified `Soul.origin_ref` Option<String>.
  */
 export async function buildImportSoulTx(params: ImportSoulTxParams): Promise<Transaction> {
+  params = { ...params, initialContent: structuredClone(params.initialContent) }
+  const identity = snapshotMintContentIdentity(params)
   validateSoulPublishArgs(params)
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
@@ -84,6 +87,8 @@ export async function buildImportSoulTx(params: ImportSoulTxParams): Promise<Tra
       initialStateConfigVec,
       tx.pure.string(params.originRef),
       tx.pure.u16(params.creatorRoyaltyBps),
+      tx.pure.vector('u8', identity.mintNonce),
+      tx.pure.id(identity.expectedContentObjectId),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })

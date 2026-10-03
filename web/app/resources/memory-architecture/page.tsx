@@ -160,34 +160,8 @@ ContentSlot {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Memory access API</h2>
-        <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground/90">
-          <code>{`GET /api/souls/[id]/content/1/default/N/access
-
-// Owner / granted-agent response (memory has no public or paid path)
-{
-  artifact: { walrusBlobUrl, walrusBlobId, blobObjectId },
-  accessPolicy: {
-    packageId,
-    stateObjectId,
-    contentObjectId,
-    kind: 1,
-    name: "default",
-    versionIndex: N,
-    moduleName: "content",
-    functionName:
-      "seal_approve_content_owner"
-      | "seal_approve_content_granted_agent",
-    soulGrantObjectId: string | null,
-    documentIdHex: string,
-  },
-  seal: { network, threshold, serverConfigs, verifyKeyServers },
-  sealSidecar: { encryptedDek, iv, cipher, fileName, mimeType, contentHash },
-  viewerAddress: string,
-  accessKind: "owner" | "granted-agent",
-  sessionTtlMin: number,
-}`}</code>
-        </pre>
+        <h2 className="text-lg font-semibold">Reading a memory version</h2>
+        <p className="text-sm text-muted">Select the exact memory version under the canonical name default, then use Read. The browser verifies the chain slot, owner or active scoped grant, and per-version encrypted envelope before asking the wallet for an explicit Seal session. It decrypts and verifies bounded Walrus bytes, then rechecks authority. Wallet or read-session changes discard late results and clear displayed memory; no human access endpoint is required.</p>
       </div>
 
       <div className="flex items-center gap-3">

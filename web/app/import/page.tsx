@@ -1,5 +1,7 @@
 'use client'
 
+import { AuthoringRecoveryImport } from '@/components/souls/authoring-recovery-import'
+
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
@@ -46,6 +48,7 @@ export default function ImportPage() {
       <FlowBar steps={steps} currentStep={0} />
 
       <PageContainer size="sm" className="space-y-6 pt-7 sm:pt-9">
+        <AuthoringRecoveryImport />
         <SectionHeader
           label="Import Soul"
           title="Choose Source"

@@ -1,6 +1,5 @@
-// Shared persona classification for Soul listings. Used by both the client
-// marketplace tabs and the server-side `/api/souls` query so the two cannot
-// drift apart and leave a page of pre-paginated results filtered to empty.
+// Shared persona classification for raw Soul readers and the public Market
+// selectors. Filtering happens over all verified rows before page slicing.
 
 export const AGENT_KEYWORDS = [
   'ai',

@@ -11,12 +11,16 @@ const MAKER_TREASURY_ID = `0x${'8'.repeat(64)}`
 const PREPARED_PURCHASE_ID = '550e8400-e29b-41d4-a716-446655440000'
 const STORED_EXPIRES_AT = new Date('2026-04-24T10:00:00.000Z')
 
+const mockedPrepareNativeAgentPurchase = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/animacraft/native-agent-purchase-prepare', () => ({ prepareNativeAgentPurchase: mockedPrepareNativeAgentPurchase }))
+
 const mockedRequireAgentWalletIdentity = vi.hoisted(() => vi.fn())
 const mockedTakeRateLimitToken = vi.hoisted(() => vi.fn())
 const mockedFindSoulAssetDetailByRouteId = vi.hoisted(() => vi.fn())
 const mockedSelectCoinObjectIdsForAmountAcrossPages = vi.hoisted(() => vi.fn())
 const mockedGetRequiredSoulidityEnv = vi.hoisted(() => vi.fn())
 const mockedGetMarketConfig = vi.hoisted(() => vi.fn())
+const mockedGetMarketConfigV2 = vi.hoisted(() => vi.fn())
 const mockedGetMarketConfigV6 = vi.hoisted(() => vi.fn())
 const mockedQuoteSoulPurchase = vi.hoisted(() => vi.fn())
 const mockedQuoteAnimacraftSoulPurchase = vi.hoisted(() => vi.fn())
@@ -73,6 +77,7 @@ vi.mock('@soulidity/sdk', async (importOriginal) => {
     suiClient: { kind: 'mock-sui-client' },
     getRequiredSoulidityEnv: mockedGetRequiredSoulidityEnv,
     getMarketConfig: mockedGetMarketConfig,
+    getMarketConfigV2: mockedGetMarketConfigV2,
     getMarketConfigV6: mockedGetMarketConfigV6,
     quoteSoulPurchase: mockedQuoteSoulPurchase,
     quoteAnimacraftSoulPurchase: mockedQuoteAnimacraftSoulPurchase,
@@ -131,6 +136,8 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
         return `0x${'a'.repeat(64)}`
       }
       if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_ID') return `0x${'8'.repeat(64)}`
+      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID') return `0x${'d'.repeat(64)}`
+      if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID') return `0x${'e'.repeat(64)}`
       if (name === 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID') {
         return `0x${'b'.repeat(64)}`
       }
@@ -140,6 +147,7 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
       throw new Error(`Unexpected env request: ${name}`)
     })
     mockedGetMarketConfig.mockResolvedValue({ platformFeeBps: 0 })
+    mockedGetMarketConfigV2.mockResolvedValue({platformFeeBps:0,secondaryEnabled:true})
     mockedGetMarketConfigV6.mockResolvedValue({
       platformFeeBps: 0,
       secondaryEnabled: true,
@@ -262,126 +270,39 @@ describe('POST /api/agent/souls/[id]/purchase', () => {
         },
       },
     })
+    expect(mockedGetMarketConfigV2).toHaveBeenCalledWith(`0x${'d'.repeat(64)}`, `0x${'e'.repeat(64)}`)
+    expect(mockedGetMarketConfigV6).not.toHaveBeenCalled()
   })
 
-  it('prepares Animacraft purchases with Maker provenance and treasury routing', async () => {
-    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
-      onChainId: SOUL_ID,
-      provenanceKind: 'animacraft',
-      listingStatus: 'listed',
-      listingObjectOnChainId: LISTING_ID,
-      listedPriceAtomic: '1000000',
-      creatorRoyaltyBps: 0,
-      collection: null,
-      collectionOnChainId: null,
-      currentKioskId: KIOSK_ID,
-      stateOnChainId: STATE_ID,
-    })
-    mockedGetAnimacraftProvenanceForState.mockResolvedValueOnce({
-      objectId: PROVENANCE_ID,
-      makerId: MAKER_ID,
-      makerTreasuryId: MAKER_TREASURY_ID,
-      makerRoyaltyBps: 300,
-    })
-    mockedQuoteAnimacraftSoulPurchase.mockReturnValueOnce({
-      platformFeeAtomic: '25000',
-      makerRoyaltyAtomic: '30000',
-      collectionRoyaltyAtomic: '0',
-      totalAtomic: '1055000',
-    })
-    mockedSelectCoinObjectIdsForAmountAcrossPages.mockResolvedValueOnce(['0xcoin'])
-
+  it('dispatches native purchases before stale mirror listing gates without old builders', async () => {
+    const soul = { onChainId: SOUL_ID, stateOnChainId: STATE_ID,
+      provenanceKind: 'animacraft', listingStatus: 'held',
+      listingObjectOnChainId: null, listedPriceAtomic: null }
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce(soul)
+    mockedPrepareNativeAgentPurchase.mockResolvedValueOnce(new Response('{}', {status: 200}))
     const response = await callRoute()
-
     expect(response.status).toBe(200)
-    expect(mockedQuoteSoulPurchase).not.toHaveBeenCalled()
-    expect(mockedGetMarketConfigV6).toHaveBeenCalledWith(
-      `0x${'b'.repeat(64)}`,
-      `0x${'c'.repeat(64)}`,
-    )
+    expect(mockedPrepareNativeAgentPurchase).toHaveBeenCalledWith({
+      request: expect.any(Request), soul, agentMemberId: 'agent-member-1', buyer: AGENT_ADDRESS,
+    })
     expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
-    expect(mockedBuildBuyAnimacraftSoulTx).toHaveBeenCalledWith(expect.objectContaining({
-      provenanceObjectId: PROVENANCE_ID,
-      makerObjectId: MAKER_ID,
-      makerTreasuryObjectId: MAKER_TREASURY_ID,
-      totalAtomic: 1_055_000n,
-    }))
-    await expect(response.json()).resolves.toMatchObject({
-      context: {
-        totalAtomic: '1055000',
-        creatorRoyaltyAtomic: '30000',
-        royaltySource: 'animacraft-maker',
-      },
-    })
+    expect(mockedBuildBuyAnimacraftSoulTx).not.toHaveBeenCalled()
+    expect(mockedBuildBuyAnimacraftV5SoulTx).not.toHaveBeenCalled()
+    expect(mockedGetMarketConfigV6).not.toHaveBeenCalled()
   })
 
-  it('prepares v5 purchases from the canonical gross listing quote', async () => {
+  it('keeps a native preparation failure closed instead of using a generic purchase', async () => {
     mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({
-      onChainId: SOUL_ID,
-      provenanceKind: 'animacraft',
-      listingStatus: 'listed',
-      listingObjectOnChainId: LISTING_ID,
-      listedPriceAtomic: '1000000',
-      creatorRoyaltyBps: 0,
-      collection: null,
-      collectionOnChainId: null,
-      currentKioskId: KIOSK_ID,
-      stateOnChainId: STATE_ID,
+      onChainId: SOUL_ID, stateOnChainId: STATE_ID, provenanceKind: 'animacraft',
+      listingStatus: 'listed', listingObjectOnChainId: LISTING_ID, listedPriceAtomic: '1000000',
     })
-    mockedGetMarketConfigV6.mockResolvedValueOnce({
-      platformFeeBps: 250,
-      secondaryEnabled: true,
-    })
-    mockedGetAnimacraftProvenanceForState.mockResolvedValueOnce({
-      objectId: PROVENANCE_ID,
-      animacraftVersion: 5,
-      makerId: MAKER_ID,
-      makerTreasuryId: MAKER_TREASURY_ID,
-      makerRoyaltyBps: 250,
-    })
-    mockedGetSoulListingObject.mockResolvedValueOnce({
-      version: 5,
-      active: true,
-      soulId: SOUL_ID,
-      stateId: STATE_ID,
-      priceAtomic: 1_000_000n,
-      creatorRoyaltyBps: 250,
-      collectionId: null,
-    })
-    mockedQuoteAnimacraftV5SoulSale.mockReturnValueOnce({
-      priceAtomic: 1_000_000n,
-      sellerPayoutAtomic: 925_000n,
-      protocolFeeAtomic: 25_000n,
-      soulCreatorRoyaltyBps: 250,
-      soulCreatorRoyaltyAtomic: 25_000n,
-      makerSourceRoyaltyBps: 250,
-      makerSourceRoyaltyAtomic: 25_000n,
-    })
-    mockedSelectCoinObjectIdsForAmountAcrossPages.mockResolvedValueOnce(['0xcoin'])
-
-    const response = await callRoute()
-
-    expect(response.status).toBe(200)
-    expect(mockedQuoteAnimacraftSoulPurchase).not.toHaveBeenCalled()
-    expect(mockedBuildBuyAnimacraftSoulTx).not.toHaveBeenCalled()
-    expect(mockedBuildBuyAnimacraftV5SoulTx).toHaveBeenCalledWith(expect.objectContaining({
-      provenanceObjectId: PROVENANCE_ID,
-      priceAtomic: 1_000_000n,
-    }))
-    expect(mockedBuildBuyAnimacraftV5SoulTx).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        makerObjectId: expect.anything(),
-        makerTreasuryObjectId: expect.anything(),
-      }),
+    mockedPrepareNativeAgentPurchase.mockResolvedValueOnce(
+      new Response(JSON.stringify({code: 'NATIVE_AGENT_PURCHASE_UNAVAILABLE'}), {status: 503}),
     )
-    await expect(response.json()).resolves.toMatchObject({
-      context: {
-        priceAtomic: '1000000',
-        platformFeeAtomic: '25000',
-        creatorRoyaltyAtomic: '25000',
-        totalAtomic: '1000000',
-        royaltySource: 'animacraft-maker',
-      },
-    })
+    const response = await callRoute()
+    expect(response.status).toBe(503)
+    expect(mockedBuildBuySoulTx).not.toHaveBeenCalled()
+    expect(mockedGetAnimacraftProvenanceForState).not.toHaveBeenCalled()
+    expect(mockedResolveOwnedPersonalKiosk).not.toHaveBeenCalled()
   })
 })

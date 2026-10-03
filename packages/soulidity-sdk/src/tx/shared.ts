@@ -13,6 +13,8 @@ import {
   getBuiltinKindDescriptor,
 } from '../kinds'
 import type { SoulDownloadPolicy } from '../types'
+import { decodeSoulPublicPreview, SOUL_PUBLIC_PREVIEW_KEY } from '../soul-public-preview'
+import { normalizeCollectionFloorAtomic, type CollectionFloorInput } from '../collection-floor-policy'
 
 export const MAX_NAME_BYTES = 256
 export const MAX_DESCRIPTION_BYTES = 4096
@@ -70,7 +72,9 @@ export function validateCollectionArgs(params: {
   extraRoyaltyBps: number
   tradeable: boolean
   maxSupply?: number | null
+  floorPriceAtomic?: CollectionFloorInput
 }) {
+  normalizeCollectionFloorAtomic(params.floorPriceAtomic)
   if (params.name.trim().length === 0) {
     throw new Error('Collection name is required')
   }
@@ -122,6 +126,10 @@ export interface InitialContentEntryInput {
   setActive: boolean
   /** Walrus blob object id (consumed by the move call). */
   blobObjectId: string
+  /** Exact per-(kind,name) version assigned in this ordered initial vector. */
+  expectedVersionIndex: number | bigint | string
+  /** Public encrypted envelope; never a raw DEK. Required atomically at mint. */
+  encryptedEnvelope: Uint8Array
 }
 
 export interface StateConfigEntryInput {
@@ -158,7 +166,24 @@ export function validateInitialContentEntries(
 ): void {
   let soulDocCount = 0
   let memoryCount = 0
+  const versions = new Map<string, bigint>()
   for (const entry of entries) {
+    const versionKey = JSON.stringify([entry.kind, entry.name])
+    const expected = versions.get(versionKey) ?? 0n
+    const input = entry.expectedVersionIndex
+    if ((typeof input !== 'string' || !/^(0|[1-9][0-9]{0,19})$/.test(input))
+      && (typeof input !== 'number' || !Number.isSafeInteger(input) || input < 0)
+      && (typeof input !== 'bigint' || input < 0n)) {
+      throw new Error('initial content expectedVersionIndex must be a lossless u64')
+    }
+    if (BigInt(input) > 18446744073709551615n || BigInt(input) !== expected) {
+      throw new Error('initial content expectedVersionIndex must match its ordered slot version')
+    }
+    versions.set(versionKey, expected + 1n)
+    if (!(entry.encryptedEnvelope instanceof Uint8Array) || entry.encryptedEnvelope.length === 0
+      || entry.encryptedEnvelope.length > 65_536) {
+      throw new Error('initial content encryptedEnvelope must contain 1 to 65536 bytes')
+    }
     if (entry.blobObjectId.trim().length === 0) {
       throw new Error('initial content entry blobObjectId is required')
     }
@@ -223,6 +248,10 @@ export function validateInitialStateConfigEntries(
 ): void {
   const seenKeys = new Set<string>()
   for (const entry of entries) {
+    if (entry.key.startsWith('content_seal_envelope_v1:')) {
+      throw new Error('initial state config cannot seed the reserved content envelope namespace')
+    }
+    if (entry.key === SOUL_PUBLIC_PREVIEW_KEY) decodeSoulPublicPreview(entry.valueUtf8)
     if (entry.key.trim().length === 0) {
       throw new Error('state config entry key is required')
     }
@@ -241,25 +270,14 @@ export function validateInitialStateConfigEntries(
 export function buildBuyerKioskArgs(tx: Transaction, params: {
   buyerKioskId?: string | null
   buyerKioskCapOnChainId?: string | null
-  /**
-   * Primary mint/content flows stay on the recoverable MarketConfigV2 gate.
-   * Every secondary-market flow must opt into MarketConfigV6 so immutable v2
-   * bytecode can never re-enable or authorize a resale after retirement.
-   */
-  registrationMarket?: 'primary-v2' | 'secondary-v6'
+  /** Explicit deployment for callers that must not consult ambient env. */
+  runtime?: { packageId: string; marketConfigId: string; kioskRegistryId: string; kioskPackageId: string }
 }) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const registrationMarket = params.registrationMarket ?? 'primary-v2'
-  const marketConfigId = getRequiredSoulidityEnv(
-    registrationMarket === 'secondary-v6'
-      ? 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'
-      : 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID',
-  )
-  const ensureRegistrationTarget = registrationMarket === 'secondary-v6'
-    ? `${packageId}::market::ensure_personal_kiosk_registered_v6`
-    : `${packageId}::market::ensure_personal_kiosk_registered_v2`
-  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
-  const kioskPackageId = getKioskPackageAddress()
+  const packageId = params.runtime?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = params.runtime?.marketConfigId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const ensureRegistrationTarget = `${packageId}::market::ensure_personal_kiosk_registered_v2`
+  const kioskRegistryId = params.runtime?.kioskRegistryId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
+  const kioskPackageId = params.runtime?.kioskPackageId ?? getKioskPackageAddress()
   const buyerKioskId = params.buyerKioskId?.trim()
   const buyerKioskCapOnChainId = params.buyerKioskCapOnChainId?.trim()
 

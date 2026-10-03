@@ -18,6 +18,59 @@
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { pathToFileURL } from 'node:url'
+import { resolve } from 'node:path'
+
+type PreparedPurchase = { preparedPurchaseId:string;txBytes:string;context:{
+  soulOnChainId:string;agentAddress?:string;royaltySource?:string;digest?:string;phase?:string;recoveryRequired?:boolean
+} }
+/** Only one signing/submission attempt. Ambiguous native outcomes are checked
+ * using the saved id; never prepare again or sign again to recover them. */
+export async function executePreparedAgentPurchase(input:{
+  prepared:PreparedPurchase;agentAddress:string;baseUrl:string;headers:Record<string,string>
+  sign:(bytes:Uint8Array)=>Promise<{signature:string}>
+  fetcher?:typeof fetch;sleep?:(ms:number)=>Promise<void>;maxChecks?:number
+}):Promise<Record<string,unknown>>{
+  const prepared=structuredClone(input.prepared)
+  const native=prepared.context.royaltySource==='animacraft-maker'
+  const maxChecks=input.maxChecks??10
+  if(!Number.isInteger(maxChecks)||maxChecks<1||maxChecks>10)throw new Error('Invalid bounded recovery count')
+  if(!prepared.preparedPurchaseId||!prepared.txBytes||!prepared.context.soulOnChainId
+    ||native&&(!prepared.context.digest||!prepared.context.phase||prepared.context.agentAddress!==input.agentAddress))
+    throw new Error('Invalid prepared purchase identity')
+  const fetcher=input.fetcher??fetch
+  const pause=input.sleep??(ms=>new Promise(r=>setTimeout(r,ms)))
+  const url=`${input.baseUrl}/api/agent/souls/${encodeURIComponent(prepared.context.soulOnChainId)}/purchase/execute`
+  async function request(body:Record<string,unknown>){
+    const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined
+    try{return await Promise.race([(async()=>{
+      const response=await fetcher(url,{method:'POST',headers:input.headers,body:JSON.stringify({preparedPurchaseId:prepared.preparedPurchaseId,...body}),signal:controller.signal})
+      return {status:response.status,body:await response.json() as Record<string,unknown>}
+    })(),new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error(`Purchase response unknown; retain prepared id ${prepared.preparedPurchaseId} and check it without signing again`))},25_000)})])}
+    finally{clearTimeout(timer)}
+  }
+  let result
+  if(native&&prepared.context.recoveryRequired)result=await request({action:'check'})
+  else{
+    const {signature}=await input.sign(Buffer.from(prepared.txBytes,'base64'))
+    result=await request({...(native?{action:'execute'}:{}),signature})
+  }
+  for(let checks=0;;checks++){
+    const {status,body}=result
+    const identity=body.soulOnChainId===prepared.context.soulOnChainId&&body.currentOwnerAddress===input.agentAddress&&body.listingStatus==='held'
+    const confirmed=native
+      ?status===200&&body.phase==='SUCCEEDED'&&body.outcome==='SUCCEEDED'&&body.onChainSuccess===true
+        &&body.syncStatus==='COMPLETE'&&body.dbSynced===true&&body.digest===prepared.context.digest&&identity
+      :status===200&&typeof body.digest==='string'&&body.digest.length>0&&identity
+        &&typeof body.currentKioskId==='string'&&body.currentKioskId.length>0
+    if(confirmed)return body
+    if(native&&(status===202||status===207)&&checks<maxChecks){
+      if(body.digest!==prepared.context.digest)throw new Error('Recovery response differs from the saved transaction digest')
+      await pause(2000);result=await request({action:'check'});continue
+    }
+    throw new Error(`Purchase not confirmed (${status}, ${String(body.syncStatus??body.phase??'unknown')}); retain prepared id ${prepared.preparedPurchaseId}. Do not prepare or sign a replacement.`)
+  }
+}
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100'
 const AGENT_MNEMONIC = process.env.AGENT_MNEMONIC
@@ -63,36 +116,18 @@ async function main() {
   console.log('Prepared purchase:')
   console.log(`  Soul: ${prepBody.context.soulOnChainId}`)
   console.log(`  Price: ${prepBody.context.priceAtomic} atomic`)
-  console.log(`  Total: ${prepBody.context.totalAtomic} atomic (incl. fees)`)
+  console.log(`  Total: ${prepBody.context.totalAtomic} atomic`)
   console.log(`  Expires: ${prepBody.context.expiresAt}`)
   console.log(`  TX bytes: ${prepBody.txBytes.length} chars (base64)`)
 
-  // Step 2: Sign TX locally
-  console.log('\n--- Step 2: Sign TX ---')
-  const txBytes = Buffer.from(prepBody.txBytes, 'base64')
-  const { signature } = await keypair.signTransaction(txBytes)
-  console.log(`Signature: ${signature.slice(0, 40)}...`)
-
-  // Step 3: Execute signed TX
-  console.log('\n--- Step 3: Execute TX ---')
-  const execRes = await fetch(`${BASE_URL}/api/agent/souls/${encodeURIComponent(SOUL_ID)}/purchase/execute`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({
-      preparedPurchaseId: prepBody.preparedPurchaseId,
-      signature,
-    }),
-  })
-
-  const execBody = await execRes.json()
-  if (!execRes.ok) {
-    console.error(`Execute failed (${execRes.status}):`, execBody)
-    process.exit(1)
-  }
+  console.log('\n--- Steps 2–3: Execute or check saved purchase ---')
+  const execBody=await executePreparedAgentPurchase({prepared:prepBody,agentAddress,baseUrl:BASE_URL,
+    headers:authHeaders(),sign:bytes=>keypair.signTransaction(bytes)})
 
   console.log(`\n✅ Purchase TX confirmed: ${execBody.digest}`)
   console.log(`  Owner: ${execBody.currentOwnerAddress}`)
-  console.log(`  Kiosk: ${execBody.currentKioskId}`)
+  // Native success promises current held proof, not a kiosk-id response field.
+  if(typeof execBody.currentKioskId==='string')console.log(`  Kiosk: ${execBody.currentKioskId}`)
   console.log(`  Status: ${execBody.listingStatus}`)
 
   // Step 4: Verify access
@@ -122,7 +157,7 @@ async function main() {
   console.log('\n⚠️ Access not available after 10 attempts.')
 }
 
-main().catch((err) => {
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch((err) => {
   console.error('Fatal:', err)
   process.exit(1)
 })

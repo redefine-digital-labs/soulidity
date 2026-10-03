@@ -1,16 +1,12 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
-  getMarketConfigV6,
-  getAnimacraftProvenanceForState,
-  getSoulListingObject,
+  getMarketConfigV2,
   getRequiredSoulidityEnv,
-  ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
-  quoteAnimacraftSoulPurchase,
-  quoteAnimacraftV5SoulSale,
   quoteSoulPurchase,
-  sameSuiValue,
 } from '@soulidity/sdk'
+import { readNativeMarketSnapshot } from '@/lib/animacraft/native-market'
+import { createNativeReceiveClient, readNativeReceiveTarget } from '@/lib/animacraft/native-receive'
 import { findSoulAssetDetailByRouteId, toSoulAssetDetail } from '@/lib/soulidity/repository'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
 
@@ -44,78 +40,25 @@ export async function GET(
 
   let quote = null
   let platformFeeBps: number | null = null
-  let animacraftProvenance = null
-  const listedPrice = soul.listedPriceAtomic != null ? BigInt(soul.listedPriceAtomic.toString()) : null
+  let currentOwnershipEpoch: number | null = null
   try {
-    const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
     if (soul.provenanceKind === 'animacraft') {
-      animacraftProvenance = await getAnimacraftProvenanceForState(
-        soul.stateOnChainId,
-        getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID'),
-      )
-    }
-    if (soul.listingStatus === 'listed' && listedPrice != null && listedPrice > 0n) {
-      if (soul.provenanceKind === 'animacraft') {
-        if (!animacraftProvenance) throw new Error('Animacraft provenance is unavailable')
-        const config = await getMarketConfigV6(
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
-        )
-        platformFeeBps = config.platformFeeBps
-        if (animacraftProvenance.animacraftVersion === 5) {
-          if (
-            !config.secondaryEnabled
-            || config.platformFeeBps !== ANIMACRAFT_V5_PROTOCOL_FEE_BPS
-            || !soul.listingObjectOnChainId
-          ) {
-            throw new Error('Animacraft v5 secondary trading is unavailable')
-          }
-          const listing = await getSoulListingObject(
-            soul.listingObjectOnChainId,
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
-          )
-          if (
-            listing.version !== 5
-            || !listing.active
-            || !sameSuiValue(listing.soulId, soul.onChainId)
-            || !sameSuiValue(listing.stateId, soul.stateOnChainId)
-            || listing.priceAtomic !== listedPrice
-            || listing.collectionId !== null
-          ) {
-            throw new Error('Animacraft v5 listing does not match the Soul')
-          }
-          const makerQuote = quoteAnimacraftV5SoulSale(listedPrice, {
-            makerSourceRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
-            soulCreatorRoyaltyBps: listing.creatorRoyaltyBps,
-          })
-          quote = {
-            priceAtomic: makerQuote.priceAtomic.toString(),
-            platformFeeAtomic: makerQuote.protocolFeeAtomic.toString(),
-            creatorRoyaltyAtomic: makerQuote.soulCreatorRoyaltyAtomic.toString(),
-            collectionRoyaltyAtomic: '0',
-            totalAtomic: makerQuote.priceAtomic.toString(),
-            makerRoyaltyAtomic: makerQuote.makerSourceRoyaltyAtomic.toString(),
-            makerRoyaltyBps: makerQuote.makerSourceRoyaltyBps,
-            soulCreatorRoyaltyBps: makerQuote.soulCreatorRoyaltyBps,
-            royaltySource: 'animacraft-maker' as const,
-          }
-        } else {
-          const makerQuote = quoteAnimacraftSoulPurchase(config, {
-            priceAtomic: listedPrice,
-            makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
-            collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
-          })
-          quote = {
-            ...makerQuote,
-            creatorRoyaltyAtomic: makerQuote.makerRoyaltyAtomic,
-            makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
-            royaltySource: 'animacraft-maker' as const,
-          }
-        }
-      } else {
-        const config = await getMarketConfigV6(
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
-          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
+      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(25000)])
+      const snapshot = await readNativeMarketSnapshot(createNativeReceiveClient(signal), readNativeReceiveTarget(), {
+        soulId: soul.onChainId, stateId: soul.stateOnChainId,
+        marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+        listingId: soul.listingObjectOnChainId,
+      }, signal)
+      platformFeeBps = snapshot.nativeFeePolicyValid ? snapshot.protocolFeeBps : null
+      quote = snapshot.purchaseAvailable ? snapshot.listing!.quote : null
+      const epoch = Number(snapshot.ownershipEpoch)
+      currentOwnershipEpoch = Number.isSafeInteger(epoch) ? epoch : null
+    } else {
+      const listedPrice = soul.listedPriceAtomic != null ? BigInt(soul.listedPriceAtomic.toString()) : null
+      if (soul.listingStatus === 'listed' && listedPrice != null && listedPrice > 0n) {
+        const config = await getMarketConfigV2(
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+          getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
         )
         platformFeeBps = config.platformFeeBps
         quote = {
@@ -129,8 +72,8 @@ export async function GET(
       }
     }
   } catch {
-    // A quote is optional, but an Animacraft purchase remains fail-closed
-    // because the purchase endpoint independently requires provenance.
+    // Detail remains available without a quote; native evidence failure never
+    // falls back to cached prices or superseded provenance/royalty paths.
   }
 
   const detail = toSoulAssetDetail(soul, {
@@ -138,7 +81,7 @@ export async function GET(
     viewerAddresses: auth.walletAddresses,
     quote,
     platformFeeBps,
-    animacraftProvenance,
+    currentOwnershipEpoch,
   })
 
   return NextResponse.json(detail)

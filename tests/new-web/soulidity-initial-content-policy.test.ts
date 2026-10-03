@@ -12,7 +12,7 @@ import {
   buildLegacyInitialContent,
   validateInitialContentEntries,
 } from '@soulidity/sdk'
-import { buildPhase2InitialContent } from '../../web/lib/hooks/phase2-mint-helpers'
+import { buildPhase2InitialContent } from './fixtures/legacy-phase2-mint-helpers'
 
 const INVARIANT_READ_MODE = READ_OWNER | READ_GRANT
 
@@ -30,6 +30,7 @@ function validSoulEntry() {
     downloadPolicy: 'public' as const,
     setActive: false,
     blobObjectId: '0x1',
+    expectedVersionIndex: 0, encryptedEnvelope: new Uint8Array([1]),
   }
 }
 
@@ -41,6 +42,7 @@ function validMemoryEntry() {
     downloadPolicy: 'public' as const,
     setActive: false,
     blobObjectId: '0x2',
+    expectedVersionIndex: 0, encryptedEnvelope: new Uint8Array([2]),
   }
 }
 
@@ -61,6 +63,7 @@ describe('Soulidity initial content download policy', () => {
 
   it('keeps import helper defaults aligned with the same no-policy invariant', () => {
     const { initialContent } = buildPhase2InitialContent({
+      publicPreview: { tags: ['imported'], previewImages: ['https://images.example.com/imported.png'] },
       protectedBlobObjectId: '0x1',
       foundingMemoryBlobObjectId: '0x2',
       skillsBlobObjectId: '0x3',
@@ -105,6 +108,7 @@ describe('Soulidity initial content download policy', () => {
         downloadPolicy: 'owner_only',
         setActive: false,
         blobObjectId: '0x3',
+        expectedVersionIndex: 0, encryptedEnvelope: new Uint8Array([3]),
       },
     ])).toThrow('kind 2 (skill) does not accept download_policy')
   })

@@ -224,8 +224,8 @@ export async function computeAutoGrantTargets(
   })
 
   // Mirror-miss chain fallback. `SoulGrantRecord` is a post-TX mirror; a
-  // grant whose `/content/sync` row failed to land (or was issued from a
-  // path that did not write the mirror) is on chain but absent above.
+  // grant issued by the direct-chain append or another writer that does not
+  // update this mirror is on chain but absent above.
   // Treating that as `existing = 0` and queuing a `desiredScopeMask =
   // kindScopeMask` issue makes `grant::issue` replace the chain slot
   // wholesale with a single-bit mask — dropping every prior scope

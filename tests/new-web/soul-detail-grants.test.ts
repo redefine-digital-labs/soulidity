@@ -15,11 +15,11 @@ describe('Soul detail grant panel source contract', () => {
     expect(page).not.toContain("scope === 'skills' ? SOUL_GRANT_SCOPE_SKILLS : SOUL_GRANT_SCOPE_MEMORY")
   })
 
-  it('does not describe reassignment as atomic and surfaces revoke-first recovery', () => {
+  it('does not describe reassignment as atomic and invalidates every viewer variant', () => {
     const page = source('web/app/souls/[id]/page.tsx')
 
     expect(page).not.toContain('existing grant will be revoked atomically')
-    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId, viewerId ?? null] })")
+    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId] })")
   })
 
   it('adds or updates grants without auto-revoking an arbitrary active grantee', () => {
@@ -27,13 +27,9 @@ describe('Soul detail grant panel source contract', () => {
 
     expect(page).not.toContain('const activeGrant = soul.activeGrants[0] ?? null')
     expect(page).toContain('findActiveGrantForAddress(soul.activeGrants, trimmedAgentAddress)')
-    expect(page).toContain('soul.activeGrantCount >= soul.grantCapacity')
-    // R-001: the "capacity full → hard block" behavior has been replaced
-    // with preflight-driven auto-bump. The mirror check is now only a UX
-    // hint ("will be raised automatically"); the real authorization
-    // decision is made off `/grant-merge-masks`'s `isNewGrantee` +
-    // `requiredCapacity` so chain-only existing grants supersede instead
-    // of being misclassified as full-slot blockers.
+    expect(page).toContain('BigInt(soul.activeGrantCount) >= BigInt(soul.grantCapacity)')
+    // Display is only a hint; the raw-chain plan binds capacity/count/slot
+    // snapshots and merges live scopes before signing the atomic operation.
     expect(page).toContain('will be raised automatically for a new grantee')
     expect(page).not.toContain('Capacity full. Revoke an existing grantee before authorizing a new one.')
     expect(page).not.toContain('await revokeGrant(existing.granteeAddress)')
@@ -50,7 +46,7 @@ describe('Soul detail grant panel source contract', () => {
     const page = source('web/app/souls/[id]/page.tsx')
 
     expect(page).toContain('actions.decryptContentVersion(entry)')
-    expect(page).toContain("title={canDecrypt ? undefined : 'Owner / grant only'}")
+    expect(page).toContain("title={canDecrypt ? undefined : 'No observed read access'}")
     expect(page).not.toContain('Memory decrypt flow not yet wired')
     expect(page).not.toContain('Decrypt unavailable')
   })

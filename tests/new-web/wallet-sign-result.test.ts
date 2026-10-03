@@ -29,9 +29,9 @@ describe('wallet sign transaction result normalization', () => {
     // estimate exceeds it. The wallet (Slush / Sui Wallet) is the authoritative
     // gas estimator on the signing path, so the hook only sets the sender and
     // forwards the transaction without touching gasBudget.
-    const source = readFileSync('web/lib/hooks/use-wallet-sign.ts', 'utf8')
+    const source = readFileSync('web/lib/hooks/use-wallet-sign.ts', 'utf8').split('const signAndExecute =')[1]
     const senderCall = source.indexOf('tx.setSenderIfNotSet(currentAccount.address)')
-    const signCall = source.indexOf('await signTransaction({')
+    const signCall = source.indexOf('await signTransactionMutation({')
 
     expect(senderCall).toBeGreaterThanOrEqual(0)
     expect(signCall).toBeGreaterThan(senderCall)

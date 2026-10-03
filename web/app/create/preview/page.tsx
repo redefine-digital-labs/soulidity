@@ -130,11 +130,11 @@ export default function CreatePreviewPage() {
   const missingStep2 = !ctx.charFile || !ctx.memoryFile
   useEffect(() => {
     if (missingStep1) {
-      router.replace('/create')
+      router.replace(ctx.collectionBindTarget ? `/create?collectionId=${encodeURIComponent(ctx.collectionBindTarget.collectionOnChainId)}` : '/create')
     } else if (missingStep2) {
       router.replace('/create/content')
     }
-  }, [missingStep1, missingStep2, router])
+  }, [missingStep1, missingStep2, router, ctx.collectionBindTarget?.collectionOnChainId])
 
   if (!ctx.name || !ctx.description || !ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile) return null
 

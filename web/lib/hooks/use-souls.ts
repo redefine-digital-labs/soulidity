@@ -1,65 +1,36 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import type { MySoulsResponse, SoulAssetDetail, SoulsListResponse } from '@soulidity/sdk'
-import type { PersonaFilter } from '@soulidity/sdk'
+import { useCommittedSession } from './use-committed-session'
+import { useCurrentAccount } from '@mysten/dapp-kit'
+import { normalizeSuiAddress } from '@mysten/sui/utils'
+import { getBrowserSoulDetailConfig, readBrowserSoulDetail } from '@/lib/soulidity/browser-soul-detail'
 
-export type SoulsSortOption = 'newest' | 'price_asc' | 'price_desc' | 'popular'
+export { usePublicSoulsMarket as useSoulsList } from './use-public-market'
+export type { SoulsSortOption, SoulsListParams } from '../soulidity/public-market-model'
 
-export interface SoulsListParams {
-  page?: number
-  tag?: string
-  q?: string
-  sort?: SoulsSortOption
-  minPrice?: string
-  maxPrice?: string
-  creator?: string
-  persona?: PersonaFilter
-}
-
-export function useSoulsList(params: SoulsListParams) {
-  const searchParams = new URLSearchParams()
-  if (params.page) searchParams.set('page', String(params.page))
-  if (params.tag) searchParams.set('tag', params.tag)
-  if (params.q) searchParams.set('q', params.q)
-  if (params.sort && params.sort !== 'newest') searchParams.set('sort', params.sort)
-  if (params.minPrice) searchParams.set('minPrice', params.minPrice)
-  if (params.maxPrice) searchParams.set('maxPrice', params.maxPrice)
-  if (params.creator) searchParams.set('creator', params.creator)
-  if (params.persona && params.persona !== 'all') searchParams.set('persona', params.persona)
-
-  return useQuery<SoulsListResponse>({
-    queryKey: ['souls', params],
-    queryFn: async () => {
-      const res = await fetch(`/api/souls?${searchParams}`, { cache: 'no-store' })
-      if (!res.ok) throw new Error('Failed to fetch souls')
-      return res.json()
-    },
-  })
-}
-
-export function useSoulDetail(id: string, getAuthHeaders?: () => Promise<Record<string, string>>, viewerId?: string | null) {
-  return useQuery<SoulAssetDetail>({
-    queryKey: ['soul', id, viewerId ?? null],
-    queryFn: async () => {
-      const headers = getAuthHeaders ? await getAuthHeaders() : undefined
-      const res = await fetch(`/api/souls/${encodeURIComponent(id)}`, { cache: 'no-store', headers })
-      if (!res.ok) throw new Error('Failed to fetch soul')
-      return res.json()
+export function useSoulDetail(id: string) {
+  const account = useCurrentAccount()
+  const viewerAddress = account?.address ? normalizeSuiAddress(account.address) : null
+  const release = (() => {
+    try { return { config: getBrowserSoulDetailConfig(), error: null } }
+    catch (error) { return { config: null, error: error instanceof Error ? error : new Error('Soul release configuration unavailable') } }
+  })()
+  const session = useCommittedSession(JSON.stringify([id, viewerAddress, release.config, release.error?.message]), viewerAddress, null, null)
+  return useQuery({
+    // Preserve the ['soul', id] invalidation prefix; cache scope is the actual
+    // connected wallet and complete public release, not a retired SQL member ID.
+    queryKey: ['soul', id, viewerAddress, 'chain-detail-v1', release.config ?? release.error?.message, session.generation],
+    queryFn: ({ signal }) => {
+      if (!release.config) throw release.error
+      const lease = session.capture()
+      if (!lease?.matches()) throw new Error('Soul detail identity changed.')
+      const abort = new AbortController(); lease.requests.add(abort)
+      return readBrowserSoulDetail({ soulId: id, viewerAddress, config: release.config, signal: AbortSignal.any([signal, abort.signal]),
+        getViewerAddress: () => lease.matches() ? viewerAddress : null }).finally(() => lease.requests.delete(abort))
     },
     enabled: !!id,
   })
 }
 
-export function useMySouls(userId: string | null, getAuthHeaders: () => Promise<Record<string, string>>) {
-  return useQuery<MySoulsResponse>({
-    queryKey: ['my-souls', userId],
-    queryFn: async () => {
-      const authHeaders = await getAuthHeaders()
-      const res = await fetch('/api/souls/my', { cache: 'no-store', headers: authHeaders })
-      if (!res.ok) throw new Error('Failed to fetch my souls')
-      return res.json()
-    },
-    enabled: !!userId,
-  })
-}
+export { useMySouls } from './use-my-souls'

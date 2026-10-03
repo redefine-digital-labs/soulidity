@@ -1,674 +1,113 @@
 'use client'
 
+import { AuthoringRecoveryExport } from '@/components/souls/authoring-recovery-export'
+
 import { useEffect, useRef, useState } from 'react'
-import { useAutoConnectWallet, useCurrentWallet, useSuiClient } from '@mysten/dapp-kit'
+import { useAutoConnectWallet, useCurrentWallet } from '@mysten/dapp-kit'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
-import { buttonStyles } from '@/components/ui/button'
+import { Button, buttonStyles } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
-import { usePublish, type PublishParams } from '@/lib/hooks/use-publish'
+import { usePublish } from '@/lib/hooks/use-publish'
 import { useAuth } from '@/components/providers/auth-provider'
-import {
-  prepareSoulBlobsForBatchPublish,
-  reclaimWalrusOrphanBlobs,
-  uploadSoulPayload,
-  WalrusUploadCancelledError,
-  type BatchSoulUploadFile,
-  type PreparedSoulBlobs,
-} from '@/lib/upload/client-upload'
-import {
-  WalrusUploadResumeMismatchError,
-  type WalrusOrphanBlob,
-} from '@/lib/upload/walrus-recovery'
-import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useLogin } from '@/lib/hooks/use-login'
 import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
-import { useUploadCostReview } from '@/components/upload/upload-cost-review'
-import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
-import { getSuiTxErrorProperties } from '@soulidity/sdk'
-import { assertListingPriceAtomic } from '@soulidity/sdk'
-import { buildListSoulTx } from '@soulidity/sdk'
-import { buildIssueGrantTx, buildRevokeGrantTx } from '@soulidity/sdk'
-import { hasCurrentSoulidityDeploymentSignature } from '@soulidity/sdk'
-import { validateSoulPublishArgs } from '@soulidity/sdk'
-import { assertObjectInputsExist } from '@soulidity/sdk'
-import { preflightCollectionBindTarget } from '@soulidity/sdk'
-import { getRequiredSoulidityEnv } from '@soulidity/sdk'
-import {
-  useCreateSoul,
-  type UploadResults,
-} from '@/components/providers/create-soul-provider'
+import { useCreateSoul } from '@/components/providers/create-soul-provider'
 import { TxRow } from '@/components/shared/tx-row'
-import {
-  MIN_SUI_BALANCE,
-  formatBalance,
-  useWalletBalances,
-} from '@/lib/hooks/use-wallet-balances'
+import { MIN_SUI_BALANCE, formatBalance, useWalletBalances } from '@/lib/hooks/use-wallet-balances'
+import { formatWal } from '@/components/upload/upload-cost-review'
+import { soulAuthoringCostReview } from '@/lib/soulidity/soul-authoring-cost-review'
+import type { SoulAuthoringPacketRecord } from '@/lib/soulidity/soul-authoring-packet'
 
-const steps = [
-  { label: 'Basic Info' },
-  { label: 'Living Content' },
-  { label: 'Preview & Confirm' },
-  { label: 'Pay Gas' },
-  { label: 'On-chain' },
-]
-
+const steps = [{ label: 'Basic Info' }, { label: 'Living Content' }, { label: 'Preview & Confirm' },
+  { label: 'Pay Gas' }, { label: 'On-chain' }]
 const royaltyLabels: Record<number, string> = {
-  0: 'Off · 0% (locked on-chain)',
-  250: 'Low · 2.5% (locked on-chain)',
-  500: 'Standard · 5% (locked on-chain)',
-  1000: 'High · 10% (locked on-chain)',
+  0: 'Off · 0% (locked on-chain)', 250: 'Low · 2.5% (locked on-chain)',
+  500: 'Standard · 5% (locked on-chain)', 1000: 'High · 10% (locked on-chain)',
 }
-
-type UploadPhase =
-  | 'idle'
-  | 'preflight'
-  | 'preparing-uploads'
-  | 'awaiting-register-signature'
-  | 'uploading-to-relay'
-  | 'done'
-
-const uploadPhaseLabels: Record<UploadPhase, string> = {
-  'idle': '',
-  'preflight': 'Verifying kiosk and publish requirements…',
-  'preparing-uploads': 'Encrypting & encoding files…',
-  'awaiting-register-signature': 'Awaiting wallet signature for batched register…',
-  'uploading-to-relay': 'Uploading encoded payloads to Walrus…',
-  'done': 'Uploads complete',
-}
-
-
 const MIME_MAP: Record<string, string> = {
-  '.md': 'text/markdown', '.txt': 'text/plain',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp', '.gif': 'image/gif',
-  '.json': 'application/json', '.zip': 'application/zip',
+  '.md': 'text/markdown', '.txt': 'text/plain', '.png': 'image/png', '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.json': 'application/json', '.zip': 'application/zip',
 }
-
 function withMime(file: File): File {
   const ext = file.name.includes('.') ? '.' + file.name.split('.').pop()!.toLowerCase() : ''
   const expected = MIME_MAP[ext]
-  if (!expected || file.type === expected) return file
-  return new File([file], file.name, { type: expected })
+  return !expected || file.type === expected ? file : new File([file], file.name, { type: expected })
 }
-
-// Stable fingerprint over the batch inputs. Used to keep the prepared batch
-// across mint-signature retries (so the same paid PTB1 + uploaded certificates
-// are reused) without holding stale state when the user actually changes a
-// file. Encryption regenerates AES-GCM keys on every preparePayload(), so any
-// re-call of `prepareSoulBlobsForBatchPublish` for an unchanged draft would
-// produce different blobIds than the persisted recovery and force the
-// orphan-mismatch branch.
-function buildBatchFingerprint(walletAddress: string, files: BatchSoulUploadFile[]): string {
-  return JSON.stringify({
-    walletAddress: walletAddress.toLowerCase(),
-    files: files.map((f) => ({
-      name: f.file.name,
-      size: f.file.size,
-      lastModified: f.file.lastModified,
-      type: f.file.type,
-      uploadType: f.uploadType,
-      kind: f.kind,
-      sendObjectTo: f.sendObjectTo?.trim().toLowerCase() ?? null,
-    })),
-  })
-}
-
-function checkMintRecovery(userId: string | undefined): boolean {
-  if (typeof window === 'undefined' || !userId) return false
-  try {
-    const raw = sessionStorage.getItem('soul-mint-recovery')
-    if (raw) {
-      const recovery = JSON.parse(raw)
-      return !!recovery.txDigest && recovery.userId === userId && hasCurrentSoulidityDeploymentSignature(recovery)
-    }
-  } catch {}
-  return false
-}
+type Approval = { review: ReturnType<typeof soulAuthoringCostReview>; finish: (accepted: boolean) => void }
 
 export default function CreateGasPage() {
-  const router = useRouter()
-  const suiClient = useSuiClient()
-  const ctx = useCreateSoul()
-  const { setPublishResult } = ctx
-  const { status, error, txDigest, publishData, publish, suiWallet } = usePublish()
-  const { getAuthHeaders, user } = useAuth()
-  const { showToast } = useToast()
-  const openWalletLogin = useLogin()
-  const { signAndExecute } = useWalletSign()
-  const walletConnection = useCurrentWallet()
-  const autoConnectStatus = useAutoConnectWallet()
-  const { requestUploadCostApproval } = useUploadCostReview()
-  const publishRef = useRef(publish)
-  const getAuthHeadersRef = useRef(getAuthHeaders)
-  const signAndExecuteRef = useRef(signAndExecute)
-  const suiClientRef = useRef(suiClient)
-  const walletRef = useRef(suiWallet)
-  const requestUploadCostApprovalRef = useRef(requestUploadCostApproval)
-  useEffect(() => {
-    publishRef.current = publish
-    getAuthHeadersRef.current = getAuthHeaders
-    signAndExecuteRef.current = signAndExecute
-    suiClientRef.current = suiClient
-    walletRef.current = suiWallet
-    requestUploadCostApprovalRef.current = requestUploadCostApproval
-  })
-
-  const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
-  const [deployError, setDeployError] = useState<string | null>(null)
-  const [walrusOrphanRecovery, setWalrusOrphanRecovery] = useState<{
-    orphanTxDigest: string
-    orphanBlobs: WalrusOrphanBlob[]
-  } | null>(null)
-  const [reclaimingOrphans, setReclaimingOrphans] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const router = useRouter(), ctx = useCreateSoul(), { user } = useAuth(), { showToast } = useToast()
+  const openWalletLogin = useLogin(), walletConnection = useCurrentWallet(), autoConnectStatus = useAutoConnectWallet()
+  const [approval, setApproval] = useState<Approval | null>(null)
+  const approvalRef = useRef<Approval | null>(null)
+  const approve = (record: SoulAuthoringPacketRecord, signal: AbortSignal) => {
+    const review = soulAuthoringCostReview(record)
+    approvalRef.current?.finish(false)
+    if (signal.aborted) return Promise.resolve(false)
+    return new Promise<boolean>(resolve => {
+      const close = () => entry.finish(false)
+      const entry: Approval = { review, finish: accepted => {
+        if (approvalRef.current !== entry) return
+        signal.removeEventListener('abort', close); approvalRef.current = null
+        setApproval(null); resolve(accepted && !signal.aborted)
+      } }
+      approvalRef.current = entry; setApproval(entry)
+      signal.addEventListener('abort', close, { once: true })
+    })
+  }
+  useEffect(() => () => { approvalRef.current?.finish(false) }, [])
+  const { status, error, txDigest, publishData, publish, resume, query, retryFailed, retryPacket, retireExpired, suiWallet, recovery, loadingRecovery, exportRecovery, exportingRecovery } = usePublish(approve)
   const completedDigestRef = useRef<string | null>(null)
-  // Cache for the prepared batch (PTB1 digest + uploaded certificates +
-  // attachCertifyCalls closure) so a mint-signature rejection or transient
-  // mint-PTB failure can retry the SAME mint signature without re-running
-  // `prepareSoulBlobsForBatchPublish` — that re-encrypts every payload with
-  // fresh AES-GCM keys, produces different blobIds than the persisted PTB1
-  // recovery, and forces the orphan-mismatch branch. Keyed by wallet +
-  // file fingerprint; cleared on successful mint and when files change.
-  const preparedBatchRef = useRef<{
-    walletAddress: string
-    fingerprint: string
-    prepared: PreparedSoulBlobs
-  } | null>(null)
-
-  // ── Balance checking ──
+  const [copied, setCopied] = useState(false)
   const balances = useWalletBalances(suiWallet?.address ?? null)
   const suiInsufficient = balances.sui !== null && balances.sui < MIN_SUI_BALANCE
   const balanceBlocked = suiInsufficient
-
-  // Guard: redirect to earliest incomplete step when required data is missing
+  const inRecovery = Boolean(recovery) && status !== 'done'
   const missingStep1 = !ctx.name || !ctx.description || !ctx.coverImageFile
   const missingStep2 = !ctx.charFile || !ctx.memoryFile
-
-  // Detect pending mint recovery: on-chain TX succeeded but sync was interrupted.
-  // useState initializer reads sessionStorage synchronously to avoid race with redirect effect.
-  const [hasMintRecovery] = useState(() => checkMintRecovery(user?.id))
-  const inRecovery = hasMintRecovery && status !== 'done'
-
   useEffect(() => {
-    if (status === 'done' || checkMintRecovery(user?.id)) return
-    if (missingStep1) {
-      router.replace('/create')
-    } else if (missingStep2) {
-      router.replace('/create/content')
-    }
-  }, [missingStep1, missingStep2, status, router, user?.id])
-
-  // Store publish result in context when done
+    if (!suiWallet || loadingRecovery || recovery || status !== 'idle') return
+    if (missingStep1) router.replace(ctx.collectionBindTarget ? `/create?collectionId=${encodeURIComponent(ctx.collectionBindTarget.collectionOnChainId)}` : '/create')
+    else if (missingStep2) router.replace('/create/content')
+  }, [suiWallet?.address, loadingRecovery, recovery, status, missingStep1, missingStep2, router, ctx.collectionBindTarget?.collectionOnChainId])
   useEffect(() => {
-    if (status === 'done' && publishData) {
-      if (completedDigestRef.current === publishData.txDigest) return
-      completedDigestRef.current = publishData.txDigest
-      setPublishResult(publishData)
-      showToast('Soul minted successfully!', 'success')
-
-      // Notify the desktop app if this mint originated from a Mint By Web
-      // hand-off. The /create page hydration step stashes the hand-off token
-      // in sessionStorage; here we fire `soulidity://mint-completed?token=...`
-      // so the desktop's protocol handler clears its local draft and resets
-      // ExtractTab. Browsers raise an OS-level "Open Soulidity?" prompt for
-      // soulidity:// URLs instead of navigating, so this is safe to fire
-      // before the router.replace below.
-      try {
-        const handoffToken = sessionStorage.getItem('soulidity-desktop-handoff-token')
-        if (handoffToken) {
-          sessionStorage.removeItem('soulidity-desktop-handoff-token')
-          window.location.href = `soulidity://mint-completed?token=${encodeURIComponent(handoffToken)}`
-        }
-      } catch { /* sessionStorage / scheme handler may be unavailable */ }
-
-      router.replace('/create/success')
-    }
-  }, [status, publishData, setPublishResult, router, showToast])
-
-  // Toast on mint error
-  useEffect(() => {
-    if (status === 'error' && error) {
-      showToast(`Mint failed: ${error}`, 'danger')
-    }
-  }, [status, error, showToast])
-
-  // Expose publish + authenticated upload + list for E2E testing.
-  // Gated to development so the helpers (notably __e2eUpload, which auto-approves
-  // wallet-paid Walrus quotes) cannot be invoked from production pages.
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'development') return
-    const w = window as any
-    w.__e2ePublish = (params: PublishParams) => publishRef.current(params)
-    w.__e2eUpload = async (fileContent: string, fileName: string, type: 'public' | 'encrypted' = 'encrypted') => {
-      const headers = await getAuthHeadersRef.current()
-      const blob = new Blob([fileContent], { type: 'text/markdown' })
-      const file = new File([blob], fileName, { type: 'text/markdown' })
-      const wallet = walletRef.current
-      if (!wallet) {
-        throw new Error('Connect a Sui wallet before uploading')
-      }
-      return uploadSoulPayload({
-        file: withMime(file),
-        uploadType: type,
-        kind: 'soul-content',
-        authHeaders: headers,
-        sendObjectTo: type === 'encrypted' ? wallet.address : null,
-        walletAddress: wallet.address,
-        suiClient: suiClientRef.current,
-        signAndExecute: signAndExecuteRef.current,
-        confirmQuote: async () => true,
-      })
-    }
-    w.__e2eListSoul = async (params: {
-      currentKioskId: string; currentKioskCapOnChainId: string;
-      stateObjectId: string; soulObjectId: string; priceAtomic: string;
-    }) => {
-      // soulObjectId is no longer needed by the new ABI (Move derives it
-      // from the state argument), but keep it in the test helper signature
-      // so existing E2E callers don't have to be edited.
-      const tx = buildListSoulTx({
-        currentKioskId: params.currentKioskId,
-        currentKioskCapOnChainId: params.currentKioskCapOnChainId,
-        stateObjectId: params.stateObjectId,
-        priceAtomic: BigInt(params.priceAtomic),
-      })
-      const result = await signAndExecuteRef.current(tx)
-      const headers = await getAuthHeadersRef.current()
-      const syncRes = await fetch(`/api/souls/${params.soulObjectId}/list`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txDigest: result.digest }),
-      })
-      if (!syncRes.ok) {
-        const err = await syncRes.json().catch(() => ({}))
-        throw new Error(err.error || `List sync failed: ${syncRes.status}`)
-      }
-      return { digest: result.digest, ...(await syncRes.json()) }
-    }
-    w.__e2eGetAuthHeaders = () => getAuthHeadersRef.current()
-    w.__e2eIssueGrant = async (params: { stateObjectId: string; granteeAddress: string; scopeMask: number; soulObjectId: string }) => {
-      const tx = buildIssueGrantTx({ stateObjectId: params.stateObjectId, granteeAddress: params.granteeAddress, scopeMask: params.scopeMask })
-      const result = await signAndExecuteRef.current(tx)
-      const headers = await getAuthHeadersRef.current()
-      const syncRes = await fetch(`/api/souls/${params.soulObjectId}/grant`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txDigest: result.digest }),
-      })
-      if (!syncRes.ok) {
-        const err = await syncRes.json().catch(() => ({}))
-        throw new Error(err.error || `Grant sync failed: ${syncRes.status}`)
-      }
-      return { digest: result.digest, ...(await syncRes.json()) }
-    }
-    w.__e2eRevokeGrant = async (params: { stateObjectId: string; granteeAddress: string; soulObjectId: string }) => {
-      const tx = buildRevokeGrantTx({ stateObjectId: params.stateObjectId, granteeAddress: params.granteeAddress })
-      const result = await signAndExecuteRef.current(tx)
-      const headers = await getAuthHeadersRef.current()
-      const syncRes = await fetch(`/api/souls/${params.soulObjectId}/grant`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txDigest: result.digest, action: 'revoke', granteeAddress: params.granteeAddress }),
-      })
-      if (!syncRes.ok) {
-        const err = await syncRes.json().catch(() => ({}))
-        return { digest: result.digest, synced: false, error: err.error }
-      }
-      return { digest: result.digest, synced: true, ...(await syncRes.json()) }
-    }
-    return () => {
-      delete w.__e2ePublish; delete w.__e2eUpload; delete w.__e2eListSoul
-      delete w.__e2eGetAuthHeaders; delete w.__e2eIssueGrant; delete w.__e2eRevokeGrant
-      delete w.__e2eLastSealMaterial
-    }
-  }, [])
-
-  async function handleDeploy() {
-    if (!ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile || !suiWallet) return
-
-    setDeployError(null)
-    setWalrusOrphanRecovery(null)
-    ctx.setPublishResult(null)
-    const walletAddress = suiWallet.address
-
+    if (status !== 'done' || !publishData || completedDigestRef.current === publishData.txDigest) return
+    completedDigestRef.current = publishData.txDigest
+    ctx.setPublishResult(publishData); showToast('Soul minted successfully!', 'success')
     try {
-      // Build a single batch: cover (public) + char/memory/skills (encrypted)
-      // files. The batch publishes via 1 register PTB + parallel
-      // HTTP uploads, then mint+certify lands in 1 more PTB inside `publish`,
-      // for 2 wallet signatures total regardless of how many files.
-      const fileIndex = { cover: -1, char: -1, memory: -1, skills: -1 }
-      const batchFiles: BatchSoulUploadFile[] = []
-
-      fileIndex.cover = batchFiles.length
-      batchFiles.push({
-        file: withMime(ctx.coverImageFile),
-        uploadType: 'public',
-        kind: 'soul-content',
-      })
-
-      fileIndex.char = batchFiles.length
-      batchFiles.push({
-        file: withMime(ctx.charFile),
-        uploadType: 'encrypted',
-        kind: 'soul-content',
-        sendObjectTo: walletAddress,
-      })
-
-      fileIndex.memory = batchFiles.length
-      batchFiles.push({
-        file: withMime(ctx.memoryFile),
-        uploadType: 'encrypted',
-        kind: 'soul-content',
-        sendObjectTo: walletAddress,
-      })
-
-      if (ctx.skillsFile) {
-        fileIndex.skills = batchFiles.length
-        batchFiles.push({
-          file: withMime(ctx.skillsFile),
-          uploadType: 'encrypted',
-          kind: 'soul-content',
-          sendObjectTo: walletAddress,
-          // Skills bundle requires SKILL.md frontmatter parsing; other batch
-          // entries (cover image, char file, memory file) do not.
-          extractSkillMetadata: true,
-        })
+      const token = sessionStorage.getItem('soulidity-desktop-handoff-token')
+      if (token) {
+        sessionStorage.removeItem('soulidity-desktop-handoff-token')
+        window.location.href = `soulidity://mint-completed?token=${encodeURIComponent(token)}`
       }
-
-      // Preflight: anything that can fail without consulting a freshly-paid
-      // register PTB runs BEFORE `prepareSoulBlobsForBatchPublish`. If a
-      // transient HTTP/RPC error or a missing env trips here, the user has
-      // not yet signed PTB1 and the next Deploy click does not have to
-      // mismatch a freshly re-encrypted payload against an already-paid
-      // register. Tags / kiosk / required envs / publish-arg shape are all
-      // resolved up-front; the only thing left to fail after PTB1 is the
-      // mint+certify PTB itself.
-      setUploadPhase('preflight')
-      const preflightAuthHeaders = await getAuthHeaders()
-      const preflightKioskRes = await fetch(
-        `/api/souls/personal-kiosk?walletAddress=${encodeURIComponent(walletAddress)}`,
-        { cache: 'no-store', headers: preflightAuthHeaders },
-      )
-      let prefetchedPersonalKiosk: { currentKioskId: string | null; currentKioskCapOnChainId: string | null } | null = null
-      if (preflightKioskRes.status !== 404) {
-        if (!preflightKioskRes.ok) {
-          const body = await preflightKioskRes.json().catch(() => ({}))
-          throw new Error(body.error || 'Failed to resolve personal kiosk')
-        }
-        prefetchedPersonalKiosk = await preflightKioskRes.json()
-      }
-      await assertObjectInputsExist(suiClient, {
-        'Your personal kiosk': prefetchedPersonalKiosk?.currentKioskId ?? null,
-        'Your personal kiosk capability': prefetchedPersonalKiosk?.currentKioskCapOnChainId ?? null,
-      })
-      if (ctx.collectionBindTarget?.collectionOnChainId) {
-        await preflightCollectionBindTarget(preflightAuthHeaders, ctx.collectionBindTarget.collectionOnChainId)
-      }
-      // The real imageUrl is filled in after PTB1 succeeds; use a placeholder
-      // that satisfies the non-empty + ≤1024-byte byte-length guards so the
-      // rest of `validateSoulPublishArgs` can still trip on bad name /
-      // description / royalty before any wallet signature.
-      validateSoulPublishArgs({
-        name: ctx.name,
-        description: ctx.description,
-        imageUrl: 'preflight://placeholder',
-        creatorRoyaltyBps: ctx.royalty,
-      })
-      // List-on-publish price must parse before any paid Walrus register PTB.
-      // The preview page already blocks navigation on bad input; this is the
-      // back-button / direct-nav safety net so a creator never signs PTB1
-      // and then has `usePublish.assertListingPriceAtomic` reject the value.
-      if (ctx.listOnPublish === true) {
-        assertListingPriceAtomic(ctx.listingPriceAtomic)
-      }
-      // Surface a missing env ahead of the paid PTB rather than after.
-      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
-      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
-      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
-      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID')
-
-      // Reuse the prepared batch when the user retries the SAME draft (e.g.
-      // closed the mint wallet popup, or hit a transient SDK/RPC error after
-      // PTB1 paid). prepareSoulBlobsForBatchPublish re-encrypts every payload
-      // with fresh AES-GCM keys, so calling it from scratch on retry yields
-      // different blobIds than the persisted PTB1 recovery — which trips the
-      // orphan-mismatch branch even though the user only wanted to re-sign
-      // mint. Cache lives in `preparedBatchRef`; cleared on successful mint
-      // (via wrapped onMintTxExecuted) and on draft changes (fingerprint).
-      const fingerprint = buildBatchFingerprint(walletAddress, batchFiles)
-      const cachedBatch = preparedBatchRef.current
-      const reusable =
-        !!cachedBatch
-        && cachedBatch.walletAddress === walletAddress
-        && cachedBatch.fingerprint === fingerprint
-      let prepared: PreparedSoulBlobs
-      if (reusable) {
-        prepared = cachedBatch.prepared
-      } else {
-        if (cachedBatch) preparedBatchRef.current = null
-        setUploadPhase('preparing-uploads')
-        prepared = await prepareSoulBlobsForBatchPublish({
-          files: batchFiles,
-          walletAddress,
-          suiClient,
-          signAndExecute,
-          authHeaders: preflightAuthHeaders,
-          confirmQuote: async (quote) => {
-            setUploadPhase('awaiting-register-signature')
-            const approved = await requestUploadCostApproval(quote)
-            if (approved) setUploadPhase('uploading-to-relay')
-            return approved
-          },
-        })
-        preparedBatchRef.current = { walletAddress, fingerprint, prepared }
-      }
-
-      const cover = prepared.files[fileIndex.cover]
-      const char = prepared.files[fileIndex.char]
-      const memory = prepared.files[fileIndex.memory]
-      const skills = fileIndex.skills >= 0 ? prepared.files[fileIndex.skills] : null
-
-      if (!char.sealMaterial) {
-        throw new Error('Character file upload is missing Seal recovery data. Please retry.')
-      }
-      if (!memory.sealMaterial) {
-        throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
-      }
-      if (skills && !skills.sealMaterial) {
-        throw new Error('Skills bundle upload is missing Seal recovery data. Please retry.')
-      }
-      if (!char.blobObjectId) {
-        throw new Error('Character file upload was deduplicated by Walrus and no owned Blob object was created. Please modify your character file slightly and retry.')
-      }
-      if (!memory.blobObjectId) {
-        throw new Error('This exact memory text already exists on Walrus. Please add a unique detail to your memory so it can be stored as a distinct on-chain founding memory.')
-      }
-      if (skills && !skills.blobObjectId) {
-        throw new Error('Skills bundle upload was deduplicated by Walrus and no owned Blob object was created. Please modify your skills file slightly and retry.')
-      }
-
-      const results: UploadResults = {
-        ownerAddress: walletAddress,
-        coverImage: {
-          blobId: cover.blobId,
-          blobObjectId: cover.blobObjectId,
-          contentHash: cover.contentHash,
-          blobUrl: cover.blobUrl,
-        },
-        charFile: {
-          blobId: char.blobId,
-          blobObjectId: char.blobObjectId,
-          contentHash: char.contentHash,
-          blobUrl: char.blobUrl,
-          sealMaterial: char.sealMaterial,
-          skillName: char.skillName ?? null,
-        },
-        memorySeed: {
-          blobId: memory.blobId,
-          blobObjectId: memory.blobObjectId,
-          contentHash: memory.contentHash,
-          blobUrl: memory.blobUrl,
-          sealMaterial: memory.sealMaterial,
-        },
-        skillsFile: skills && skills.sealMaterial
-          ? {
-              blobId: skills.blobId,
-              blobObjectId: skills.blobObjectId,
-              contentHash: skills.contentHash,
-              blobUrl: skills.blobUrl,
-              sealMaterial: skills.sealMaterial,
-              skillName: skills.skillName ?? null,
-            }
-          : undefined,
-      }
-      ctx.setUploadResults(results)
-      setUploadPhase('done')
-
-      if (process.env.NODE_ENV === 'development') {
-        ;(window as any).__e2eLastSealMaterial = {
-          char: char.sealMaterial,
-          memory: memory.sealMaterial,
-          skills: skills?.sealMaterial ?? null,
-        }
-      }
-
-      const parsedTags = ctx.tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean)
-
-      await publish({
-        name: ctx.name,
-        description: ctx.description,
-        tags: parsedTags,
-        imageUrl: cover.blobUrl,
-        previewImages: [cover.blobUrl],
-        prefetchedPersonalKiosk,
-        protectedBlobObjectId: char.blobObjectId,
-        foundingMemoryBlobObjectId: memory.blobObjectId,
-        skillsBlobObjectId: skills?.blobObjectId ?? null,
-        initialSkillName: skills?.skillName ?? null,
-        skillsVisibility: 'private',
-        creatorRoyaltyBps: ctx.royalty,
-        sealMaterial: char.sealMaterial,
-        memorySealMaterial: memory.sealMaterial,
-        skillsSealMaterial: skills?.sealMaterial ?? null,
-        attachBeforeMint: prepared.attachCertifyCalls,
-        onMintTxExecuted: () => {
-          prepared.clearBatchRecovery()
-          preparedBatchRef.current = null
-        },
-        collectionBindTarget: ctx.collectionBindTarget,
-        listOnPublish: ctx.listOnPublish === true,
-        listingPriceAtomic: ctx.listOnPublish === true ? (ctx.listingPriceAtomic ?? null) : null,
-      })
-    } catch (err) {
-      if (err instanceof WalrusUploadResumeMismatchError) {
-        preparedBatchRef.current = null
-        setWalrusOrphanRecovery({
-          orphanTxDigest: err.orphanTxDigest,
-          orphanBlobs: [...err.orphanBlobs],
-        })
-        setDeployError(
-          'A previous Walrus register transaction can no longer be resumed because the encrypted payload changed. '
-          + 'The stale local recovery was cleared; reclaim the orphaned blobs, or click Sign & Deploy again to start from a clean register.',
-        )
-        setUploadPhase('idle')
-        return
-      }
-      if (!(err instanceof WalrusUploadCancelledError)) {
-        captureFrontendException(err, {
-          scope: 'create_soul_deploy',
-          phase: uploadPhase,
-          ...getSuiTxErrorProperties(err),
-        })
-      }
-      setDeployError(err instanceof Error ? err.message : 'Deploy failed')
-      setUploadPhase('idle')
-    }
+    } catch { /* The browser may not support the desktop scheme. */ }
+    router.replace('/create/success')
+  }, [status, publishData, ctx.setPublishResult, router, showToast])
+  const handleDeploy = async () => {
+    if (!ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile) return
+    await publish({ name: ctx.name, description: ctx.description, tags: ctx.tags.split(',').map(tag => tag.trim()).filter(Boolean),
+      creatorRoyaltyBps: ctx.royalty, cover: withMime(ctx.coverImageFile), character: withMime(ctx.charFile),
+      memory: withMime(ctx.memoryFile), skills: ctx.skillsFile ? withMime(ctx.skillsFile) : null,
+      collectionBindTarget: ctx.collectionBindTarget, listOnPublish: ctx.listOnPublish, listingPriceAtomic: ctx.listingPriceAtomic })
   }
-
-  async function handleReclaimWalrusOrphans() {
-    if (!suiWallet || !walrusOrphanRecovery || reclaimingOrphans) return
-
-    setReclaimingOrphans(true)
-    setDeployError(null)
-    try {
-      const result = await reclaimWalrusOrphanBlobs({
-        orphanBlobs: walrusOrphanRecovery.orphanBlobs,
-        walletAddress: suiWallet.address,
-        suiClient,
-        signAndExecute,
-      })
-      setWalrusOrphanRecovery(null)
-      preparedBatchRef.current = null
-      showToast(`Reclaimed ${result.reclaimedCount} Walrus blob(s).`, 'success')
-    } catch (err) {
-      captureFrontendException(err, {
-        scope: 'create_soul_walrus_orphan_reclaim',
-        txDigest: walrusOrphanRecovery.orphanTxDigest,
-        ...getSuiTxErrorProperties(err),
-      })
-      setDeployError(err instanceof Error ? err.message : 'Failed to reclaim Walrus blobs')
-    } finally {
-      setReclaimingOrphans(false)
-    }
-  }
-
-  // Resume sync for a pending mint recovery (on-chain TX succeeded, sync failed/interrupted)
-  async function handleResume() {
-    if (!suiWallet || !txDigest) return
-    setDeployError(null)
-    try {
-      // Recovery path in usePublish skips build+sign and uses stored sync body
-      await publish({
-        name: '', description: '', tags: [], imageUrl: '',
-        previewImages: [], protectedBlobObjectId: '', creatorRoyaltyBps: 0,
-        listOnPublish: false,
-      })
-    } catch (err) {
-      captureFrontendException(err, {
-        scope: 'create_soul_resume_sync',
-        txDigest,
-        ...getSuiTxErrorProperties(err),
-      })
-      setDeployError(err instanceof Error ? err.message : 'Resume failed')
-    }
-  }
-
-  function handleAbandonRecovery() {
-    ctx.reset()
-    router.replace('/create')
-  }
-
-  if (!inRecovery && status !== 'done' && (!ctx.name || !ctx.description || !ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile)) return null
-
-  const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
-  const networkLabel = network === 'mainnet' ? 'Sui Mainnet' : `Sui ${network.charAt(0).toUpperCase() + network.slice(1)}`
-  const isBusy = reclaimingOrphans || uploadPhase !== 'idle' && uploadPhase !== 'done' || status === 'building' || status === 'signing' || status === 'syncing'
-  const combinedError = deployError || error
+  const networkLabel = 'Sui Mainnet'
+  const isBusy = loadingRecovery || exportingRecovery || ['building', 'signing', 'syncing'].includes(status)
+  const combinedError = error
   const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
   const walletActionState = getWalletActionState({
-    hasActiveWallet: !!suiWallet,
-    hasSessionWallet: !!user?.primarySuiAddress,
-    walletRestoring,
-    busy: isBusy,
-    busyLabel: uploadPhaseLabels[uploadPhase] || `${status}...`,
-    balanceBlocked,
-    recovery: inRecovery,
-    txDigest,
-    readyLabel: '✓ Sign & Deploy',
+    hasActiveWallet: !!suiWallet, hasSessionWallet: !!user?.primarySuiAddress, walletRestoring,
+    busy: isBusy, busyLabel: loadingRecovery ? 'Reading saved creation…' : 'Creating Soul…',
+    balanceBlocked: inRecovery ? false : balanceBlocked,
+    // A saved pre-payment preparation has no digest yet but is still resumable.
+    recovery: false, txDigest, readyLabel: inRecovery ? retryPacket ? retryPacket.retired ? 'Retry Retired Transaction' : 'Retry Failed Transaction' : 'Resume Saved Creation' : '✓ Sign & Deploy',
   })
-
   function handleWalletAction(action: () => void | Promise<void>) {
-    if (walletActionState.needsWalletReconnect) {
-      openWalletLogin()
-      return
-    }
+    if (walletActionState.needsWalletReconnect) { openWalletLogin(); return }
     void action()
   }
 
@@ -679,9 +118,9 @@ export default function CreateGasPage() {
       <PageContainer size="sm" className="space-y-5 pt-7 sm:pt-9">
         <SectionHeader
           label="Create Soul"
-          title={inRecovery ? 'Step 4 — Resume Sync' : 'Step 4 — Pay Gas'}
+          title={inRecovery ? 'Step 4 — Resume Creation' : 'Step 4 — Pay Gas'}
           subtitle={inRecovery
-            ? 'Your previous mint transaction succeeded. Complete the sync to finish creating your Soul.'
+            ? 'Your saved creation is retained. Check its original transaction or explicitly resume it.'
             : 'Your Soul will be minted as a Soul object on Sui. Review the transaction before signing.'}
           className="mb-1"
         />
@@ -692,8 +131,8 @@ export default function CreateGasPage() {
               Pending Soul Mint
             </div>
             <p className="text-sm text-muted leading-relaxed">
-              A previous mint transaction succeeded on-chain but the mirror sync was interrupted.
-              Resume to complete the process, or start over to create a new Soul.
+              This creation has a saved identity and encrypted upload data. Its transaction may still be pending.
+              Resuming uses the same operation; a missing receipt does not mean payment failed.
             </p>
             {txDigest && (
               <div className="flex items-center justify-between rounded-lg border border-border/50 bg-[var(--ui-surface-muted)] px-3 py-2">
@@ -712,7 +151,7 @@ export default function CreateGasPage() {
 
           <div className="divide-y divide-border/50">
             <TxRow label="Contract">
-              <span className="font-mono text-tech-text">market::mint_native_in_personal_kiosk</span>
+              <span className="font-mono text-tech-text">market::mint_native_in_personal_kiosk_v2</span>
             </TxRow>
             <TxRow label="Network">
               <span className="font-semibold text-foreground">{networkLabel}</span>
@@ -744,8 +183,8 @@ export default function CreateGasPage() {
                 Character locked after mint · Grant-gated memory writes · Skills private by default · Revocable
               </span>
             </TxRow>
-            <TxRow label="Estimated Gas">
-              <span className="text-foreground">~0.005 SUI</span>
+            <TxRow label="Gas budget">
+              <span className="text-foreground">Reviewed for each transaction before signing</span>
             </TxRow>
             <TxRow label="Walrus Storage">
               <span className="text-muted">Paid by connected wallet after cost review</span>
@@ -822,12 +261,13 @@ export default function CreateGasPage() {
               <span className="text-sm text-muted">Status</span>
               <span className={`text-sm font-semibold ${
                 status === 'done' ? 'text-success' :
-                status === 'error' || combinedError ? 'text-danger' : 'text-action-label'
+                status === 'error' ? 'text-danger' : 'text-action-label'
               }`}>
-                {uploadPhase !== 'idle' && uploadPhase !== 'done' && uploadPhaseLabels[uploadPhase]}
-                {uploadPhase === 'done' && status === 'building' && '⟳ Building TX…'}
+                {status === 'building' && 'Preparing saved creation…'}
+                {status === 'idle' && 'Awaiting your next action'}
+                {false}
                 {status === 'signing' && '⟳ Signing…'}
-                {status === 'syncing' && '⟳ Syncing…'}
+                {status === 'syncing' && '⟳ Checking original transaction…'}
                 {status === 'done' && '✓ Published'}
                 {status === 'error' && '✗ Failed'}
               </span>
@@ -843,38 +283,7 @@ export default function CreateGasPage() {
                 {combinedError}
               </div>
             )}
-            {walrusOrphanRecovery && (
-              <div className="space-y-3 rounded-lg border border-[var(--ui-value)] bg-[var(--ui-soft-value)] px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ui-value-text)]">
-                      Walrus Orphan Recovery
-                    </div>
-                    <p className="mt-1 text-xs leading-relaxed text-muted">
-                      Previous register: <span className="font-mono text-foreground">{walrusOrphanRecovery.orphanTxDigest.slice(0, 16)}…</span>
-                      {' '}· {walrusOrphanRecovery.orphanBlobs.length} blob(s)
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={walletActionState.disabled || reclaimingOrphans}
-                    onClick={() => handleWalletAction(handleReclaimWalrusOrphans)}
-                    className={buttonStyles({
-                      variant: 'outline',
-                      size: 'sm',
-                      className:
-                        `shrink-0 rounded-[10px] border-[var(--ui-value)] px-3 py-1.5 text-[12px] text-[var(--ui-value-text)] hover:border-[var(--ui-value-hover)] ${walletActionState.disabled || reclaimingOrphans ? 'opacity-50 cursor-not-allowed' : ''}`,
-                    })}
-                  >
-                    {reclaimingOrphans ? 'Reclaiming…' : 'Reclaim'}
-                  </button>
-                </div>
-                <p className="text-[11px] leading-relaxed text-muted">
-                  Reclaim signs a Walrus delete transaction for the stale deletable Blob objects.
-                  You can also deploy again from a clean register if you choose to leave them orphaned.
-                </p>
-              </div>
-            )}
+
           </div>
         )}
 
@@ -884,25 +293,23 @@ export default function CreateGasPage() {
             <div className="mx-4 max-w-sm rounded-[var(--ui-radius-lg)] border border-[var(--ui-action)] bg-[var(--ui-surface)] p-10 text-center shadow-[var(--ui-shadow-md)]">
               <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-2 border-purple/30 border-t-purple" />
               <h2 className="text-lg font-bold mb-2">
-                {uploadPhase !== 'idle' && uploadPhase !== 'done'
-                  ? 'Uploading to Walrus…'
-                  : 'Deploying Soul…'}
+                {status === 'syncing' ? 'Checking transaction…' : 'Creating Soul…'}
               </h2>
               <p className="text-sm text-muted">
-                {uploadPhase !== 'idle' && uploadPhase !== 'done'
-                  ? uploadPhaseLabels[uploadPhase]
-                  : `Writing to ${networkLabel} · Registering Seal policy`}
+                {status === 'signing' ? 'Review the exact transaction and confirm in your wallet.'
+                  : 'Your operation is saved. Keep this page open while it is processing.'}
               </p>
             </div>
           </div>
         )}
 
         {/* Navigation */}
+        {inRecovery && <AuthoringRecoveryExport disabled={isBusy || !suiWallet} onExport={exportRecovery} />}
         <div className="flex flex-col-reverse gap-2.5 sm:flex-row">
           {inRecovery ? (
             <button
               type="button"
-              onClick={handleAbandonRecovery}
+              disabled={isBusy} onClick={() => void query()}
               className={buttonStyles({
                 variant: 'outline',
                 size: 'lg',
@@ -910,7 +317,7 @@ export default function CreateGasPage() {
                   'w-full rounded-[10px] border-purple/20 bg-transparent px-4 py-2.5 text-[13px] text-foreground hover:border-purple/45 hover:text-foreground sm:w-auto sm:min-w-[76px]',
               })}
             >
-              Start Over
+              Check Transaction
             </button>
           ) : (
             <Link
@@ -925,6 +332,13 @@ export default function CreateGasPage() {
               ← Back
             </Link>
           )}
+          {inRecovery && txDigest && !retryPacket && (
+            <button type="button" disabled={walletActionState.disabled}
+              onClick={() => handleWalletAction(retireExpired)}
+              className={buttonStyles({ variant: 'outline', size: 'lg', className: 'rounded-[10px] px-4 py-2.5 text-[13px]' })}>
+              Check Expiry &amp; Retire
+            </button>
+          )}
           {status === 'done' ? (
             <Link
               href="/create/success"
@@ -936,7 +350,7 @@ export default function CreateGasPage() {
             <button
               type="button"
               disabled={walletActionState.disabled}
-              onClick={() => handleWalletAction(handleResume)}
+              onClick={() => handleWalletAction(retryPacket ? retryFailed : resume)}
               className={buttonStyles({
                 variant: 'gold',
                 size: 'lg',
@@ -963,6 +377,21 @@ export default function CreateGasPage() {
           )}
         </div>
       </PageContainer>
+      <Modal open={Boolean(approval)} onClose={() => approval?.finish(false)} title="Review Creation Transaction"
+        subtitle="Confirm this saved transaction before opening your wallet. Storage registration and Soul mint are separate transactions.">
+        {approval && <div className="space-y-4 text-sm">
+          <TxRow label="Stage">{approval.review.stage === 'REGISTER' ? 'Pay for storage' : 'Certify content & mint Soul'}</TxRow>
+          <TxRow label="WAL payment">{formatWal(approval.review.wal)}</TxRow>
+          <TxRow label="Maximum gas">{approval.review.gasBudgetMist.toString()} MIST</TxRow>
+          <TxRow label="Expires after epoch">{approval.review.expirationEpoch}</TxRow>
+          <div className="break-all font-mono text-xs">{approval.review.digest}</div>
+          <p className="text-muted">Cancelling retains the saved creation. It does not delete paid storage or create a replacement transaction.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => approval.finish(false)}>Cancel</Button>
+            <Button variant="gold" onClick={() => approval.finish(true)}>Continue to Wallet</Button>
+          </div>
+        </div>}
+      </Modal>
     </div>
   )
 }

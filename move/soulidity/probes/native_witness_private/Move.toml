@@ -1,0 +1,9 @@
+[package]
+name = "native_witness_private"
+edition = "2024.beta"
+
+[dependencies]
+soulidity = { local = "../.." }
+
+[addresses]
+native_witness_private = "0x0"

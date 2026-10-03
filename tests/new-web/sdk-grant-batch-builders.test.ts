@@ -73,11 +73,11 @@ describe('buildBatchIssueGrantsTx', () => {
     ).toThrow(/scopeMask/)
   })
 
-  it('rejects past expiry inside the batch', () => {
+  it('rejects malformed expiry inside the batch', () => {
     expect(() =>
       buildBatchIssueGrantsTx({
         items: [
-          { stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS, expiresAtMs: 1 },
+          { stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS, expiresAtMs: -1 },
         ],
       }),
     ).toThrow(/expiresAtMs/)
@@ -142,8 +142,8 @@ describe('buildBatchIssueGrantsTx', () => {
     ).toThrow(/MAX_GRANT_CAPACITY/)
   })
 
-  it('rejects non-positive / non-safe setCapacityTo', () => {
-    for (const bad of [0, -1, 1.5, Number.NaN]) {
+  it('rejects negative / non-safe setCapacityTo', () => {
+    for (const bad of [-1, 1.5, Number.NaN]) {
       expect(() =>
         buildBatchIssueGrantsTx({
           items: [
@@ -237,9 +237,9 @@ describe('addIssueGrantCalls / addSetGrantCapacityCalls injectors', () => {
     )
   })
 
-  it('addIssueGrantCalls rejects past expiry, empty grantee, non-positive scope', () => {
+  it('addIssueGrantCalls rejects malformed expiry, empty grantee, non-positive scope', () => {
     expect(() => addIssueGrantCalls(new Transaction(), {
-      stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS, expiresAtMs: 1,
+      stateObjectId: STATE_A, granteeAddress: GRANTEE, scopeMask: SOUL_GRANT_SCOPE_ASSETS, expiresAtMs: -1,
     })).toThrow(/expiresAtMs/)
     expect(() => addIssueGrantCalls(new Transaction(), {
       stateObjectId: STATE_A, granteeAddress: '   ', scopeMask: SOUL_GRANT_SCOPE_ASSETS,
@@ -270,9 +270,9 @@ describe('addIssueGrantCalls / addSetGrantCapacityCalls injectors', () => {
     )
   })
 
-  it('addSetGrantCapacityCalls rejects non-positive / unsafe capacity', () => {
+  it('addSetGrantCapacityCalls accepts zero and rejects negative / unsafe capacity', () => {
     expect(() => addSetGrantCapacityCalls(new Transaction(), { stateObjectId: STATE_A, capacity: 0 }))
-      .toThrow(/capacity/)
+      .not.toThrow()
     expect(() => addSetGrantCapacityCalls(new Transaction(), { stateObjectId: STATE_A, capacity: -1 }))
       .toThrow(/capacity/)
     expect(() => addSetGrantCapacityCalls(new Transaction(), { stateObjectId: STATE_A, capacity: Number.NaN }))

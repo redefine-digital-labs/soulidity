@@ -1,10 +1,14 @@
-name: Soulidity fast-path smoke
+name: Soulidity PR checks
 
-# PR gates run on every push affecting the fast-path surface. The
-# `workflow_dispatch` job runs the live testnet smoke matrix and is
-# what the runbook treats as the gate before mainnet stage 7b.
-
+# PR checks plus paired Move gates; not full G3 or S13 live acceptance.
+# Exact peer revision and release boundary: docs/plans/2026-10-01-paired-move-ci.md
 on:
+  workflow_dispatch:
+    inputs:
+      animacraft_commit_sha:
+        description: Exact reviewed Animacraft commit for this paired release check
+        required: true
+        type: string
   push:
     branches: [master]
   pull_request:
@@ -20,42 +24,46 @@ on:
       - 'web/app/api/collections/[id]/list/**'
       - 'web/app/api/collections/[id]/add-soul/**'
       - 'tests/new-web/walrus-batch-helper-split.test.ts'
-      - 'scripts/smoke-soulidity.ts'
-      - 'scripts/phase2-testnet-smoke.ts'
-      - 'scripts/lib/soulidity-mainnet-migration.ts'
-      - 'scripts/lib/reviewed-move-dependencies.ts'
-      - 'scripts/preflight-animacraft-market-retirement.ts'
-      - 'scripts/publish-soulidity-and-sync.ts'
-      - 'scripts/retire-soulidity-legacy-market.ts'
-      - 'scripts/upgrade-soulidity-mainnet.ts'
+      - 'tests/scripts/retired-smoke-entry.test.ts'
+      - 'tests/scripts/paired-move-ci.test.ts'
       - 'packages/soulidity-sdk/**'
       - 'web/components/providers/**'
       - 'desktop/apps/desktop/src/main/**'
-      - 'services/walrus-uploader/**'
       - 'tests/new-web/sui-grpc-compat.test.ts'
-      - 'tests/scripts/soulidity-mainnet-migration.test.ts'
-      - 'tests/scripts/publish-soulidity-and-sync.test.ts'
-      - 'tests/scripts/reviewed-move-dependencies.test.ts'
+      - 'tests/scripts/single-release-entry.test.ts'
+      - 'docs/plans/2026-10-01-single-release-entry.md'
+      - 'docs/plans/2026-10-01-paired-move-ci.md'
       - '.github/workflows/soulidity-fast-path-smoke.yml'
-  workflow_dispatch:
-    inputs:
-      run_testnet_smoke:
-        description: 'Run live testnet smoke matrix (requires .env.soulidity-smoke secrets)'
-        required: false
-        default: 'false'
-
 jobs:
   pr-gates:
     name: PR gates (typecheck + unit + Move build/test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      ANIMACRAFT_COMMIT_SHA: ${{ inputs.animacraft_commit_sha || vars.ANIMACRAFT_COMMIT_SHA }}
+      ANIMACRAFT_WORKSPACE: ${{ github.workspace }}/_paired/animacraft
+      SUI_RELEASE: mainnet-v1.80.1
+      SUI_ARCHIVE: sui-mainnet-v1.80.1-ubuntu-x86_64.tgz
+      SUI_ARCHIVE_SHA256: 97f9aed10e0c2fe3204ce4639ac992e1449b17c14f22f30e9f903ead54ac7336
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
+      - name: Require exact paired source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$ANIMACRAFT_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'ANIMACRAFT_COMMIT_SHA must identify the reviewed paired commit; branch fallback is forbidden.'
+            exit 1
+          fi
       # `npm ci` is strict-validating, but knip's transitive
       # `@oxc-parser/binding-wasm32-wasi` declares `@emnapi/core/runtime`
       # 1.10.0 as `peer: true, optional: true` inBundle deps that don't
@@ -80,86 +88,89 @@ jobs:
       - name: Install desktop deps
         working-directory: desktop
         run: pnpm install --frozen-lockfile
-      - name: Install Walrus uploader deps
-        run: npm --prefix services/walrus-uploader ci --no-audit --no-fund
       - name: Typecheck Soulidity SDK
         run: npm --prefix packages/soulidity-sdk run typecheck
       - name: Typecheck desktop main process
         working-directory: desktop/apps/desktop
         run: pnpm run build:shared && pnpm run build:backend && pnpm exec tsc --noEmit -p tsconfig.node.json
-      - name: Build Walrus uploader
-        run: npm --prefix services/walrus-uploader run build
+      - name: Checkout paired Animacraft source
+        uses: actions/checkout@v4
+        with:
+          repository: redefine-digital-labs/animacraft
+          ref: ${{ env.ANIMACRAFT_COMMIT_SHA }}
+          path: _paired/animacraft
+          persist-credentials: false
+      - name: Verify paired source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C _paired/animacraft rev-parse HEAD)" = "$ANIMACRAFT_COMMIT_SHA"
+          test -f _paired/animacraft/scripts/native-soul-test-graph.mjs
+          node --test _paired/animacraft/test/harness/native-soul-v8/*.test.mjs _paired/animacraft/test/seal-cap-toolchain-identity.test.mjs
+      - name: Install paired Animacraft dependencies
+        working-directory: _paired/animacraft
+        run: npm ci
       - name: Run TS unit + integration tests
         run: npm test
       - name: Run web typecheck
-        run: npm --prefix web run typecheck || npx tsc --noEmit -p web/tsconfig.json
+        run: npm --prefix web run typecheck
       - name: Lint web
         run: npm --prefix web run lint
-      - name: Install suiup
+      - name: Install pinned Sui CLI
+        shell: bash
         run: |
-          curl -sSfL https://raw.githubusercontent.com/Mystenlabs/suiup/main/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Install Sui CLI
-        run: suiup install sui@testnet -y
-      - name: Sui Move build
-        run: sui move build --path move/soulidity
-      - name: Sui Move test
-        run: sui move test --path move/soulidity
-
-  testnet-smoke:
-    name: Testnet smoke matrix (live)
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_testnet_smoke == 'true'
-    runs-on: ubuntu-latest
-    needs: pr-gates
-    env:
-      NEXT_PUBLIC_SUI_NETWORK: testnet
-      SOULIDITY_WEB_URL: ${{ secrets.SOULIDITY_TESTNET_WEB_URL }}
-      SMOKE_PUBLISHER_KEY: ${{ secrets.SMOKE_PUBLISHER_KEY_TESTNET }}
-      SMOKE_BUYER_KEY: ${{ secrets.SMOKE_BUYER_KEY_TESTNET }}
-      SMOKE_AGENT_KEY: ${{ secrets.SMOKE_AGENT_KEY_TESTNET }}
-      SOULIDITY_SMOKE_SCENARIO_JSON: ${{ secrets.SOULIDITY_SMOKE_SCENARIO_JSON_TESTNET }}
-      # Per-signer auth — scripts/smoke-soulidity.ts picks Authorization /
-      # Cookie headers off step.signer, so a single global cookie cannot
-      # service publisher / buyer / agent rows. Each first-party mirror
-      # route enforces that the signed-in wallet identity matches the
-      # on-chain transaction sender (assertTransactionSender in
-      # web/lib/soulidity/server.ts). Legacy SMOKE_AUTHORIZATION / SMOKE_COOKIE
-      # are intentionally not exported — the harness no longer reads them
-      # and tests/new-web/collection-fast-path-regressions.test.ts pins this.
-      SMOKE_PUBLISHER_AUTHORIZATION: ${{ secrets.SOULIDITY_SMOKE_PUBLISHER_AUTHORIZATION_TESTNET }}
-      SMOKE_PUBLISHER_COOKIE: ${{ secrets.SOULIDITY_SMOKE_PUBLISHER_COOKIE_TESTNET }}
-      SMOKE_BUYER_AUTHORIZATION: ${{ secrets.SOULIDITY_SMOKE_BUYER_AUTHORIZATION_TESTNET }}
-      SMOKE_BUYER_COOKIE: ${{ secrets.SOULIDITY_SMOKE_BUYER_COOKIE_TESTNET }}
-      SMOKE_AGENT_AUTHORIZATION: ${{ secrets.SOULIDITY_SMOKE_AGENT_AUTHORIZATION_TESTNET }}
-      SMOKE_AGENT_COOKIE: ${{ secrets.SOULIDITY_SMOKE_AGENT_COOKIE_TESTNET }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-      # `npm ci` is strict-validating, but knip's transitive
-      # `@oxc-parser/binding-wasm32-wasi` declares `@emnapi/core/runtime`
-      # 1.10.0 as `peer: true, optional: true` inBundle deps that don't
-      # round-trip cleanly between darwin (where the lock is generated)
-      # and linux (where CI runs). `npm install` reads the same lock but
-      # tolerates that gap.
-      - name: Install root deps
-        run: npm install --no-audit --no-fund
-      - name: Install web deps
-        run: npm --prefix web install --no-audit --no-fund
-      - name: Install suiup
+          set -euo pipefail
+          bin_dir="$RUNNER_TEMP/sui-bin"
+          binary="$bin_dir/sui"
+          archive="$RUNNER_TEMP/$SUI_ARCHIVE"
+          mkdir -p "$bin_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            "https://github.com/MystenLabs/sui/releases/download/${SUI_RELEASE}/${SUI_ARCHIVE}" \
+            --output "$archive"
+          echo "${SUI_ARCHIVE_SHA256}  ${archive}" | sha256sum --check --strict
+          member="$(tar -tzf "$archive" | grep -E '^(\./)?sui$')"
+          test "$(printf '%s\n' "$member" | wc -l)" -eq 1
+          tar -xOzf "$archive" "$member" > "$binary"
+          chmod 0755 "$binary"
+          test "$("$binary" --version)" = 'sui 1.80.1-671ba71e69c7'
+      - name: Verify test-only seal-cap reproducibility
+        shell: bash
         run: |
-          curl -sSfL https://raw.githubusercontent.com/Mystenlabs/suiup/main/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Install Sui CLI
-        run: suiup install sui@testnet -y
-      - name: Run smoke matrix
-        run: npm run smoke:soulidity
-      - name: Upload bench artefact
+          set -euo pipefail
+          ANIMACRAFT_SUI_BINARY="$RUNNER_TEMP/sui-bin/sui" \
+            ANIMACRAFT_SUI_ARCHIVE="$RUNNER_TEMP/$SUI_ARCHIVE" \
+            node _paired/animacraft/test/harness/animacraft_v8_seal_cap_harness/scripts/verify_reproducibility.mjs \
+            2>&1 | tee "$RUNNER_TEMP/seal-cap-quick.log"
+          git -C _paired/animacraft diff --exit-code HEAD -- move scripts test/harness
+      - name: Run paired eight-package Move and joint gates
+        shell: bash
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          node _paired/animacraft/scripts/native-soul-test-graph.mjs \
+            --animacraft-root "$GITHUB_WORKSPACE/_paired/animacraft" \
+            --soulidity-root "$GITHUB_WORKSPACE" \
+            --sui "$RUNNER_TEMP/sui-bin/sui" --check release-gates
+      - name: Bundle paired Move gate evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          shopt -s nullglob
+          files=(native-soul-v8-graph-*/*.json native-soul-v8-graph-*/*.log)
+          if [[ -f seal-cap-quick.log ]]; then files+=(seal-cap-quick.log); fi
+          if (( ${#files[@]} == 0 )); then
+            echo 'No graph evidence was created; the preceding gate remains authoritative.'
+            exit 0
+          fi
+          tar -czf paired-move-evidence.tgz -- "${files[@]}"
+      - name: Retain paired Move gate evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: soulidity-fast-path-bench-${{ github.run_id }}
-          path: docs/benchmarks/
+          name: paired-move-gates-${{ github.run_id }}
+          path: ${{ runner.temp }}/paired-move-evidence.tgz
+          if-no-files-found: warn
           retention-days: 30

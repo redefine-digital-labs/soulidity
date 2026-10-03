@@ -335,7 +335,7 @@ export default function AddSoulsPage() {
 
           {/* Draft auto-save notice */}
           <p className="text-center text-xs text-muted/60">
-            Draft auto-saved · You can exit and resume from My Souls → Collections → Drafts
+            Check the local draft save status above before leaving. This device's draft is separate from saved launch transactions and cross-device recovery.
           </p>
         </PageContainer>
       </div>

@@ -1,6 +1,7 @@
 module soulidity::content;
 
 use std::string::{Self as string, String};
+use std::{bcs, hash};
 use sui::clock::Clock;
 use sui::dynamic_object_field as dof;
 use sui::event;
@@ -36,6 +37,13 @@ const EPublicReadModeRequiresPublicPolicy: u64 = 26;
 const EInitialSoulDocMissing: u64 = 27;
 const EInitialMemoryMissing: u64 = 28;
 const EOwnerReadModeRequired: u64 = 29;
+const EExpectedVersionMismatch: u64 = 30;
+const EEncryptedEnvelopeSize: u64 = 31;
+const EUploadRecoveryIdLength: u64 = 32;
+const EUploadRecoveryIdDomain: u64 = 33;
+const EUploadRecoveryAuthor: u64 = 34;
+const EExpectedOwnershipEpochMismatch: u64 = 35;
+const EExpectedActiveBindingMismatch: u64 = 36;
 
 const DOCUMENT_ID_VERSION: u8 = 1;
 const DOCUMENT_ID_NONCE_BYTES: u64 = 16;
@@ -45,6 +53,7 @@ const KIND_BYTES: u64 = 4; // u32 big-endian
 const VERSION_INDEX_BYTES: u64 = 8; // u64 big-endian
 const CONTENT_NAME_MAX_LEN: u64 = 32;
 const VERSION: u64 = 1;
+const ENCRYPTED_ENVELOPE_MAX_BYTES: u64 = 65_536;
 
 const DOWNLOAD_POLICY_PUBLIC: u8 = 0;
 const DOWNLOAD_POLICY_OWNER_ONLY: u8 = 1;
@@ -68,6 +77,15 @@ public struct ContentBlobKey has copy, drop, store {
     kind: u32,
     name: String,
     version_index: u64,
+}
+
+/// Exact BCS preimage shared with the browser content envelope codec. No caller
+/// supplies a configuration key, so a grantee can write only this new version.
+public struct ContentEnvelopeKeyV1 has drop {
+    content: ID,
+    kind: u32,
+    name: String,
+    version: u64,
 }
 
 // ── Slot / version metadata ───────────────────────────────────────────
@@ -361,11 +379,42 @@ public fun assert_version_not_active(
     assert!(!is_version_active(self, kind, name, version_index), EActiveVersionDeleted);
 }
 
+/// A signed PTB precondition only. This neither grants write authority nor
+/// mutates the roots; the following business call still checks owner/grant rights.
+public fun assert_mutation_scope(
+    content: &SoulContent,
+    state: &SoulState,
+    expected_ownership_epoch: u64,
+) {
+    assert_content_matches_state(content, state);
+    assert!(soul::ownership_epoch(state) == expected_ownership_epoch, EExpectedOwnershipEpochMismatch);
+}
+
+/// Compare the observed binding in the same transaction as its mutation.
+/// Slot identity and policy never change, so its name and index identify it.
+public fun assert_active_binding(
+    content: &SoulContent,
+    kind: u32,
+    expected_name: Option<String>,
+    expected_version_index: Option<u64>,
+) {
+    assert!(expected_name.is_some() == expected_version_index.is_some(), EExpectedActiveBindingMismatch);
+    let current = active_binding(content, kind);
+    assert!(current.is_some() == expected_name.is_some(), EExpectedActiveBindingMismatch);
+    if (current.is_some()) {
+        let binding = current.borrow();
+        assert!(binding.name == *expected_name.borrow()
+            && binding.version_index == *expected_version_index.borrow(), EExpectedActiveBindingMismatch);
+    };
+}
+
 // ── Lifecycle: create / share ─────────────────────────────────────────
 
-public(package) fun create(soul_id: ID, ctx: &mut TxContext): SoulContent {
+public(package) fun create_derived<K: copy + drop + store>(
+    soul_id: ID, parent: &mut UID, key: K, ctx: &mut TxContext,
+): SoulContent {
     let content = SoulContent {
-        id: object::new(ctx),
+        id: sui::derived_object::claim(parent, key),
         version: VERSION,
         soul_id,
         items: table::new(ctx),
@@ -379,6 +428,16 @@ public(package) fun create(soul_id: ID, ctx: &mut TxContext): SoulContent {
     content
 }
 
+#[test_only]
+public(package) fun create(soul_id: ID, ctx: &mut TxContext): SoulContent {
+    let content = SoulContent {
+        id: object::new(ctx), version: VERSION, soul_id,
+        items: table::new(ctx), count_by_kind: table::new(ctx), active: table::new(ctx),
+    };
+    event::emit(SoulContentCreated { content_id: object::id(&content), soul_id });
+    content
+}
+
 public(package) fun share_content(content: SoulContent) {
     transfer::share_object(content);
 }
@@ -387,19 +446,22 @@ public(package) fun share_content(content: SoulContent) {
 
 public fun append_version_as_owner(
     content: &mut SoulContent,
-    state: &SoulState,
+    state: &mut SoulState,
     registry: &KindRegistry,
     kind: u32,
     name: String,
     slot_read_mode_mask: u64,
     download_policy: u8,
+    expected_version_index: u64,
+    encrypted_envelope: vector<u8>,
     content_blob: Blob,
     clock: &Clock,
     ctx: &mut TxContext,
 ): u64 {
     soul::assert_owner(state, ctx.sender());
     assert_content_matches_state(content, state);
-    append_version_impl(
+    assert_append_envelope(content, kind, name, expected_version_index, &encrypted_envelope);
+    let version = append_version_impl(
         content,
         registry,
         kind,
@@ -409,20 +471,24 @@ public fun append_version_as_owner(
         content_blob,
         clock,
         true,
-    )
+    );
+    persist_append_envelope(content, state, kind, name, version, encrypted_envelope, ctx.sender());
+    version
 }
 
 // ── Append (granted agent) ────────────────────────────────────────────
 
 public fun append_version_as_granted_agent(
     content: &mut SoulContent,
-    state: &SoulState,
+    state: &mut SoulState,
     registry: &KindRegistry,
     soul_grant: &SoulGrant,
     kind: u32,
     name: String,
     slot_read_mode_mask: u64,
     download_policy: u8,
+    expected_version_index: u64,
+    encrypted_envelope: vector<u8>,
     content_blob: Blob,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -431,7 +497,8 @@ public fun append_version_as_granted_agent(
     let descriptor = kind_registry::borrow_descriptor(registry, kind);
     let scope_mask = kind_registry::descriptor_default_grant_scope_mask(descriptor);
     grant::assert_active_with_scope(state, soul_grant, scope_mask, clock, ctx);
-    append_version_impl(
+    assert_append_envelope(content, kind, name, expected_version_index, &encrypted_envelope);
+    let version = append_version_impl(
         content,
         registry,
         kind,
@@ -441,7 +508,34 @@ public fun append_version_as_granted_agent(
         content_blob,
         clock,
         true,
-    )
+    );
+    persist_append_envelope(content, state, kind, name, version, encrypted_envelope, ctx.sender());
+    version
+}
+
+fun assert_append_envelope(content: &SoulContent, kind: u32, name: String, expected: u64, envelope: &vector<u8>) {
+    assert!(version_count(content, kind, name) == expected, EExpectedVersionMismatch);
+    assert!(!envelope.is_empty() && envelope.length() <= ENCRYPTED_ENVELOPE_MAX_BYTES, EEncryptedEnvelopeSize);
+}
+
+public(package) fun envelope_config_key(content: ID, kind: u32, name: String, version: u64): String {
+    let digest = hash::sha2_256(bcs::to_bytes(&ContentEnvelopeKeyV1 { content, kind, name, version }));
+    let alphabet = b"0123456789abcdef";
+    let mut bytes = b"content_seal_envelope_v1:";
+    digest.do!(|byte| {
+        bytes.push_back(alphabet[(byte >> 4) as u64]);
+        bytes.push_back(alphabet[(byte & 15) as u64]);
+    });
+    string::utf8(bytes)
+}
+
+/// This bounded encrypted value is opaque to Move. Exact JSON/Seal identity and
+/// encryption validity remain mandatory reader checks; no plaintext is decoded.
+fun persist_append_envelope(content: &SoulContent, state: &mut SoulState, kind: u32, name: String,
+    version: u64, envelope: vector<u8>, updater: address) {
+    let key = envelope_config_key(object::id(content), kind, name, version);
+    soul::upsert_state_config(state, key, envelope);
+    soul::emit_state_config_upserted(state, updater, key);
 }
 
 // ── Initial mint append (package-only) ────────────────────────────────
@@ -457,14 +551,20 @@ public fun append_version_as_granted_agent(
 /// and `(KIND_MEMORY, "default")`. Aborts on any other (kind, name).
 public(package) fun append_initial_invariant_version(
     content: &mut SoulContent,
+    state: &mut SoulState,
     registry: &KindRegistry,
     kind: u32,
     name: String,
     slot_read_mode_mask: u64,
     download_policy: u8,
     content_blob: Blob,
+    expected_version_index: u64,
+    encrypted_envelope: vector<u8>,
     clock: &Clock,
+    ctx: &TxContext,
 ): u64 {
+    assert_content_matches_state(content, state);
+    assert_append_envelope(content, kind, name, expected_version_index, &encrypted_envelope);
     if (kind == KIND_SOUL_DOC_ID) {
         assert!(name == soul_doc_name(), ESoulDocNameMismatch);
         // soul.md is forever immutable: at most v0 allowed.
@@ -480,7 +580,7 @@ public(package) fun append_initial_invariant_version(
     // SOUL_DOC / MEMORY slots to owner-only or any other subset.
     let invariant_read_mode = kind_registry::read_owner() | kind_registry::read_grant();
     assert!(slot_read_mode_mask == invariant_read_mode, EReadModeNotAllowed);
-    append_version_impl(
+    let version = append_version_impl(
         content,
         registry,
         kind,
@@ -490,7 +590,9 @@ public(package) fun append_initial_invariant_version(
         content_blob,
         clock,
         false,
-    )
+    );
+    persist_append_envelope(content, state, kind, name, version, encrypted_envelope, ctx.sender());
+    version
 }
 
 /// Append-time entry for non-invariant kinds. Enforces `OP_APPEND` so
@@ -498,14 +600,20 @@ public(package) fun append_initial_invariant_version(
 /// initial content during mint.
 public(package) fun append_initial_user_version(
     content: &mut SoulContent,
+    state: &mut SoulState,
     registry: &KindRegistry,
     kind: u32,
     name: String,
     slot_read_mode_mask: u64,
     download_policy: u8,
     content_blob: Blob,
+    expected_version_index: u64,
+    encrypted_envelope: vector<u8>,
     clock: &Clock,
+    ctx: &TxContext,
 ): u64 {
+    assert_content_matches_state(content, state);
+    assert_append_envelope(content, kind, name, expected_version_index, &encrypted_envelope);
     // SOUL_DOC / MEMORY must come through `append_initial_invariant_version`.
     assert!(kind != KIND_SOUL_DOC_ID, ESoulDocNameMismatch);
     assert!(kind != KIND_MEMORY_ID, EMemoryNameMismatch);
@@ -514,7 +622,7 @@ public(package) fun append_initial_user_version(
         kind_registry::descriptor_op_mask(descriptor) & kind_registry::op_append() != 0,
         EInitialKindOpNotAllowed,
     );
-    append_version_impl(
+    let version = append_version_impl(
         content,
         registry,
         kind,
@@ -524,7 +632,9 @@ public(package) fun append_initial_user_version(
         content_blob,
         clock,
         false,
-    )
+    );
+    persist_append_envelope(content, state, kind, name, version, encrypted_envelope, ctx.sender());
+    version
 }
 
 fun append_version_impl(
@@ -908,6 +1018,21 @@ public fun seal_approve_content_public(
     assert!(!slot.purged, EVersionPurged);
     assert!(slot.read_mode_mask & kind_registry::read_public() != 0, EReadModeNotAllowed);
     assert!(slot.seal_encrypted, EPublicSlotNoSeal);
+}
+
+/// Author-only recovery for an uploaded, not-yet-appended ciphertext. This
+/// separate fixed-length namespace cannot approve any existing content ID.
+/// content ID / operation hash / nonce are opaque bindings, not state authority.
+public fun seal_approve_upload_recovery(id: vector<u8>, ctx: &TxContext) {
+    let domain = b"soul-content-upload-recovery:";
+    let offset = domain.length();
+    assert!(id.length() == offset + 1 + 32 + 32 + 32 + 16, EUploadRecoveryIdLength);
+    let mut i = 0;
+    while (i < offset) { assert!(id[i] == domain[i], EUploadRecoveryIdDomain); i = i + 1; };
+    assert!(id[offset] == 1, EUploadRecoveryIdDomain);
+    let author = bcs::to_bytes(&ctx.sender());
+    i = 0;
+    while (i < 32) { assert!(id[offset + 1 + i] == author[i], EUploadRecoveryAuthor); i = i + 1; };
 }
 
 // ── Mint-time invariant: SOUL_DOC v0 + MEMORY v0 must exist ──────────

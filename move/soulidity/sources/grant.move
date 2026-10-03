@@ -2,6 +2,7 @@ module soulidity::grant;
 
 use sui::clock::Clock;
 use sui::event;
+use std::bcs;
 use soulidity::soul::{Self as soul, SoulState};
 
 const EInvalidGrantee: u64 = 1;
@@ -20,6 +21,7 @@ const EGrantInvalidScopeMask: u64 = 13;
 const EGrantCapacityTooLow: u64 = 14;
 const EGrantCapacityTooHigh: u64 = 15;
 const EGrantStillActive: u64 = 16;
+const EMutationSnapshotMismatch: u64 = 17;
 
 const MAX_GRANT_CAPACITY: u64 = 10_000;
 const VERSION: u64 = 1;
@@ -129,6 +131,53 @@ public fun scope_assets(): u64 {
 
 public fun has_scope(self: &SoulGrant, required_scope_mask: u64): bool {
     has_required_scope(self.scope_mask, required_scope_mask)
+}
+
+/// Read-only compare-and-assert for a wallet-approved mutation. A missing
+/// snapshot means no physical row, not an expired or old-epoch row.
+public fun assert_mutation_snapshot(
+    state: &SoulState,
+    expected_soul_id: ID,
+    grantee: address,
+    expected_epoch: u64,
+    expected_capacity: u64,
+    expected_count: u64,
+    expected_slot: Option<vector<u8>>,
+    expected_live: bool,
+    clock: &Clock,
+) {
+    assert!(soul::soul_id(state) == expected_soul_id, EMutationSnapshotMismatch);
+    assert!(soul::ownership_epoch(state) == expected_epoch, EMutationSnapshotMismatch);
+    assert!(soul::grant_capacity(state) == expected_capacity, EMutationSnapshotMismatch);
+    assert!(soul::active_grant_count(state) == expected_count, EMutationSnapshotMismatch);
+    let actual_slot = if (soul::active_grant_has_grantee_row(state, grantee)) {
+        option::some(bcs::to_bytes(soul::active_grant_slot_for_grantee(state, grantee)))
+    } else { option::none() };
+    assert!(actual_slot == expected_slot, EMutationSnapshotMismatch);
+    assert!(slot_is_live(state, grantee, clock) == expected_live, EMutationSnapshotMismatch);
+}
+
+/// Append may increase capacity, but must not overwrite a newer owner's choice.
+public fun assert_capacity(state: &SoulState, expected_capacity: u64) {
+    assert!(soul::grant_capacity(state) == expected_capacity, EMutationSnapshotMismatch);
+}
+
+/// Automatic append grants may add scopes, never narrow a concurrently widened
+/// live grant. Run all guards before any capacity/grant writes in the PTB.
+public fun assert_preserves_active_scopes(
+    state: &SoulState, grantee: address, desired_scope_mask: u64, clock: &Clock,
+) {
+    assert_valid_scope_mask(desired_scope_mask);
+    if (slot_is_live(state, grantee, clock)) {
+        let old_mask = soul::active_grant_slot_scope_mask(soul::active_grant_slot_for_grantee(state, grantee));
+        assert!(has_required_scope(desired_scope_mask, old_mask), EMutationSnapshotMismatch);
+    };
+}
+
+fun slot_is_live(state: &SoulState, grantee: address, clock: &Clock): bool {
+    if (!soul::active_grant_contains_grantee(state, grantee)) { return false };
+    let expiry = soul::active_grant_slot_expires_at_ms(soul::active_grant_slot_for_grantee(state, grantee));
+    expiry.is_none() || *expiry.borrow() > clock.timestamp_ms()
 }
 
 public fun issue(
@@ -308,6 +357,8 @@ public fun cleanup_inactive_grants(
     grantees.destroy_empty();
 }
 
+// Clock remains in the public operation ABI; capacity updates have no time gate.
+#[allow(lint(unused_object_with_fields))]
 public fun set_grant_capacity(
     state: &mut SoulState,
     capacity: u64,

@@ -7,6 +7,8 @@ import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { useCreateSoul } from '@/components/providers/create-soul-provider'
 import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import { usePublish } from '@/lib/hooks/use-publish'
+import { Button } from '@/components/ui/button'
 
 const steps = [
   { label: 'Basic Info' },
@@ -24,8 +26,10 @@ function truncateId(id: string) {
 export default function CreateSuccessPage() {
   const router = useRouter()
   const ctx = useCreateSoul()
-  const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
-  const networkLabel = network === 'mainnet' ? 'Mainnet' : network.charAt(0).toUpperCase() + network.slice(1)
+  // Completion archival only re-proves history. It never requests a signature.
+  const completion = usePublish(async () => false)
+  const network = 'mainnet'
+  const networkLabel = 'Mainnet'
 
   // Guard: redirect if no publish result (wait for sessionStorage hydration first)
   useEffect(() => {
@@ -165,6 +169,17 @@ export default function CreateSuccessPage() {
         )}
 
         {/* Ghost link */}
+        <div className="mb-5 space-y-2">
+          <Button variant="outline" disabled={completion.loadingRecovery || completion.status === 'building' || !completion.suiWallet}
+            onClick={async () => {
+              if (await completion.startAnother(txDigest, ctx.publishResult!.authoringCompletionKey)) {
+                ctx.reset(); router.replace('/create')
+              }
+            }}>
+            {completion.status === 'building' ? 'Retaining completion proof…' : 'Create Another Soul'}
+          </Button>
+          {completion.error && <p role="alert" className="text-sm text-danger">{completion.error}</p>}
+        </div>
         <Link
           href="/market"
           className="text-sm text-muted underline underline-offset-4 transition hover:text-action-label"

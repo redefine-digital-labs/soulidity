@@ -3,7 +3,7 @@ import Link from 'next/link'
 
 const pageTitle = 'SoulGrant — Authorization API'
 const pageDescription =
-  'Issue, supersede, revoke, and expire SoulGrants. Scope bitmask, ownership-epoch invalidation, grant-merge-masks pre-check, and auto-grant on append.'
+  'Issue, supersede, revoke, and expire SoulGrants. Scope bitmask, ownership-epoch invalidation, frozen chain snapshots, exact-byte recovery, and auto-grant on append.'
 
 export const metadata: Metadata = {
   title: pageTitle,
@@ -89,7 +89,7 @@ export default function SoulGrantApiPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Supersede semantics — full replacement, not union</h2>
         <p className="text-sm text-muted">
-          Each Soul has one grant slot per grantee. Issuing a second grant to the same grantee <strong>fully replaces</strong> the previous <code>scope_mask</code> — Soulidity does <em>not</em> union the two masks. If you intend to extend an existing grant, you must compute the merged mask yourself first.
+          Each Soul has one grant slot per grantee. Issuing a second grant to the same grantee <strong>fully replaces</strong> the previous <code>scope_mask</code> — the low-level Move operation does <em>not</em> union the two masks. The browser grant workflow reads and freezes the live merged mask before issuing; direct SDK callers must do the same when extending access.
         </p>
         <ul className="text-sm text-muted space-y-2">
           <li><strong className="text-foreground">Issue.</strong> Owner calls <code>grant::issue_to_grantee</code> with <code>SoulState</code>, grantee, <code>scope_mask</code>, optional <code>expires_at_ms</code>. Emits <code>SoulGrantIssued</code>.</li>
@@ -102,55 +102,25 @@ export default function SoulGrantApiPage() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">grant-merge-masks pre-check</h2>
+        <h2 className="text-lg font-semibold">Browser grant management</h2>
         <p className="text-sm text-muted">
-          Because supersede replaces (not unions) scope, you must look up the agent&apos;s current mask before issuing a fresh grant if your intent is to extend access. The pre-check endpoint computes <code>existing | added</code> in one round-trip and returns the on-chain object to supersede.
+          The original Soul Grants form reads the current owner, epoch, physical grant slot, chain Clock, active count and capacity directly. New scopes are merged only with a live same-epoch grant; expired or old-owner scopes are not resurrected. A new grantee can raise capacity within the contract limit of 10,000.
         </p>
-        <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground/90">
-          <code>{`POST /api/souls/grant-merge-masks
-{
-  "items": [
-    {
-      "soulOnChainId": "0x...",
-      "granteeAddress": "0x...",
-      "addedScopeMask": 4    // SCOPE_SKILLS
-    }
-  ]
-}
-→ {
-  "items": [
-    {
-      "soulOnChainId": "0x...",
-      "granteeAddress": "0x...",
-      "addedScopeMask": 4,
-      "existingScopeMask": 2,   // pre-existing SCOPE_MEMORY
-      "mergedScopeMask": 6,     // memory | skills
-      "isNewGrantee": false,
-      "currentCapacity": 16,
-      "activeGrantCount": 3,
-      "requiredCapacity": 16
-    }
-  ]
-}`}</code>
-        </pre>
-        <p className="text-xs text-muted">
-          Use the returned <code>mergedScopeMask</code> and capacity fields to build the grant PTB with <code>buildIssueGrantTx</code> or <code>buildBatchIssueGrantsTx</code>. The SDK does not run this pre-check implicitly, so callers must invoke the endpoint before signing when they want to preserve existing scopes.
+        <p className="text-sm text-muted">
+          Readonly transaction checks bind those observations before any capacity or grant write. A concurrent scope, capacity or ownership change rejects the stale attempt. These checks do not grant permissions: the existing owner-only Move operations still enforce authorization. The form supports optional expiry, whole-grant revocation and explicit per-scope revocation.
+        </p>
+        <p className="text-sm text-muted">
+          The account GrantModal can add a grantee without revoking anyone else. Replacing a selected grantee is an explicit two-transaction action; if the second action fails, the old grant remains revoked and recovery is shown.
         </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Auto-grant on append</h2>
         <p className="text-sm text-muted">
-          When the Soul owner uploads a <em>non-public</em> version of any kind, Soulidity automatically issues scope-matched grants to every active agent on the owner&apos;s account that doesn&apos;t already cover the required scope. The merge is done with the same <code>grant-merge-masks</code> pre-check so existing scopes are preserved.
+          Private account discovery suggests addresses for the uploaded kind&apos;s required scope. The append plan checks those suggestions against raw live grants, merges current scopes, and places scope-preservation and capacity checks before the atomic content/grant writes. An unknown upload or transaction must be recovered before another attempt.
         </p>
-        <ol className="text-sm text-muted space-y-1.5 ml-5 list-decimal">
-          <li>Read the kind&apos;s <code>default_grant_scope_mask</code>.</li>
-          <li>For each active agent on the account: skip if their existing scope already covers it.</li>
-          <li>Compute <code>merged = existing | needed</code> and submit a supersede TX.</li>
-          <li>On failure (deploy window race, RPC flake, wallet timeout), the Soul detail page surfaces a <span className="text-amber-300">yellow banner</span> enumerating missing scopes; the owner clicks <em>Retry</em>.</li>
-        </ol>
         <p className="text-xs text-muted">
-          Public slots are not auto-granted because they require no grant to read. See <Link href="/resources/agent-integration" className="text-action-label hover:text-foreground transition">Agent Integration</Link> for the full rules.
+          Private wallet-to-Agent membership and pairing are still a separate cutover dependency. A failed discovery service is visible, not an empty agent list or permission to publish private membership. The remaining Pet workflow still has its own server pre-check; it is not used by the Soul grant form.
         </p>
       </div>
 
@@ -174,39 +144,22 @@ export default function SoulGrantApiPage() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">REST API endpoints</h2>
-        <ul className="text-sm text-muted space-y-3">
-          <li>
-            <div className="font-mono text-xs text-foreground mb-1">POST /api/souls/[id]/grant</div>
-            Mirror a grant TX after it succeeds on-chain. Body: <code>txDigest</code>, <code>action</code> (<code>&quot;issue&quot;</code> | <code>&quot;revoke&quot;</code> | <code>&quot;revoke-scope&quot;</code>), and <code>granteeAddress</code> for revoke / revoke-scope. Idempotent on <code>txDigest</code>.
-          </li>
-          <li>
-            <div className="font-mono text-xs text-foreground mb-1">POST /api/souls/[id]/grant-capacity</div>
-            Mirror a grant-capacity adjustment TX (raise the <code>SoulState.grant_capacity</code> ceiling).
-          </li>
-          <li>
-            <div className="font-mono text-xs text-foreground mb-1">POST /api/souls/grant-merge-masks</div>
-            Pre-check for <code>existing | added</code> across <code>(soulOnChainId, granteeAddress)</code> pairs. Returns merged masks and capacity planning fields.
-          </li>
-          <li>
-            <div className="font-mono text-xs text-foreground mb-1">GET /api/souls/[id]</div>
-            Soul detail includes <code>activeGrantCount</code> from the DB mirror. For live on-chain grant state use the SDK <code>queries.ts</code> helpers.
-          </li>
-        </ul>
+        <h2 className="text-lg font-semibold">Direct transactions and recovery</h2>
+        <p className="text-sm text-muted">The browser persists the exact prepared transaction before requesting a signature, then persists and verifies the signed bytes before broadcast. Access changes &amp; recovery provides read-only original-result checks, explicit same-byte Resume, pre-sign cancellation and public receipt export. A later ownership or grant change does not erase the original transaction receipt.</p>
+        <p className="text-xs text-muted">SDK integrations must compose the applicable snapshot checks and existing grant builders against one explicit deployment, use exact u64 values, and preserve unresolved transaction evidence. The removed human grant and capacity mirror routes are not a synchronization step.</p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Access resolution flow</h2>
         <p className="text-sm text-muted">
-          When a viewer calls <code>GET /api/souls/[id]/content/[kind]/[name]/[versionIndex]/access</code>, the server runs <code>resolveContentAccessPayload</code> for that exact slot. The legacy <code>/api/souls/[id]/access</code> route resolves only the canonical Soul document at <code>(KIND_SOUL_DOC, &quot;soul&quot;, 0)</code>.
+          The original content Open/Read controls now resolve the exact slot directly from verified chain data. They do not use a human access endpoint or SQL permission mirror. The connected wallet authorizes an explicit Seal personal-message session.
         </p>
         <ol className="text-sm text-muted space-y-1 list-decimal ml-5">
           <li>Fetch live <code>SoulState</code> from chain to get the current owner and the active grant table.</li>
-          <li>If the viewer is the owner → return <code>seal_approve_content_owner</code> approval params.</li>
-          <li>Else, if the slot&apos;s <code>read_mode_mask</code> permits <code>READ_PUBLIC</code> and the slot&apos;s <code>download_policy</code> is public → return <code>seal_approve_content_public</code> params.</li>
-          <li>Else, look up a SoulGrant whose <code>scope_mask</code> includes the slot&apos;s cached <code>grant_scope_mask</code> → return <code>seal_approve_content_granted_agent</code> params (with the grant object ID).</li>
-          <li>Else, look up an active <code>KindPaidEntry</code> for the viewer satisfying the same scope → return <code>seal_approve_content_paid_access</code> params.</li>
-          <li>The client constructs a Seal session, builds the approval TX, and decrypts the blob client-side.</li>
+          <li>Check the slot&apos;s matching read-mode bit for each channel: owner, scoped grant, paid, then public.</li>
+          <li>Grant and paid access must match the current ownership epoch and remain unexpired against the chain Clock; a grant also needs its matching live slot and object.</li>
+          <li>Build the exact <code>seal_approve_content_*</code> policy for the selected channel. Current public slots are also encrypted, not a plaintext fallback.</li>
+          <li>Verify the per-version envelope and Blob, request explicit Seal approval, decrypt and verify the content hash, then recheck live authority before releasing bytes.</li>
         </ol>
       </div>
 

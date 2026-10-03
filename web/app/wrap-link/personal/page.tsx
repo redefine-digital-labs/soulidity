@@ -1,5 +1,7 @@
 'use client'
 
+import { AuthoringRecoveryImport } from '@/components/souls/authoring-recovery-import'
+
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -13,7 +15,7 @@ import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
 import { useKioskNfts, type KioskNft } from '@/lib/hooks/use-kiosk-nfts'
-import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
+import { useWrapPublish } from '@/lib/hooks/use-wrap-publish'
 
 function NftCard({ nft, selected, onSelect }: { nft: KioskNft; selected: boolean; onSelect: () => void }) {
   return (
@@ -45,7 +47,10 @@ function NftCard({ nft, selected, onSelect }: { nft: KioskNft; selected: boolean
 export default function SelectNftPage() {
   const router = useRouter()
   const ctx = useWrap()
-  const { suiWallet } = useWalletSign()
+  const { suiWallet, recovery, loadingRecovery, error: recoveryError } = useWrapPublish(async () => false)
+  const savedKind = recovery?.manifest.request.mints[0]?.kind
+  const recoveryHref = recovery?.manifest.request.collection ? '/collections/create/gas'
+    : savedKind === 'JOINED' ? '/wrap-link/personal/preview' : savedKind === 'IMPORTED' ? '/import/gas' : '/create/gas'
   const { data: nfts, isLoading } = useKioskNfts(suiWallet?.address)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -69,6 +74,8 @@ export default function SelectNftPage() {
   }, [nfts, search])
 
   function handleNext() {
+    if (loadingRecovery || recoveryError) return
+    if (recovery) { router.push(recoveryHref); return }
     if (!ctx.selectedNft) {
       setError('Please select an NFT to wrap.')
       return
@@ -82,6 +89,7 @@ export default function SelectNftPage() {
       <FlowBar steps={wrapSteps} currentStep={0} />
       <div className="relative z-10 border-t border-purple/20">
         <PageContainer size="sm" className="space-y-6 pt-7 sm:pt-9">
+          <AuthoringRecoveryImport />
           <SectionHeader
             label="Personal Join"
             title="Select Your NFT"
@@ -90,6 +98,17 @@ export default function SelectNftPage() {
           />
 
           {/* NFT Platform tabs */}
+          {loadingRecovery ? <p role="status">Checking for saved creation…</p> : recoveryError ? (
+            <p role="alert" className="text-danger">{recoveryError}</p>
+          ) : recovery && (
+            <section className="rounded-xl border border-purple/40 bg-card2/55 p-4 space-y-2" aria-label="Saved creation">
+              <h2 className="font-semibold">{savedKind === 'JOINED' ? 'Your saved wrap is ready to resume' : 'Another saved creation needs attention'}</h2>
+              <p className="text-sm text-muted">Open the saved operation to check its result or continue. You do not need to select its NFT or upload the files again.</p>
+              <Link href={recoveryHref} className={buttonStyles({ variant: 'primary' })}>
+                {savedKind === 'JOINED' ? 'Open Saved Wrap' : 'Open Saved Creation'}
+              </Link>
+            </section>
+          )}
           <div className="flex gap-2">
             <Tag color="purple">Sui (Connected)</Tag>
             <Tag color="muted">Ethereum</Tag>
@@ -171,6 +190,7 @@ export default function SelectNftPage() {
             <button
               type="button"
               onClick={handleNext}
+              disabled={loadingRecovery || Boolean(recoveryError)}
               className={buttonStyles({
                 variant: 'landing',
                 size: 'lg',

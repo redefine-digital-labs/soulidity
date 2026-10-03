@@ -6,58 +6,12 @@ import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@soulidity/sdk'
-import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 
 const PUBLISH_RESULT_KEY = 'soul-publish-result'
-const MINT_RECOVERY_KEY = 'soul-mint-recovery'
 const COLLECTION_BIND_TARGET_KEY = 'soul-create-collection-bind-target'
 
-// ── Upload result shapes ──
-
-interface PublicUploadResult {
-  blobId: string
-  blobObjectId: string
-  contentHash: string
-  blobUrl: string
-}
-
-interface EncryptedUploadResult {
-  blobId: string
-  blobObjectId: string
-  contentHash: string
-  blobUrl: string
-  sealMaterial: PendingSealMaterial
-  skillName?: string | null
-}
-
-export interface UploadResults {
-  ownerAddress?: string
-  coverImage?: PublicUploadResult
-  charFile?: EncryptedUploadResult
-  memorySeed?: EncryptedUploadResult
-  skillsFile?: EncryptedUploadResult
-}
-
-export function selectReusableUploadResults(
-  existing: UploadResults | null,
-  ownerAddress: string,
-): UploadResults {
-  if (!existing) {
-    return { ownerAddress }
-  }
-
-  const canReuseTxBoundUploads = existing.ownerAddress === ownerAddress
-
-  return {
-    ownerAddress,
-    coverImage: existing.coverImage,
-    charFile: canReuseTxBoundUploads ? existing.charFile : undefined,
-    memorySeed: canReuseTxBoundUploads ? existing.memorySeed : undefined,
-    skillsFile: canReuseTxBoundUploads ? existing.skillsFile : undefined,
-  }
-}
-
 export interface PublishResult {
+  authoringCompletionKey?: string
   txDigest: string
   soulOnChainId: string
   stateOnChainId: string
@@ -156,8 +110,6 @@ interface CreateSoulContextValue {
   setSkillsFile: (file: File | null) => void
 
   // Upload results (populated during step 4)
-  uploadResults: UploadResults | null
-  setUploadResults: (results: UploadResults) => void
 
   // Publish results (populated after successful TX)
   publishResult: PublishResult | null
@@ -218,26 +170,18 @@ function CreateSoulProviderInner({
   const [charFile, setCharFileRaw] = useState<File | null>(null)
   const [skillsFile, setSkillsFileRaw] = useState<File | null>(null)
 
-  // Step 4 results
-  const [uploadResults, setUploadResultsRaw] = useState<UploadResults | null>(null)
-  const setUploadResults = useCallback((results: UploadResults) => {
-    setUploadResultsRaw(results)
-  }, [])
-
-  // Wrapped input setters — invalidate the corresponding cached upload slot on change
+  // Source files stay in this draft; durable encrypted upload recovery belongs
+  // to the authoring controller, never to an in-memory Seal-material cache.
   const setCharFile = useCallback((file: File | null) => {
     setCharFileRaw(file)
-    setUploadResultsRaw(prev => prev ? { ...prev, charFile: undefined } : prev)
   }, [])
 
   const setSkillsFile = useCallback((file: File | null) => {
     setSkillsFileRaw(file)
-    setUploadResultsRaw(prev => prev ? { ...prev, skillsFile: undefined } : prev)
   }, [])
 
   const setMemoryFile = useCallback((file: File | null) => {
     setMemoryFileRaw(file)
-    setUploadResultsRaw(prev => prev ? { ...prev, memorySeed: undefined } : prev)
   }, [])
   const [publishResult, setPublishResultRaw] = useState<PublishResult | null>(null)
   const [collectionBindTarget, setCollectionBindTargetRaw] = useState<CollectionBindTarget | null>(null)
@@ -298,7 +242,6 @@ function CreateSoulProviderInner({
       setCoverImagePreviewUrl(null)
     }
     setCoverImageFileRaw(file)
-    setUploadResultsRaw(prev => prev ? { ...prev, coverImage: undefined } : prev)
   }, [])
 
   useEffect(() => {
@@ -318,14 +261,12 @@ function CreateSoulProviderInner({
     setMemoryFileRaw(null)
     setCharFileRaw(null)
     setSkillsFileRaw(null)
-    setUploadResultsRaw(null)
     setPublishResultRaw(null)
     setCollectionBindTargetRaw(null)
     setListOnPublish(false)
     setListingPriceAtomic(null)
     try {
       sessionStorage.removeItem(PUBLISH_RESULT_KEY)
-      sessionStorage.removeItem(MINT_RECOVERY_KEY)
       sessionStorage.removeItem(COLLECTION_BIND_TARGET_KEY)
     } catch {}
   }, [setCoverImage])
@@ -340,7 +281,6 @@ function CreateSoulProviderInner({
       memoryFile, setMemoryFile,
       charFile, setCharFile,
       skillsFile, setSkillsFile,
-      uploadResults, setUploadResults,
       publishResult, setPublishResult,
       collectionBindTarget, setCollectionBindTarget,
       listOnPublish, setListOnPublish,

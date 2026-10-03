@@ -25,27 +25,21 @@ export interface SoulidityDeployment {
    * those types and remains stable across later upgrades.
    */
   marketConfigV2PackageId?: string
-  /** Defining package for v6-only secondary-market config/admin/listing types. */
-  marketConfigV6PackageId?: string
   /** @deprecated Use `callablePackageId` or `originalPackageId` explicitly. */
   packageId: string
-  marketConfigId: string
+  /** Historical configuration only; a fresh release does not create it.
+   * Never alias the fresh V2 ID into this field. */
+  marketConfigId?: string
   /**
-   * Unified successor config created by `market::retire_legacy_market`.
-   *
-   * It is deliberately absent until the irreversible retirement transaction
-   * succeeds. All market transaction builders fail closed when it is missing.
+   * Fresh configuration created directly by market initialization, shared by
+   * primary and secondary flows. Builders fail closed when it is missing.
    */
   marketConfigV2Id?: string
   /**
-   * V2 cap UID created by retirement. In v6 it is wrapped inside
-   * `MarketAdminCapV6` and is not a top-level transaction input.
+   * Fresh address-owned admin capability bound to marketConfigV2Id.
+   * It is not wrapped in a predecessor/retirement capability.
    */
   marketAdminCapV2Id?: string
-  /** Shared v6-only secondary-market policy object. */
-  marketConfigV6Id?: string
-  /** Address-owned vault that wraps the otherwise-dangerous V2 admin cap. */
-  marketAdminCapV6Id?: string
   kioskRegistryId: string
   kindRegistryId?: string
   soulTransferPolicyId: string
@@ -166,24 +160,5 @@ export function getSoulidityMarketConfigV2PackageId(
       || deployment.packageId,
     network,
     'marketConfigV2PackageId',
-  )
-}
-
-export function getSoulidityMarketConfigV6PackageId(
-  network = getConfiguredSoulidityNetwork(),
-): string {
-  const deployment = getSoulidityDeployment(network)
-  if (process.env.NODE_ENV === 'production' && !deployment.marketConfigV6PackageId) {
-    throw new InvalidSoulidityPackageRoutingError(
-      network,
-      'marketConfigV6PackageId is required in production',
-    )
-  }
-  return requirePackageId(
-    deployment.marketConfigV6PackageId?.trim()
-      || deployment.callablePackageId
-      || deployment.packageId,
-    network,
-    'marketConfigV6PackageId',
   )
 }

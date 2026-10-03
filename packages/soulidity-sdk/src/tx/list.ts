@@ -16,19 +16,22 @@ export function buildListSoulTx(params: {
   priceAtomic: bigint
   collectionObjectId?: string | null
   animacraftProvenanceObjectId?: string | null
+  animacraftVersion?: number | null
 }) {
+  if (params.animacraftProvenanceObjectId != null || params.animacraftVersion != null) {
+    throw new Error('Animacraft listings require the native V8 market builder; legacy provenance is unsupported')
+  }
   if (params.priceAtomic <= 0n) {
     throw new Error('priceAtomic must be positive')
   }
 
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const isAnimacraft = Boolean(params.animacraftProvenanceObjectId)
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
   const tx = new Transaction()
 
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered_v6`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -36,60 +39,30 @@ export function buildListSoulTx(params: {
     ],
   })
 
-  let listing: ReturnType<Transaction['moveCall']>
-  if (params.animacraftProvenanceObjectId) {
-    listing = params.collectionObjectId
-      ? tx.moveCall({
-          target: `${packageId}::market::list_animacraft_soul_fixed_price_with_collection_v6`,
-          arguments: [
-            tx.object(marketConfigId),
-            tx.object(kioskRegistryId),
-            tx.object(params.animacraftProvenanceObjectId),
-            tx.object(params.collectionObjectId),
-            tx.object(params.currentKioskId),
-            tx.object(params.currentKioskCapOnChainId),
-            tx.object(params.stateObjectId),
-            tx.pure.u64(params.priceAtomic),
-          ],
-        })
-      : tx.moveCall({
-          target: `${packageId}::market::list_animacraft_soul_fixed_price_v6`,
-          arguments: [
-            tx.object(marketConfigId),
-            tx.object(kioskRegistryId),
-            tx.object(params.animacraftProvenanceObjectId),
-            tx.object(params.currentKioskId),
-            tx.object(params.currentKioskCapOnChainId),
-            tx.object(params.stateObjectId),
-            tx.pure.u64(params.priceAtomic),
-          ],
-        })
-  } else {
-    listing = params.collectionObjectId
-      ? tx.moveCall({
-          target: `${packageId}::market::list_soul_fixed_price_with_collection_v6`,
-          arguments: [
-            tx.object(marketConfigId),
-            tx.object(kioskRegistryId),
-            tx.object(params.collectionObjectId),
-            tx.object(params.currentKioskId),
-            tx.object(params.currentKioskCapOnChainId),
-            tx.object(params.stateObjectId),
-            tx.pure.u64(params.priceAtomic),
-          ],
-        })
-      : tx.moveCall({
-          target: `${packageId}::market::list_soul_fixed_price_v6`,
-          arguments: [
-            tx.object(marketConfigId),
-            tx.object(kioskRegistryId),
-            tx.object(params.currentKioskId),
-            tx.object(params.currentKioskCapOnChainId),
-            tx.object(params.stateObjectId),
-            tx.pure.u64(params.priceAtomic),
-          ],
-        })
-  }
+  const listing = params.collectionObjectId
+    ? tx.moveCall({
+        target: `${packageId}::market::list_soul_fixed_price_with_collection_v2`,
+        arguments: [
+          tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
+          tx.object(params.collectionObjectId),
+          tx.object(params.currentKioskId),
+          tx.object(params.currentKioskCapOnChainId),
+          tx.object(params.stateObjectId),
+          tx.pure.u64(params.priceAtomic),
+        ],
+      })
+    : tx.moveCall({
+        target: `${packageId}::market::list_soul_fixed_price_v2`,
+        arguments: [
+          tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
+          tx.object(params.currentKioskId),
+          tx.object(params.currentKioskCapOnChainId),
+          tx.object(params.stateObjectId),
+          tx.pure.u64(params.priceAtomic),
+        ],
+      })
 
   tx.moveCall({
     target: `${packageId}::market::finalize_soul_listing`,
@@ -105,23 +78,24 @@ export function buildListSoulTx(params: {
  * and the returned `CollectionListing` is finalized by
  * `market::finalize_collection_listing`.
  */
+export interface CollectionTransactionTarget { packageId: string; marketConfigId: string; kioskRegistryId: string }
+
 export function buildListCollectionTx(params: {
   currentKioskId: string
   currentKioskCapOnChainId: string
   collectionObjectId: string
   priceAtomic: bigint
-}) {
+}, target?: CollectionTransactionTarget, tx = new Transaction()) {
   if (params.priceAtomic <= 0n) {
     throw new Error('priceAtomic must be positive')
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')
-  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
-  const tx = new Transaction()
+  const packageId = target?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = target?.marketConfigId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const kioskRegistryId = target?.kioskRegistryId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
 
   tx.moveCall({
-    target: `${packageId}::market::ensure_personal_kiosk_registered_v6`,
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -129,7 +103,7 @@ export function buildListCollectionTx(params: {
     ],
   })
   const listing = tx.moveCall({
-    target: `${packageId}::market::list_collection_right_fixed_price_v6`,
+    target: `${packageId}::market::list_collection_right_fixed_price_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),

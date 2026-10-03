@@ -112,8 +112,8 @@ export async function POST(request: Request) {
 
   // Load every targeted Soul once, owner-check up front. `stateOnChainId`
   // is required for the on-chain fallback below (a missing mirror row must
-  // not be treated as "no grant on chain" because grants can land before
-  // `/content/sync` mirrors them — see R-001).
+  // not be treated as "no grant on chain": direct-chain writers do not
+  // populate this retained mirror — see R-001).
   const uniqueSoulIds = Array.from(new Set(parsed.map((p) => p.soulOnChainId)))
   const souls = await prisma.soulAsset.findMany({
     where: { onChainId: { in: uniqueSoulIds } },
@@ -161,8 +161,8 @@ export async function POST(request: Request) {
   )
 
   // R-001: mirror-miss chain verification. `SoulGrantRecord` is a post-TX
-  // mirror; a grant whose `/content/sync` write has not yet committed (or
-  // failed transiently, or was issued outside this UI) is on chain but
+  // mirror; a grant issued by a direct-chain writer or whose projection
+  // write failed transiently is on chain but
   // absent here. Treating that as `existingScopeMask = 0` and re-issuing
   // with the bare `addedScopeMask` makes `grant::issue` replace the slot
   // wholesale with the narrower mask, silently dropping every prior scope.

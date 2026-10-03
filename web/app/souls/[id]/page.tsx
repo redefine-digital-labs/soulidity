@@ -1,12 +1,11 @@
 'use client'
 
-import { use, useCallback, useMemo, useState } from 'react'
+import { useLayoutEffect, use, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { normalizeSuiAddress } from '@mysten/sui/utils'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tag } from '@/components/ui/tag'
 import { Button, buttonStyles } from '@/components/ui/button'
@@ -20,18 +19,18 @@ import { formatAtomicAmountForDisplay, NO_DOWNLOAD_POLICY, READ_GRANT, READ_OWNE
 import { KIND_AUDIO, KIND_MEMORY, KIND_SKILL, KIND_SOUL_DOC, KIND_SPRITE } from '@soulidity/sdk'
 import { useGrant } from '@/lib/hooks/use-grant'
 import { usePaidAccess } from '@/lib/hooks/use-paid-access'
-import { useSoulContentActions, useSoulContentSyncReplay } from '@/lib/hooks/use-soul-content-actions'
+import { useSoulContentActions } from '@/lib/hooks/use-soul-content-actions'
+import { ContentMutationRecoveryPanel } from '@/components/souls/content-mutation-recovery'
+import { SoulAccessRecoveryPanel } from '@/components/souls/soul-access-recovery'
+import { PaidAccessControls } from '@/components/souls/paid-access-controls'
+import { useSoulContentAppend } from '@/lib/hooks/use-soul-content-append'
+import { canAttemptContentRead } from '@/lib/soulidity/content-read-hint'
 import { SkillBundleFormatHint } from '@/components/souls/skill-bundle-format-hint'
-import { PhysicalWardrobeV7Panel } from '@/components/souls/physical-wardrobe-v7'
+import { NativeWardrobePanel } from '@/components/souls/native-wardrobe'
 import { parsePersonaSpriteConfig, PERSONA_SPRITE_CONFIG_ERROR, validateSelectedSkillBundle } from '@soulidity/sdk'
-import { MAX_GRANT_CAPACITY, SOUL_GRANT_SCOPE_ASSETS, SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
-import type {
-  SoulAssetDetail,
-  SoulContentVersionRecord,
-  SoulGrantRecord,
-  SoulPaidAccessEntryRecord,
-  SoulPaidAccessKindConfigRecord,
-} from '@soulidity/sdk'
+import { SOUL_GRANT_SCOPE_ASSETS, SOUL_GRANT_SCOPE_MEMORY, SOUL_GRANT_SCOPE_SEAL, SOUL_GRANT_SCOPE_SKILLS } from '@soulidity/sdk'
+import { compareChainInteger, formatChainTimestamp, type ChainSoulDetail, type ChainSoulContentVersion,
+  type ChainSoulGrant, type ChainSoulPaidEntry, type ChainSoulPaidConfig } from '@/lib/soulidity/soul-detail-model'
 import './soul-detail.css'
 
 type Role = 'owner' | 'grantee' | 'visitor'
@@ -43,40 +42,30 @@ function formatAddress(value: string | null | undefined) {
   return `${value.slice(0, 6)}…${value.slice(-4)}`
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString()
-}
-
-function formatRelative(value: string | null | undefined | number) {
-  if (value == null) return '—'
-  const then = typeof value === 'number' ? value : new Date(value).getTime()
-  if (Number.isNaN(then)) return '—'
-  const diff = Date.now() - then
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`
-  return new Date(then).toLocaleDateString()
-}
-
-function deriveRole(soul: SoulAssetDetail): Role {
+function deriveRole(soul: ChainSoulDetail): Role {
   if (soul.isOwner) return 'owner'
   if (soul.isGrantedAgent) return 'grantee'
   return 'visitor'
 }
 
-function formatProvenance(kind: SoulAssetDetail['provenanceKind']) {
+function formatProvenance(kind: ChainSoulDetail['provenanceKind']) {
   if (kind === 'imported') return 'Imported'
   if (kind === 'personal-join') return 'Personal Join'
   if (kind === 'animacraft') return 'Animacraft'
   return 'Native'
 }
 
-function activeVersions(rows: SoulContentVersionRecord[], kind: number) {
+function makerRoyaltyLabel(soul: ChainSoulDetail) {
+  // Native Maker and Soul-creator royalties are distinct. Never substitute the
+  // creator's rate or retired provenance metadata when the verified quote is absent.
+  const rate = soul.provenanceKind === 'animacraft' ? soul.sourceRoyaltyBps : soul.creatorRoyaltyBps
+  return rate == null ? 'Not verified' : `${(rate / 100).toFixed(2)}%`
+}
+
+function activeVersions(rows: ChainSoulContentVersion[], kind: number) {
   return rows
-    .filter((r) => r.kind === kind && r.deletedAt == null)
-    .sort((a, b) => b.versionIndex - a.versionIndex)
+    .filter((r) => r.kind === kind && !r.deleted)
+    .sort((a, b) => compareChainInteger(b.versionIndex, a.versionIndex))
 }
 
 function normalizeSuiAddressForCompare(value: string | null | undefined) {
@@ -89,16 +78,16 @@ function normalizeSuiAddressForCompare(value: string | null | undefined) {
   }
 }
 
-function findActiveGrantForAddress(grants: SoulGrantRecord[], address: string) {
+function findActiveGrantForAddress(grants: ChainSoulGrant[], address: string) {
   const normalized = normalizeSuiAddressForCompare(address)
   if (!normalized) return null
   return grants.find((grant) => normalizeSuiAddressForCompare(grant.granteeAddress) === normalized) ?? null
 }
 
-function contentVersionsForKind(rows: SoulContentVersionRecord[], kind: number) {
+function contentVersionsForKind(rows: ChainSoulContentVersion[], kind: number) {
   return rows
-    .filter((r) => r.kind === kind && r.purgedAt == null)
-    .sort((a, b) => b.versionIndex - a.versionIndex)
+    .filter((r) => r.kind === kind && !r.purged)
+    .sort((a, b) => compareChainInteger(b.versionIndex, a.versionIndex))
 }
 
 function scopeMaskForKind(kind: number) {
@@ -108,14 +97,14 @@ function scopeMaskForKind(kind: number) {
   return 0
 }
 
-function grantIncludesScope(grant: SoulGrantRecord, scopeMask: number) {
+function grantIncludesScope(grant: ChainSoulGrant, scopeMask: number) {
   if (scopeMask === SOUL_GRANT_SCOPE_ASSETS) return grant.scopes.includes('assets')
   if (scopeMask === SOUL_GRANT_SCOPE_SKILLS) return grant.scopes.includes('skills')
   if (scopeMask === SOUL_GRANT_SCOPE_MEMORY) return grant.scopes.includes('memory')
   return false
 }
 
-function viewerGrantForKind(soul: SoulAssetDetail, viewerAddress: string | null | undefined, kind: number) {
+function viewerGrantForKind(soul: ChainSoulDetail, viewerAddress: string | null | undefined, kind: number) {
   const normalized = normalizeSuiAddressForCompare(viewerAddress)
   if (!normalized) return null
   const scopeMask = scopeMaskForKind(kind)
@@ -126,13 +115,13 @@ function viewerGrantForKind(soul: SoulAssetDetail, viewerAddress: string | null 
   ) ?? null
 }
 
-function canAppendContent(role: Role, soul: SoulAssetDetail, viewerAddress: string | null | undefined, kind: number) {
+function canAppendContent(role: Role, soul: ChainSoulDetail, viewerAddress: string | null | undefined, kind: number) {
   if (role === 'owner') return true
   if (role !== 'grantee') return false
   return viewerGrantForKind(soul, viewerAddress, kind) !== null
 }
 
-function canDeleteContent(role: Role, soul: SoulAssetDetail, viewerAddress: string | null | undefined, kind: number) {
+function canDeleteContent(role: Role, soul: ChainSoulDetail, viewerAddress: string | null | undefined, kind: number) {
   return canAppendContent(role, soul, viewerAddress, kind)
 }
 
@@ -192,7 +181,7 @@ function Hero({
   onDelist,
   onReport,
 }: {
-  soul: SoulAssetDetail
+  soul: ChainSoulDetail
   role: Role
   priceLabel: string
   onUpdatePrice: () => void
@@ -201,9 +190,8 @@ function Hero({
 }) {
   const router = useRouter()
   const { requireAuth } = useRequireAuth()
-  const listed = soul.listingStatus === 'listed'
-  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
-  const v5CollectionBlocked = isAnimacraftV5 && Boolean(soul.collectionOnChainId)
+  const listed = soul.chainListingStatus === 'LISTED'
+  const isAnimacraft = soul.provenanceKind === 'animacraft'
   const soulCreatorRoyaltyBps =
     soul.quote?.soulCreatorRoyaltyBps ?? soul.creatorRoyaltyBps
   const sprites = useMemo(() => activeVersions(soul.contentVersions, KIND_SPRITE), [soul.contentVersions])
@@ -213,7 +201,7 @@ function Hero({
       {/* Cover card */}
       <div className="relative flex flex-col overflow-hidden rounded-[18px] border border-[var(--border-soft)] bg-card">
         <div className="relative aspect-[4/5] w-full overflow-hidden">
-          <SoulCoverImage imageUrl={soul.imageUrl} className="absolute inset-0 h-full w-full" />
+          <SoulCoverImage soul={soul} imageUrl={soul.imageUrl} className="absolute inset-0 h-full w-full" />
 
           {/* Overlay tags + actions */}
           <div className="absolute inset-x-3.5 top-3.5 z-[2] flex items-center gap-1.5">
@@ -345,7 +333,7 @@ function Hero({
         >
           <div className="min-w-0">
             <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--text-faint)]">
-              {listed ? 'Current checkout total' : 'Listing status'}
+              {listed ? (soul.purchaseAvailable ? 'Current checkout total' : 'Observed total · checkout unavailable') : 'Listing status'}
             </div>
             <div
               className={`mt-1.5 flex flex-wrap items-baseline gap-2.5 font-display font-extrabold leading-[1.1] tracking-[-0.02em] ${
@@ -359,14 +347,10 @@ function Hero({
               {listed ? (
                 <>
                   <span className="whitespace-nowrap">
-                    {isAnimacraftV5
-                      ? 'Maker-source royalty'
-                      : soul.provenanceKind === 'animacraft'
-                        ? 'Maker royalty'
-                        : 'Creator royalty'}{' '}
-                    <b className="text-foreground">{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</b>
+                    {isAnimacraft ? 'Maker-source royalty' : 'Creator royalty'}{' '}
+                    <b className="text-foreground">{makerRoyaltyLabel(soul)}</b>
                   </span>
-                  {isAnimacraftV5 && (
+                  {isAnimacraft && (
                     <>
                       <span className="text-[var(--text-faint)]">·</span>
                       <span className="whitespace-nowrap">
@@ -375,7 +359,7 @@ function Hero({
                       </span>
                     </>
                   )}
-                  {soul.collection && !isAnimacraftV5 && (
+                  {soul.collection && !isAnimacraft && (
                     <>
                       <span className="text-[var(--text-faint)]">·</span>
                       <span className="whitespace-nowrap">
@@ -384,10 +368,6 @@ function Hero({
                     </>
                   )}
                 </>
-              ) : v5CollectionBlocked ? (
-                <span className="text-danger">
-                  Collection-bound Animacraft v5 Soul · secondary listing is blocked.
-                </span>
               ) : (
                 <span>List your Soul on the Soulidity Market when you&apos;re ready to find a new owner.</span>
               )}
@@ -396,17 +376,15 @@ function Hero({
           <div className="sd-listing-actions flex flex-col items-stretch gap-2" style={{ minWidth: 140 }}>
             {role === 'owner' && listed && (
               <>
-                {!v5CollectionBlocked && (
-                  <Button variant="gold" size="sm" onClick={onUpdatePrice}>
-                    Update price
-                  </Button>
-                )}
+                <Button variant="gold" size="sm" onClick={onUpdatePrice}>
+                  Update price
+                </Button>
                 <Button variant="outline" size="sm" onClick={onDelist}>
                   Delist
                 </Button>
               </>
             )}
-            {role === 'owner' && !listed && !v5CollectionBlocked && (
+            {role === 'owner' && !listed && (
               <Link
                 href={`/souls/${encodeURIComponent(soul.onChainId)}/sell`}
                 className={buttonStyles({ variant: 'gold', size: 'sm' })}
@@ -414,16 +392,7 @@ function Hero({
                 List Soul
               </Link>
             )}
-            {role === 'owner' && !listed && v5CollectionBlocked && (
-              <button
-                type="button"
-                disabled
-                className={buttonStyles({ variant: 'outline', size: 'sm' })}
-              >
-                Listing blocked
-              </button>
-            )}
-            {role !== 'owner' && listed && soul.quote && !v5CollectionBlocked && (
+            {role !== 'owner' && soul.purchaseAvailable && soul.quote && (
               <button
                 type="button"
                 onClick={() => {
@@ -442,6 +411,11 @@ function Hero({
                 Buy for {priceLabel}
               </button>
             )}
+            {role !== 'owner' && listed && !soul.purchaseAvailable && (
+              <p className="text-xs text-muted">{soul.listingStatus === 'floor-violation'
+                ? 'This chain listing is below the collection floor and cannot be bought through the app.'
+                : 'Trading is currently unavailable for this release. The displayed listing price is an observation, not purchase approval.'}</p>
+            )}
           </div>
         </div>
       </div>
@@ -450,8 +424,7 @@ function Hero({
 }
 
 // ── Quick stats ──────────────────────────────────────────────────────
-function QuickStats({ soul }: { soul: SoulAssetDetail }) {
-  const updated = soul.updatedAt ?? soul.createdAt
+function QuickStats({ soul }: { soul: ChainSoulDetail }) {
   const cells: Array<{ label: string; value: React.ReactNode; sub?: React.ReactNode; key: string }> = [
     {
       key: 'soul',
@@ -490,10 +463,10 @@ function QuickStats({ soul }: { soul: SoulAssetDetail }) {
         ),
     },
     {
-      key: 'updated',
-      label: 'Updated',
-      value: <span className="text-[15px] font-bold text-foreground">{formatRelative(updated)}</span>,
-      sub: <span>{formatDate(updated)}</span>,
+      key: 'observed',
+      label: 'Chain observed',
+      value: <span className="text-[15px] font-bold text-foreground">{formatChainTimestamp(soul.observedAtMs, true)}</span>,
+      sub: <span>Live state, not an edit timestamp</span>,
     },
   ]
 
@@ -515,6 +488,54 @@ function QuickStats({ soul }: { soul: SoulAssetDetail }) {
 // ── Workspace tabs ───────────────────────────────────────────────────
 type TabId = 'info' | 'wardrobe' | 'sprite' | 'skills' | 'memory' | 'grants'
 
+function ContentAppendRecoveryPanel({ soul, role, detailQueryId }: { soul: ChainSoulDetail; role: Role; detailQueryId: string }) {
+  const queryClient = useQueryClient()
+  const updated = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId] })
+    void queryClient.invalidateQueries({ queryKey: ['soul', soul.onChainId] })
+  }, [queryClient, detailQueryId, soul.onChainId])
+  const recovery = useSoulContentAppend(soul, role, false, updated)
+  return <div className="m-4 rounded-xl border border-[var(--border-soft)] p-4" data-content-append-recovery>
+    <div className="mb-2 flex items-center justify-between gap-3">
+      <h3 className="text-sm font-semibold">Encrypted content recovery</h3>
+      <Button variant="outline" size="sm" disabled={recovery.pending} onClick={() => void recovery.refresh().catch(() => {})}>Refresh</Button>
+    </div>
+    <p className="mb-3 text-xs text-muted">Prepared uploads remain here until chain content and its encrypted envelope are verified. Resume continues the exact recorded attempt. If its version or gas is stale, Rebase checks prior outcomes and reuses the paid Blob with an explicitly approved new attempt; it never registers storage again.</p>
+    <p className="mb-3 text-xs text-muted">Finish completed upload verifies the original result even if ownership, permissions or current content have since changed. It only archives this device's recovery; encrypted history remains queryable and exportable. Unconfirmed transactions cannot be finished.</p>
+    <label className="mb-3 block text-xs text-muted">Import encrypted recovery from another device (read-only)
+      <input type="file" accept="application/json,.json" disabled={recovery.pending} className="mt-1 block"
+        onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void recovery.importRecovery(file).catch(() => {}) }} />
+    </label>
+    {recovery.importedRecovery && <div className="mb-3 flex items-center gap-2 text-xs">
+      <span>{recovery.importedRecovery.record.scope.name} · imported encrypted recovery</span>
+      <Button variant="outline" size="sm" disabled={recovery.pending}
+        onClick={() => void recovery.queryImported(recovery.importedRecovery!).catch(() => {})}>Check imported transaction</Button>
+      <Button variant="outline" size="sm" disabled={recovery.pending}
+        onClick={() => void recovery.restore(recovery.importedRecovery!).catch(() => {})}>Restore to this device</Button>
+    </div>}
+    {recovery.error && <p role="alert" className="mb-3 text-xs text-danger">{recovery.error}</p>}
+    {recovery.queryStatus && <p role="status" className="mb-3 text-xs text-muted">{recovery.queryStatus}</p>}
+    {recovery.pendingRestores.map(bundle => <div key={bundle.record.authorSignature} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <span className="mr-auto">{bundle.record.scope.name} · local restore unfinished; original payment records retained</span>
+      <Button variant="outline" size="sm" disabled={recovery.pending}
+        onClick={() => void recovery.restore(bundle).catch(() => {})}>Finish restoring to this device</Button>
+    </div>)}
+    {recovery.recoveries.map(record => <div key={record.authorSignature} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <span className="mr-auto">{record.scope.name} · v{record.scope.versionIndex} · {record.sidecar.fileName}</span>
+      <Button variant="outline" size="sm" disabled={recovery.pending} onClick={() => void recovery.query(record).catch(() => {})}>Check recorded transaction</Button>
+      <Button variant="outline" size="sm" disabled={recovery.pending} onClick={() => void recovery.resume(record).catch(() => {})}>Resume recorded upload</Button>
+      <Button variant="outline" size="sm" disabled={recovery.pending} onClick={() => void recovery.rebase(record).catch(() => {})}>Rebase paid upload</Button>
+      <Button variant="outline" size="sm" disabled={recovery.pending} onClick={() => void recovery.finish(record).catch(() => {})}>Finish completed upload</Button>
+      <Button variant="outline" size="sm" disabled={recovery.pending} onClick={() => void recovery.exportRecovery(record).catch(() => {})}>Export encrypted recovery</Button>
+    </div>)}
+    {recovery.archivedRecoveries.map(record => <div key={record.authorSignature} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <span className="mr-auto">{record.scope.name} · archived recovery · encrypted history retained</span>
+      <Button variant="outline" size="sm" disabled={recovery.pending} onClick={() => void recovery.query(record).catch(() => {})}>Check archived transaction</Button>
+      <Button variant="outline" size="sm" disabled={recovery.pending} onClick={() => void recovery.exportRecovery(record).catch(() => {})}>Export archived recovery</Button>
+    </div>)}
+  </div>
+}
+
 function Workspace({
   soul,
   role,
@@ -522,26 +543,24 @@ function Workspace({
   viewerId,
   viewerAddress,
 }: {
-  soul: SoulAssetDetail
+  soul: ChainSoulDetail
   role: Role
   detailQueryId: string
   viewerId?: string | null
   viewerAddress?: string | null
 }) {
-  useSoulContentSyncReplay({ soul, detailQueryId, viewerId })
-
   const [tab, setTab] = useState<TabId>('info')
   const counts = useMemo(
     () => ({
       sprite: activeVersions(soul.contentVersions, KIND_SPRITE).length,
       skills: activeVersions(soul.contentVersions, KIND_SKILL).length,
       memory: activeVersions(soul.contentVersions, KIND_MEMORY).length,
-      grants: soul.activeGrantCount + countActivePaidEntries(soul, role, viewerAddress),
+      grants: (BigInt(soul.activeGrantCount) + BigInt(countActivePaidEntries(soul, role, viewerAddress))).toString(),
     }),
     [soul, role, viewerAddress],
   )
 
-  const tabs: Array<{ id: TabId; label: string; count: number | null }> = [
+  const tabs: Array<{ id: TabId; label: string; count: number | string | null }> = [
     { id: 'info', label: 'Info', count: null },
     ...(soul.provenanceKind === 'animacraft'
       ? [{ id: 'wardrobe' as const, label: 'Wardrobe', count: null }]
@@ -584,14 +603,18 @@ function Workspace({
         })}
       </div>
 
-      {tab === 'info' && <InfoPanel soul={soul} />}
-      {tab === 'wardrobe' && (
-        <PhysicalWardrobeV7Panel
+      <ContentAppendRecoveryPanel soul={soul} role={role} detailQueryId={detailQueryId} />
+      <ContentMutationRecoveryPanel soul={soul} detailQueryId={detailQueryId} />
+      <SoulAccessRecoveryPanel soul={soul} detailQueryId={detailQueryId} />
+      {tab === 'info' && <>
+        <InfoPanel soul={soul} />
+        <SoulDocumentPanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />
+      </>}
+      {tab === 'wardrobe' && soul.provenanceKind === 'animacraft' && (
+        <NativeWardrobePanel
+          key={soul.onChainId}
           soulObjectId={soul.onChainId}
-          soulStateObjectId={soul.stateOnChainId}
-          currentOwnerAddress={soul.currentOwnerAddress}
-          role={role}
-          listed={soul.listingStatus === 'listed'}
+          stateObjectId={soul.stateOnChainId}
         />
       )}
       {tab === 'sprite' && <SpritePanel soul={soul} role={role} detailQueryId={detailQueryId} viewerId={viewerId} viewerAddress={viewerAddress} />}
@@ -623,8 +646,8 @@ function Subcard({ children, className = '' }: { children: React.ReactNode; clas
 }
 
 // ── Info panel (object graph + royalties) ────────────────────────────
-function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
-  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+function InfoPanel({ soul }: { soul: ChainSoulDetail }) {
+  const isAnimacraft = soul.provenanceKind === 'animacraft'
   const soulCreatorRoyaltyBps =
     soul.quote?.soulCreatorRoyaltyBps ?? soul.creatorRoyaltyBps
 
@@ -649,16 +672,10 @@ function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
         <Subcard>
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-action-label">Royalties &amp; access</div>
           <KV
-            k={
-              isAnimacraftV5
-                ? 'Maker-source royalty'
-                : soul.provenanceKind === 'animacraft'
-                  ? 'Maker royalty'
-                  : 'Creator royalty'
-            }
-            v={<span>{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</span>}
+            k={isAnimacraft ? 'Maker-source royalty' : 'Creator royalty'}
+            v={<span>{makerRoyaltyLabel(soul)}</span>}
           />
-          {isAnimacraftV5 && (
+          {isAnimacraft && (
             <KV
               k="Soul creator royalty"
               v={<span>{(soulCreatorRoyaltyBps / 100).toFixed(2)}%</span>}
@@ -668,8 +685,8 @@ function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
             k="Collection royalty"
             v={
               <span>
-                {isAnimacraftV5 && soul.collectionOnChainId
-                  ? 'Incompatible · resale blocked'
+                {isAnimacraft && soul.collectionOnChainId
+                  ? 'Native Collection resale is not yet available'
                   : soul.collection
                     ? `${(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%`
                     : 'None'}
@@ -680,8 +697,8 @@ function InfoPanel({ soul }: { soul: SoulAssetDetail }) {
           <KV k="Sprite versions" v={<span>{activeVersions(soul.contentVersions, KIND_SPRITE).length}</span>} />
           <KV k="Skills versions" v={<span>{activeVersions(soul.contentVersions, KIND_SKILL).length}</span>} />
           <KV k="Memory entries" v={<span>{activeVersions(soul.contentVersions, KIND_MEMORY).length}</span>} />
-          <KV k="Created" v={<span>{formatDate(soul.createdAt)}</span>} />
-          <KV k="Updated" v={<span>{formatDate(soul.updatedAt)}</span>} />
+          <KV k="Created" v={<span>{formatChainTimestamp(soul.createdAtMs)}</span>} />
+          <KV k="Updated" v={<span>Not recorded on chain</span>} />
         </Subcard>
       </div>
     </div>
@@ -702,8 +719,9 @@ function ContentPanel({
   versionLabelSingular,
   uploadCard,
   actions,
+  readOnly = false,
 }: {
-  soul: SoulAssetDetail
+  soul: ChainSoulDetail
   role: Role
   viewerAddress?: string | null
   kind: number
@@ -715,13 +733,14 @@ function ContentPanel({
   versionLabelSingular: string
   uploadCard?: React.ReactNode
   actions: ContentActions
+  readOnly?: boolean
 }) {
   const versions = useMemo(() => contentVersionsForKind(soul.contentVersions, kind), [soul.contentVersions, kind])
   const { pendingAction, contentActionError } = actions
-  const canDelete = canDeleteContent(role, soul, viewerAddress, kind)
-  const canPurge = canPurgeContent(role)
-  const canSetActive = canSetActiveContent(role)
-  const [purgeTarget, setPurgeTarget] = useState<SoulContentVersionRecord | null>(null)
+  const canDelete = !readOnly && canDeleteContent(role, soul, viewerAddress, kind)
+  const canPurge = !readOnly && canPurgeContent(role)
+  const canSetActive = !readOnly && canSetActiveContent(role)
+  const [purgeTarget, setPurgeTarget] = useState<ChainSoulContentVersion | null>(null)
 
   const tags: React.ReactNode = (
     <>
@@ -741,7 +760,15 @@ function ContentPanel({
     <div className="p-5">
       <PanelHead title={title} copy={copy} tags={tags} />
 
+      {versions.some(version => version.envelopeStatus === 'MISSING' && !version.deleted) && (
+        <p role="status" className="mb-4 rounded-lg border border-gold/30 p-3 text-xs text-muted">
+          Some encrypted content envelopes are still pending finalization. The Soul already exists; do not mint it again.
+          Resume the original creation or content upload to finish saving its envelopes.
+        </p>
+      )}
+
       {uploadCard}
+      {actions.contentAppend.notice && <p role="status" className="mt-3 text-xs text-muted">{actions.contentAppend.notice}</p>}
       {contentActionError && (
         <div className="mt-3 rounded-lg border border-danger/35 bg-danger/8 px-3.5 py-2 text-[12px] text-danger">
           {contentActionError}
@@ -763,19 +790,7 @@ function ContentPanel({
             {versions.map((v) => {
               const isActiveSprite =
                 kind === KIND_SPRITE && v.versionIndex === soul.activeSpriteVersionIndex && v.name === soul.activeSpriteName
-              const canOpen =
-                !v.deletedAt
-                && (
-                  role === 'owner'
-                  || viewerGrantForKind(soul, viewerAddress, kind) !== null
-                  || (
-                    role === 'visitor'
-                    && kind === KIND_SPRITE
-                    && v.isPublic
-                    && !v.sealEncrypted
-                    && v.downloadPolicy === 'public'
-                  )
-                )
+              const canOpen = canAttemptContentRead(soul, v, viewerAddress ?? null)
               return (
                 <div
                   key={v.id}
@@ -788,56 +803,56 @@ function ContentPanel({
                     <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-foreground">
                       <span className="whitespace-nowrap">{v.name || versionLabelSingular}</span>
                       {isActiveSprite && <Tag color="gold">Active</Tag>}
-                      {v.deletedAt && <Tag color="muted">Deleted</Tag>}
+                      {v.deleted && <Tag color="muted">Deleted</Tag>}
                       <Tag color={v.isPublic ? 'gold' : 'purple'}>{v.isPublic ? 'public' : 'private'}</Tag>
                       {v.sealEncrypted && <Tag color="purple">sealed</Tag>}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted">
                       <span className="whitespace-nowrap">blob <span className="font-mono text-tech-text">{formatAddress(v.blobObjectId)}</span></span>
                       <span className="opacity-50">·</span>
-                      <span className="whitespace-nowrap">{formatRelative(v.createdAtMs)}</span>
+                      <span className="whitespace-nowrap">{formatChainTimestamp(v.createdAtMs, true)}</span>
                       <span className="opacity-50">·</span>
                       <span className="whitespace-nowrap font-mono text-[10.5px]">{v.downloadPolicy}</span>
                     </div>
                   </div>
                   <div className="flex flex-shrink-0 flex-wrap gap-1.5">
                     {canOpen && (
-                      <Button variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void actions.openContentVersion(v)}>
+                      <Button variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void actions.openContentVersion(v).catch(() => {})}>
                         Open
                       </Button>
                     )}
-                    {kind === KIND_SPRITE && !v.deletedAt && canSetActive && !isActiveSprite && (
+                    {kind === KIND_SPRITE && !v.deleted && canSetActive && !isActiveSprite && (
                       <Button
                         variant="teal"
                         size="sm"
                         disabled={pendingAction !== null}
-                        onClick={() => void actions.setActiveContent(v.kind, v.name, v.versionIndex)}
+                        onClick={() => void actions.setActiveContent(v.kind, v.name, v.versionIndex).catch(() => {})}
                       >
                         Set active
                       </Button>
                     )}
-                    {kind === KIND_SPRITE && !v.deletedAt && canSetActive && isActiveSprite && (
+                    {kind === KIND_SPRITE && !v.deleted && canSetActive && isActiveSprite && (
                       <Button
                         variant="ghost"
                         size="sm"
                         disabled={pendingAction !== null}
-                        onClick={() => void actions.clearActiveContent(v.kind)}
+                        onClick={() => void actions.clearActiveContent(v.kind).catch(() => {})}
                       >
                         Clear active
                       </Button>
                     )}
-                    {!v.deletedAt && canDelete && (
+                    {!v.deleted && canDelete && (
                       <Button
                         variant="danger"
                         size="sm"
                         disabled={pendingAction !== null || isActiveSprite || !canDelete}
                         title={isActiveSprite ? 'Clear or change the active sprite before deleting this version.' : undefined}
-                        onClick={() => void actions.deleteContentVersion(v)}
+                        onClick={() => void actions.deleteContentVersion(v).catch(() => {})}
                       >
                         Delete
                       </Button>
                     )}
-                    {v.deletedAt && canPurge && (
+                    {v.deleted && canPurge && (
                       <Button
                         variant="danger"
                         size="sm"
@@ -908,7 +923,7 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
     // disabled and surface the error before the user pays for Walrus storage
     // and signs the on-chain mutation. Anything that fails this parse would
     // also be rejected by the desktop resolver downstream, so we never want
-    // it to reach `setStateConfig('sprite_config_json', ...)`.
+    // it to reach the atomic append's sprite_config_json write.
     if (!parsePersonaSpriteConfig(text)) {
       setConfigError(PERSONA_SPRITE_CONFIG_ERROR)
     }
@@ -922,14 +937,13 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
       return
     }
     const spriteConfigJson = configFileText ?? await readFileText(configFile)
-    await actions.appendContentVersion({
+    const appended = await actions.appendContentVersion({
       kind: KIND_SPRITE,
       name: 'persona-sprite',
       file: sheetFile,
       // `content::append_version_impl` hardcodes `seal_encrypted = true` on
-      // every appended slot, and `/content/sync` rejects sealed slots that
-      // arrive without a sidecar. Sprite uploads therefore always go through
-      // the Seal envelope path so the post-TX mirror has a sidecar to store —
+      // every appended slot. Sprite uploads therefore always prepare a Seal
+      // envelope, persisted atomically with the appended chain version —
       // including "Public" slots, which are sealed-public (any wallet can
       // construct a Seal session via `seal_approve_content_public`) rather
       // than anonymous-plaintext.
@@ -939,6 +953,7 @@ function SpriteAppendCard({ role, canAppend, actions }: { role: Role; canAppend:
       setActive: role === 'owner' && setActiveAfterUpload,
       spriteConfigJson,
     })
+    if (!appended) return
     setSheetFile(null)
     setConfigFile(null)
     setConfigFileText(null)
@@ -1032,7 +1047,7 @@ function SkillsAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
 
   async function handleUpload() {
     if (!bundleFile || !skillName) return
-    await actions.appendContentVersion({
+    const appended = await actions.appendContentVersion({
       kind: KIND_SKILL,
       name: skillName,
       file: bundleFile,
@@ -1040,6 +1055,7 @@ function SkillsAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
       slotReadModeMask: READ_OWNER | READ_GRANT,
       downloadPolicy: NO_DOWNLOAD_POLICY,
     })
+    if (!appended) return
     setBundleFile(null)
     setSkillName(null)
     setBundleError(null)
@@ -1084,6 +1100,7 @@ function SkillsAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
 
 function MemoryAppendCard({ canAppend, actions }: { canAppend: boolean; actions: ContentActions }) {
   const [body, setBody] = useState('')
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const { pendingAction } = actions
   const trimmed = body.trim()
 
@@ -1091,8 +1108,9 @@ function MemoryAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
 
   async function handleUpload() {
     if (!trimmed) return
+    setSubmitError(null)
     const file = new File([trimmed], `memory-${Date.now()}.md`, { type: 'text/markdown' })
-    await actions.appendContentVersion({
+    const appended = await actions.appendContentVersion({
       kind: KIND_MEMORY,
       name: actions.canonicalMemoryName,
       file,
@@ -1100,7 +1118,7 @@ function MemoryAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
       slotReadModeMask: READ_OWNER | READ_GRANT,
       downloadPolicy: actions.noDownloadPolicy,
     })
-    setBody('')
+    if (appended) setBody(current => current === body ? '' : current)
   }
 
   return (
@@ -1125,17 +1143,18 @@ function MemoryAppendCard({ canAppend, actions }: { canAppend: boolean; actions:
           variant="primary"
           size="sm"
           disabled={pendingAction !== null || !trimmed}
-          onClick={() => void handleUpload()}
+          onClick={() => void handleUpload().catch(error => setSubmitError(error instanceof Error ? error.message : 'Memory append failed'))}
         >
           {pendingAction === 'append' ? 'Uploading…' : 'Append memory'}
         </Button>
       </div>
+      {submitError && <p role="alert" className="mt-2 text-[12px] text-danger">{submitError}</p>}
     </Subcard>
   )
 }
 
 interface ContentPanelProps {
-  soul: SoulAssetDetail
+  soul: ChainSoulDetail
   role: Role
   detailQueryId: string
   viewerId?: string | null
@@ -1175,6 +1194,14 @@ function SpritePanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
   )
 }
 
+function SoulDocumentPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: ContentPanelProps) {
+  const actions = useSoulContentActions({ soul, role, detailQueryId, viewerId })
+  return <ContentPanel soul={soul} role={role} viewerAddress={viewerAddress} kind={KIND_SOUL_DOC}
+    title="Soul document" copy="Open the original soul.md encrypted at creation. Access is verified again before downloading."
+    emptyIcon="📄" emptyTitle="No Soul document recorded" emptySub="No initial Soul document was observed in this content root."
+    versionLabelSingular="version" actions={actions} readOnly />
+}
+
 function SkillsPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: ContentPanelProps) {
   const actions = useSoulContentActions({ soul, role, detailQueryId, viewerId })
   const canAppend = canAppendContent(role, soul, viewerAddress, KIND_SKILL)
@@ -1211,12 +1238,12 @@ function SkillsPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
 function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: ContentPanelProps) {
   const actions = useSoulContentActions({ soul, role, detailQueryId, viewerId })
   const versions = useMemo(() => contentVersionsForKind(soul.contentVersions, KIND_MEMORY), [soul.contentVersions])
+  const canDecrypt = versions.some(v => canAttemptContentRead(soul, v, viewerAddress ?? null))
   const canAppend = canAppendContent(role, soul, viewerAddress, KIND_MEMORY)
   const canDelete = canDeleteContent(role, soul, viewerAddress, KIND_MEMORY)
-  const canDecrypt = role === 'owner' || viewerGrantForKind(soul, viewerAddress, KIND_MEMORY) !== null
   const canPurge = canPurgeContent(role)
   const { pendingAction, contentActionError } = actions
-  const [purgeTarget, setPurgeTarget] = useState<SoulContentVersionRecord | null>(null)
+  const [purgeTarget, setPurgeTarget] = useState<ChainSoulContentVersion | null>(null)
   const purgeModal = (
     <PurgeConfirmModal
       open={purgeTarget !== null}
@@ -1257,6 +1284,7 @@ function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
           pendingAction={actions.pendingAction}
         />
         <MemoryAppendCard canAppend={canAppend} actions={actions} />
+        {actions.contentAppend.notice && <p role="status" className="mb-3 text-xs text-muted">{actions.contentAppend.notice}</p>}
         {contentActionError && (
           <div className="mb-3 rounded-lg border border-danger/35 bg-danger/8 px-3.5 py-2 text-[12px] text-danger">
             {contentActionError}
@@ -1280,6 +1308,7 @@ function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
         tags={tags}
       />
       <MemoryAppendCard canAppend={canAppend} actions={actions} />
+      {actions.contentAppend.notice && <p role="status" className="mb-3 text-xs text-muted">{actions.contentAppend.notice}</p>}
       {contentActionError && (
         <div className="mb-3 rounded-lg border border-danger/35 bg-danger/8 px-3.5 py-2 text-[12px] text-danger">
           {contentActionError}
@@ -1288,11 +1317,11 @@ function MemoryPanel({ soul, role, detailQueryId, viewerId, viewerAddress }: Con
       <div className="space-y-2">
         {versions.map((v) => (
           <MemoryRow
-            key={v.id}
+            key={`${actions.privacyKey}:${v.id}`}
             entry={v}
-            canDecrypt={canDecrypt && !v.deletedAt}
-            canDelete={canDelete && !v.deletedAt}
-            canPurge={canPurge && Boolean(v.deletedAt)}
+            canDecrypt={canAttemptContentRead(soul, v, viewerAddress ?? null)}
+            canDelete={canDelete && !v.deleted}
+            canPurge={canPurge && Boolean(v.deleted)}
             pendingAction={pendingAction}
             actions={actions}
             onRequestPurge={(entry) => setPurgeTarget(entry)}
@@ -1313,26 +1342,31 @@ function MemoryRow({
   actions,
   onRequestPurge,
 }: {
-  entry: SoulContentVersionRecord
+  entry: ChainSoulContentVersion
   canDecrypt: boolean
   canDelete: boolean
   canPurge: boolean
   pendingAction: ContentActions['pendingAction']
   actions: ContentActions
-  onRequestPurge: (entry: SoulContentVersionRecord) => void
+  onRequestPurge: (entry: ChainSoulContentVersion) => void
 }) {
   const [open, setOpen] = useState(false)
   const [plaintext, setPlaintext] = useState<string | null>(null)
   const [rowError, setRowError] = useState<string | null>(null)
+  const readGeneration = useRef(0)
+  useEffect(() => () => { readGeneration.current++ }, [])
 
   async function handleDecrypt() {
     if (!canDecrypt) return
+    const generation = ++readGeneration.current
     setRowError(null)
     try {
       const bytes = await actions.decryptContentVersion(entry)
-      setPlaintext(new TextDecoder().decode(bytes))
+      try {
+        if (readGeneration.current === generation) setPlaintext(new TextDecoder().decode(bytes))
+      } finally { bytes.fill(0) }
     } catch (error) {
-      setRowError(error instanceof Error ? error.message : 'Failed to decrypt memory entry')
+      if (readGeneration.current === generation) setRowError(error instanceof Error ? error.message : 'Failed to decrypt memory entry')
     }
   }
 
@@ -1345,10 +1379,10 @@ function MemoryRow({
       >
         <Tag color="teal">v{entry.versionIndex}</Tag>
         <span className="flex-1 truncate text-[13px] font-medium text-foreground">
-          {`Memory @ ${formatDate(entry.createdAt)}`}
+          {`Memory @ ${formatChainTimestamp(entry.createdAtMs)}`}
         </span>
-        {entry.deletedAt && <Tag color="muted">Deleted</Tag>}
-        <span className="whitespace-nowrap text-[12px] text-muted">{formatRelative(entry.createdAtMs)}</span>
+        {entry.deleted && <Tag color="muted">Deleted</Tag>}
+        <span className="whitespace-nowrap text-[12px] text-muted">{formatChainTimestamp(entry.createdAtMs, true)}</span>
         <span className="text-[var(--text-faint)]" title="Encrypted blob on Walrus">🔒</span>
         <span className="text-[11px] text-[var(--text-faint)]">{open ? '▲' : '▼'}</span>
       </button>
@@ -1356,11 +1390,16 @@ function MemoryRow({
         <div className="border-t border-[var(--border-soft)] bg-[var(--ui-surface-muted)] px-3.5 pb-3 pt-2">
           <KV k="Slot name" v={<span className="font-mono text-[12px] text-tech-text">{entry.name}</span>} />
           <KV k="Blob object" v={<CopyChip value={entry.blobObjectId} />} />
-          {entry.blobId && <KV k="Walrus blob" v={<CopyChip value={entry.blobId} />} />}
+          <KV k="Encrypted envelope" v={<span>{entry.envelopeStatus === 'VERIFIED' ? 'Verified on chain' : 'Pending finalization'}</span>} />
           <KV k="Download policy" v={<span className="font-mono text-[12px]">{entry.downloadPolicy}</span>} />
-          <KV k="Created" v={<span>{formatDate(entry.createdAt)}</span>} />
+          <KV k="Created" v={<span>{formatChainTimestamp(entry.createdAtMs)}</span>} />
           {rowError && <div className="mt-2 text-[12px] text-danger">{rowError}</div>}
-          {plaintext && (
+          {plaintext === '' && (
+            <div role="status" className="mt-2 text-[12px] text-muted">
+              Memory read successfully. This entry is empty.
+            </div>
+          )}
+          {plaintext !== null && plaintext !== '' && (
             <pre className="mt-2 max-h-[240px] overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--border-soft)] bg-[var(--ui-control-bg)] p-3 text-[12px] leading-5 text-foreground">
               {plaintext}
             </pre>
@@ -1370,17 +1409,17 @@ function MemoryRow({
               variant="outline"
               size="sm"
               disabled={pendingAction !== null || !canDecrypt}
-              title={canDecrypt ? undefined : 'Owner / grant only'}
+              title={canDecrypt ? undefined : 'No observed read access'}
               onClick={() => void handleDecrypt()}
             >
-              {pendingAction === 'open' ? 'Decrypting…' : canDecrypt ? 'Read' : 'Owner / grant only'}
+              {pendingAction === 'open' ? 'Decrypting…' : canDecrypt ? 'Read' : 'Read unavailable'}
             </Button>
             {canDelete && (
               <Button
                 variant="danger"
                 size="sm"
                 disabled={pendingAction !== null}
-                onClick={() => void actions.deleteContentVersion(entry)}
+                onClick={() => void actions.deleteContentVersion(entry).catch(() => {})}
               >
                 Delete
               </Button>
@@ -1410,7 +1449,7 @@ function GrantsPanel({
   viewerId,
   viewerAddress,
 }: {
-  soul: SoulAssetDetail
+  soul: ChainSoulDetail
   role: Role
   detailQueryId: string
   viewerId?: string | null
@@ -1420,27 +1459,26 @@ function GrantsPanel({
   const [skillsAndDocsScope, setSkillsAndDocsScope] = useState(true)
   const [memoryScope, setMemoryScope] = useState(false)
   const [assetsScope, setAssetsScope] = useState(false)
+  const [grantExpiry, setGrantExpiry] = useState('')
+  const [grantFormError, setGrantFormError] = useState<string | null>(null)
   const [agentAddress, setAgentAddress] = useState('')
   const [reassignmentNotice, setReassignmentNotice] = useState<string | null>(null)
-  const [preflightActive, setPreflightActive] = useState(false)
-  const [preflightError, setPreflightError] = useState<string | null>(null)
-  const { pending, error, issueGrant, revokeGrant } = useGrant(soul)
-  const { getAuthHeaders } = useAuth()
+  const { pending, error, identityKey, issueGrant, revokeGrant, revokeGrantScope } = useGrant(soul)
+  const grantIdentity = useRef(identityKey)
+  useLayoutEffect(() => { grantIdentity.current = identityKey }, [identityKey])
+  const formScope = identityKey
+  const [previousFormScope, setPreviousFormScope] = useState(formScope)
+  if (previousFormScope !== formScope) { setPreviousFormScope(formScope); setGrantFormError(null); setReassignmentNotice(null) }
   const queryClient = useQueryClient()
   const trimmedAgentAddress = agentAddress.trim()
   const targetActiveGrant = findActiveGrantForAddress(soul.activeGrants, trimmedAgentAddress)
-  // Mirror-only hint for the helper text below the form. NOT authoritative:
-  // the preflight in `handleAuthorize` will identify chain-only existing
-  // grantees as `isNewGrantee: false` (R-001) and will bump capacity for
-  // truly-new grantees up to `MAX_GRANT_CAPACITY`. The button stays
-  // enabled even when the mirror looks "full" so the preflight can correct
-  // the decision against on-chain truth.
+  // Display hint only; the frozen raw-chain plan determines capacity and scope.
   const mirrorLooksFullForNewGrantee = Boolean(
-    trimmedAgentAddress && !targetActiveGrant && soul.activeGrantCount >= soul.grantCapacity,
+    trimmedAgentAddress && !targetActiveGrant && BigInt(soul.activeGrantCount) >= BigInt(soul.grantCapacity),
   )
 
   function refreshSoulDetail() {
-    void queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId, viewerId ?? null] })
+    void queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId] })
   }
 
   const scopeMask =
@@ -1449,87 +1487,24 @@ function GrantsPanel({
     | (assetsScope ? SOUL_GRANT_SCOPE_ASSETS : 0)
 
   async function handleAuthorize() {
+    const started = grantIdentity.current
     const addr = trimmedAgentAddress
     if (!addr) return
     if (scopeMask === 0) return
     setReassignmentNotice(null)
-    setPreflightError(null)
+    setGrantFormError(null)
     try {
-      // Always preflight `/grant-merge-masks` before deciding capacity or
-      // scope. The mirror's `activeGrantCount` / `grantCapacity` can lag
-      // behind the chain (post-TX mirror miss, grant issued via another
-      // UI), so a local "capacity full" decision would reject a supersede
-      // that the chain would happily accept. The preflight is the
-      // authoritative source for both:
-      //  - `isNewGrantee` (whether issuing consumes a fresh slot — chain
-      //    fallback already self-heals mirror misses, see R-001 F-450); and
-      //  - `requiredCapacity` / `currentCapacity` (whether the PTB needs
-      //    a `set_grant_capacity` bump before `issue_to_grantee`).
-      setPreflightActive(true)
-      let mergedScopeMask = scopeMask
-      let isNewGrantee = false
-      let requiredCapacity = soul.grantCapacity
-      let currentCapacity = soul.grantCapacity
-      try {
-        const headers = await getAuthHeaders()
-        const mergeRes = await fetch('/api/souls/grant-merge-masks', {
-          method: 'POST',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            items: [{
-              soulOnChainId: soul.onChainId,
-              granteeAddress: addr,
-              addedScopeMask: scopeMask,
-            }],
-          }),
-        })
-        if (!mergeRes.ok) {
-          const body = await mergeRes.json().catch(() => ({}))
-          throw new Error(body.error || `Failed to compute merged grant scope (${mergeRes.status})`)
-        }
-        const mergeBody = await mergeRes.json() as {
-          items: Array<{
-            soulOnChainId: string
-            mergedScopeMask: number
-            isNewGrantee: boolean
-            currentCapacity: number
-            requiredCapacity: number
-          }>
-        }
-        const preflightItem = mergeBody.items[0]
-        mergedScopeMask = preflightItem?.mergedScopeMask ?? scopeMask
-        isNewGrantee = preflightItem?.isNewGrantee ?? false
-        currentCapacity = preflightItem?.currentCapacity ?? soul.grantCapacity
-        requiredCapacity = preflightItem?.requiredCapacity ?? currentCapacity
-      } catch (mergeErr) {
-        setPreflightError(mergeErr instanceof Error ? mergeErr.message : 'Failed to compute merged grant scope')
-        return
-      } finally {
-        setPreflightActive(false)
-      }
-
-      // Capacity gate using the preflight's authoritative answer. Existing
-      // grantees (chain-confirmed) supersede their own slot and never need
-      // a bump — `requiredCapacity === currentCapacity`. New grantees may
-      // need the bump; refuse if the bump would exceed the on-chain
-      // ceiling.
-      if (isNewGrantee && requiredCapacity > MAX_GRANT_CAPACITY) {
-        setPreflightError(
-          `Authorizing this grantee would require capacity ${requiredCapacity}, which exceeds the on-chain maximum of ${MAX_GRANT_CAPACITY}. Revoke an existing grantee first.`,
-        )
-        return
-      }
-      const setCapacityTo = requiredCapacity > currentCapacity ? requiredCapacity : null
-
-      await issueGrant(addr, null, mergedScopeMask, { setCapacityTo })
+      const expiry = grantExpiry === '' ? null : new Date(grantExpiry).getTime()
+      await issueGrant(addr, expiry, scopeMask)
+      if (grantIdentity.current !== started) return
       refreshSoulDetail()
-      setAgentAddress('')
+      setAgentAddress(current => current === agentAddress ? '' : current)
     } catch (e) {
-      // error surfaced via hook state
+      if (grantIdentity.current === started) setGrantFormError(e instanceof Error ? e.message : 'Grant failed')
     }
   }
 
-  async function handleRevoke(grant: SoulGrantRecord) {
+  async function handleRevoke(grant: ChainSoulGrant) {
     try {
       await revokeGrant(grant.granteeAddress)
       refreshSoulDetail()
@@ -1543,7 +1518,7 @@ function GrantsPanel({
       <section>
       <PanelHead
         title="SoulGrants"
-        copy="Authorize an agent to access this Soul on your behalf. Only the grantee can read or append within their scope — no one else, including Soulidity. When capacity is full, revoke the grantee you want to replace before adding a new one."
+        copy="Authorize Sui addresses to read, append or delete within their granted scopes. Existing live scopes are preserved; capacity can increase up to the contract limit. Owners retain control, and public or separately purchased access remains independent."
         tags={
           <Tag color="muted">
             {soul.activeGrantCount} / {soul.grantCapacity} slot
@@ -1571,11 +1546,15 @@ function GrantsPanel({
                   ))}
                   <CopyChip value={grant.granteeAddress} />
                 </div>
-                {canManage && (
-                  <Button variant="ghost" size="sm" disabled={pending !== null} onClick={() => handleRevoke(grant)}>
-                    Revoke
-                  </Button>
-                )}
+                {canManage && <div className="flex flex-wrap gap-1">
+                  <Button variant="ghost" size="sm" disabled={pending !== null} onClick={() => handleRevoke(grant)}>Revoke all</Button>
+                  {[
+                    [SOUL_GRANT_SCOPE_SEAL, 'Docs'], [SOUL_GRANT_SCOPE_MEMORY, 'Memory'],
+                    [SOUL_GRANT_SCOPE_SKILLS, 'Skills'], [SOUL_GRANT_SCOPE_ASSETS, 'Assets'],
+                  ].map(([mask, label]) => typeof mask === 'number' && (grant.scopeMask & mask) !== 0 && (grant.scopeMask & ~mask) !== 0
+                    ? <Button key={mask} variant="ghost" size="sm" disabled={pending !== null}
+                        onClick={() => void revokeGrantScope(grant.granteeAddress, mask).then(refreshSoulDetail).catch(() => {})}>Revoke {label}</Button> : null)}
+                </div>}
               </div>
               <div className="mt-3 grid gap-1.5 text-[12px]">
                 <div className="flex justify-between text-muted">
@@ -1584,7 +1563,7 @@ function GrantsPanel({
                 </div>
                 <div className="flex justify-between text-muted">
                   <span>Expires</span>
-                  <span>{grant.expiresAt ? formatDate(grant.expiresAt) : 'Never'}</span>
+                  <span>{grant.expiresAtMs === null ? 'Never' : formatChainTimestamp(grant.expiresAtMs)}</span>
                 </div>
               </div>
             </Subcard>
@@ -1663,8 +1642,11 @@ function GrantsPanel({
             }}
             className="sd-grant-input"
           />
+          <label className="mt-3 block text-xs text-muted">Expiry (local time; blank means no expiry)
+            <input aria-label="Grant expiry" type="datetime-local" value={grantExpiry} onChange={e => setGrantExpiry(e.target.value)} className="sd-grant-input" />
+          </label>
           {error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
-          {preflightError && <div className="mt-2 text-[12px] text-danger">{preflightError}</div>}
+          {grantFormError && <div role="alert" className="mt-2 text-[12px] text-danger">{grantFormError}</div>}
           {reassignmentNotice && <div className="mt-2 text-[12px] text-value-text">{reassignmentNotice}</div>}
           {scopeMask === 0 && <div className="mt-2 text-[12px] text-muted">Select at least one scope.</div>}
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
@@ -1673,15 +1655,12 @@ function GrantsPanel({
               size="sm"
               disabled={
                 pending !== null
-                || preflightActive
                 || !trimmedAgentAddress
                 || scopeMask === 0
               }
               onClick={handleAuthorize}
             >
-              {preflightActive
-                ? 'Checking scope…'
-                : pending === 'issue'
+              {pending === 'issue'
                   ? 'Authorizing…'
                   : pending === 'revoke'
                     ? 'Revoking…'
@@ -1718,7 +1697,7 @@ function PaidAccessSection({
   detailQueryId,
   viewerId,
 }: {
-  soul: SoulAssetDetail
+  soul: ChainSoulDetail
   role: Role
   viewerAddress?: string | null
   detailQueryId: string
@@ -1727,11 +1706,12 @@ function PaidAccessSection({
   const canManage = role === 'owner'
   const queryClient = useQueryClient()
   const refreshSoulDetail = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId, viewerId ?? null] })
+    void queryClient.invalidateQueries({ queryKey: ['soul', detailQueryId] })
   }, [detailQueryId, queryClient, viewerId])
-  const { pending, error, revokePaidAccess } = usePaidAccess(soul, { onSynced: refreshSoulDetail })
+  const access = usePaidAccess(soul, { onSynced: refreshSoulDetail })
+  const { pending, error, revokePaidAccess } = access
 
-  async function handleRevoke(entry: SoulPaidAccessEntryRecord) {
+  async function handleRevoke(entry: ChainSoulPaidEntry) {
     try {
       await revokePaidAccess(entry.buyerAddress, entry.kind)
       refreshSoulDetail()
@@ -1775,6 +1755,8 @@ function PaidAccessSection({
         </div>
       )}
 
+      <PaidAccessControls soul={soul} canManage={canManage} access={access} />
+
       {visibleEntries.length === 0 ? (
         <EmptyState icon="💳" label="No paid-access entry" sublabel={emptyCopy} />
       ) : (
@@ -1792,12 +1774,12 @@ function PaidAccessSection({
         </div>
       )}
 
-      {canManage && error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
+      {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
     </section>
   )
 }
 
-function PaidConfigCard({ config }: { config: SoulPaidAccessKindConfigRecord }) {
+function PaidConfigCard({ config }: { config: ChainSoulPaidConfig }) {
   return (
     <Subcard className="!p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
@@ -1828,8 +1810,8 @@ function PaidEntryCard({
   pending,
   onRevoke,
 }: {
-  entry: SoulPaidAccessEntryRecord
-  soul: SoulAssetDetail
+  entry: ChainSoulPaidEntry
+  soul: ChainSoulDetail
   canManage: boolean
   pending: boolean
   onRevoke: (() => void) | null
@@ -1838,7 +1820,6 @@ function PaidEntryCard({
   const stale = paidEntryStale(entry, soul)
   const active = paidEntryActive(entry, soul)
   const statusLabel = active ? 'active' : stale ? 'stale' : expired ? 'expired' : 'on file'
-  const isComp = isCompEntry(entry)
   return (
     <Subcard className="!p-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2.5">
@@ -1850,7 +1831,6 @@ function PaidEntryCard({
               {s}
             </Tag>
           ))}
-          {isComp && <Tag color="gold">comp</Tag>}
           <CopyChip value={entry.buyerAddress} />
         </div>
         {canManage && onRevoke && (
@@ -1861,9 +1841,9 @@ function PaidEntryCard({
       </div>
       <div className="mt-3 grid gap-1.5 text-[12px]">
         <div className="flex justify-between text-muted">
-          <span>{isComp ? 'Granted' : 'Price paid'}</span>
+          <span>Price paid</span>
           <span className="font-mono text-foreground">
-            {isComp ? '0 USDC' : formatAtomicAmountForDisplay(entry.pricePaidAtomic)}
+            Not recorded on chain
           </span>
         </div>
         <div className="flex justify-between text-muted">
@@ -1872,7 +1852,7 @@ function PaidEntryCard({
         </div>
         <div className="flex justify-between text-muted">
           <span>Purchased</span>
-          <span>{formatRelative(entry.createdAtMs)}</span>
+          <span>Not recorded on chain</span>
         </div>
       </div>
     </Subcard>
@@ -1880,11 +1860,11 @@ function PaidEntryCard({
 }
 
 function selectVisiblePaidEntries(
-  soul: SoulAssetDetail,
+  soul: ChainSoulDetail,
   role: Role,
   viewerAddress: string | null | undefined,
-): SoulPaidAccessEntryRecord[] {
-  const all = soul.paidAccessEntries.filter((e) => e.revokedAt == null)
+): ChainSoulPaidEntry[] {
+  const all = soul.paidAccessEntries
   if (role === 'owner') return all
   const v = normalizeSuiAddressForCompare(viewerAddress)
   if (!v) return []
@@ -1892,7 +1872,7 @@ function selectVisiblePaidEntries(
 }
 
 function countActivePaidEntries(
-  soul: SoulAssetDetail,
+  soul: ChainSoulDetail,
   role: Role,
   viewerAddress: string | null | undefined,
 ): number {
@@ -1901,39 +1881,26 @@ function countActivePaidEntries(
   ).length
 }
 
-function paidAccessConfigActive(config: SoulPaidAccessKindConfigRecord, soul: SoulAssetDetail): boolean {
-  return config.deletedAt == null
+function paidAccessConfigActive(config: ChainSoulPaidConfig, soul: ChainSoulDetail): boolean {
+  return config.currentEpoch
     && soul.currentOwnershipEpoch != null
     && config.ownershipEpochSnapshot === soul.currentOwnershipEpoch
 }
 
-function paidEntryActive(entry: SoulPaidAccessEntryRecord, soul: SoulAssetDetail): boolean {
-  return entry.revokedAt == null
+function paidEntryActive(entry: ChainSoulPaidEntry, soul: ChainSoulDetail): boolean {
+  return entry.currentEpoch
     && !paidEntryExpired(entry)
     && soul.currentOwnershipEpoch != null
     && entry.ownershipEpochSnapshot === soul.currentOwnershipEpoch
 }
 
-function paidEntryStale(entry: SoulPaidAccessEntryRecord, soul: SoulAssetDetail): boolean {
+function paidEntryStale(entry: ChainSoulPaidEntry, soul: ChainSoulDetail): boolean {
   return soul.currentOwnershipEpoch != null
     && entry.ownershipEpochSnapshot !== soul.currentOwnershipEpoch
 }
 
-function paidEntryExpired(entry: SoulPaidAccessEntryRecord): boolean {
-  if (!entry.expiresAtMs) return false
-  try {
-    return BigInt(entry.expiresAtMs) <= BigInt(Date.now())
-  } catch {
-    return false
-  }
-}
-
-function isCompEntry(entry: SoulPaidAccessEntryRecord): boolean {
-  try {
-    return BigInt(entry.pricePaidAtomic) === 0n
-  } catch {
-    return false
-  }
+function paidEntryExpired(entry: ChainSoulPaidEntry): boolean {
+  return !entry.unexpiredAtObservation
 }
 
 function paidAccessKindLabel(kind: number): string {
@@ -1962,7 +1929,8 @@ function formatDurationMs(value: string | number | bigint | null | undefined): s
   } catch {
     return '—'
   }
-  if (ms <= 0n) return 'lifetime'
+  if (ms < 0n) return '—'
+  if (ms === 0n) return '0 secs'
   const SEC = 1000n
   const MIN = 60n * SEC
   const HR = 60n * MIN
@@ -1984,26 +1952,23 @@ function formatDurationMs(value: string | number | bigint | null | undefined): s
 }
 
 function formatExpiresAtMs(value: string | null): string {
-  if (!value) return 'Never'
-  const ms = Number(value)
-  if (!Number.isFinite(ms)) return '—'
-  return new Date(ms).toLocaleString()
+  return value === null ? 'Never' : formatChainTimestamp(value)
 }
 
 // ── Right rail ───────────────────────────────────────────────────────
-function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
-  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
+function Rail({ soul, role }: { soul: ChainSoulDetail; role: Role }) {
+  const isAnimacraft = soul.provenanceKind === 'animacraft'
   const soulCreatorRoyaltyBps =
     soul.quote?.soulCreatorRoyaltyBps ?? soul.creatorRoyaltyBps
-  const grantPct =
-    soul.grantCapacity > 0 ? Math.min(100, (soul.activeGrantCount / soul.grantCapacity) * 100) : 0
+  const grantPct = BigInt(soul.grantCapacity) > 0n
+    ? Math.min(100, Number((BigInt(soul.activeGrantCount) * 10000n) / BigInt(soul.grantCapacity)) / 100) : 0
 
-  // Synthesize a small activity feed from contentVersions + grants.
+  // Mint/content slots retain timestamps; current grant slots do not retain an issuance timeline.
   const activity = useMemo(() => {
-    type Item = { ts: number; title: string; detail: string; tone?: 'gold' | 'teal' }
+    type Item = { ts: string; title: string; detail: string; tone?: 'gold' | 'teal' }
     const items: Item[] = []
     items.push({
-      ts: new Date(soul.createdAt).getTime(),
+      ts: soul.createdAtMs,
       title: 'Soul minted',
       detail: `${formatProvenance(soul.provenanceKind)} · creator ${formatAddress(soul.creatorAddress)}`,
     })
@@ -2017,16 +1982,8 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
         tone: v.isPublic ? 'gold' : 'teal',
       })
     }
-    for (const g of soul.activeGrants) {
-      items.push({
-        ts: new Date(g.createdAt).getTime(),
-        title: 'Grant issued',
-        detail: `${formatAddress(g.granteeAddress)} · ${g.scopes.join(', ')}`,
-        tone: 'teal',
-      })
-    }
-    return items.sort((a, b) => b.ts - a.ts).slice(0, 6)
-  }, [soul.contentVersions, soul.activeGrants, soul.createdAt, soul.creatorAddress, soul.provenanceKind])
+    return items.sort((a, b) => compareChainInteger(b.ts, a.ts)).slice(0, 6)
+  }, [soul.contentVersions, soul.createdAtMs, soul.creatorAddress, soul.provenanceKind])
 
   return (
     <aside className="flex flex-col gap-4">
@@ -2047,7 +2004,7 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
             }
           />
         )}
-        <KV k="Created" v={<span>{new Date(soul.createdAt).toLocaleDateString()}</span>} />
+        <KV k="Created" v={<span>{formatChainTimestamp(soul.createdAtMs)}</span>} />
       </div>
 
       <div className="rounded-2xl border border-[var(--border-soft)] bg-card p-[18px]">
@@ -2063,26 +2020,20 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
         <KV k="Skills versions" v={<span>{activeVersions(soul.contentVersions, KIND_SKILL).length}</span>} />
         <KV k="Memory entries" v={<span>{activeVersions(soul.contentVersions, KIND_MEMORY).length}</span>} />
         <KV
-          k={
-            isAnimacraftV5
-              ? 'Maker-source royalty'
-              : soul.provenanceKind === 'animacraft'
-                ? 'Maker royalty'
-                : 'Creator royalty'
-          }
-          v={<span>{((soul.animacraftProvenance?.makerRoyaltyBps ?? soul.creatorRoyaltyBps) / 100).toFixed(2)}%</span>}
+          k={isAnimacraft ? 'Maker-source royalty' : 'Creator royalty'}
+          v={<span>{makerRoyaltyLabel(soul)}</span>}
         />
-        {isAnimacraftV5 && (
+        {isAnimacraft && (
           <KV
             k="Soul creator royalty"
             v={<span>{(soulCreatorRoyaltyBps / 100).toFixed(2)}%</span>}
           />
         )}
-        {soul.collection && !isAnimacraftV5 && (
+        {soul.collection && !isAnimacraft && (
           <KV k="Collection royalty" v={<span>{(soul.collection.extraRoyaltyBps / 100).toFixed(2)}%</span>} />
         )}
-        {isAnimacraftV5 && soul.collectionOnChainId && (
-          <KV k="Secondary sale" v={<span className="text-danger">Blocked by collection binding</span>} />
+        {isAnimacraft && soul.collectionOnChainId && (
+          <KV k="Secondary sale" v={<span className="text-danger">Native Collection resale is not yet available</span>} />
         )}
         {role === 'owner' && (
           <div className="mt-3">
@@ -2102,14 +2053,15 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
 
       <div className="rounded-2xl border border-[var(--border-soft)] bg-card p-[18px]">
         <div className="mb-3 flex items-center justify-between">
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-action-label">Activity</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-action-label">Content activity</div>
         </div>
+        <p className="mb-3 text-[11px] text-muted">Mint and content timestamps only. Grant issuance history is not retained on chain.</p>
         <div className="sd-activity">
           {activity.map((a, i) => (
             <div key={i} className={`sd-act ${a.tone === 'gold' ? 'sd-act-gold' : a.tone === 'teal' ? 'sd-act-teal' : ''}`}>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="min-w-0 truncate text-[13px] font-semibold text-foreground">{a.title}</span>
-                <span className="flex-shrink-0 whitespace-nowrap text-[11px] text-[var(--text-faint)]">{formatRelative(a.ts)}</span>
+                <span className="flex-shrink-0 whitespace-nowrap text-[11px] text-[var(--text-faint)]">{formatChainTimestamp(a.ts, true)}</span>
               </div>
               <div className="mt-1 text-[12px] leading-[1.45] text-muted">{a.detail}</div>
             </div>
@@ -2147,8 +2099,7 @@ function Rail({ soul, role }: { soul: SoulAssetDetail; role: Role }) {
 // ── Page ─────────────────────────────────────────────────────────────
 export default function SoulDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const { user, getAuthHeaders } = useAuth()
-  const { data: soul, isLoading, error } = useSoulDetail(id, getAuthHeaders, user?.id)
+  const { data: soul, isLoading, error, refetch } = useSoulDetail(id)
   const [showUpdatePrice, setShowUpdatePrice] = useState(false)
   const [showDelist, setShowDelist] = useState(false)
   const [showReport, setShowReport] = useState(false)
@@ -2178,18 +2129,20 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
       <div className="mx-auto max-w-[1080px] px-4 py-12 sm:px-6">
         <EmptyState
           icon="🫥"
-          label="Soul not found"
-          sublabel="The Soulidity projection does not have this asset yet, or the route ID is invalid."
-          actionLabel="Back to Market"
-          onAction={() => {
-            window.location.href = '/market'
-          }}
+          label="Soul data unavailable"
+          sublabel={error?.message ?? 'The current chain state could not be verified. This does not mean the Soul is missing.'}
+          actionLabel="Retry chain read"
+          onAction={() => { void refetch() }}
         />
       </div>
     )
   }
 
   const role = deriveRole(soul)
+  // Dispose decrypted child state when the actual read wallet/authority changes,
+  // including a cached response arriving without an intermediate loading render.
+  const workspaceScope = JSON.stringify([soul.originalPackageId, soul.onChainId, soul.viewerAddress,
+    soul.currentOwnershipEpoch, role, soul.activeGrants.filter(grant => grant.granteeAddress === soul.viewerAddress)])
   const priceLabel = soul.quote?.totalAtomic
     ? formatAtomicAmountForDisplay(soul.quote.totalAtomic)
     : soul.listedPriceAtomic
@@ -2231,23 +2184,30 @@ export default function SoulDetailPage({ params }: { params: Promise<{ id: strin
         <QuickStats soul={soul} />
       </div>
 
+      {soul.provenanceKind === 'animacraft' && <div className="mt-4">
+        <Button variant="outline" size="sm" onClick={() => setShowUpdatePrice(true)}>Listing / price update recovery</Button>
+      </div>}
+
       <div className="sd-body mt-5 grid gap-5" style={{ gridTemplateColumns: 'minmax(0,1fr) 380px' }}>
         <Workspace
+          key={workspaceScope}
           soul={soul}
           role={role}
           detailQueryId={id}
-          viewerId={user?.id ?? null}
-          viewerAddress={user?.primarySuiAddress ?? null}
+          viewerId={soul.viewerAddress}
+          viewerAddress={soul.viewerAddress}
         />
         <Rail soul={soul} role={role} />
       </div>
 
-      {soul.isOwner && soul.listingStatus === 'listed' && (
+      {(soul.provenanceKind === 'animacraft' || (soul.isOwner && soul.chainListingStatus === 'LISTED')) && (
         <>
           <UpdatePriceModal soul={soul} open={showUpdatePrice} onClose={() => setShowUpdatePrice(false)} />
-          <DelistModal soul={soul} open={showDelist} onClose={() => setShowDelist(false)} />
         </>
       )}
+
+      {(soul.provenanceKind === 'animacraft' || (soul.isOwner && soul.chainListingStatus === 'LISTED')) &&
+        <DelistModal soul={soul} open={showDelist} onClose={() => setShowDelist(false)} />}
 
       <ReportModal
         open={showReport}

@@ -8,51 +8,8 @@ import {
   attachSoulidityDeploymentSignature,
   hasCurrentSoulidityDeploymentSignature,
 } from '@soulidity/sdk'
-import type { PendingSealMaterial } from '@/lib/upload/client-seal'
 
 const IMPORT_RESULT_KEY = 'soul-import-result'
-const IMPORT_RECOVERY_KEY = 'soul-import-recovery'
-
-// ── Upload result shapes (same as create-soul-provider) ──
-
-interface PublicUploadResult {
-  blobId: string
-  blobObjectId: string
-  contentHash: string
-  blobUrl: string
-}
-
-interface EncryptedUploadResult {
-  blobId: string
-  blobObjectId: string
-  contentHash: string
-  blobUrl: string
-  sealMaterial: PendingSealMaterial
-  skillName?: string | null
-}
-
-export interface UploadResults {
-  ownerAddress?: string
-  coverImage?: PublicUploadResult
-  charFile?: EncryptedUploadResult
-  memorySeed?: EncryptedUploadResult
-  skillsFile?: EncryptedUploadResult
-}
-
-export function selectReusableUploadResults(
-  existing: UploadResults | null,
-  ownerAddress: string,
-): UploadResults {
-  if (!existing) return { ownerAddress }
-  const canReuse = existing.ownerAddress === ownerAddress
-  return {
-    ownerAddress,
-    coverImage: existing.coverImage,
-    charFile: canReuse ? existing.charFile : undefined,
-    memorySeed: canReuse ? existing.memorySeed : undefined,
-    skillsFile: canReuse ? existing.skillsFile : undefined,
-  }
-}
 
 // ── Import result ──
 
@@ -61,6 +18,7 @@ export interface ImportResult {
   soulOnChainId: string
   provenanceKind: string
   originRef: string
+  authoringCompletionKey?: string
 }
 
 interface StoredImportResult {
@@ -138,10 +96,6 @@ interface ImportSoulContextValue {
   /** True when description comes from mapping (not manual input) */
   descriptionMapped: boolean
 
-  // Step 5
-  uploadResults: UploadResults | null
-  setUploadResults: (r: UploadResults) => void
-
   // Step 6
   importResult: ImportResult | null
   setImportResult: (r: ImportResult | null) => void
@@ -198,10 +152,6 @@ function ImportSoulProviderInner({
   const [royalty, setRoyalty] = useState(500)
   const [tags, setTags] = useState('')
 
-  // Step 5
-  const [uploadResults, setUploadResultsRaw] = useState<UploadResults | null>(null)
-  const setUploadResults = useCallback((r: UploadResults) => setUploadResultsRaw(r), [])
-
   // Step 6
   const [importResult, setImportResultRaw] = useState<ImportResult | null>(null)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -240,7 +190,6 @@ function ImportSoulProviderInner({
       setCoverImagePreviewUrl(null)
     }
     setCoverImageFileRaw(file)
-    setUploadResultsRaw((prev) => (prev ? { ...prev, coverImage: undefined } : prev))
   }, [])
 
 
@@ -250,20 +199,17 @@ function ImportSoulProviderInner({
     }
   }, [])
 
-  // Invalidate upload caches on file change
+  // Original file inputs; encrypted paid preparation is owned by the authoring journal.
   const setCharFile = useCallback((f: File | null) => {
     setCharFileRaw(f)
-    setUploadResultsRaw((prev) => (prev ? { ...prev, charFile: undefined } : prev))
   }, [])
 
   const setMemoryFile = useCallback((f: File | null) => {
     setMemoryFileRaw(f)
-    setUploadResultsRaw((prev) => (prev ? { ...prev, memorySeed: undefined } : prev))
   }, [])
 
   const setSkillsFile = useCallback((f: File | null) => {
     setSkillsFileRaw(f)
-    setUploadResultsRaw((prev) => (prev ? { ...prev, skillsFile: undefined } : prev))
   }, [])
 
   const setRawFile = useCallback((f: File | null) => {
@@ -280,13 +226,10 @@ function ImportSoulProviderInner({
     setMemoryFileRaw(null)
     setSkillsFileRaw(null)
     setCoverImage(null)
-    setUploadResultsRaw(null)
     setImportResultRaw(null)
     try {
       sessionStorage.removeItem(IMPORT_RESULT_KEY)
-      // IMPORT_RECOVERY_KEY is intentionally NOT cleared here — a committed TX
-      // recovery must survive draft edits from back-navigation. Only reset()
-      // (explicit "Start Over") clears the recovery key.
+      // Draft edits never clear the durable authoring operation.
     } catch {}
   }, [setCoverImage])
 
@@ -341,11 +284,9 @@ function ImportSoulProviderInner({
     setCoverImage(null)
     setRoyalty(500)
     setTags('')
-    setUploadResultsRaw(null)
     setImportResultRaw(null)
     try {
       sessionStorage.removeItem(IMPORT_RESULT_KEY)
-      sessionStorage.removeItem(IMPORT_RECOVERY_KEY)
     } catch {}
   }, [setCoverImage])
 
@@ -367,7 +308,6 @@ function ImportSoulProviderInner({
       royalty, setRoyalty,
       tags, setTags,
       resolvedName, resolvedDescription, nameMapped, descriptionMapped,
-      uploadResults, setUploadResults,
       importResult, setImportResult,
       isHydrated,
       reset,

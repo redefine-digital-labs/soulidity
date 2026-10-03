@@ -7,9 +7,6 @@ import { useAuth, type AuthUser } from '@/components/providers/auth-provider'
 import { Button } from '@/components/ui/button'
 import { CoverImagePicker } from '@/components/ui/cover-image-picker'
 import { useUpdateProfile } from '@/lib/hooks/use-profile'
-import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
-import { uploadSoulPayload } from '@/lib/upload/client-upload'
-import { useUploadCostReview } from '@/components/upload/upload-cost-review'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '—'
@@ -19,10 +16,8 @@ function formatAddress(value: string | null | undefined) {
 type WalletStatus = 'idle' | 'syncing' | 'success' | 'error'
 
 function ProfileForm({ user }: { user: AuthUser }) {
-  const { status, error, updateProfile } = useUpdateProfile()
-  const { getAuthHeaders, refresh } = useAuth()
-  const { suiWallet, suiClient, signAndExecute } = useWalletSign()
-  const { requestUploadCostApproval } = useUploadCostReview()
+  const { status, error, updateProfile, pending, recoveryExport, resumeProfile, queryProfile, discardProfile } = useUpdateProfile()
+  const { profileError, refresh } = useAuth()
 
   const [displayName, setDisplayName] = useState(() => user.displayName ?? user.tgName ?? '')
   const [handle, setHandle] = useState(() => user.handle ?? '')
@@ -65,71 +60,41 @@ function ProfileForm({ user }: { user: AuthUser }) {
     setCoverImageFileRaw(null)
   }, [])
 
-  const uploadCoverImage = useCallback(async () => {
-    if (!coverImageFile) return coverImagePreviewUrl
-    if (!suiWallet) {
-      throw new Error('Connect a Sui wallet before uploading a profile cover')
-    }
-
-    const headers = await getAuthHeaders()
-    const upload = await uploadSoulPayload({
-      file: coverImageFile,
-      uploadType: 'public',
-      kind: 'soul-content',
-      authHeaders: headers,
-      walletAddress: suiWallet.address,
-      suiClient,
-      signAndExecute,
-      confirmQuote: requestUploadCostApproval,
-    })
-    return upload.blobUrl
-  }, [coverImageFile, coverImagePreviewUrl, getAuthHeaders, requestUploadCostApproval, signAndExecute, suiClient, suiWallet])
-
   const handleSyncWallet = useCallback(async () => {
     setWalletStatus('syncing')
     setWalletError(null)
 
     try {
-      const headers = await getAuthHeaders()
-      const response = await fetch('/api/profile/wallet', {
-        method: 'POST',
-        headers,
-      })
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}))
-        throw new Error(body.error || `Wallet sync failed: ${response.status}`)
-      }
-
-      const data = await response.json() as { primarySuiAddress: string }
-      setWalletAddress(data.primarySuiAddress)
-      setWalletStatus('success')
       await refresh()
+      setWalletAddress(user.primarySuiAddress)
+      setWalletStatus('success')
     } catch (syncError) {
       setWalletError(syncError instanceof Error ? syncError.message : 'Wallet sync failed')
       setWalletStatus('error')
     }
-  }, [getAuthHeaders, refresh])
+  }, [refresh, user.primarySuiAddress])
 
   async function handleSave() {
     setSaveError(null)
     try {
-      const nextCoverImageUrl = await uploadCoverImage()
+      if (profileError) throw new Error('Reload your chain profile before saving. A failed read does not mean this wallet has no profile.')
       const savedProfile = await updateProfile({
         displayName: displayName.trim() || null,
         avatar: emoji,
         bio: bio.trim() || null,
-        coverImageUrl: nextCoverImageUrl,
+        coverImageUrl: coverImageFile ? user.coverImageUrl : coverImagePreviewUrl,
         handle: handle.trim() || null,
         twitterUrl: twitterUrl.trim() || null,
         websiteUrl: websiteUrl.trim() || null,
-      }) as { coverImage?: string | null }
+      }, coverImageFile)
+      if (savedProfile.status !== 'saved') return
 
       if (coverPreviewObjectUrlRef.current) {
         URL.revokeObjectURL(coverPreviewObjectUrlRef.current)
         coverPreviewObjectUrlRef.current = null
       }
       setCoverImageFileRaw(null)
-      setCoverImagePreviewUrl(savedProfile.coverImage ?? nextCoverImageUrl ?? null)
+      setCoverImagePreviewUrl(savedProfile.intent.metadata.coverImageUrl)
     } catch (saveFailure) {
       setSaveError(saveFailure instanceof Error ? saveFailure.message : 'Profile update failed')
     }
@@ -137,6 +102,26 @@ function ProfileForm({ user }: { user: AuthUser }) {
 
   const isSaving = status === 'saving'
   const isSyncingWallet = walletStatus === 'syncing'
+  const frozen = pending?.draft?.intent ?? pending?.operation?.intent
+
+  function exportRecovery() {
+    if (!recoveryExport) return
+    const url = URL.createObjectURL(new Blob([recoveryExport], { type: 'application/json' }))
+    const link = document.createElement('a'); link.href = url; link.download = 'public-profile-recovery.json'; link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  async function recover(action: 'query' | 'resume' | 'discard') {
+    setSaveError(null)
+    try {
+      const result = await (action === 'query' ? queryProfile() : action === 'resume' ? resumeProfile(coverImageFile) : discardProfile())
+      if (result.status === 'saved') {
+        setDisplayName(result.intent.metadata.displayName ?? ''); setHandle(result.intent.handle ?? '')
+        setBio(result.intent.metadata.bio ?? ''); setEmoji(result.intent.metadata.avatar ?? '🤖')
+        setTwitterUrl(result.intent.metadata.twitterUrl ?? ''); setWebsiteUrl(result.intent.metadata.websiteUrl ?? '')
+        setCoverImageFileRaw(null); setCoverImagePreviewUrl(result.intent.metadata.coverImageUrl)
+      }
+    } catch (failure) { setSaveError(failure instanceof Error ? failure.message : 'Profile recovery failed') }
+  }
 
   return (
     <div id="profile" className="max-w-[640px] mx-auto px-6 py-8 relative z-10">
@@ -145,7 +130,13 @@ function ProfileForm({ user }: { user: AuthUser }) {
       <p className="text-sm text-muted mb-6">
         These settings power your public page at <span className="font-mono text-foreground">/community/u/{user.id}</span>.
       </p>
+      {profileError && <div role="alert" className="mb-6 rounded-xl border border-danger p-4">
+        <p className="text-sm text-danger">Profile could not be read: {profileError}</p>
+        <p className="text-xs text-muted mt-1">Your existing profile has not been changed. Reload before creating or saving.</p>
+        <Button variant="outline" size="sm" onClick={() => void handleSyncWallet()} disabled={isSyncingWallet}>Retry chain read</Button>
+      </div>}
 
+      <fieldset disabled={isSaving || !!pending}>
       <section id="cover" className="mb-8 rounded-xl border border-border bg-card px-5 py-5">
         <div className="mb-3">
           <h2 className="text-sm font-bold text-foreground">Profile Cover</h2>
@@ -172,7 +163,7 @@ function ProfileForm({ user }: { user: AuthUser }) {
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => void handleSyncWallet()} disabled={isSyncingWallet}>
-            {isSyncingWallet ? 'Linking…' : walletAddress ? 'Re-sync wallet' : 'Link wallet'}
+            {isSyncingWallet ? 'Reading…' : 'Refresh wallet data'}
           </Button>
         </div>
         <div className="mt-4 rounded-lg border border-border bg-card2/60 px-4 py-3">
@@ -259,6 +250,30 @@ function ProfileForm({ user }: { user: AuthUser }) {
         />
       </div>
 
+      </fieldset>
+      {coverImageFile && <Button size="sm" variant="outline" onClick={() => {
+        const url = URL.createObjectURL(coverImageFile), link = document.createElement('a')
+        link.href = url; link.download = coverImageFile.name; link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      }}>Download cropped cover for recovery</Button>}
+      {pending && <section aria-label="Pending profile save" className="mb-4 rounded-xl border border-border p-4">
+        <h2 className="text-sm font-bold">Unfinished profile save</h2>
+        <p className="text-xs text-muted mt-2">This save is frozen for {frozen?.owner}. Checking does not upload or request a signature. Resume uses the original form and transaction, not edits made afterward.</p>
+        <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify({ handle: frozen?.handle, ...frozen?.metadata }, null, 2)}</pre>
+        {pending.draft?.cover && !pending.draft.coverReceipt && <label className="block text-xs mt-3">
+          The cropped cover is cached for recovery. If that cache is missing, select its downloaded copy ({pending.draft.cover.byteLength} bytes), not the uncropped original.
+          <input type="file" accept="image/png,image/jpeg,image/webp" disabled={isSaving}
+            onChange={event => setCoverImage(event.target.files?.[0] ?? null)} />
+        </label>}
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Button size="sm" variant="outline" disabled={isSaving} onClick={() => void recover('query')}>Check result</Button>
+          <Button size="sm" disabled={isSaving} onClick={() => void recover('resume')}>Resume original save</Button>
+          <Button size="sm" variant="outline" disabled={isSaving} onClick={() => void recover('discard')}>Archive safe record</Button>
+        </div>
+        <p className="text-xs text-muted mt-2">Signed or uncertain transactions cannot be discarded. Archiving retains public receipts in this browser.</p>
+      </section>}
+      {recoveryExport && (pending || error) && <Button size="sm" variant="outline" onClick={exportRecovery}>Export recovery record</Button>}
+      {status === 'pending' && <p role="status" className="text-xs text-muted my-3">The save is not yet confirmed. Check its result before starting another.</p>}
       {status === 'success' && (
         <div className="mb-4 rounded-lg border border-teal/30 bg-teal/8 px-4 py-2.5">
           <p className="text-xs font-semibold text-teal">Profile saved successfully</p>
@@ -274,7 +289,7 @@ function ProfileForm({ user }: { user: AuthUser }) {
         full
         size="lg"
         onClick={() => void handleSave()}
-        disabled={isSaving}
+        disabled={isSaving || !!profileError || !!pending}
       >
         {isSaving ? 'Saving…' : 'Save Profile'}
       </Button>
@@ -292,7 +307,7 @@ export default function ProfilePage() {
       sublabel="Profile settings are only available after your Soulidity account is loaded."
       className="max-w-[640px]"
     >
-      {user ? <ProfileForm key={user.id} user={user} /> : null}
+      {user ? <ProfileForm key={user.primarySuiAddress ?? user.id} user={user} /> : null}
     </AuthGate>
   )
 }

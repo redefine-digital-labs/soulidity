@@ -2,34 +2,36 @@
 
 import { use } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
-import { useAuth } from '@/components/providers/auth-provider'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
-import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
-
-function resolvePriceDisplay(rawPrice: string | null, listedPriceAtomic: string | null) {
-  if (rawPrice) {
-    try {
-      return formatAtomicAmountForDisplay(parseDisplayAmountToAtomic(rawPrice))
-    } catch {
-      return rawPrice
-    }
-  }
-
-  if (listedPriceAtomic) {
-    return formatAtomicAmountForDisplay(listedPriceAtomic)
-  }
-
-  return 'Pending sync'
-}
+import { useListSoul } from '@/lib/hooks/use-list-soul'
+import { NativeListingRecovery } from '@/components/souls/native-listing-recovery'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
 
 export default function SellSuccessPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const searchParams = useSearchParams()
-  const { user, getAuthHeaders } = useAuth()
-  const { data: soul } = useSoulDetail(id, getAuthHeaders, user?.id)
+  const { data: soul, error, refetch } = useSoulDetail(id)
+  const {native}=useListSoul(soul??null)
 
-  const priceDisplay = resolvePriceDisplay(searchParams.get('price'), soul?.listedPriceAtomic ?? null)
+  if (error) return <div className="max-w-[560px] mx-auto px-6 py-8"><p role="alert">Listing state could not be verified: {error.message}</p><button onClick={() => void refetch()}>Retry chain read</button></div>
+  if (!soul) return <div className="max-w-[560px] mx-auto px-6 py-8"><p className="text-muted">Loading listing evidence…</p></div>
+  if (native) return <div className="max-w-[560px] mx-auto px-6 py-8 relative z-10">
+    <div className="bg-card border border-border rounded-xl p-6">
+      <h2 className="font-display text-2xl font-bold mb-2">Listing receipt</h2>
+      <p className="text-muted text-sm">Verify the saved transaction and current listing below. A saved receipt or a price in this URL is not proof that the Soul is still listed.</p>
+      <NativeListingRecovery actions={native}/>
+      {!native.record && <p className="mt-3 text-sm text-muted">{native.wallet ? 'No saved listing transaction for this wallet on this device.' : 'Connect the wallet used to list this Soul to load its saved transaction.'}</p>}
+      <Link href={`/souls/${encodeURIComponent(soul.onChainId)}`} className="mt-4 inline-block text-action-label">Open Soul →</Link>
+    </div>
+  </div>
+
+  if (soul.chainListingStatus !== 'LISTED' || !soul.listingObjectOnChainId || soul.listedPriceAtomic === null) {
+    return <div className="max-w-[560px] mx-auto px-6 py-8"><h2>Listing is not active</h2>
+      <p>The current chain state does not show an active listing. A price or success URL does not prove a sale listing.</p>
+      <button onClick={() => void refetch()}>Refresh chain state</button>
+      <Link href={`/souls/${encodeURIComponent(soul.onChainId)}`}>Open Soul →</Link></div>
+  }
+  const priceDisplay = formatAtomicAmountForDisplay(soul.listedPriceAtomic)
+  const belowFloor = soul.listingStatus === 'floor-violation'
 
   return (
     <div className="max-w-[560px] mx-auto px-6 py-8 relative z-10">
@@ -54,9 +56,9 @@ export default function SellSuccessPage({ params }: { params: Promise<{ id: stri
           🏷️
         </div>
 
-        <h2 className="font-display text-2xl font-bold mb-2">Soul Listed!</h2>
+        <h2 className="font-display text-2xl font-bold mb-2">{belowFloor ? 'Listed below collection floor' : 'Soul Listed!'}</h2>
         <p className="text-muted mb-7">
-          Your Soul is now live in the marketplace at{' '}
+          {belowFloor ? 'Listed on chain but hidden by the collection floor policy, at ' : 'The current chain listing is active at '}
           <span className="text-gold font-semibold">{priceDisplay}</span>.
         </p>
 
@@ -75,7 +77,7 @@ export default function SellSuccessPage({ params }: { params: Promise<{ id: stri
           </div>
           <div className="flex justify-between px-4 py-2.5">
             <span className="text-muted">Status</span>
-            <span className="text-success">● Listed in Market</span>
+            <span className="text-success">{belowFloor ? '● Listed on chain · below floor' : '● Listed in Market'}</span>
           </div>
         </div>
 

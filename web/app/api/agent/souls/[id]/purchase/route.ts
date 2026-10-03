@@ -1,40 +1,18 @@
 import { createHash } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { suiClient } from '@soulidity/sdk'
+import { suiClient, selectCoinObjectIdsForAmountAcrossPages, getRequiredSoulidityEnv,
+  getMarketConfigV2, quoteSoulPurchase, resolveOwnedPersonalKiosk,
+  SoulidityPersonalKioskInvariantError, buildBuySoulTx } from '@soulidity/sdk'
 import { takeRateLimitToken } from '@/lib/rate-limit'
-import { selectCoinObjectIdsForAmountAcrossPages } from '@soulidity/sdk'
-import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
-import {
-  assertPhysicalWardrobeV7Runtime,
-  fetchPhysicalWardrobeV7Snapshot,
-  getAnimacraftProvenanceForState,
-  getAnimacraftPhysicalProfileV7Id,
-  getAnimacraftWardrobeV7Id,
-  getMarketConfigV6,
-  getSoulListingObject,
-  physicalWardrobeV7RuntimeFromEnv,
-  ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
-  quoteAnimacraftSoulPurchase,
-  quoteAnimacraftV5SoulSale,
-  quoteSoulPurchase,
-  sameSuiValue,
-} from '@soulidity/sdk'
-import { resolveOwnedPersonalKiosk, SoulidityPersonalKioskInvariantError } from '@soulidity/sdk'
-import {
-  buildBuyAnimacraftSoulTx,
-  buildBuyAnimacraftV5SoulTx,
-  buildBuyAnimacraftV7SoulTx,
-  buildBuySoulTx,
-} from '@soulidity/sdk'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
+import { prepareNativeAgentPurchase } from '@/lib/animacraft/native-agent-purchase-prepare'
 
 export const dynamic = 'force-dynamic'
 
 const AGENT_PURCHASE_RATE_LIMIT = { max: 10, windowMs: 5 * 60 * 1000 } as const
 const PREPARED_PURCHASE_TTL_MS = 10 * 60 * 1000
-const PAYMENT_COIN_TYPE = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE')
 
 export async function POST(
   request: Request,
@@ -59,6 +37,11 @@ export async function POST(
   if (!soul) {
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
   }
+  const agentAddress = auth.walletAddresses[0]!
+  if (soul.provenanceKind === 'animacraft') {
+    return prepareNativeAgentPurchase({ request, soul,
+      agentMemberId: auth.agent.agentMemberId, buyer: agentAddress })
+  }
   if (soul.listingStatus !== 'listed' || !soul.listingObjectOnChainId || !soul.listedPriceAtomic) {
     return NextResponse.json({ error: 'Soul is not listed for sale' }, { status: 409 })
   }
@@ -67,130 +50,29 @@ export async function POST(
     return NextResponse.json({ error: 'Soul is not listed for sale' }, { status: 409 })
   }
 
-  const agentAddress = auth.walletAddresses[0]!
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
 
   try {
-    const [wardrobeV7Id, physicalProfileV7Id] = await Promise.all([
-      getAnimacraftWardrobeV7Id(soul.stateOnChainId),
-      getAnimacraftPhysicalProfileV7Id(soul.stateOnChainId),
-    ])
-    if (Boolean(wardrobeV7Id) !== Boolean(physicalProfileV7Id)) {
-      return NextResponse.json(
-        { error: 'Physical Wardrobe v7 binding is incomplete; purchase is blocked' },
-        { status: 409 },
-      )
+    const config = await getMarketConfigV2(
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+      getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'),
+    )
+    const quote = {
+      ...quoteSoulPurchase(config, {
+        priceAtomic: listedPriceAtomic,
+        creatorRoyaltyBps: soul.creatorRoyaltyBps,
+        collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
+      }),
+      royaltySource: 'soul-creator' as const,
     }
-    const physicalRuntime = physicalWardrobeV7RuntimeFromEnv()
-    const physicalSnapshot = wardrobeV7Id && physicalProfileV7Id
-      ? await fetchPhysicalWardrobeV7Snapshot(
-          suiClient as never,
-          assertPhysicalWardrobeV7Runtime(physicalRuntime),
-          {
-            soulObjectId: soul.onChainId,
-            soulStateObjectId: soul.stateOnChainId,
-            walletAddress: agentAddress,
-          },
-        )
-      : null
-    if ((wardrobeV7Id || physicalProfileV7Id) && !physicalSnapshot) {
-      return NextResponse.json(
-        { error: 'Physical Wardrobe v7 could not be verified; purchase is blocked' },
-        { status: 409 },
-      )
-    }
-    const animacraftProvenance = soul.provenanceKind === 'animacraft'
-      ? await getAnimacraftProvenanceForState(
-        soul.stateOnChainId,
-        getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID'),
-      )
-      : null
-    if (soul.provenanceKind === 'animacraft' && !animacraftProvenance) {
-      return NextResponse.json(
-        { error: 'Animacraft provenance is unavailable; purchase is blocked' },
-        { status: 409 },
-      )
-    }
-    const isAnimacraftV5 = animacraftProvenance?.animacraftVersion === 5
-    const quote = isAnimacraftV5
-      ? await (async () => {
-          const config = await getMarketConfigV6(
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
-          )
-          if (!config.secondaryEnabled || config.platformFeeBps !== ANIMACRAFT_V5_PROTOCOL_FEE_BPS) {
-            throw new Error('Animacraft v5 secondary trading is unavailable')
-          }
-          const verifiedV5Listing = await getSoulListingObject(
-            soul.listingObjectOnChainId!,
-            packageId,
-          )
-          if (
-            verifiedV5Listing.version !== 5
-            || !verifiedV5Listing.active
-            || !sameSuiValue(verifiedV5Listing.soulId, soul.onChainId)
-            || !sameSuiValue(verifiedV5Listing.stateId, soul.stateOnChainId)
-            || verifiedV5Listing.priceAtomic !== listedPriceAtomic
-            || verifiedV5Listing.collectionId !== null
-          ) {
-            throw new Error('Animacraft v5 listing does not match the Soul')
-          }
-          const grossQuote = quoteAnimacraftV5SoulSale(listedPriceAtomic, {
-            makerSourceRoyaltyBps: animacraftProvenance!.makerRoyaltyBps,
-            soulCreatorRoyaltyBps: verifiedV5Listing.creatorRoyaltyBps,
-          })
-          return {
-            priceAtomic: grossQuote.priceAtomic.toString(),
-            platformFeeAtomic: grossQuote.protocolFeeAtomic.toString(),
-            creatorRoyaltyAtomic: grossQuote.soulCreatorRoyaltyAtomic.toString(),
-            collectionRoyaltyAtomic: '0',
-            totalAtomic: grossQuote.priceAtomic.toString(),
-            makerRoyaltyAtomic: grossQuote.makerSourceRoyaltyAtomic.toString(),
-            royaltySource: 'animacraft-maker' as const,
-          }
-        })()
-      : animacraftProvenance
-      ? await (async () => {
-          const config = await getMarketConfigV6(
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
-          )
-          const makerQuote = quoteAnimacraftSoulPurchase(config, {
-            priceAtomic: listedPriceAtomic,
-            makerRoyaltyBps: animacraftProvenance.makerRoyaltyBps,
-            collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
-          })
-          return {
-            ...makerQuote,
-            creatorRoyaltyAtomic: makerQuote.makerRoyaltyAtomic,
-            royaltySource: 'animacraft-maker' as const,
-          }
-        })()
-      : await (async () => {
-          const config = await getMarketConfigV6(
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
-            getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID'),
-          )
-          return {
-            ...quoteSoulPurchase(config, {
-            priceAtomic: listedPriceAtomic,
-            creatorRoyaltyBps: soul.creatorRoyaltyBps,
-            collectionRoyaltyBps: soul.collection?.extraRoyaltyBps ?? 0,
-          }),
-          royaltySource: 'soul-creator' as const,
-          }
-        })()
     const totalRequired = BigInt(quote.totalAtomic)
-
     const kioskResult = await resolveOwnedPersonalKiosk({ ownerAddresses: auth.walletAddresses })
     const buyerKioskId = kioskResult.status === 'ready' ? kioskResult.kiosk.currentKioskId : null
     const buyerKioskCapOnChainId = kioskResult.status === 'ready' ? kioskResult.kiosk.currentKioskCapOnChainId : null
-
     let coinIds: string[] = []
     if (totalRequired > 0n) {
       const selectedCoinIds = await selectCoinObjectIdsForAmountAcrossPages(suiClient, {
         owner: agentAddress,
-        coinType: PAYMENT_COIN_TYPE,
+        coinType: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE'),
         requiredAmount: totalRequired,
       })
       if (!selectedCoinIds || selectedCoinIds.length === 0) {
@@ -198,8 +80,7 @@ export async function POST(
       }
       coinIds = selectedCoinIds
     }
-
-    const sharedPurchaseParams = {
+    const tx = buildBuySoulTx({
       sellerKioskId: soul.currentKioskId,
       stateObjectId: soul.stateOnChainId,
       listingObjectId: soul.listingObjectOnChainId,
@@ -208,43 +89,7 @@ export async function POST(
       collectionObjectId: soul.collectionOnChainId ?? null,
       buyerKioskId,
       buyerKioskCapOnChainId,
-    }
-    const tx = physicalSnapshot
-      ? buildBuyAnimacraftV7SoulTx({
-          sellerKioskId: soul.currentKioskId,
-          stateObjectId: soul.stateOnChainId,
-          listingObjectId: soul.listingObjectOnChainId,
-          provenanceObjectId: animacraftProvenance!.objectId,
-          priceAtomic: totalRequired,
-          paymentCoinObjectIds: coinIds,
-          buyerKioskId,
-          buyerKioskCapOnChainId,
-          v7: {
-            physicalConfigObjectId: physicalRuntime.physicalProtocolConfigObjectId,
-            physicalProfileObjectId: physicalSnapshot.maker.physicalProfileObjectId,
-            wardrobeObjectId: physicalSnapshot.wardrobe.objectId,
-            expectedWardrobeRevision: physicalSnapshot.wardrobe.revision,
-          },
-        })
-      : isAnimacraftV5
-      ? buildBuyAnimacraftV5SoulTx({
-          sellerKioskId: soul.currentKioskId,
-          stateObjectId: soul.stateOnChainId,
-          listingObjectId: soul.listingObjectOnChainId,
-          provenanceObjectId: animacraftProvenance!.objectId,
-          priceAtomic: totalRequired,
-          paymentCoinObjectIds: coinIds,
-          buyerKioskId,
-          buyerKioskCapOnChainId,
-        })
-      : animacraftProvenance
-        ? buildBuyAnimacraftSoulTx({
-          ...sharedPurchaseParams,
-          provenanceObjectId: animacraftProvenance.objectId,
-          makerObjectId: animacraftProvenance.makerId,
-          makerTreasuryObjectId: animacraftProvenance.makerTreasuryId,
-        })
-        : buildBuySoulTx(sharedPurchaseParams)
+    })
     tx.setSender(agentAddress)
 
     // Cross-package @mysten/sui type mismatch in the merged web runtime.

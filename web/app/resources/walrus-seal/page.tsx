@@ -176,13 +176,14 @@ export default function WalrusSealPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Client decryption flow</h2>
         <ol className="text-sm text-muted space-y-1.5 list-decimal ml-5">
-          <li>Call <code>GET /api/souls/[id]/content/[kind]/[name]/[versionIndex]/access</code> for the exact slot. The route returns the sidecar, Walrus blob URL, Seal server config, and an approval policy (module + function + required object IDs). The legacy <code>/api/souls/[id]/access</code> route resolves only the canonical Soul document.</li>
+          <li>The browser reads the exact slot, live permissions and per-version encrypted envelope from chain, and verifies the contained, certified, unexpired Walrus Blob. Content Open/Read no longer uses a human access API.</li>
           <li>Create a <code>SessionKey</code> via <code>SessionKey.create</code>, sign the personal message with the viewer wallet.</li>
           <li>Build the approval transaction bytes matching the returned policy (one of the four <code>seal_approve_content_*</code> entries).</li>
           <li>Fetch the encrypted blob from Walrus.</li>
           <li>Call <code>SealClient.decrypt</code> with the sidecar <code>encryptedDek</code> — the Seal key servers verify the approval TX before releasing key shares.</li>
           <li>AES-GCM decrypt the blob with the recovered DEK + IV.</li>
           <li>Verify the plaintext SHA-256 matches the bound <code>contentHash</code>.</li>
+          <li>Recheck chain authority before releasing plaintext. Wallet, client, release or Soul changes cancel the read and clear private buffers; public read permission does not imply plaintext storage.</li>
         </ol>
       </div>
 

@@ -13,7 +13,10 @@ import {
 } from '@mysten/sui/transactions'
 import { downloadPolicyToU8 } from '../kinds'
 import { getRequiredSoulidityEnv } from '../env'
+import type { MintContentIdentityInput } from '../mint-content-identity'
 import {
+  validateInitialStateConfigEntries,
+  validateInitialContentEntries,
   type InitialContentEntryInput,
   type StateConfigEntryInput,
 } from './shared'
@@ -41,6 +44,8 @@ function buildInitialContentEntryArg(
       tx.pure.u8(downloadPolicyToU8(entry.downloadPolicy)),
       tx.pure.bool(entry.setActive),
       tx.object(entry.blobObjectId),
+      tx.pure.u64(BigInt(entry.expectedVersionIndex)),
+      tx.pure.vector('u8', new Uint8Array(entry.encryptedEnvelope)),
     ],
   })
   return result as unknown as TransactionObjectArgument
@@ -50,10 +55,11 @@ function buildInitialContentVector(
   tx: Transaction,
   callablePackageId: string,
   entries: ReadonlyArray<InitialContentEntryInput>,
+  originalPackageId?: string,
 ): TransactionArgument {
   const args = entries.map((entry) => buildInitialContentEntryArg(tx, callablePackageId, entry))
   return tx.makeMoveVec({
-    type: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')}::market::InitialContentEntry`,
+    type: `${originalPackageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')}::market::InitialContentEntry`,
     elements: args,
   })
 }
@@ -81,15 +87,17 @@ function buildStateConfigVector(
   tx: Transaction,
   callablePackageId: string,
   entries: ReadonlyArray<StateConfigEntryInput>,
+  originalPackageId?: string,
 ): TransactionArgument {
+  validateInitialStateConfigEntries(entries)
   const args = entries.map((entry) => buildStateConfigEntryArg(tx, callablePackageId, entry))
   return tx.makeMoveVec({
-    type: `${getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')}::market::StateConfigEntry`,
+    type: `${originalPackageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')}::market::StateConfigEntry`,
     elements: args,
   })
 }
 
-export interface MintPtbInputs {
+export interface MintPtbInputs extends MintContentIdentityInput {
   initialContent: ReadonlyArray<InitialContentEntryInput>
   initialStateConfig: ReadonlyArray<StateConfigEntryInput>
 }
@@ -98,14 +106,16 @@ export interface MintPtbInputs {
 export function buildInitialContentArgs(
   tx: Transaction,
   packageId: string,
-  inputs: MintPtbInputs,
+  inputs: Pick<MintPtbInputs, 'initialContent' | 'initialStateConfig'>,
+  originalPackageId?: string,
 ): {
   initialContentVec: TransactionArgument
   initialStateConfigVec: TransactionArgument
 } {
+  validateInitialContentEntries(inputs.initialContent)
   return {
-    initialContentVec: buildInitialContentVector(tx, packageId, inputs.initialContent),
-    initialStateConfigVec: buildStateConfigVector(tx, packageId, inputs.initialStateConfig),
+    initialContentVec: buildInitialContentVector(tx, packageId, inputs.initialContent, originalPackageId),
+    initialStateConfigVec: buildStateConfigVector(tx, packageId, inputs.initialStateConfig, originalPackageId),
   }
 }
 

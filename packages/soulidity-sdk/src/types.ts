@@ -81,16 +81,6 @@ export interface SoulidityMarketConfigV2 {
   secondaryEnabled: boolean
 }
 
-/** Isolated secondary-market policy introduced by Soulidity v6. */
-export interface SoulidityMarketConfigV6 {
-  objectId: string
-  packageId: string
-  configV2Id: string
-  legacyConfigId: string
-  feeRecipient: string
-  platformFeeBps: number
-  secondaryEnabled: boolean
-}
 
 export interface SoulObject {
   objectId: string
@@ -134,42 +124,8 @@ export interface SoulStateObject {
   paidAccessListId: string | null
   collectionId: string | null
   isListed: boolean
-  /** SoulAppearanceStateV6 bound through the SoulState dynamic-field key u8=3. */
-  animacraftAppearanceV6Id: string | null
-  /** SoulWardrobeV7 bound through the SoulState dynamic-field key u8=4. */
-  animacraftWardrobeV7Id: string | null
-  /** Trusted MakerPhysicalProfileV7 marker at SoulState key u8=7. */
-  animacraftPhysicalProfileV7Id: string | null
 }
 
-/**
- * Immutable cross-package receipt created when Soulidity consumes Animacraft's
- * version-matched authorization. v4 uses `CanonicalSoulMintAuthorization`;
- * commerce v5 wraps it in `CommerceV5SoulMintAuthorization` together with the
- * authenticated MakerRoot creator royalty. v5 purchases pay the source share
- * directly to the original `makerCreatorAddress` frozen in this receipt.
- */
-export interface AnimacraftProvenanceObject {
-  objectId: string
-  packageId: string
-  soulId: string
-  animacraftVersion: number
-  makerId: string
-  makerTreasuryId: string
-  makerCreatorAddress: string
-  payerAddress: string
-  profileJsonBlobId: string
-  imageBlobId: string
-  imageUrl: string
-  makerRoyaltyBps: number
-  mintPaymentCoinType: string
-  mintPriceAtomic: string
-  protocolFeeConfigId: string
-  protocolTreasuryId: string
-  primaryProtocolFeeBps: number
-  primaryProtocolFeeAtomic: string
-  authorizedAtMs: string
-}
 
 /**
  * Active-binding mirror for a kind that supports `OP_ACTIVE_BIND` (sprite,
@@ -461,27 +417,6 @@ export interface SoulCollectionAssetSummary {
   updatedAt: string
 }
 
-export interface SoulCollectionAssetDetail extends SoulCollectionAssetSummary {
-  souls: SoulAssetSummary[]
-}
-
-export interface CollectionDetailStats {
-  soulFloorAtomic: string | null
-  soulHolders: number
-  soulVolume: string | null
-}
-
-export interface CollectionDetailResponse extends SoulCollectionAssetDetail {
-  quote: {
-    priceAtomic: string
-    platformFeeAtomic: string
-    totalAtomic: string
-  } | null
-  isHolder: boolean
-  isCreator: boolean
-  stats: CollectionDetailStats
-}
-
 export interface SoulAssetDetail extends SoulAssetSummary {
   creatorMemberId: string | null
   currentOwnerMemberId: string | null
@@ -504,48 +439,6 @@ export interface SoulAssetDetail extends SoulAssetSummary {
   isGrantedAgent: boolean
   quote: SoulQuoteBreakdown | null
   platformFeeBps: number | null
-  animacraftProvenance: AnimacraftProvenanceObject | null
-}
-
-export interface SoulsListResponse {
-  items: SoulAssetSummary[]
-  total: number
-  page: number
-  totalPages: number
-}
-
-export interface CollectionsListResponse {
-  items: SoulCollectionAssetSummary[]
-  total: number
-  page: number
-  totalPages: number
-}
-
-export interface MySoulActiveGrant {
-  granteeAddress: string
-  createdAt: string
-}
-
-export interface MySoulEntry extends SoulAssetSummary {
-  collectionName: string | null
-  activeGrantDetails: MySoulActiveGrant[]
-}
-
-export interface SoulPurchaseActivity {
-  id: string
-  txDigest: string
-  soulOnChainId: string
-  soulName: string | null
-  paidAtomic: string | null
-  totalAtomic: string | null
-  createdAt: string
-}
-
-export interface MySoulsResponse {
-  owned: MySoulEntry[]
-  collections: SoulCollectionAssetSummary[]
-  purchases: SoulPurchaseActivity[]
-  grants: SoulGrantRecord[]
 }
 
 // ── Access-resolution responses ──────────────────────────────────────────

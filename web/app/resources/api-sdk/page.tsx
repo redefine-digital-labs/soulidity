@@ -26,22 +26,14 @@ type Method = 'GET' | 'POST'
 type RouteRow = [Method, string, string]
 
 const soulRoutes: RouteRow[] = [
-  ['GET', '/api/souls', 'Browse all public souls. Supports pagination and tag filters.'],
-  ['GET', '/api/souls/my', 'List souls owned by the authenticated user.'],
-  ['GET', '/api/souls/tags', 'List popular soul tags with counts.'],
   ['GET', '/api/souls/[id]', 'Get soul detail by on-chain object ID or DB slug.'],
   ['GET', '/api/souls/personal-kiosk', "Resolve the personal kiosk for the authenticated user's wallet."],
   ['POST', '/api/souls/publish', 'Mirror a publish TX. Body: txDigest + client-built Seal sidecar object(s) for every initial content slot. Returns soul + state + content mirror.'],
   ['POST', '/api/souls/[id]/list', 'Mirror a fixed-price list TX (atomic USDC).'],
   ['POST', '/api/souls/[id]/delist', 'Mirror a cancel-listing TX.'],
   ['POST', '/api/souls/[id]/purchase', 'Mirror a buy TX (kiosk transfer + fee split).'],
-  ['POST', '/api/souls/[id]/grant', 'Mirror a grant issue / revoke / revoke-scope TX. See SoulGrant API.'],
-  ['POST', '/api/souls/[id]/grant-capacity', 'Mirror a grant-capacity adjustment TX.'],
-  ['POST', '/api/souls/grant-merge-masks', 'Pre-check: body.items[] computes existing | added scope for (soulOnChainId, granteeAddress) pairs and returns capacity planning fields. See Agent Integration.'],
+  ['POST', '/api/souls/grant-merge-masks', 'Remaining Pet workflow only; the Soul grant form uses direct chain snapshots and does not use this pre-check.'],
   ['GET', '/api/souls/[id]/access', "Legacy Soul document access. Resolves only (KIND_SOUL_DOC, 'soul', 0)."],
-  ['GET', '/api/souls/[id]/content/[kind]/[name]/[versionIndex]/access', 'Unified Seal access resolution for a specific SoulContent slot. Public plaintext slots can resolve anonymously; sealed slots require auth.'],
-  ['POST', '/api/souls/[id]/content/sync', 'Mirror content append/delete/purge/active-binding/state-config TXs. Body includes action, txDigest, kind, name, and sidecar fields as required by the action.'],
-  ['POST', '/api/souls/[id]/paid-access', 'Mirror an owner revoke paid-access TX. Body action must be revoke and includes txDigest, buyerAddress, and kind.'],
 ]
 
 const agentRoutes: RouteRow[] = [
@@ -59,7 +51,7 @@ export default function ApiSdkPage() {
         <p className="text-[11px] font-bold text-action-label uppercase tracking-[0.1em] mb-1.5">Resources</p>
         <h1 className="font-display text-2xl font-bold mb-2">API &amp; SDK Reference</h1>
         <p className="text-sm text-muted">
-          Soulidity exposes REST endpoints for post-TX mirroring, soul browsing, content access, and paid access — plus a TypeScript SDK packaged as <code>@soulidity/sdk</code> for transaction building, on-chain queries, and client-side decryption.
+          Public Market discovery, wallet portfolios and content reads use chain-backed browser services and <code>@soulidity/sdk</code>. The remaining REST entries below identify integrations still being converted; they are not a completed static deployment interface.
         </p>
       </div>
 
@@ -77,6 +69,11 @@ export default function ApiSdkPage() {
         <h2 className="text-lg font-semibold">REST API — Soul routes</h2>
         <p className="text-sm text-muted">All routes are under <code>/api/souls/</code> in <code>web/app/api/souls/</code>.</p>
         <RouteList rows={soulRoutes} />
+        <p className="text-sm text-muted">My Souls now reads the connected wallet’s registered Kiosk inventory, Collection rights and verified grant/purchase history directly. Its browser portfolio reader exposes independent scan progress, partial results and retry; it does not aggregate SQL account rows or require a public Profile.</p>
+        <p className="text-sm text-muted">Specific content versions now open directly in the browser from verified chain slots and encrypted Walrus envelopes. The former human content-access endpoint has been removed. Remaining mutation and agent APIs are still being converted; this list is not a claim of completed backend removal.</p>
+        <p className="text-sm text-muted">Market scans Soul and Collection candidates through bounded public chain discovery, verifies current raw objects, then filters, sorts and paginates the cumulative results. Tags come from verified listings; creator names and handles use public wallet Profiles. Partial scans and unavailable identities remain explicit. The former public Souls, tags and Collections list endpoints have been removed.</p>
+        <p className="text-sm text-muted">Collection detail reads the requested chain ID and discovers its verified member Souls separately. The public detail endpoint and SQL identity DTOs are removed. Add-Soul preflight checks the raw creator and exact supply; CollectionRight ownership does not grant creator authority. Current reads are not transaction authorization or historical purchase proof.</p>
+        <p className="text-sm text-muted">Collection Right purchases now save an exact transaction and full seller-plus-platform-fee quote before a separate signing action. Historical transaction, checkpoint and Kiosk custody proof establish success; current custody is refreshed separately. Unknown signed payments remain query-first across refreshes, wallet changes and releases. Public recovery can be exported or imported. The former Collection purchase mirror endpoint is removed; Collection creation and batch publishing are still being converted.</p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">

@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Profile storage primitive verification</title>
+<h1>Local storage primitives — no wallet or product transaction</h1>
+<p>This local-only fixture writes public sample bytes on this temporary origin.</p>
+<button id="release">Release test lock</button>
+<button id="probe">Probe test lock</button>
+<pre id="result">Running…</pre>
+<script type="module">
+  import { browserProfileCoverCache } from '/web/lib/profile/profile-cover-cache.ts'
+  const params = new URLSearchParams(location.search), key = params.get('key')
+  if (!key || !/^profile-unit-[a-z0-9-]+$/.test(key)) throw new Error('Explicit isolated test key required')
+  const result = { checks: [], errors: [], role: params.get('role'), key }
+  const show = () => document.querySelector('#result').textContent = JSON.stringify(result, null, 2)
+  const check = (value, label) => { if (!value) throw new Error(label); result.checks.push(label); show() }
+  try {
+    const cache = browserProfileCoverCache()
+    if (result.role === 'writer') {
+      await cache.write(key, new File(['public-cropped-fixture'], 'fixture.webp', { type: 'image/webp' }))
+      check(true, 'strict IDB write completed')
+    }
+    const restored = await browserProfileCoverCache().read(key)
+    check(restored?.name === 'profile-cover.webp' && await restored.text() === 'public-cropped-fixture', 'fresh cache reads exact persisted public Blob')
+    document.querySelector('#probe').onclick = async () => {
+      await navigator.locks.request(key, { ifAvailable: true, mode: 'exclusive' }, lock => {
+        result.checks.push(lock ? 'probe acquired lock' : 'probe refused overlapping lock'); show()
+      })
+    }
+    if (result.role === 'writer') {
+      void navigator.locks.request(key, { mode: 'exclusive' }, async () => {
+        check(true, 'writer holds native Web Lock')
+        await new Promise(resolve => { document.querySelector('#release').onclick = resolve })
+        check(true, 'writer released native Web Lock')
+      })
+    }
+    show()
+  } catch (error) { result.errors.push(String(error)); show() }
+</script>

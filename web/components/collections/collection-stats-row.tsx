@@ -1,30 +1,28 @@
 import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
-import type { CollectionDetailResponse } from '@soulidity/sdk'
+import type { ChainCollectionDetail } from '@/lib/collections/collection-detail-model'
 
 interface CollectionStatsRowProps {
-  collection: CollectionDetailResponse
+  collection: ChainCollectionDetail
 }
 
 function StatCell({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: React.ReactNode }) {
   return (
     <div className="bg-card2 border border-border rounded-lg px-4 py-3 text-center">
       <div className="text-[10px] font-bold text-muted uppercase tracking-[0.08em] mb-1">{label}</div>
-      <div className={`text-sm font-bold ${color ?? 'text-foreground'}`}>{value}</div>
+      <div className={`text-sm font-bold break-words ${color ?? 'text-foreground'}`}>{value}</div>
       {sub}
     </div>
   )
 }
 
-function SoulsCell({ collection }: { collection: CollectionDetailResponse }) {
+function SoulsCell({ collection }: { collection: ChainCollectionDetail }) {
   const current = collection.currentSoulSupply
-  const cap = collection.maxSoulSupply == null ? null : Number(collection.maxSoulSupply)
-  // Defensive: pre-cap-launch DB rows could carry maxSoulSupply === "0".
-  // Treat that as a fully-saturated capacity (not a divide-by-zero NaN).
+  const cap = collection.maxSoulSupply == null ? null : BigInt(collection.maxSoulSupply)
   if (cap == null) {
     return <StatCell label="Souls" value={String(current)} />
   }
-  const safeCap = cap === 0 ? 1 : cap
-  const pct = Math.min(100, Math.max(0, (current / safeCap) * 100))
+  // Only the bounded visual percentage is a Number; supply stays exact u64.
+  const pct = Number(BigInt(current) * 10000n / cap) / 100
   const value = `${current} / ${cap}`
   return (
     <StatCell
@@ -44,8 +42,7 @@ function SoulsCell({ collection }: { collection: CollectionDetailResponse }) {
 }
 
 export function CollectionStatsRow({ collection }: CollectionStatsRowProps) {
-  // Prefer the collection's own floor price; fall back to the cheapest listed soul
-  const floorSource = collection.floorPriceAtomic ?? collection.stats.soulFloorAtomic
+  const floorSource = collection.floorPriceAtomic
   const floorPrice = floorSource
     ? formatAtomicAmountForDisplay(floorSource)
     : '\u2014'
@@ -55,11 +52,13 @@ export function CollectionStatsRow({ collection }: CollectionStatsRowProps) {
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      <StatCell label="Soul Floor" value={floorPrice} color="text-gold" />
+      <StatCell label="Soul Floor Policy" value={floorPrice} color="text-gold"
+        sub={<p className="mt-1 text-[10px] text-muted">{collection.stats.soulFloorAtomic === null ? 'Member listing minimum unavailable'
+          : `${collection.membersComplete ? 'Member minimum' : 'Verified subset minimum'}: ${formatAtomicAmountForDisplay(collection.stats.soulFloorAtomic)}`}</p>} />
       <StatCell label="Soul Volume" value={volume} color="text-gold" />
       <SoulsCell collection={collection} />
-      <StatCell label="Soul Holders" value={String(collection.stats.soulHolders)} />
-      <StatCell label="Royalty Rate" value={`${(collection.extraRoyaltyBps / 100).toFixed(0)}%`} color="text-teal" />
+      <StatCell label="Soul Holders" value={collection.stats.soulHolders === null ? 'Unavailable' : String(collection.stats.soulHolders)} />
+      <StatCell label="Royalty Rate" value={`${collection.extraRoyaltyBps / 100}%`} color="text-teal" />
     </div>
   )
 }

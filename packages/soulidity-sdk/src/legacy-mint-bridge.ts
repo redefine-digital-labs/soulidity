@@ -30,6 +30,7 @@ import type {
   StateConfigEntryInput,
 } from './tx/shared'
 import type { SoulDownloadPolicy } from './types'
+import { buildSoulPublicPreviewStateConfig, type SoulPublicPreviewInput } from './soul-public-preview'
 
 export interface LegacyInitialSpriteInput {
   blobObjectId: string
@@ -59,6 +60,9 @@ export interface LegacyMintParams {
 const INVARIANT_READ_MODE = READ_OWNER | READ_GRANT
 const SPRITE_DEFAULT_NAME = 'persona-sprite'
 
+/** UI slot draft only. Callers must bind actual version envelopes before mint. */
+export type InitialContentDraftEntry = Omit<InitialContentEntryInput, 'expectedVersionIndex' | 'encryptedEnvelope'>
+
 function deriveAudioReadMode(visibility: 'public' | 'private' | null | undefined): {
   mask: number
   policy: SoulDownloadPolicy
@@ -85,7 +89,7 @@ function deriveSpriteReadMode(sprite: LegacyInitialSpriteInput): {
  */
 export function buildLegacyInitialContent(
   params: LegacyMintParams,
-): InitialContentEntryInput[] {
+): InitialContentDraftEntry[] {
   if (!params.protectedBlobObjectId) {
     throw new Error('protectedBlobObjectId (soul.md) is required')
   }
@@ -93,7 +97,7 @@ export function buildLegacyInitialContent(
     throw new Error('foundingMemoryBlobObjectId is required (Phase 2 mints must seed at least one MEMORY entry)')
   }
 
-  const entries: InitialContentEntryInput[] = [
+  const entries: InitialContentDraftEntry[] = [
     {
       kind: KIND_SOUL_DOC,
       name: CANONICAL_SOUL_DOC_NAME,
@@ -162,13 +166,13 @@ export function buildLegacyInitialContent(
 }
 
 /**
- * Build the Phase 2 `initialStateConfig` vector from the legacy sprite/voice
- * config JSON blobs.
+ * Preserve sprite config and persist explicit public previews in the same mint.
+ * Missing public metadata is an error, never an invented empty record.
  */
 export function buildLegacyInitialStateConfig(
-  params: LegacyMintParams,
+  params: LegacyMintParams & { publicPreview: SoulPublicPreviewInput },
 ): StateConfigEntryInput[] {
-  const entries: StateConfigEntryInput[] = []
+  const entries: StateConfigEntryInput[] = [buildSoulPublicPreviewStateConfig(params.publicPreview)]
   const sprite = params.initialSprite
   if (sprite?.spriteConfigJson) {
     entries.push({ key: 'sprite_config_json', valueUtf8: sprite.spriteConfigJson })

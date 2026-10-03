@@ -101,9 +101,7 @@ describe('repository contract guards', () => {
     if (rootPackage.scripts?.typecheck) {
       expect(rootPackage.scripts.typecheck).toContain('npm run typecheck:web')
     }
-    if (rootPackage.scripts?.['publish:soulidity']) {
-      expect(rootPackage.scripts['publish:soulidity']).toBe('tsx scripts/publish-soulidity-and-sync.ts')
-    }
+    expect(rootPackage.scripts?.['publish:soulidity']).toBeUndefined()
   })
 
   it('keeps web soul business code isolated from the legacy web/lib/souls runtime', () => {
@@ -121,11 +119,11 @@ describe('repository contract guards', () => {
     expect(existsSync(join(webRoot, 'app', 'api', 'souls', '[id]', 'allowlist', 'route.ts'))).toBe(false)
     expect(existsSync(join(webRoot, 'app', 'collections', '[id]', 'buy', 'page.tsx'))).toBe(false)
 
-    expect(existsSync(join(webRoot, 'app', 'api', 'souls', '[id]', 'grant', 'route.ts'))).toBe(true)
-    expect(existsSync(join(webRoot, 'app', 'api', 'collections', 'route.ts'))).toBe(true)
-    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'route.ts'))).toBe(true)
-    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'purchase', 'route.ts'))).toBe(true)
-    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'list', 'route.ts'))).toBe(true)
+    expect(existsSync(join(webRoot, 'app', 'api', 'souls', '[id]', 'grant', 'route.ts'))).toBe(false)
+    expect(existsSync(join(webRoot, 'app', 'api', 'collections', 'route.ts'))).toBe(false)
+    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'route.ts'))).toBe(false)
+    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'purchase', 'route.ts'))).toBe(false)
+    expect(existsSync(join(webRoot, 'app', 'api', 'collections', '[id]', 'list', 'route.ts'))).toBe(false)
     expect(existsSync(join(webRoot, 'app', 'api', 'import', 'route.ts'))).toBe(true)
     expect(existsSync(join(webRoot, 'app', 'api', 'wrap-link', 'personal', 'route.ts'))).toBe(true)
   })
@@ -144,10 +142,11 @@ describe('repository contract guards', () => {
     expect(txSyncSource).toContain(`'buy'`)
     expect(txSyncSource).toContain(`'list'`)
     expect(txSyncSource).toContain(`'delist'`)
-    expect(txSyncSource).toContain(`'grant:issue'`)
-    expect(txSyncSource).toContain(`'grant:revoke'`)
-    expect(txSyncSource).toContain(`'collection:list'`)
-    expect(txSyncSource).toContain(`'collection:buy'`)
+    expect(txSyncSource).not.toContain(`'grant:issue'`)
+    expect(txSyncSource).not.toContain(`'grant:revoke'`)
+    expect(txSyncSource).not.toContain(`'collection:list'`)
+    expect(txSyncSource).not.toContain(`'collection:delist'`)
+    expect(txSyncSource).not.toContain(`'collection:buy'`)
     expect(txSyncSource).toContain(`'collection:add-soul'`)
     expect(txSyncSource).toContain(`'import'`)
     expect(txSyncSource).toContain(`'personal-join'`)

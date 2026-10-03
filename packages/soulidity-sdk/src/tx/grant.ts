@@ -1,5 +1,6 @@
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '../env'
+import { accessU64, accessId, accessScope, accessCapacity, type AccessU64 } from './access-snapshot'
 
 const SUI_CLOCK_OBJECT_ID = '0x6'
 
@@ -23,7 +24,7 @@ export interface BatchIssueGrantItem {
   stateObjectId: string
   granteeAddress: string
   scopeMask: number
-  expiresAtMs?: number | null
+  expiresAtMs?: AccessU64 | null
   /**
    * When provided, splice `grant::set_grant_capacity(state, setCapacityTo)`
    * into the PTB immediately before this item's `issue_to_grantee` call.
@@ -32,10 +33,10 @@ export interface BatchIssueGrantItem {
    * carry the bump in the same PTB, otherwise `grant::issue` aborts with
    * `EGrantCapacityExceeded` when the grantee is new.
    *
-   * Validation: must be a positive safe integer ≤ `MAX_GRANT_CAPACITY`.
+   * Validation: must be a canonical u64 in 0..`MAX_GRANT_CAPACITY`.
    * Pass `null`/`undefined` to skip the bump.
    */
-  setCapacityTo?: number | null
+  setCapacityTo?: AccessU64 | null
 }
 
 export interface BatchRevokeGrantItem {
@@ -55,53 +56,44 @@ function assertBatchSize(length: number, kind: 'issue' | 'revoke') {
 }
 
 function assertGranteeAddress(value: string) {
-  if (value.trim().length === 0) {
-    throw new Error('granteeAddress is required')
-  }
+  accessId(value, 'granteeAddress')
 }
 
 function assertScopeMask(value: number) {
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error('scopeMask must be a positive integer')
-  }
+  accessScope(value)
 }
 
-function assertFutureExpiry(value: number | null | undefined) {
-  if (value != null && value <= Date.now()) {
-    throw new Error('expiresAtMs must be in the future')
-  }
+function assertExpiry(value: AccessU64 | null | undefined) {
+  if (value != null) accessU64(value, 'expiresAtMs')
 }
 
-function assertCapacityBump(value: number | null | undefined) {
+function assertCapacityBump(value: AccessU64 | null | undefined) {
   if (value == null) return
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error('setCapacityTo must be a positive safe integer')
-  }
-  if (value > MAX_GRANT_CAPACITY) {
-    throw new Error(`setCapacityTo must be ≤ MAX_GRANT_CAPACITY (${MAX_GRANT_CAPACITY})`)
-  }
+  accessCapacity(value, 'setCapacityTo')
 }
 
 export interface AddIssueGrantParams {
   stateObjectId: string
   granteeAddress: string
   scopeMask: number
-  expiresAtMs?: number | null
+  expiresAtMs?: AccessU64 | null
 }
 
 /**
  * Splice `grant::issue_to_grantee` into an existing PTB. Used by the
  * auto-grant-on-append flow so a single owner upload signature also
  * issues N agent grants in the same transaction. Per-grantee idempotent
- * on-chain (existing slot is superseded), but callers should still
- * pre-flight against the DB mirror to avoid wasted gas.
+ * on-chain (existing slot is superseded). Callers must still check live grant
+ * state before writing; an explicit deployment also supports exact read-only
+ * reconstruction of an already executed transaction.
  */
-export function addIssueGrantCalls(tx: Transaction, params: AddIssueGrantParams): void {
+export function addIssueGrantCalls(tx: Transaction, params: AddIssueGrantParams, deployment?: { packageId: string }): void {
   assertGranteeAddress(params.granteeAddress)
   assertScopeMask(params.scopeMask)
-  assertFutureExpiry(params.expiresAtMs)
+  assertExpiry(params.expiresAtMs)
+  accessId(params.stateObjectId)
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const packageId = accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'))
   tx.moveCall({
     target: `${packageId}::grant::issue_to_grantee`,
     arguments: [
@@ -114,9 +106,8 @@ export function addIssueGrantCalls(tx: Transaction, params: AddIssueGrantParams)
   })
 }
 
-export function buildIssueGrantTx(params: AddIssueGrantParams) {
-  const tx = new Transaction()
-  addIssueGrantCalls(tx, params)
+export function buildIssueGrantTx(params: AddIssueGrantParams, deployment?: { packageId: string }, tx = new Transaction()) {
+  addIssueGrantCalls(tx, params, deployment)
   return tx
 }
 
@@ -137,7 +128,8 @@ export function buildBatchIssueGrantsTx(params: {
   for (const item of params.items) {
     assertGranteeAddress(item.granteeAddress)
     assertScopeMask(item.scopeMask)
-    assertFutureExpiry(item.expiresAtMs)
+    assertExpiry(item.expiresAtMs)
+    accessId(item.stateObjectId)
     assertCapacityBump(item.setCapacityTo)
   }
 
@@ -175,10 +167,10 @@ export function buildBatchIssueGrantsTx(params: {
 export function buildRevokeGrantTx(params: {
   stateObjectId: string
   granteeAddress: string
-}) {
+}, deployment?: { packageId: string }, tx = new Transaction()) {
   assertGranteeAddress(params.granteeAddress)
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const tx = new Transaction()
+  accessId(params.stateObjectId)
+  const packageId = accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'))
   tx.moveCall({
     target: `${packageId}::grant::revoke`,
     arguments: [
@@ -262,7 +254,7 @@ export function buildCleanupInactiveGrantsTx(params: {
 
 export interface AddSetGrantCapacityParams {
   stateObjectId: string
-  capacity: number
+  capacity: AccessU64
 }
 
 /**
@@ -273,27 +265,23 @@ export interface AddSetGrantCapacityParams {
 export function addSetGrantCapacityCalls(
   tx: Transaction,
   params: AddSetGrantCapacityParams,
+  deployment?: { packageId: string },
 ): void {
-  if (!Number.isSafeInteger(params.capacity) || params.capacity <= 0) {
-    throw new Error('capacity must be a positive safe integer')
-  }
-  if (params.capacity > MAX_GRANT_CAPACITY) {
-    throw new Error(`capacity must be ≤ MAX_GRANT_CAPACITY (${MAX_GRANT_CAPACITY})`)
-  }
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const capacity = accessCapacity(params.capacity)
+  accessId(params.stateObjectId)
+  const packageId = accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'))
   tx.moveCall({
     target: `${packageId}::grant::set_grant_capacity`,
     arguments: [
       tx.object(params.stateObjectId),
-      tx.pure.u64(params.capacity),
+      tx.pure.u64(capacity),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
 }
 
-export function buildSetGrantCapacityTx(params: AddSetGrantCapacityParams) {
-  const tx = new Transaction()
-  addSetGrantCapacityCalls(tx, params)
+export function buildSetGrantCapacityTx(params: AddSetGrantCapacityParams, deployment?: { packageId: string }, tx = new Transaction()) {
+  addSetGrantCapacityCalls(tx, params, deployment)
   return tx
 }
 
@@ -301,16 +289,11 @@ export function buildRevokeGrantScopeTx(params: {
   stateObjectId: string
   granteeAddress: string
   revokedScopeMask: number
-}) {
-  if (params.granteeAddress.trim().length === 0) {
-    throw new Error('granteeAddress is required')
-  }
-  if (!Number.isInteger(params.revokedScopeMask) || params.revokedScopeMask <= 0) {
-    throw new Error('revokedScopeMask must be a positive integer')
-  }
-
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-  const tx = new Transaction()
+}, deployment?: { packageId: string }, tx = new Transaction()) {
+  assertGranteeAddress(params.granteeAddress)
+  accessId(params.stateObjectId)
+  accessScope(params.revokedScopeMask, 'revokedScopeMask')
+  const packageId = accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'))
   tx.moveCall({
     target: `${packageId}::grant::revoke_scope_to_grantee`,
     arguments: [

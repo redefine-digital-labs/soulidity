@@ -12,7 +12,6 @@ import {
 } from './kiosk'
 import type {
   ActiveGrantSlotObject,
-  AnimacraftProvenanceObject,
   ResolvedPersonalKiosk,
   SoulCollectionObject,
   SoulCollectionRightObject,
@@ -26,7 +25,6 @@ import type {
   SoulStateObject,
   SoulidityMarketConfig,
   SoulidityMarketConfigV2,
-  SoulidityMarketConfigV6,
 } from './types'
 
 export { getPersonalKioskCapTypePackageAddress } from './kiosk'
@@ -86,13 +84,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
-function readMoveStructFields(value: unknown, fieldName: string): Record<string, unknown> {
-  const record = asRecord(value)
-  if (!record) {
-    throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
-  }
-  return asRecord(record.fields) ?? record
-}
 
 export function normalizeSuiValue(value: string): string | null {
   const trimmed = value.trim()
@@ -768,54 +759,15 @@ export async function getMarketConfigV2(
   }
 }
 
-export async function getMarketConfigV6(
-  configId: string,
-  packageId: string,
-): Promise<SoulidityMarketConfigV6> {
-  const response = await suiClient.getObject({
-    id: configId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = `${normalizePackageId(packageId)}::market::MarketConfigV6`
-  const { fields, packageId: resolvedPackageId } =
-    expectMoveObject(response, configId, expectedTypePrefix)
-  return {
-    objectId: configId,
-    packageId: resolvedPackageId,
-    configV2Id: readObjectId(
-      fields.config_v2_id,
-      'MarketConfigV6 config_v2_id',
-    ),
-    legacyConfigId: readObjectId(
-      fields.legacy_config_id,
-      'MarketConfigV6 legacy_config_id',
-    ),
-    feeRecipient: readAddress(
-      fields.fee_recipient,
-      'MarketConfigV6 fee_recipient',
-    ),
-    platformFeeBps: readNumber(
-      fields.platform_fee_bps,
-      'MarketConfigV6 platform_fee_bps',
-    ),
-    secondaryEnabled: Boolean(fields.secondary_enabled),
-  }
-}
 
 function ceilBpsAmount(price: bigint, bps: bigint) {
   const numerator = price * bps
   return numerator === 0n ? 0n : (numerator + MAX_BPS - 1n) / MAX_BPS
 }
 
-function floorBpsAmount(price: bigint, bps: bigint) {
-  return (price * bps) / MAX_BPS
-}
 
 type SecondaryMarketQuoteConfig = Pick<SoulidityMarketConfig, 'platformFeeBps'>
-  & Partial<Pick<SoulidityMarketConfigV6, 'secondaryEnabled'>>
+  & Partial<Pick<SoulidityMarketConfigV2, 'secondaryEnabled'>>
 
 function assertSecondaryMarketQuoteEnabled(config: SecondaryMarketQuoteConfig) {
   if (config.secondaryEnabled === false) {
@@ -863,50 +815,6 @@ export function quoteCollectionPurchase(config: SecondaryMarketQuoteConfig, para
   }
 }
 
-export function quoteAnimacraftSoulPurchase(config: SoulidityMarketConfigV6, params: {
-  priceAtomic: bigint
-  makerRoyaltyBps: number
-  collectionRoyaltyBps: number
-}) {
-  if (!config.secondaryEnabled) {
-    throw new OnChainVerificationError('Animacraft secondary market is disabled')
-  }
-  const combinedBps = config.platformFeeBps + params.makerRoyaltyBps + params.collectionRoyaltyBps
-  if (params.priceAtomic <= 0n) {
-    throw new OnChainVerificationError('Animacraft Soul listing price must be positive')
-  }
-  if (
-    !Number.isInteger(params.makerRoyaltyBps)
-    || !Number.isInteger(params.collectionRoyaltyBps)
-    || params.makerRoyaltyBps < 0
-    || params.collectionRoyaltyBps < 0
-    || combinedBps > Number(MAX_BPS)
-  ) {
-    throw new OnChainVerificationError('Animacraft Soul purchase fee policy is invalid')
-  }
-
-  const platformFee = ceilBpsAmount(params.priceAtomic, BigInt(config.platformFeeBps))
-  const makerRoyalty = floorBpsAmount(params.priceAtomic, BigInt(params.makerRoyaltyBps))
-  if (params.makerRoyaltyBps > 0 && makerRoyalty === 0n) {
-    throw new OnChainVerificationError('Animacraft Maker royalty rounds to zero at this listing price')
-  }
-  const collectionRoyalty = ceilBpsAmount(
-    params.priceAtomic,
-    BigInt(params.collectionRoyaltyBps),
-  )
-  const total = params.priceAtomic + platformFee + makerRoyalty + collectionRoyalty
-  if (total > MAX_U64) {
-    throw new OnChainVerificationError('Animacraft Soul purchase quote exceeds the supported range')
-  }
-
-  return {
-    platformFeeAtomic: platformFee.toString(),
-    priceAtomic: params.priceAtomic.toString(),
-    makerRoyaltyAtomic: makerRoyalty.toString(),
-    collectionRoyaltyAtomic: collectionRoyalty.toString(),
-    totalAtomic: total.toString(),
-  }
-}
 
 function readSoulProvenanceKind(value: unknown, fieldName: string): SoulProvenanceKind {
   const rawValue = readNumber(value, fieldName)
@@ -971,11 +879,6 @@ export async function getSoulStateObject(
   const activeGrants = shouldMaterializeActiveGrants
     ? await readActiveGrantSlots(fields, ownershipEpoch, activeGrantCount)
     : []
-  const animacraftAppearanceV6Id = await getAnimacraftAppearanceV6Id(objectId)
-  const animacraftWardrobeV7Id = await getAnimacraftWardrobeV7Id(objectId)
-  const animacraftPhysicalProfileV7Id = await getAnimacraftPhysicalProfileV7Id(
-    objectId,
-  )
   return {
     objectId,
     packageId: resolvedPackageId,
@@ -993,239 +896,13 @@ export async function getSoulStateObject(
     paidAccessListId: readNestedObjectId(fields.access_list_id, 'SoulState access_list_id'),
     collectionId: readNestedObjectId(fields.collection_id, 'SoulState collection_id'),
     isListed: Boolean(fields.is_listed),
-    animacraftAppearanceV6Id,
-    animacraftWardrobeV7Id,
-    animacraftPhysicalProfileV7Id,
   }
 }
 
-type DynamicFieldClient = Pick<typeof suiClient, 'getDynamicFieldObject'>
 
-async function getSoulStateBoundObjectId(
-  client: DynamicFieldClient,
-  stateObjectId: string,
-  key: number,
-  label: string,
-): Promise<string | null> {
-  try {
-    const response = await client.getDynamicFieldObject({
-      parentId: stateObjectId,
-      name: { type: 'u8', value: key },
-    })
-    if (!response.data) {
-      if (isDynamicFieldNotFound(response.error)) return null
-      throw new OnChainVerificationError(`${label} binding is missing on chain`)
-    }
-    const content = response.data.content
-    if (!content || !('fields' in content)) {
-      throw new OnChainVerificationError(`${label} binding is malformed on chain`)
-    }
-    const fields = readMoveStructFields(content.fields, `${label} dynamic field`)
-    const objectId = readNestedObjectId(fields.value, `${label} object id`)
-    if (!objectId) {
-      throw new OnChainVerificationError(`${label} object id is malformed on chain`)
-    }
-    return objectId
-  } catch (error) {
-    if (isDynamicFieldNotFound(error)) return null
-    throw error
-  }
-}
 
-/** Resolve the exact SoulWardrobeV7 bound to SoulState key u8=4. */
-export async function getAnimacraftWardrobeV7Id(
-  stateObjectId: string,
-  client: DynamicFieldClient = suiClient,
-): Promise<string | null> {
-  return getSoulStateBoundObjectId(
-    client,
-    stateObjectId,
-    4,
-    'Animacraft v7 wardrobe',
-  )
-}
 
-/** Resolve the trusted physical Profile marker written by canonical v7 Complete. */
-export async function getAnimacraftPhysicalProfileV7Id(
-  stateObjectId: string,
-  client: DynamicFieldClient = suiClient,
-): Promise<string | null> {
-  return getSoulStateBoundObjectId(
-    client,
-    stateObjectId,
-    7,
-    'Animacraft v7 physical Profile',
-  )
-}
 
-/**
- * Resolve the v6 appearance companion bound to a SoulState. The u8 key is a
- * protocol constant; only an explicit dynamic-field-not-found response is
- * treated as an ordinary pre-v6 Soul.
- */
-export async function getAnimacraftAppearanceV6Id(
-  stateObjectId: string,
-): Promise<string | null> {
-  try {
-    const response = await suiClient.getDynamicFieldObject({
-      parentId: stateObjectId,
-      name: {
-        type: 'u8',
-        value: 3,
-      },
-    })
-    if (!response.data) {
-      if (isDynamicFieldNotFound(response.error)) return null
-      throw new OnChainVerificationError('Animacraft v6 appearance binding is missing on chain')
-    }
-    const content = response.data.content
-    if (!content || !('fields' in content)) {
-      throw new OnChainVerificationError(
-        'Animacraft v6 appearance binding is malformed on chain',
-      )
-    }
-    const fields = readMoveStructFields(
-      content.fields,
-      'Animacraft v6 appearance dynamic field',
-    )
-    const appearanceId = readNestedObjectId(
-      fields.value,
-      'Animacraft v6 appearance id',
-    )
-    if (!appearanceId) {
-      throw new OnChainVerificationError(
-        'Animacraft v6 appearance id is malformed on chain',
-      )
-    }
-    return appearanceId
-  } catch (error) {
-    if (isDynamicFieldNotFound(error)) return null
-    throw error
-  }
-}
-
-export async function getAnimacraftProvenanceId(
-  stateObjectId: string,
-): Promise<string | null> {
-  try {
-    const response = await suiClient.getDynamicFieldObject({
-      parentId: stateObjectId,
-      name: {
-        type: 'u8',
-        value: 1,
-      },
-    })
-    if (!response.data) {
-      const message = JSON.stringify(response.error ?? '')
-      if (/not.?found|not.?exist|dynamic field/i.test(message)) return null
-      throw new OnChainVerificationError('Animacraft provenance binding is missing on chain')
-    }
-    const content = response.data.content
-    if (!content || !('fields' in content)) {
-      throw new OnChainVerificationError('Animacraft provenance binding is malformed on chain')
-    }
-    const fields = readMoveStructFields(content.fields, 'Animacraft provenance dynamic field')
-    return readObjectId(fields.value, 'Animacraft provenance id')
-  } catch (error) {
-    if (isDynamicFieldNotFound(error)) return null
-    throw error
-  }
-}
-
-export function getAnimacraftProvenanceStructType(definingPackageId: string): string {
-  return `${normalizePackageId(definingPackageId)}::animacraft_provenance::AnimacraftProvenance`
-}
-
-export async function getAnimacraftProvenanceObject(
-  objectId: string,
-  definingPackageId: string,
-): Promise<AnimacraftProvenanceObject> {
-  const response = await suiClient.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showType: true,
-    },
-  })
-  const expectedTypePrefix = getAnimacraftProvenanceStructType(definingPackageId)
-  const { fields, packageId: resolvedPackageId } = expectMoveObject(
-    response,
-    objectId,
-    expectedTypePrefix,
-  )
-  const royaltyPolicy = readMoveStructFields(
-    fields.royalty_policy,
-    'AnimacraftProvenance royalty_policy',
-  )
-
-  return {
-    objectId,
-    packageId: resolvedPackageId,
-    soulId: readObjectId(fields.soul_id, 'AnimacraftProvenance soul_id'),
-    animacraftVersion: readNumber(
-      fields.animacraft_version,
-      'AnimacraftProvenance animacraft_version',
-    ),
-    makerId: readObjectId(fields.maker_id, 'AnimacraftProvenance maker_id'),
-    makerTreasuryId: readObjectId(
-      fields.maker_treasury_id,
-      'AnimacraftProvenance maker_treasury_id',
-    ),
-    makerCreatorAddress: readAddress(
-      fields.maker_creator,
-      'AnimacraftProvenance maker_creator',
-    ),
-    payerAddress: readAddress(fields.payer, 'AnimacraftProvenance payer'),
-    profileJsonBlobId: readString(
-      fields.profile_json_blob_id,
-      'AnimacraftProvenance profile_json_blob_id',
-    ),
-    imageBlobId: readString(fields.image_blob_id, 'AnimacraftProvenance image_blob_id'),
-    imageUrl: readString(fields.image_url, 'AnimacraftProvenance image_url'),
-    makerRoyaltyBps: readNumber(
-      royaltyPolicy.royalty_bps,
-      'AnimacraftProvenance royalty_policy.royalty_bps',
-    ),
-    mintPaymentCoinType: readString(
-      fields.mint_payment_coin_type,
-      'AnimacraftProvenance mint_payment_coin_type',
-    ),
-    mintPriceAtomic: readBigInt(
-      fields.mint_price_atomic,
-      'AnimacraftProvenance mint_price_atomic',
-    ).toString(),
-    protocolFeeConfigId: readObjectId(
-      fields.protocol_fee_config_id,
-      'AnimacraftProvenance protocol_fee_config_id',
-    ),
-    protocolTreasuryId: readObjectId(
-      fields.protocol_treasury_id,
-      'AnimacraftProvenance protocol_treasury_id',
-    ),
-    primaryProtocolFeeBps: readNumber(
-      fields.primary_protocol_fee_bps,
-      'AnimacraftProvenance primary_protocol_fee_bps',
-    ),
-    primaryProtocolFeeAtomic: readBigInt(
-      fields.primary_protocol_fee_atomic,
-      'AnimacraftProvenance primary_protocol_fee_atomic',
-    ).toString(),
-    authorizedAtMs: readBigInt(
-      fields.authorized_at_ms,
-      'AnimacraftProvenance authorized_at_ms',
-    ).toString(),
-  }
-}
-
-export async function getAnimacraftProvenanceForState(
-  stateObjectId: string,
-  definingPackageId: string,
-): Promise<AnimacraftProvenanceObject | null> {
-  const provenanceId = await getAnimacraftProvenanceId(stateObjectId)
-  return provenanceId
-    ? getAnimacraftProvenanceObject(provenanceId, definingPackageId)
-    : null
-}
 
 function readVectorU8AsUtf8(value: unknown, fieldName: string): string {
   // Sui RPC returns `vector<u8>` in `showContent` mode as a `number[]` of byte

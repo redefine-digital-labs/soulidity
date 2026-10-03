@@ -1,5 +1,6 @@
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '../env'
+import { normalizeCollectionFloorAtomic, type CollectionFloorInput } from '../collection-floor-policy'
 import { buildBuyerKioskArgs, finishBuyerKioskArgs, validateCollectionArgs } from './shared'
 
 type CreateCollectionTxParams = {
@@ -14,6 +15,8 @@ type CreateCollectionTxParams = {
   // Positive integer = on-chain supply cap. Soft Web limit lives in
   // validateCollectionArgs (MAX_COLLECTION_SUPPLY).
   maxSupply?: number | null
+  /** Immutable app listing policy, not the CollectionRight sale price. */
+  floorPriceAtomic?: CollectionFloorInput
   /**
    * Optional hook to splice extra commands into the create-collection PTB
    * after personal-kiosk setup and before `create_collection_in_personal_kiosk`.
@@ -66,6 +69,7 @@ function appendCreateCollectionPrimitive(
       tx.pure.u16(params.extraRoyaltyBps),
       tx.pure.bool(params.tradeable),
       maxSupplyArg,
+      tx.pure.option('u128', normalizeCollectionFloorAtomic(params.floorPriceAtomic)),
     ],
   })
 }
@@ -102,7 +106,7 @@ function appendListCollectionRightCall(
   priceAtomic: bigint | number,
 ): MoveCallResult {
   return tx.moveCall({
-    target: `${packageId}::market::list_collection_right_fixed_price_v6`,
+    target: `${packageId}::market::list_collection_right_fixed_price_v2`,
     arguments: [
       tx.object(marketConfigId),
       tx.object(kioskRegistryId),
@@ -162,6 +166,7 @@ export function appendCreateCollectionMoveCalls(
 
 export async function buildCreateCollectionTx(params: CreateCollectionTxParams): Promise<Transaction> {
   validateCollectionArgs(params)
+  params = { ...params, floorPriceAtomic: normalizeCollectionFloorAtomic(params.floorPriceAtomic) }
 
   const env = loadCreateCollectionEnv()
   const tx = new Transaction()
@@ -195,6 +200,7 @@ export async function buildCreateCollectionWithListTx(
   params: CreateCollectionWithListParams,
 ): Promise<Transaction> {
   validateCollectionArgs(params)
+  params = { ...params, floorPriceAtomic: normalizeCollectionFloorAtomic(params.floorPriceAtomic) }
   if (!(BigInt(params.collectionRightListingPriceAtomic) > 0n)) {
     throw new Error('buildCreateCollectionWithListTx requires collectionRightListingPriceAtomic > 0')
   }
@@ -223,7 +229,7 @@ export async function buildCreateCollectionWithListTx(
   const listing = appendListCollectionRightCall(
     tx,
     env.packageId,
-    getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID'),
+    getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
     env.kioskRegistryId,
     personalKiosk,
     collection,

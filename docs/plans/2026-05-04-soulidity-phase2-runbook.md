@@ -1,5 +1,9 @@
 # Soulidity Phase 2 — Publish + Smoke Runbook
 
+> HISTORICAL ONLY. This independent publish/API-mirror runbook is superseded;
+> its publish/upgrade commands are removed and must not be executed. Current
+> authority: [single fresh release](2026-10-01-single-release-entry.md).
+
 Companion to `2026-05-04-soulidity-unified-content-phase2.md`. Captures the
 manual steps that must run after the TS/SDK/API hard-cut lands.
 

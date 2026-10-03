@@ -191,7 +191,6 @@ model Member {
   uploadBindings         SoulUploadBinding[]
   following              Follow[]               @relation("follower")
   followers              Follow[]               @relation("following")
-  bookmarks              Bookmark[]
   desktopPet             DesktopPet?            @relation("DesktopPetAgentMember")
 
   @@index([tgId])
@@ -388,7 +387,6 @@ model SoulAsset {
   tags                       String[]
   previewImages              String[]                   @map("preview_images")
   readme                     String?
-  bookmarks                  Bookmark[]
   createdAt                  DateTime                   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                  DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -554,6 +552,8 @@ model SoulPreparedPurchase {
   totalAtomic          Decimal   @default(0) @map("total_atomic") @db.Decimal(20, 0)
   txBytesBase64        String    @map("tx_bytes_base64")
   txBytesHash          String    @map("tx_bytes_hash")
+  nativeOperation      Json?     @map("native_operation")
+  operationRevision    Int       @default(0) @map("operation_revision")
   expiresAt            DateTime  @map("expires_at") @db.Timestamptz
   executedAt           DateTime? @map("executed_at") @db.Timestamptz
   executionTxDigest    String?   @map("execution_tx_digest")
@@ -564,6 +564,7 @@ model SoulPreparedPurchase {
 
   @@unique([agentMemberId, txBytesHash])
   @@index([agentMemberId, expiresAt])
+  @@index([soulOnChainId, agentAddress, createdAt(sort: Desc)], map: "soul_prepared_purchases_native_buyer_history_idx")
   @@index([soulOnChainId, createdAt(sort: Desc)])
   @@index([executionTxDigest])
   @@map("soul_prepared_purchases")
@@ -605,20 +606,6 @@ model Follow {
   @@unique([followerId, followingId])
   @@index([followingId])
   @@map("follows")
-}
-
-model Bookmark {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  memberId  String   @map("member_id") @db.Uuid
-  soulId    String   @map("soul_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-
-  member Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  soul   SoulAsset @relation(fields: [soulId], references: [id], onDelete: Cascade)
-
-  @@unique([memberId, soulId])
-  @@index([soulId])
-  @@map("bookmarks")
 }
 
 /// Per-kind paid-access configuration for a Soul. Mirrors

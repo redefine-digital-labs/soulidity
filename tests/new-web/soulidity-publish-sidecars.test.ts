@@ -7,7 +7,6 @@ import {
 } from '../../packages/soulidity-sdk/src/content-document-id'
 
 const ROOT = process.cwd()
-const SMOKE_MATRIX_PATH = 'scripts/scenarios/soulidity-smoke-matrix.example.json'
 const ORIGINAL_SEAL_PACKAGE_ID = `0x${'22'.repeat(32)}`
 const CALLABLE_PACKAGE_ID = `0x${'44'.repeat(32)}`
 
@@ -41,85 +40,45 @@ function readSource(path: string) {
   return readFileSync(join(ROOT, path), 'utf8')
 }
 
-function parseSmokeMatrix() {
-  return JSON.parse(readSource(SMOKE_MATRIX_PATH)) as {
-    rows: Array<{
-      name: string
-      steps: Array<{
-        label: string
-        mirror?: MirrorRequest | MirrorRequest[]
-        assertEvents?: {
-          contentVersions?: Array<{
-            kind?: number
-            name?: string
-            versionIndex?: number
-            count: number
-          }>
-        }
-      }>
-    }>
-  }
-}
-
-interface MirrorRequest {
-  path: string
-  body?: Record<string, unknown>
-}
-
-function collectMirrorRequests(matrix: ReturnType<typeof parseSmokeMatrix>): MirrorRequest[] {
-  const mirrors: MirrorRequest[] = []
-  for (const row of matrix.rows) {
-    for (const step of row.steps) {
-      if (!step.mirror) continue
-      mirrors.push(...(Array.isArray(step.mirror) ? step.mirror : [step.mirror]))
-    }
-  }
-  return mirrors
-}
-
-function collectLegacySidecarMentions(value: unknown, path = '$'): string[] {
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => collectLegacySidecarMentions(item, `${path}[${index}]`))
-  }
-  if (value && typeof value === 'object') {
-    const hits: string[] = []
-    for (const [key, item] of Object.entries(value)) {
-      if ((LEGACY_SIDECAR_REQUEST_FIELDS as readonly string[]).includes(key)) {
-        hits.push(`${path}.${key}`)
-      }
-      hits.push(...collectLegacySidecarMentions(item, `${path}.${key}`))
-    }
-    return hits
-  }
-  if (typeof value === 'string') {
-    return LEGACY_SIDECAR_REQUEST_FIELDS
-      .filter((field) => value.includes(field))
-      .map((field) => `${path} contains ${field}`)
-  }
-  return []
-}
-
-function expectInitialContentSidecars(value: unknown, context: string) {
-  expect(Array.isArray(value), `${context} must include contentSidecars[]`).toBe(true)
-  const entries = value as Array<Record<string, unknown>>
-  const keys = entries.map((entry) => `${entry.kind}::${entry.name}::${entry.versionIndex}`)
-  expect(keys, `${context} must include the Soul document sidecar entry`).toContain('0::soul::0')
-  expect(keys, `${context} must include the default memory sidecar entry`).toContain('1::default::0')
-  for (const [index, entry] of entries.entries()) {
-    expect(typeof entry.kind, `${context}.contentSidecars[${index}].kind`).toBe('number')
-    expect(typeof entry.name, `${context}.contentSidecars[${index}].name`).toBe('string')
-    expect(typeof entry.versionIndex, `${context}.contentSidecars[${index}].versionIndex`).toBe('number')
-    expect(Object.prototype.hasOwnProperty.call(entry, 'sidecar'), `${context}.contentSidecars[${index}].sidecar`).toBe(true)
-  }
-}
-
 describe('Soulidity publish content sidecars', () => {
-  it('single-soul create publish sync sends Phase 2 contentSidecars', () => {
+  it('requires the exact selected Soul event slots before mirror writes', async () => {
+    const { parseContentSidecars, assertExactContentSidecarSlots } = await import('../../web/lib/soulidity/mirror/parse-content-sidecars')
+    const slots = [
+      { kind: 0, name: 'soul', versionIndex: 0, sidecar: null, sealEncrypted: true },
+      { kind: 1, name: 'default', versionIndex: 0, sidecar: null, sealEncrypted: true },
+    ]
+    const parsed = parseContentSidecars(slots, 'contentSidecars')
+    expect(() => assertExactContentSidecarSlots(parsed, slots.toReversed())).not.toThrow()
+    expect(() => assertExactContentSidecarSlots(parsed, slots.slice(0, 1))).toThrow('unexpected')
+    expect(() => assertExactContentSidecarSlots(parseContentSidecars([], 'contentSidecars'), slots)).toThrow('missing')
+    expect(() => assertExactContentSidecarSlots(parsed, [...slots, slots[0]])).toThrow('duplicate')
+    expect(() => parseContentSidecars([...slots, slots[0]], 'contentSidecars')).toThrow('duplicate')
+    const publicSlots = slots.map(slot => ({ ...slot, sealEncrypted: false }))
+    expect(() => assertExactContentSidecarSlots(parseContentSidecars(undefined, 'contentSidecars'), publicSlots)).not.toThrow()
+    expect(() => assertExactContentSidecarSlots(parsed, publicSlots)).not.toThrow()
+    expect(() => assertExactContentSidecarSlots(parseContentSidecars([slots[0]], 'contentSidecars'), [slots[0], publicSlots[1]])).not.toThrow()
+    expect(() => assertExactContentSidecarSlots(parsed, [publicSlots[0]])).toThrow('unexpected')
+    for (const changed of [
+      { ...slots[0], kind: 2 }, { ...slots[0], name: 'other-soul' }, { ...slots[0], versionIndex: 1 },
+    ]) {
+      expect(() => assertExactContentSidecarSlots(parsed, [changed, slots[1]])).toThrow('missing')
+    }
+    const source = readSource('web/app/api/souls/publish/route.ts')
+    const guard = source.indexOf('assertExactContentSidecarSlots(contentSidecars, versionsForSoul)')
+    expect(guard).toBeGreaterThan(source.indexOf('allContentVersions.filter'))
+    expect(guard).toBeLessThan(source.indexOf('await syncSoulProjectionFromChain('))
+    expect(guard).toBeLessThan(source.indexOf('await syncContentVersionProjectionFromChain('))
+  })
+
+  it('single-soul creation prepares durable encrypted content before constructing its wallet execution', () => {
     const source = readSource('web/lib/hooks/use-publish.ts')
 
-    expect(source).toContain('contentSidecars: ContentSidecarRequestEntry[]')
-    expect(source).toContain('buildContentSidecarsForVersionsWithSuiClient')
-    expect(source).toContain('extractAllContentVersionAppendedEvents')
+    const prepare = source.lastIndexOf('await prepareSoulAuthoring(')
+    expect(prepare).toBeGreaterThan(0)
+    expect(source.indexOf('createSoulAuthoringWallet({')).toBeGreaterThan(prepare)
+    expect(source).toContain("uploadType: 'encrypted', kind: 'soul-content'")
+    expect(source).not.toContain('buildContentSidecarsForVersionsWithSuiClient')
+    expect(source).not.toContain('/api/souls/publish')
     expect(source).not.toContain('PHASE2_PENDING_SIDECAR')
     for (const field of LEGACY_SIDECAR_REQUEST_FIELDS) {
       expect(source).not.toContain(`${field}:`)
@@ -129,29 +88,12 @@ describe('Soulidity publish content sidecars', () => {
     }
   })
 
-  it('collection publish sync bodies also use Phase 2 contentSidecars', () => {
+  it('Collection uses pre-payment encrypted authoring and has no plaintext mirror recovery', () => {
     const source = readSource('web/lib/hooks/use-collection-publish.ts')
-
-    expect(source).toContain('contentSidecars: ContentSidecarRequestEntry[]')
-    expect(source).toContain('buildContentSidecarsForVersionsWithSuiClient')
-    expect(source).toContain('extractAllContentVersionAppendedEvents')
-    expect(source).not.toContain('PHASE2_PENDING_SIDECAR')
-    for (const field of LEGACY_SIDECAR_REQUEST_FIELDS) {
-      expect(source).not.toContain(`${field}:`)
-      expect(source).not.toContain(`.${field}`)
-      expect(source).not.toContain(`'${field}'`)
-      expect(source).not.toContain(`"${field}"`)
-    }
-  })
-
-  it('collection recovery preserves legacy private sprite material as a content sidecar', () => {
-    const source = readSource('web/lib/hooks/use-collection-publish.ts')
-
-    expect(source).toContain('assetsSealMaterial?: PendingSealMaterial | null')
-    expect(source).toContain('hasValidOptionalLegacyAssetsSealMaterial')
-    expect(source).toContain('!hasValidOptionalLegacyAssetsSealMaterial(soul.uploads.assetsSealMaterial)')
-    expect(source).toContain('spriteMaterial: params.uploads.assetsSealMaterial ?? null')
-    expect(source).toContain('spriteName: legacySpriteVersion?.name ?? null')
+    expect(source).toContain("useSingleSoulAuthoring(approve, 'COLLECTION')")
+    expect(source).not.toContain('PendingSealMaterial')
+    expect(source).not.toContain('sessionStorage')
+    expect(source).not.toContain('/api/')
   })
 
   it('content sidecar document ids are validated against the version tuple and reused for access approval', () => {
@@ -307,56 +249,4 @@ describe('Soulidity publish content sidecars', () => {
     })).toThrow(SealSidecarSyncConfigError)
   })
 
-  it('smoke matrix mirrors the contentSidecars request contract', () => {
-    const raw = readSource(SMOKE_MATRIX_PATH)
-    expect(() => JSON.parse(raw)).not.toThrow()
-
-    const matrix = parseSmokeMatrix()
-    expect(collectLegacySidecarMentions(matrix)).toEqual([])
-
-    const mirrors = collectMirrorRequests(matrix)
-    const publishMirrors = mirrors.filter((mirror) => mirror.path === '/api/souls/publish')
-    expect(publishMirrors.length).toBeGreaterThan(0)
-    for (const [index, mirror] of publishMirrors.entries()) {
-      expectInitialContentSidecars(mirror.body?.contentSidecars, `/api/souls/publish mirror ${index}`)
-    }
-
-    const batchMirrors = mirrors.filter((mirror) => mirror.path === '/api/souls/publish/batch')
-    expect(batchMirrors.length).toBeGreaterThan(0)
-    for (const [mirrorIndex, mirror] of batchMirrors.entries()) {
-      expect(Array.isArray(mirror.body?.syncBodies), `/api/souls/publish/batch mirror ${mirrorIndex}`).toBe(true)
-      for (const [bodyIndex, syncBody] of (mirror.body?.syncBodies as Array<Record<string, unknown>>).entries()) {
-        expectInitialContentSidecars(
-          syncBody.contentSidecars,
-          `/api/souls/publish/batch mirror ${mirrorIndex} syncBodies[${bodyIndex}]`,
-        )
-      }
-    }
-  })
-
-  it('smoke matrix does not advertise non-existent first-party skills/assets mirror routes', () => {
-    const mirrors = collectMirrorRequests(parseSmokeMatrix())
-    const paths = mirrors.map((mirror) => mirror.path)
-
-    expect(paths).not.toContain('/api/souls/__SOUL_ON_CHAIN_ID__/skills')
-    expect(paths).not.toContain('/api/souls/__SOUL_ON_CHAIN_ID__/assets')
-  })
-
-  it('PTB-only skills/assets smoke rows assert emitted content-version events', () => {
-    const matrix = parseSmokeMatrix()
-    const skillsRow = matrix.rows.find((row) => row.name === 'first-skills-root-plus-three-versions')
-    const skillsStep = skillsRow?.steps.find((step) => step.label === 'ptb2-init-and-append-skills')
-    expect(skillsStep?.mirror).toBeUndefined()
-    expect(skillsStep?.assertEvents?.contentVersions).toEqual([{ kind: 2, count: 3 }])
-
-    const assetsRow = matrix.rows.find((row) => row.name === 'first-assets-root-plus-three-sprite-versions')
-    const assetsStep = assetsRow?.steps.find((step) => step.label === 'ptb2-init-and-append-assets')
-    expect(assetsStep?.mirror).toBeUndefined()
-    expect(assetsStep?.assertEvents?.contentVersions).toEqual([{ kind: 3, count: 3 }])
-
-    const harness = readSource('scripts/smoke-soulidity.ts')
-    expect(harness).toContain('extractAllContentVersionAppendedEvents')
-    expect(harness).toContain('assertSmokeEvents')
-    expect(harness).toContain('step.assertEvents')
-  })
 })

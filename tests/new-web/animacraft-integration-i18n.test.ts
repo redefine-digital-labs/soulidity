@@ -98,11 +98,11 @@ describe('Animacraft Soulidity integration translations', () => {
 
   it('routes handoff status, errors, and calls to action through the dictionary', () => {
     expect(source).toContain('formatAnimacraftIntegrationMessage')
-    expect(source).toContain("t('mintChecking')")
-    expect(source).toContain("t('technicalDetails')")
-    expect(source).toContain("t('signCompletePrice'")
-    expect(source).toContain("t('connectSuiWallet')")
-    expect(source).toContain("t('backToAnimacraft')")
-    expect(source).toContain('?lang=${encodeURIComponent(locale)}#make')
+    expect(source).toContain("t('subtitle')")
+    expect(source).toContain("t(valid ? status : 'invalid')")
+    expect(source).toContain("t('retry')")
+    expect(source).toContain("t('login')")
+    expect(source).toContain("t('back')")
+    expect(source).not.toContain('signCompletePrice')
   })
 })

@@ -19,6 +19,7 @@
 import type { Prisma } from '@db/prisma-client'
 import { prisma } from '@/lib/prisma'
 import { isUuid } from '@/lib/is-uuid'
+import { soulArtworkUrl } from '@/lib/animacraft/artwork-url'
 import { toProjectionNumber } from '@soulidity/sdk'
 import {
   clampContentVersionPageSize,
@@ -38,7 +39,6 @@ import type {
   ContentReadMode,
   SoulAssetDetail,
   SoulAssetSummary,
-  SoulCollectionAssetDetail,
   SoulCollectionAssetSummary,
   SoulContentVersionRecord,
   SoulDownloadPolicy,
@@ -377,9 +377,6 @@ type SoulCollectionSummaryRecord = Prisma.SoulCollectionAssetGetPayload<{
 type SoulAssetDetailRecord = Prisma.SoulAssetGetPayload<{
   select: typeof soulAssetDetailSelect
 }>
-type SoulCollectionDetailRecord = Prisma.SoulCollectionAssetGetPayload<{
-  select: typeof soulCollectionDetailSelect
-}>
 
 // ── Mappers: simple records ──────────────────────────────────────────────
 
@@ -531,7 +528,7 @@ export function toSoulAssetSummary(record: SoulAssetSummaryRecord): SoulAssetSum
     paidAccessListOnChainId: record.paidAccessListOnChainId,
     name: record.name,
     description: record.description,
-    imageUrl: record.imageUrl,
+    imageUrl: soulArtworkUrl(record.imageUrl, record.onChainId),
     activeSpriteName: record.activeSpriteName,
     activeSpriteVersionIndex: record.activeSpriteVersionIndex == null
       ? null
@@ -634,7 +631,6 @@ export function toSoulAssetDetail(
     currentOwnershipEpoch?: number | null
     quote?: SoulQuoteBreakdown | null
     platformFeeBps?: number | null
-    animacraftProvenance?: SoulAssetDetail['animacraftProvenance']
   },
 ): SoulAssetDetail {
   const viewerAddresses = new Set(
@@ -681,16 +677,6 @@ export function toSoulAssetDetail(
     isGrantedAgent,
     quote: params.quote ?? null,
     platformFeeBps: params.platformFeeBps ?? null,
-    animacraftProvenance: params.animacraftProvenance ?? null,
-  }
-}
-
-export function toSoulCollectionDetail(
-  record: SoulCollectionDetailRecord,
-): SoulCollectionAssetDetail {
-  return {
-    ...toSoulCollectionSummary(record),
-    souls: record.souls.map(toSoulAssetSummary),
   }
 }
 

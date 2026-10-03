@@ -20,11 +20,7 @@ import {
   upsertGrantProjection,
 } from '@/lib/soulidity/mirror/upsert-grant'
 import { upsertCollectionProjection } from '@/lib/soulidity/mirror/upsert-collection'
-import {
-  markContentVersionDeleted,
-  markContentVersionPurged,
-  upsertContentVersionProjection,
-} from '@/lib/soulidity/mirror/upsert-content-version'
+import { upsertContentVersionProjection } from '@/lib/soulidity/mirror/upsert-content-version'
 import {
   markPaidAccessEntryRevoked,
   markPaidAccessKindConfigDeleted,
@@ -45,6 +41,7 @@ import {
 } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import type { SoulDownloadPolicy } from '@soulidity/sdk'
+import { NativeReceiveError } from '@/lib/animacraft/native-receive'
 
 interface ActiveBindingMirror {
   name: string
@@ -82,7 +79,27 @@ export async function syncSoulProjectionFromChain(params: {
   activeVoice?: ActiveBindingMirror | null
   /** Cached snapshots of `SoulState.config_ext` keys we mirror by name. */
   stateConfig?: StateConfigSnapshot
+  /** Native purchase/cancellation: never overwrite subsequent custody or relisting. */
+  expectedNativeHeldState?: {
+    ownerAddress: string
+    kioskId: string
+    ownershipEpoch: string
+    verifyReadSet: () => Promise<void>
+  }
+  /** Receipt-bound native listing; a later reprice/sale must not be overwritten. */
+  expectedNativeListedState?: {
+    ownerAddress: string
+    kioskId: string
+    ownershipEpoch: string
+    listingId: string
+    priceAtomic: bigint
+    verifyReadSet: () => Promise<void>
+  }
 }) {
+  if (params.expectedNativeHeldState && params.expectedNativeListedState) {
+    throw new Error('Conflicting native mirror state guards')
+  }
+  const expectedNative = params.expectedNativeHeldState ?? params.expectedNativeListedState
   const [soul, state] = await Promise.all([
     getSoulObject(params.soulObjectId, params.packageId),
     getSoulStateObject(params.stateObjectId, params.packageId),
@@ -103,14 +120,44 @@ export async function syncSoulProjectionFromChain(params: {
     }
   }
 
-  // Resolve kiosk cap ID: caller-provided → registry lookup → owned-object scan (with retry)
-  let kioskCapOnChainId = params.currentKioskCapOnChainId ?? null
+  const assertNativeHeldState = () => {
+    const expected = params.expectedNativeHeldState
+    if (!expected) return
+    if (soul.objectId !== params.soulObjectId || state.objectId !== params.stateObjectId
+      || state.soulId !== soul.objectId || soul.provenanceKind !== 'animacraft'
+      || state.currentOwnerAddress !== expected.ownerAddress || state.isListed
+      || state.currentKioskId !== expected.kioskId || String(state.ownershipEpoch) !== expected.ownershipEpoch
+      || params.listingObjectOnChainId != null || params.listedPriceAtomic != null
+      || (params.listingStatus != null && params.listingStatus !== 'held')) {
+      throw new Error('Native Soul ownership changed before held-state mirror write')
+    }
+  }
+  assertNativeHeldState()
+
+  const assertNativeListedState = () => {
+    const expected = params.expectedNativeListedState
+    if (!expected) return
+    if (soul.objectId !== params.soulObjectId || state.objectId !== params.stateObjectId
+      || state.soulId !== soul.objectId || soul.provenanceKind !== 'animacraft'
+      || state.currentOwnerAddress !== expected.ownerAddress || !state.isListed
+      || state.currentKioskId !== expected.kioskId || String(state.ownershipEpoch) !== expected.ownershipEpoch
+      || params.listingObjectOnChainId !== expected.listingId || params.listedPriceAtomic !== expected.priceAtomic
+      || params.listingStatus !== 'listed') {
+      throw new NativeReceiveError('NATIVE_LISTING_STATE_CHANGED', 'Native listing changed before mirror write', 409)
+    }
+  }
+  assertNativeListedState()
+
+  // Native recovery resolves the owner's actual cap without a fee config or
+  // purchase gate. Cached/caller-provided caps cannot stand in for current custody.
+  // Ordinary callers retain their existing registry/scan resolution.
+  let kioskCapOnChainId = expectedNative ? null : params.currentKioskCapOnChainId ?? null
   if (!kioskCapOnChainId) {
     const MAX_CAP_RESOLVE_ATTEMPTS = 4
     const CAP_RESOLVE_DELAY_MS = 1500
 
     for (let attempt = 1; attempt <= MAX_CAP_RESOLVE_ATTEMPTS; attempt++) {
-      const registered = await getRegisteredPersonalKiosk({
+      const registered = expectedNative ? null : await getRegisteredPersonalKiosk({
         marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
         marketPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID'),
         ownerAddress: state.currentOwnerAddress,
@@ -122,7 +169,8 @@ export async function syncSoulProjectionFromChain(params: {
       }
 
       const ownedCaps = await listOwnedPersonalKioskCaps(state.currentOwnerAddress)
-      const matched = ownedCaps.find(cap => cap.currentKioskId === state.currentKioskId)
+      const matched = ownedCaps.find(cap => cap.currentKioskId === state.currentKioskId
+        && (!expectedNative || cap.ownerAddress === state.currentOwnerAddress))
       if (matched) {
         kioskCapOnChainId = matched.currentKioskCapOnChainId
         break
@@ -148,6 +196,12 @@ export async function syncSoulProjectionFromChain(params: {
         `[syncSoulProjection] Could not resolve PersonalKioskCap for kiosk ${state.currentKioskId} owned by ${state.currentOwnerAddress} after ${MAX_CAP_RESOLVE_ATTEMPTS} attempts.`,
       )
     }
+  }
+
+  if (expectedNative) {
+    assertNativeHeldState()
+    assertNativeListedState()
+    await expectedNative.verifyReadSet()
   }
 
   return upsertSoulProjection({
@@ -259,32 +313,6 @@ export async function syncContentVersionProjectionFromChain(
   client?: ContentSyncDbClient,
 ) {
   return upsertContentVersionProjection(params, client)
-}
-
-export async function markContentVersionDeletedFromChain(
-  params: {
-    contentOnChainId: string
-    kind: number
-    name: string
-    versionIndex: number
-    deletedAt?: Date | null
-  },
-  client?: ContentSyncDbClient,
-) {
-  return markContentVersionDeleted(params, client)
-}
-
-export async function markContentVersionPurgedFromChain(
-  params: {
-    contentOnChainId: string
-    kind: number
-    name: string
-    versionIndex: number
-    purgedAt?: Date | null
-  },
-  client?: ContentSyncDbClient,
-) {
-  return markContentVersionPurged(params, client)
 }
 
 // ── Paid access sync ────────────────────────────────────────────────────

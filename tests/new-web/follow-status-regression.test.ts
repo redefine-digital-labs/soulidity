@@ -7,34 +7,32 @@ function readSource(relativePath: string) {
 }
 
 describe('follow status regression guards', () => {
-  it('loads follow status with auth headers when available', () => {
+  it('loads chain follow state with the wallet and release scoped cache, without owned follow APIs', () => {
     const source = readSource('web/lib/hooks/use-social.ts')
-    const useFollowStatusBlock = source.match(/export function useFollowStatus[\s\S]*?\n}\n/)?.[0]
-
-    expect(useFollowStatusBlock).toBeTruthy()
-    expect(useFollowStatusBlock).toContain('const { user, getAuthHeaders } = useAuth()')
-    expect(useFollowStatusBlock).toContain("queryKey: ['follow-status', memberId, user?.id ?? null]")
-    expect(useFollowStatusBlock).toContain("const headers = await getAuthHeaders().catch(() => ({}))")
-    expect(useFollowStatusBlock).toContain("cache: 'no-store'")
-    expect(useFollowStatusBlock).toContain('headers,')
+    const hook = readSource('web/lib/hooks/use-wallet-follow.ts')
+    expect(source).not.toContain('/api/community/follow')
+    expect(hook).not.toContain('getAuthHeaders')
+    expect(hook).toContain("['follow-status', config?.deployment ?? null, targetId, owner]")
+    expect(hook).toContain('readWalletFollowState({ client: suiGrpcClient')
+    expect(hook).toContain('targetProfileId: targetId, viewerAddress: walletAddress, signal')
   })
 
   it('reads community profile follow stats from the canonical member id', () => {
     const source = readSource('web/app/community/u/[spaceId]/page.tsx')
 
-    expect(source).toContain('useFollowStatus(profile?.id ?? null)')
+    expect(source).toContain('const targetId = profile?.id ??')
+    expect(source).toContain('/^0x[0-9a-f]{64}$/.test(spaceId)')
+    expect(source).toContain('!/^0x0+$/.test(spaceId) ? spaceId : null')
+    expect(source).toContain('useFollowStatus(targetId)')
     expect(source).not.toContain('const { data: followData } = useFollowStatus(spaceId)')
-    expect(source).toContain('<FollowButton targetMemberId={profile.id} />')
+    expect(source).toContain('<FollowButton targetMemberId={targetId} />')
   })
 
-  it('updates the viewer-scoped follow cache after toggling', () => {
-    const source = readSource('web/lib/hooks/use-social.ts')
-    const useToggleFollowBlock = source.match(/export function useToggleFollow[\s\S]*?\n}\n\n\/\/ ── Bookmark hooks ──/)?.[0]
-
-    expect(useToggleFollowBlock).toBeTruthy()
-    expect(useToggleFollowBlock).toContain('const { user, getAuthHeaders } = useAuth()')
-    expect(useToggleFollowBlock).toContain("const followStatusKey = ['follow-status', targetMemberId, user?.id ?? null] as const")
-    expect(useToggleFollowBlock).toContain('setQueryData<FollowStatus>(followStatusKey')
-    expect(useToggleFollowBlock).toContain('invalidateQueries({ queryKey: followStatusKey })')
+  it('refreshes the viewer-scoped chain state after confirmed outcomes, never optimistic cache patches', () => {
+    const source = readSource('web/lib/hooks/use-wallet-follow.ts')
+    expect(source).toContain("result.phase === 'SUCCEEDED' || result.phase === 'FAILED'")
+    expect(source).toContain('invalidateQueries({ queryKey: queryKey(targetId, walletAddress) })')
+    expect(source).not.toContain('setQueryData')
+    expect(readSource('web/components/community/follow-button.tsx')).not.toContain('optimistic')
   })
 })

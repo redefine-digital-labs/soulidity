@@ -18,38 +18,24 @@ import {
 } from '@soulidity/sdk'
 import {
   buildWalrusBatchRecoveryKey,
-  buildWalrusUploadRecoveryKey,
   clearWalrusBatchRecovery,
-  clearWalrusUploadRecovery,
   persistWalrusBatchRecovery,
-  persistWalrusUploadRecovery,
   readWalrusBatchRecovery,
-  readWalrusUploadRecovery,
   WalrusUploadResumeMismatchError,
   type WalrusBatchRecoveryBlob,
   type WalrusOrphanBlob,
-  type WalrusUploadRecoveryRecord,
 } from '@/lib/upload/walrus-recovery'
 import { assertSuiTxSucceeded } from '@soulidity/sdk'
-import {
-  deserializeWalrusCertificate,
-  getConfiguredWalrusUploadTransport,
-  serializeWalrusEncodedBlob,
-  type SerializedWalrusCertificate,
-  type WalrusUploadTransport,
-} from '@/lib/upload/walrus-batch-transport'
-import {
-  completeManagedWalrusUpload,
-  finalizeManagedWalrusUpload,
-  requestManagedWalrusUploaderCredentials,
-  uploadPayloadToManagedWalrusUploader,
-  type ManagedUploaderCredentials,
-} from '@/lib/upload/walrus-managed-transport'
+import { uploadDurableWalrusBlob, recoverDurableWalrusBlob, queryHistoricalWalrusBlobRecord, observeHistoricalWalrusBlob, inspectWalrusRegisteredBlobForRebase,
+  continueRegisteredWalrusBlob, acknowledgeWalrusSingleBlobUpload as acknowledgeDurableWalrusBlob } from './walrus-single-upload'
+import { captureWalrusSingleAttachment, readWalrusSingleRecord, walrusSingleKey, withWalrusSingleLock, type WalrusSingleExecution, type WalrusSingleAttachment, type WalrusSingleRecord } from './walrus-single-operation'
+export type { WalrusSingleExecution, WalrusSingleAttachment } from './walrus-single-operation'
 
 export type SoulUploadKind = 'persona-sprite' | 'soul-content'
 export type SoulUploadType = 'public' | 'encrypted'
 
 export interface SoulUploadResult {
+  recoveryKey?: string
   blobId: string
   blobObjectId: string
   contentHash: string
@@ -60,7 +46,7 @@ export interface SoulUploadResult {
   certifyTxDigest: string
   /**
    * Full TX result of the certify call. Populated by the single-blob path
-   * so callers that supplied an `attachAfterCertify` callback can extract
+   * so callers that supplied a scoped `attachment` can extract
    * events (e.g. `ContentVersionAppended`) from here without an extra
    * `getTransactionBlock` RPC. Optional because the batch publish path
    * splices every blob's `certify_blob` into the caller's mint PTB, so
@@ -99,42 +85,14 @@ export interface UploadSoulPayloadParams {
   file: File
   uploadType: SoulUploadType
   kind: SoulUploadKind
-  authHeaders?: Record<string, string>
   sendObjectTo?: string | null
   walletAddress: string
-  suiClient: unknown
-  signAndExecute: SignAndExecuteWalrusTx
+  execution: WalrusSingleExecution
+  operationScope: string
+  attachment: WalrusSingleAttachment | null
   confirmQuote: (quote: WalrusUploadQuote) => Promise<boolean>
   storageEpochs?: number
-  // Only skill-bundle uploads must contain `SKILL.md`; sprite ZIPs (and other
-  // ZIP-shaped payloads such as cover archives) do not. Default false so a
-  // generic ZIP upload no longer fails the skill-bundle parser.
   extractSkillMetadata?: boolean
-  /**
-   * Optional callback invoked AFTER the Walrus `certify_blob` moveCall has
-   * been added to the certify PTB but BEFORE the wallet signs. Use this to
-   * splice an additional moveCall (typically Soulidity
-   * `content::append_version_as_owner`) into the same PTB so the wallet
-   * sees a single combined signature instead of two — register stays its
-   * own signature because it must commit before the off-chain blob upload.
-   * The callback receives the in-flight Walrus Blob object id; the caller
-   * is responsible for using `tx.object(blobObjectId)` (or equivalent)
-   * when adding its moveCall.
-   */
-  attachAfterCertify?: (tx: Transaction, blobObjectId: string) => void
-}
-
-interface UploadBlobResult {
-  blobId: string
-  blobObjectId: string
-  storageTxDigest: string
-  certifyTxDigest: string
-  /**
-   * Full result of the certify TX. Present so callers that splice
-   * additional moveCalls via `attachAfterCertify` can extract events from
-   * the combined PTB without an extra `getTransactionBlock` RPC.
-   */
-  certifyTxResult: WalrusSignAndExecuteResult
 }
 
 interface SuiClientWithCache {
@@ -155,9 +113,6 @@ const QUOTE_RELAY_TIP_MAX_MIST = BigInt(Number.MAX_SAFE_INTEGER)
 const WALRUS_WEIGHTED_QUORUM_CONFIRMATION_RETRIES = 2
 const WALRUS_STORAGE_WRITE_TIMEOUT_MS = 20_000
 const WALRUS_REGISTER_RESOLVE_TIMEOUT_MS = 60_000
-const DEFAULT_MANAGED_COMPLETE_CONCURRENCY = 1
-const MIN_MANAGED_COMPLETE_CONCURRENCY = 1
-const MAX_MANAGED_COMPLETE_CONCURRENCY = 4
 
 function getWalrusWasmUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_WALRUS_WASM_URL
@@ -199,51 +154,6 @@ function getBlobUrl(blobId: string, network: 'testnet' | 'mainnet') {
   return `${getAggregatorUrl(network)}/v1/blobs/${encodeURIComponent(blobId)}`
 }
 
-function getManagedCompleteConcurrency(): number {
-  const raw = process.env.NEXT_PUBLIC_WALRUS_MANAGED_COMPLETE_CONCURRENCY?.trim()
-  if (!raw) return DEFAULT_MANAGED_COMPLETE_CONCURRENCY
-
-  const parsed = Number(raw)
-  if (!Number.isInteger(parsed)) return DEFAULT_MANAGED_COMPLETE_CONCURRENCY
-
-  return Math.max(
-    MIN_MANAGED_COMPLETE_CONCURRENCY,
-    Math.min(MAX_MANAGED_COMPLETE_CONCURRENCY, parsed),
-  )
-}
-
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  concurrency: number,
-  worker: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length)
-  let nextIndex = 0
-  let failed = false
-
-  async function runWorker(): Promise<void> {
-    while (!failed && nextIndex < items.length) {
-      const index = nextIndex
-      nextIndex += 1
-      try {
-        results[index] = await worker(items[index] as T, index)
-      } catch (error) {
-        failed = true
-        throw error
-      }
-    }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker()),
-  )
-  return results
-}
-
-function cloneBytes(bytes: Uint8Array) {
-  return new Uint8Array(bytes)
-}
-
 function clearWalrusUploadRelayTipCache(suiClient: unknown) {
   const cache = (suiClient as SuiClientWithCache).cache
   if (cache?.clear) {
@@ -280,7 +190,7 @@ export function hasWalrusWeightedQuorum(params: {
   return 3 * weight >= 2 * Math.trunc(params.nShards) + 1
 }
 
-async function createWalrusClient(params: {
+export async function createWalrusClient(params: {
   suiClient: unknown
   network: 'testnet' | 'mainnet'
   relayUrl?: string
@@ -346,215 +256,8 @@ function getWalrusCertificateQuorumStatus(params: {
   }
 }
 
-async function uploadSingleBlob(params: {
-  client: Awaited<ReturnType<typeof createWalrusClient>>
-  payload: Uint8Array
-  walletAddress: string
-  storageEpochs: number
-  signAndExecute: SignAndExecuteWalrusTx
-  recoveryKey: string
-  contentHash: string
-  network: 'testnet' | 'mainnet'
-  attachAfterCertify?: (tx: Transaction, blobObjectId: string) => void
-}): Promise<UploadBlobResult> {
-  const existing = readWalrusUploadRecovery(params.recoveryKey)
-  const matchesExisting = (record: WalrusUploadRecoveryRecord | null) =>
-    !!record
-    && record.walletAddress.toLowerCase() === params.walletAddress.toLowerCase()
-    && record.network === params.network
-    && record.payloadByteLength === params.payload.byteLength
-    && record.storageEpochs === params.storageEpochs
-  const resumeRecord = matchesExisting(existing) ? existing : null
-  if (existing && !resumeRecord) {
-    // Different upload intent under the same key — drop stale state.
-    clearWalrusUploadRecovery(params.recoveryKey)
-  }
-
-  // The SDK's runtime resume reads `blobId`, `blobObjectId`, `txDigest`, and
-  // `nonce` independently (see @mysten/walrus/dist/flows/write-blob.mjs). The
-  // public `WriteBlobStep` discriminated union additionally requires a `step`
-  // field plus `rootHash`/`unencodedSize`/`certificate` that we don't persist;
-  // we cast through `unknown` because runtime only consumes the four fields
-  // we provide here.
-  type WriteBlobFlowOptionsArg = Parameters<typeof params.client.writeBlobFlow>[0]
-  type ResumeOption = NonNullable<WriteBlobFlowOptionsArg['resume']>
-  const flow = params.client.writeBlobFlow({
-    blob: params.payload,
-    ...(resumeRecord
-      ? {
-          resume: {
-            blobId: resumeRecord.blobId,
-            ...(resumeRecord.blobObjectId ? { blobObjectId: resumeRecord.blobObjectId } : {}),
-            txDigest: resumeRecord.txDigest,
-            ...(resumeRecord.nonce ? { nonce: resumeRecord.nonce } : {}),
-          } as unknown as ResumeOption,
-        }
-      : {}),
-  })
-
-  let encoded: Awaited<ReturnType<typeof flow.encode>>
-  try {
-    encoded = await flow.encode()
-  } catch (encodeError) {
-    if (resumeRecord) {
-      clearWalrusUploadRecovery(params.recoveryKey)
-      throw new WalrusUploadResumeMismatchError({
-        message:
-          'Cannot resume the previous Walrus upload because the payload changed. '
-          + `A previously registered Blob object (${resumeRecord.blobObjectId ?? 'object id unknown'}) `
-          + `from tx ${resumeRecord.txDigest} is now orphaned and will not be reused. `
-          + 'Original error: '
-          + (encodeError instanceof Error ? encodeError.message : String(encodeError)),
-        orphanBlobs: [{ blobId: resumeRecord.blobId, blobObjectId: resumeRecord.blobObjectId }],
-        orphanTxDigest: resumeRecord.txDigest,
-      })
-    }
-    throw encodeError
-  }
-
-  let txDigest: string
-  let deletable = true
-  if (resumeRecord) {
-    txDigest = resumeRecord.txDigest
-    deletable = resumeRecord.deletable
-  } else {
-    const registerTx = flow.register({
-      epochs: params.storageEpochs,
-      owner: params.walletAddress,
-      deletable,
-    })
-    const registerResult = await params.signAndExecute(registerTx)
-    try {
-      assertSuiTxSucceeded(registerResult, 'Walrus register transaction')
-    } catch (error) {
-      clearWalrusUploadRecovery(params.recoveryKey)
-      throw error
-    }
-    txDigest = registerResult.digest
-    // Persist the registered blob immediately so a relay/certify failure does
-    // not silently re-register on the next attempt and burn another wallet
-    // payment. blobObjectId is filled in after `flow.upload` resolves it.
-    persistWalrusUploadRecovery(params.recoveryKey, {
-      walletAddress: params.walletAddress,
-      network: params.network,
-      contentHash: params.contentHash,
-      payloadByteLength: params.payload.byteLength,
-      storageEpochs: params.storageEpochs,
-      blobId: encoded.blobId,
-      blobObjectId: null,
-      txDigest,
-      nonce: 'nonce' in encoded && typeof encoded.nonce === 'string' ? encoded.nonce : null,
-      deletable,
-    })
-  }
-
-  const uploaded = await flow.upload({ digest: txDigest, deletable })
-
-  // We now know the on-chain Blob object id; refresh recovery so a later
-  // certify failure can resume without re-resolving the digest.
-  if (uploaded.blobObjectId) {
-    persistWalrusUploadRecovery(params.recoveryKey, {
-      walletAddress: params.walletAddress,
-      network: params.network,
-      contentHash: params.contentHash,
-      payloadByteLength: params.payload.byteLength,
-      storageEpochs: params.storageEpochs,
-      blobId: uploaded.blobId,
-      blobObjectId: uploaded.blobObjectId,
-      txDigest,
-      nonce: 'nonce' in encoded && typeof encoded.nonce === 'string' ? encoded.nonce : null,
-      deletable,
-    })
-  }
-
-  const certifyTx = flow.certify()
-  // Splice the caller's append moveCall into the certify PTB before
-  // signing. The Blob object exists on chain post-register, so the
-  // appended moveCall references it via `tx.object(blobObjectId)` — this
-  // is what drops the per-skill prompt count from 3 → 2.
-  if (params.attachAfterCertify && uploaded.blobObjectId) {
-    params.attachAfterCertify(certifyTx, uploaded.blobObjectId)
-  }
-  const certifyResult = await params.signAndExecute(certifyTx)
-  assertSuiTxSucceeded(certifyResult, 'Walrus certify transaction')
-
-  // Certify (and any spliced post-certify Move calls — e.g. soulidity
-  // append/setStateConfig/setActiveContent) already succeeded on chain. Drop
-  // recovery before any further async step so a transient post-success read
-  // failure cannot leave us in a state where the next retry rebuilds the
-  // certify PTB and replays the spliced moveCalls (double-append, or abort
-  // on already-certified blob).
-  clearWalrusUploadRecovery(params.recoveryKey)
-
-  // Best-effort post-success read of the certified Blob object. If this
-  // throws or times out we fall back to the values already known from
-  // `flow.upload()` — `uploaded.blobId` is the same deterministic blob ID
-  // and `uploaded.blobObjectId` is the on-chain object id we just certified
-  // — so the caller still receives the certify digest needed for /content/sync.
-  let certified: Awaited<ReturnType<typeof flow.getBlob>> | null = null
-  try {
-    certified = await flow.getBlob()
-  } catch {
-    certified = null
-  }
-
-  return {
-    blobId: certified?.blobId ?? uploaded.blobId,
-    blobObjectId: certified?.blobObjectId || uploaded.blobObjectId,
-    storageTxDigest: txDigest,
-    certifyTxDigest: certifyResult.digest,
-    certifyTxResult: certifyResult,
-  }
-}
-
-async function uploadPayloadToWalrus(params: {
-  name: string
-  contentHash: string
-  payload: Uint8Array
-  walletAddress: string
-  suiClient: unknown
-  signAndExecute: SignAndExecuteWalrusTx
-  storageEpochs: number
-  plan: WalrusUploadPlan
-  quote: WalrusUploadQuote
-  network: 'testnet' | 'mainnet'
-  relayUrl: string
-  payloadHash: string
-  attachAfterCertify?: (tx: Transaction, blobObjectId: string) => void
-}): Promise<UploadBlobResult> {
-  void params.name
-  void params.contentHash
-  void params.plan
-  const client = await createWalrusClient({
-    suiClient: params.suiClient,
-    network: params.network,
-    relayUrl: params.relayUrl,
-    maxRelayTipMist: params.quote.relayTipMist,
-  })
-
-  const recoveryKey = buildWalrusUploadRecoveryKey({
-    network: params.network,
-    walletAddress: params.walletAddress,
-    contentHash: params.payloadHash,
-    payloadByteLength: params.payload.byteLength,
-    storageEpochs: params.storageEpochs,
-  })
-
-  return uploadSingleBlob({
-    client,
-    payload: params.payload,
-    walletAddress: params.walletAddress,
-    storageEpochs: params.storageEpochs,
-    signAndExecute: params.signAndExecute,
-    recoveryKey,
-    contentHash: params.payloadHash,
-    network: params.network,
-    attachAfterCertify: params.attachAfterCertify,
-  })
-}
-
 // ---------------------------------------------------------------------------
-// Batch publish path: one PTB1 (register all) + parallel HTTP uploads + one
+// Batch publish path: one PTB1 (register all) + sequential browser uploads + one
 // PTB2 (certify all + mint), so N files cost 2 wallet signatures regardless
 // of N. The mint half is composed by the caller via `attachCertifyCalls(tx)`.
 // ---------------------------------------------------------------------------
@@ -601,8 +304,6 @@ export interface PrepareSoulBlobsForBatchPublishParams {
   suiClient: unknown
   signAndExecute: SignAndExecuteWalrusTx
   confirmQuote: (quote: WalrusUploadQuote) => Promise<boolean>
-  authHeaders?: Record<string, string>
-  transport?: WalrusUploadTransport
   storageEpochs?: number
 }
 
@@ -661,17 +362,14 @@ interface BatchWalrusContinuation {
   storageEpochs: number
   suiClient: unknown
   walrusClient: Awaited<ReturnType<typeof createWalrusClient>>
-  transport: WalrusUploadTransport
   prepared: PreparedFile[]
   encodedList: Array<{
-    uploadId?: string | null
     blobId: string
     rootHash: Uint8Array
     size?: number
     metadata?: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['metadata']
     sliversByNode?: Parameters<Awaited<ReturnType<typeof createWalrusClient>>['writeEncodedBlobToNodes']>[0]['sliversByNode']
   }>
-  managedUploader: ManagedUploaderCredentials | null
   recoveryKey: string
   resumedBlobObjectIds: string[] | null
   quote: WalrusUploadQuote
@@ -685,8 +383,6 @@ export interface CompleteBatchWalrusUploadAfterRegisterParams {
    * `'fresh'` mode, this is required.
    */
   registerTxDigest?: string | null
-  authHeaders?: Record<string, string>
-  transport?: WalrusUploadTransport
 }
 
 export interface CompleteBatchWalrusUploadResult {
@@ -701,12 +397,10 @@ export interface PrepareBatchWalrusRegisterIntentParams {
   walletAddress: string
   suiClient: unknown
   confirmQuote: (quote: WalrusUploadQuote) => Promise<boolean>
-  authHeaders?: Record<string, string>
-  transport?: WalrusUploadTransport
   storageEpochs?: number
 }
 
-interface PreparedFile {
+export interface PreparedFile {
   index: number
   item: BatchSoulUploadFile
   contentType: string
@@ -718,14 +412,14 @@ interface PreparedFile {
   skillBundleMetadata: ReturnType<typeof extractSkillBundleMetadata> | null
 }
 
-interface ReadFileResult {
+export interface ReadFileResult {
   plaintext: Uint8Array
   contentHash: string
   contentType: string
   normalizedFile: File
 }
 
-async function readAndHashUploadFile(item: BatchSoulUploadFile): Promise<ReadFileResult> {
+export async function readAndHashUploadFile(item: BatchSoulUploadFile): Promise<ReadFileResult> {
   const contentType = inferSoulUploadContentType(item.file, item.uploadType)
   const normalizedFile =
     item.file.type === contentType
@@ -740,7 +434,7 @@ async function readAndHashUploadFile(item: BatchSoulUploadFile): Promise<ReadFil
   return { plaintext, contentHash, contentType, normalizedFile }
 }
 
-async function preparePayload(
+export async function preparePayload(
   item: BatchSoulUploadFile,
   index: number,
   base: ReadFileResult,
@@ -969,93 +663,6 @@ async function writeEncodedBlobAndBuildCertificate(params: {
   )
 }
 
-function isSerializedWalrusCertificate(value: unknown): value is SerializedWalrusCertificate {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Partial<SerializedWalrusCertificate>
-  return Array.isArray(candidate.signers)
-    && candidate.signers.every((signer) => Number.isInteger(signer) && signer >= 0)
-    && typeof candidate.serializedMessage === 'string'
-    && typeof candidate.signature === 'string'
-}
-
-async function completeEncodedBlobsViaServer(params: {
-  network: 'testnet' | 'mainnet'
-  walletAddress: string
-  registerTxDigest: string
-  encodedList: BatchWalrusContinuation['encodedList']
-  blobObjectIds: string[]
-  authHeaders?: Record<string, string>
-}): Promise<Array<{
-  blobId: string
-  blobObjectId: string
-  certificate: WalrusCertificate
-}>> {
-  const body = {
-    network: params.network,
-    registerTxDigest: params.registerTxDigest,
-    walletAddress: params.walletAddress,
-    blobs: params.encodedList.map((encoded, index) =>
-      serializeWalrusEncodedBlob({
-        blobId: encoded.blobId,
-        blobObjectId: params.blobObjectIds[index],
-        metadata: encoded.metadata,
-        sliversByNode: encoded.sliversByNode,
-      }),
-    ),
-  }
-
-  const response = await fetch('/api/walrus/batch/complete', {
-    method: 'POST',
-    headers: {
-      ...params.authHeaders,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-  const payload = await response.json().catch(() => null) as {
-    error?: string
-    files?: Array<{
-      blobId?: unknown
-      blobObjectId?: unknown
-      certificate?: unknown
-    }>
-  } | null
-
-  if (!response.ok) {
-    throw new Error(payload?.error || `Walrus server upload failed with HTTP ${response.status}`)
-  }
-
-  if (!payload || !Array.isArray(payload.files) || payload.files.length !== params.encodedList.length) {
-    throw new Error('Walrus server upload returned an invalid certificate list')
-  }
-
-  return payload.files.map((file, index) => {
-    const expected = params.encodedList[index]
-    const expectedObjectId = params.blobObjectIds[index]
-    if (file.blobId !== expected.blobId || file.blobObjectId !== expectedObjectId) {
-      throw new Error(`Walrus server upload returned mismatched certificate for blob index ${index}`)
-    }
-    if (!isSerializedWalrusCertificate(file.certificate)) {
-      throw new Error(`Walrus server upload returned an invalid certificate for blob index ${index}`)
-    }
-    return {
-      blobId: expected.blobId,
-      blobObjectId: expectedObjectId,
-      certificate: deserializeWalrusCertificate(file.certificate) as WalrusCertificate,
-    }
-  })
-}
-
-function requireManagedUploadId(
-  encoded: BatchWalrusContinuation['encodedList'][number],
-  index: number,
-): string {
-  if (!encoded.uploadId) {
-    throw new Error(`Walrus managed upload missing uploadId for blob index ${index}`)
-  }
-  return encoded.uploadId
-}
-
 function requireBrowserEncodedBlob(
   encoded: BatchWalrusContinuation['encodedList'][number],
   index: number,
@@ -1065,51 +672,13 @@ function requireBrowserEncodedBlob(
 } {
   if (encoded.metadata == null || encoded.sliversByNode == null) {
     throw new Error(
-      `Walrus ${encoded.uploadId ? 'managed' : 'browser'} upload cannot use local/server sliver completion for blob index ${index}`,
+      `Walrus browser upload is missing encoded slivers for blob index ${index}`,
     )
   }
   return {
     metadata: encoded.metadata,
     sliversByNode: encoded.sliversByNode,
   }
-}
-
-async function completeEncodedBlobsViaManagedUploader(params: {
-  credentials: ManagedUploaderCredentials
-  network: 'testnet' | 'mainnet'
-  walletAddress: string
-  registerTxDigest: string
-  encodedList: BatchWalrusContinuation['encodedList']
-  blobObjectIds: string[]
-}): Promise<Array<{
-  blobId: string
-  blobObjectId: string
-  certificate: WalrusCertificate
-}>> {
-  return mapWithConcurrency(
-    params.encodedList,
-    getManagedCompleteConcurrency(),
-    async (encoded, index) => {
-      const uploadId = requireManagedUploadId(encoded, index)
-      const blobObjectId = params.blobObjectIds[index]
-      const completed = await completeManagedWalrusUpload({
-        credentials: params.credentials,
-        uploadId,
-        walletAddress: params.walletAddress,
-        network: params.network,
-        registerTxDigest: params.registerTxDigest,
-        blobObjectId,
-      })
-      if (completed.blobId !== encoded.blobId || completed.blobObjectId !== blobObjectId) {
-        throw new Error(`Walrus uploader returned mismatched completion for blob index ${index}`)
-      }
-      return {
-        blobId: completed.blobId,
-        blobObjectId: completed.blobObjectId,
-        certificate: completed.certificate as WalrusCertificate,
-      }
-    },
-  )
 }
 
 export async function reclaimWalrusOrphanBlobs(params: {
@@ -1176,7 +745,6 @@ export async function prepareBatchWalrusRegisterIntent(
   const network = getWalrusNetwork()
   const relayUrl = getUploadRelayUrl(network)
   const storageEpochs = params.storageEpochs ?? DEFAULT_STORAGE_EPOCHS
-  const transport = params.transport ?? getConfiguredWalrusUploadTransport()
 
   // 1a. Read + hash every file in parallel (no encryption yet) so we can
   //     look up any prior recovery record keyed on `(contentHash,
@@ -1240,66 +808,10 @@ export async function prepareBatchWalrusRegisterIntent(
     calculateRelayTip: async () => 0n,
   })
 
-  const preUploadRecoveryKey = await buildWalrusBatchRecoveryKey({
-    network,
-    walletAddress: params.walletAddress,
-    storageEpochs,
-    files: prepared.map((p) => ({
-      contentHash: p.contentHash,
-      sendObjectTo: p.item.sendObjectTo?.trim() || params.walletAddress,
-    })),
-  })
-  const preUploadRecovery = readWalrusBatchRecovery(preUploadRecoveryKey)
-  const preUploadMayResume =
-    !!preUploadRecovery
-    && preUploadRecovery.walletAddress.toLowerCase() === params.walletAddress.toLowerCase()
-    && preUploadRecovery.network === network
-    && preUploadRecovery.storageEpochs === storageEpochs
-    && preUploadRecovery.blobs.length === prepared.length
-
-  let quoteApprovedBeforeUpload = false
-  if (transport === 'managed' && !preUploadMayResume) {
-    const approved = await params.confirmQuote(quote)
-    if (!approved) {
-      throw new WalrusUploadCancelledError('Walrus upload was cancelled before wallet signing')
-    }
-    if (!isWalrusUploadQuoteFresh(quote, plan)) {
-      throw new Error('Walrus upload quote expired before wallet signing')
-    }
-    quoteApprovedBeforeUpload = true
-  }
-
-  // 3. Encode every blob. The managed path sends only encrypted payload bytes
-  // to the uploader service; it never ships Walrus slivers through Vercel.
+  // 3. Encode locally. No upload token, owned uploader or server receives bytes.
+  // Network storage writes happen only after the caller confirms and registers.
   const client = quoteClient
-  const managedUploader = transport === 'managed'
-    ? await requestManagedWalrusUploaderCredentials({
-        walletAddress: params.walletAddress,
-        network,
-        fileCount: prepared.length,
-        byteLimit: prepared.reduce((sum, p) => sum + p.payload.byteLength, 0),
-        authHeaders: params.authHeaders,
-      })
-    : null
-  const encodedList = transport === 'managed'
-    ? await Promise.all(prepared.map(async (p) => {
-        const uploaded = await uploadPayloadToManagedWalrusUploader({
-          credentials: managedUploader!,
-          walletAddress: params.walletAddress,
-          network,
-          payload: p.payload,
-          fileName: p.normalizedFile.name || p.item.kind,
-        })
-        return {
-          uploadId: uploaded.uploadId,
-          blobId: uploaded.blobId,
-          rootHash: uploaded.rootHash,
-          size: uploaded.size,
-        }
-      }))
-    : await Promise.all(
-        prepared.map((p) => client.encodeBlob(p.payload)),
-      )
+  const encodedList = await Promise.all(prepared.map((p) => client.encodeBlob(p.payload)))
 
   // 3a. Batch recovery — same orphan / resume / fresh decision tree as
   // before. We freeze it here (pre-signature) so the caller's PTB1 either
@@ -1382,14 +894,12 @@ export async function prepareBatchWalrusRegisterIntent(
   }
 
   if (mode === 'fresh') {
-    if (!quoteApprovedBeforeUpload) {
-      const approved = await params.confirmQuote(quote)
-      if (!approved) {
-        throw new WalrusUploadCancelledError('Walrus upload was cancelled before wallet signing')
-      }
-      if (!isWalrusUploadQuoteFresh(quote, plan)) {
-        throw new Error('Walrus upload quote expired before wallet signing')
-      }
+    const approved = await params.confirmQuote(quote)
+    if (!approved) {
+      throw new WalrusUploadCancelledError('Walrus upload was cancelled before wallet signing')
+    }
+    if (!isWalrusUploadQuoteFresh(quote, plan)) {
+      throw new Error('Walrus upload quote expired before wallet signing')
     }
   }
 
@@ -1399,10 +909,8 @@ export async function prepareBatchWalrusRegisterIntent(
     storageEpochs,
     suiClient: params.suiClient,
     walrusClient: client,
-    transport,
     prepared,
     encodedList,
-    managedUploader,
     recoveryKey,
     resumedBlobObjectIds,
     quote,
@@ -1479,7 +987,6 @@ export async function completeBatchWalrusUploadAfterRegister(
       sendObjectTo: p.item.sendObjectTo?.trim() || ctx.walletAddress,
       payloadByteLength: p.payload.byteLength,
       blobId: encodedList[i].blobId,
-      uploadId: encodedList[i].uploadId ?? null,
       blobObjectId: null,
       sealMaterial: p.encrypted?.material ?? null,
     }))
@@ -1507,51 +1014,19 @@ export async function completeBatchWalrusUploadAfterRegister(
     })
   }
 
-  const transport = params.transport ?? ctx.transport ?? getConfiguredWalrusUploadTransport()
-  const uploaded = transport === 'managed'
-    ? await completeEncodedBlobsViaManagedUploader({
-        credentials: ctx.managedUploader ?? (() => {
-          throw new Error('Walrus managed uploader credentials are missing from upload intent')
-        })(),
-        network,
-        walletAddress: ctx.walletAddress,
-        registerTxDigest: registerDigest,
-        encodedList,
-        blobObjectIds,
-      })
-    : transport === 'server'
-      ? await completeEncodedBlobsViaServer({
-        network,
-        walletAddress: ctx.walletAddress,
-        registerTxDigest: registerDigest,
-        encodedList: encodedList.map((encoded, index) => {
-          const local = requireBrowserEncodedBlob(encoded, index)
-          return {
-            blobId: encoded.blobId,
-            rootHash: encoded.rootHash,
-            metadata: local.metadata,
-            sliversByNode: local.sliversByNode,
-          }
-        }),
-        blobObjectIds,
-        authHeaders: params.authHeaders,
-      })
-    : await (async () => {
-        const browserUploaded: Awaited<ReturnType<typeof writeEncodedBlobAndBuildCertificate>>[] = []
-        for (let i = 0; i < prepared.length; i++) {
-          const m = encodedList[i]
-          const local = requireBrowserEncodedBlob(m, i)
-          browserUploaded.push(await writeEncodedBlobAndBuildCertificate({
-            client,
-            blobId: m.blobId,
-            blobObjectId: blobObjectIds[i],
-            metadata: local.metadata,
-            sliversByNode: local.sliversByNode,
-            deletable: true,
-          }))
-        }
-        return browserUploaded
-      })()
+  const uploaded: Awaited<ReturnType<typeof writeEncodedBlobAndBuildCertificate>>[] = []
+  for (let i = 0; i < prepared.length; i++) {
+    const encoded = encodedList[i]
+    const local = requireBrowserEncodedBlob(encoded, i)
+    uploaded.push(await writeEncodedBlobAndBuildCertificate({
+      client,
+      blobId: encoded.blobId,
+      blobObjectId: blobObjectIds[i],
+      metadata: local.metadata,
+      sliversByNode: local.sliversByNode,
+      deletable: true,
+    }))
+  }
 
   const files: SoulUploadResult[] = prepared.map((p, i) => {
     p.plaintext.fill(0)
@@ -1591,17 +1066,6 @@ export async function completeBatchWalrusUploadAfterRegister(
     registerTxDigest: registerDigest,
     attachCertifyCalls,
     clearBatchRecovery: () => {
-      if (transport === 'managed' && ctx.managedUploader) {
-        for (const encoded of encodedList) {
-          if (!encoded.uploadId) continue
-          void finalizeManagedWalrusUpload({
-            credentials: ctx.managedUploader,
-            uploadId: encoded.uploadId,
-            walletAddress: ctx.walletAddress,
-            network,
-          })
-        }
-      }
       clearWalrusBatchRecovery(recoveryKey)
     },
   }
@@ -1615,8 +1079,6 @@ export async function prepareSoulBlobsForBatchPublish(
     walletAddress: params.walletAddress,
     suiClient: params.suiClient,
     confirmQuote: params.confirmQuote,
-    authHeaders: params.authHeaders,
-    transport: params.transport,
     storageEpochs: params.storageEpochs,
   })
 
@@ -1638,111 +1100,162 @@ export async function prepareSoulBlobsForBatchPublish(
   return completeBatchWalrusUploadAfterRegister({
     intent,
     registerTxDigest,
-    authHeaders: params.authHeaders,
-    transport: params.transport,
   })
 }
 
 // ---------------------------------------------------------------------------
-// Legacy single-blob path (still used for cover image until the publish flow
-// is fully migrated). To be removed in the cleanup step once gas/page.tsx and
-// use-publish.ts are switched over to the batch path above.
+// Wallet-paid single-blob path for public metadata, covers and content updates.
+// Uses the public Walrus relay directly; never an owned business upload API.
 // ---------------------------------------------------------------------------
 
+// Session-only encryption material permits deterministic same-page retry. Raw
+// DEK/IV never enter this path's durable journal; reload is explicitly query-only
+// until a separate encrypted recovery envelope is available.
+const singleBlobMaterials = new Map<string, PendingSealMaterial>()
+export async function acknowledgeWalrusSingleBlobUpload(params: { recoveryKey: string; certifyDigest: string }) {
+  await acknowledgeDurableWalrusBlob(params)
+  singleBlobMaterials.delete(params.recoveryKey)
+}
 export async function uploadSoulPayload(params: UploadSoulPayloadParams): Promise<SoulUploadResult> {
-  const { file, uploadType } = params
+  params = { ...params, execution: { ...params.execution }, attachment: captureWalrusSingleAttachment(params.attachment) }
+  const { file, uploadType, execution, operationScope, attachment } = params
   const contentType = inferSoulUploadContentType(file, uploadType)
   const normalizedFile = file.type === contentType ? file : new File([file], file.name, { type: contentType })
   const fileError = validateSoulUploadFile(normalizedFile, uploadType)
   if (fileError) throw new Error(fileError)
-
   const plaintext = new Uint8Array(await normalizedFile.arrayBuffer())
   const signatureError = validateSoulUploadSignature(plaintext, uploadType, contentType)
   if (signatureError) throw new Error(signatureError)
-
-  const skillBundleMetadata = params.extractSkillMetadata && hasZipSignature(plaintext)
-    ? extractSkillBundleMetadata(plaintext)
-    : null
+  const skillBundleMetadata = params.extractSkillMetadata && hasZipSignature(plaintext) ? extractSkillBundleMetadata(plaintext) : null
   const contentHash = await sha256Hex(plaintext)
-  const encrypted = uploadType === 'encrypted'
-    ? await encryptClientSide({
-        plaintext,
-        mimeType: contentType,
-        fileName: normalizedFile.name || 'bundle',
-      })
-    : null
+  const network = getWalrusNetwork(), relayUrl = getUploadRelayUrl(network)
+  const recoveryKey = walrusSingleKey({ network, owner: params.walletAddress, operationScope })
+  const encrypted = uploadType === 'encrypted' ? await withWalrusSingleLock(`${recoveryKey}:material`, async () => {
+    const savedMaterial = singleBlobMaterials.get(recoveryKey)
+    const prior = readWalrusSingleRecord(recoveryKey)
+    if (prior && !prior.acknowledged && !savedMaterial) {
+      plaintext.fill(0)
+      throw new Error('WALRUS_PRIVATE_RECOVERY_MATERIAL_REQUIRED_QUERY_ONLY')
+    }
+    if (savedMaterial && savedMaterial.contentHash !== contentHash) {
+      plaintext.fill(0)
+      throw new Error('WALRUS_PRIVATE_SOURCE_CHANGED_QUERY_EXISTING_OPERATION')
+    }
+    const encrypted = await encryptClientSide({ plaintext, mimeType: contentType, fileName: normalizedFile.name || 'bundle', material: savedMaterial })
+    singleBlobMaterials.set(recoveryKey, structuredClone(encrypted.material))
+    return encrypted
+  }) : null
   const payload = encrypted ? encrypted.ciphertext : plaintext
-
-  const network = getWalrusNetwork()
-  const relayUrl = getUploadRelayUrl(network)
-  const storageEpochs = params.storageEpochs ?? DEFAULT_STORAGE_EPOCHS
-  const plan = buildWalrusUploadPlan({
-    files: [{
-      name: normalizedFile.name || params.kind,
-      size: plaintext.byteLength,
-      encryptedSize: payload.byteLength,
-    }],
-    network,
-    storageEpochs,
-    chunking: false,
-    relayUrl,
-  })
-
-  const quoteClient = await createWalrusClient({
-    suiClient: params.suiClient,
-    network,
-    relayUrl,
-    maxRelayTipMist: QUOTE_RELAY_TIP_MAX_MIST,
-  })
-  const quote = await quoteWalrusUpload(plan, {
-    fetchStorageCost: (payloadBytes, epochs) => quoteClient.storageCost(payloadBytes, epochs),
-    // Delegate to the SDK so the quoted tip uses the encoded blob size with the
-    // live n_shards, matching what `WriteBlobFlow` will actually transfer at
-    // sign time. The quoteClient is constructed with maxRelayTipMist =
-    // MAX_SAFE_INTEGER, so the SDK's max-check cannot throw during quoting.
-    calculateRelayTip: async (payloadBytes) =>
-      BigInt(await quoteClient.calculateUploadRelayTip({ size: payloadBytes })),
-  })
-  const approved = await params.confirmQuote(quote)
-  if (!approved) {
-    throw new WalrusUploadCancelledError('Walrus upload was cancelled before wallet signing')
+  try {
+    const uploaded = await uploadPreparedSoulPayload({ ...params, payload, contentHash,
+      plaintextByteLength: plaintext.length, fileName: normalizedFile.name || params.kind })
+    return { ...uploaded,
+      sealMaterial: encrypted?.material ?? null, skillName: skillBundleMetadata?.skillName ?? null }
+  } finally {
+    plaintext.fill(0)
+    if (encrypted) payload.fill(0)
   }
-  if (!isWalrusUploadQuoteFresh(quote, plan)) {
-    throw new Error('Walrus upload quote expired before wallet signing')
-  }
+}
 
-  const uploaded = await uploadPayloadToWalrus({
-    name: normalizedFile.name || params.kind,
-    contentHash,
-    payload: cloneBytes(payload),
-    walletAddress: params.sendObjectTo?.trim() || params.walletAddress,
-    suiClient: params.suiClient,
-    signAndExecute: params.signAndExecute,
-    storageEpochs,
-    plan,
-    quote,
-    network,
-    relayUrl,
-    // Recovery key is keyed on the plaintext hash so encrypted retries (which
-    // re-encrypt with a fresh DEK and produce a different ciphertext blobId)
-    // still surface the prior orphaned register via the same key.
-    payloadHash: contentHash,
-    attachAfterCertify: params.attachAfterCertify,
+/** Upload immutable, already-encrypted staged bytes. Content append stores its
+ * ciphertext and wrapped envelope before payment, so cold resume needs neither
+ * the original plaintext File nor a persisted raw key. Caller owns staging and
+ * envelope validation; this layer preserves the existing exact-byte payment WAL. */
+export async function uploadPreparedSoulPayload(params: Pick<UploadSoulPayloadParams,
+  'walletAddress' | 'sendObjectTo' | 'execution' | 'operationScope' | 'attachment' | 'confirmQuote' | 'storageEpochs'> & {
+  payload: Uint8Array; contentHash: string; plaintextByteLength: number; fileName: string
+}): Promise<SoulUploadResult> {
+  params = { ...params, execution: { ...params.execution }, attachment: captureWalrusSingleAttachment(params.attachment) }
+  const payload = new Uint8Array(params.payload)
+  try {
+    if (!/^[0-9a-f]{64}$/.test(params.contentHash) || !Number.isSafeInteger(params.plaintextByteLength)
+      || params.plaintextByteLength < 0 || payload.length === 0 || payload.length > 64 * 1024 * 1024
+      || typeof params.fileName !== 'string' || !params.fileName || params.fileName.length > 4096) {
+      throw new Error('WALRUS_PREPARED_PAYLOAD_INVALID')
+    }
+    const { execution, attachment, operationScope, contentHash } = params
+    const network = getWalrusNetwork(), relayUrl = getUploadRelayUrl(network)
+    const storageEpochs = params.storageEpochs ?? DEFAULT_STORAGE_EPOCHS
+    const intent = { network, owner: params.walletAddress, recipient: params.sendObjectTo?.trim() || params.walletAddress,
+      operationScope, attachmentScope: attachment?.scope ?? null, contentHash, payloadHash: await sha256Hex(payload),
+      payloadByteLength: payload.length, storageEpochs, relayUrl }
+    const createClient = (maxRelayTipMist: bigint) => createWalrusClient({ suiClient: execution.client, network, relayUrl, maxRelayTipMist })
+    const uploaded = await uploadDurableWalrusBlob({ intent, payload, execution, attachment, createClient, approve: async () => {
+      const plan = buildWalrusUploadPlan({ files: [{ name: params.fileName, size: params.plaintextByteLength,
+        encryptedSize: payload.length }], network, storageEpochs, chunking: false, relayUrl })
+      const client = await createClient(QUOTE_RELAY_TIP_MAX_MIST)
+      const quote = await quoteWalrusUpload(plan, {
+        fetchStorageCost: (size, epochs) => client.storageCost(size, epochs),
+        calculateRelayTip: async size => BigInt(await client.calculateUploadRelayTip({ size })),
+      })
+      if (!await params.confirmQuote(quote)) throw new WalrusUploadCancelledError()
+      if (!isWalrusUploadQuoteFresh(quote, plan)) throw new Error('Walrus upload quote expired before wallet signing')
+      return { relayTip: String(quote.relayTipMist), storageCost: String(quote.walStorageCost),
+        writeCost: String(quote.walWriteCost), gasBudget: String(quote.gasBudgetMist), quoteId: quote.id }
+    } })
+    return { ...uploaded, contentHash, blobUrl: getBlobUrl(uploaded.blobId, network), sealMaterial: null }
+  } finally { payload.fill(0) }
+}
+
+/** Rebase uses the paid record's captured storage service and original encoding.
+ * Neither companion below contains a quote or registration fallback. */
+export async function inspectPreparedSoulPayload(params: {
+  record: WalrusSingleRecord; execution: WalrusSingleExecution; attachment: WalrusSingleAttachment
+}) {
+  const record = structuredClone(params.record), execution = { ...params.execution }, attachment = captureWalrusSingleAttachment(params.attachment)!
+  return inspectWalrusRegisteredBlobForRebase({ record, execution, attachment, operationScope: attachment.scope,
+    createClient: maxRelayTipMist => createWalrusClient({ suiClient: execution.client,
+      network: record.intent.network, relayUrl: record.intent.relayUrl, maxRelayTipMist }) })
+}
+export async function queryHistoricalPreparedSoulPayload(params: {
+  record: WalrusSingleRecord; payload: Uint8Array; execution: WalrusSingleExecution
+  attachment: WalrusSingleAttachment; signal: AbortSignal
+}) {
+  const record = structuredClone(params.record), execution = { ...params.execution }, attachment = captureWalrusSingleAttachment(params.attachment)!
+  return queryHistoricalWalrusBlobRecord({ record, payload: params.payload, execution, attachment,
+    signal: params.signal, operationScope: attachment.scope,
+    createClient: maxRelayTipMist => createWalrusClient({ suiClient: execution.client,
+      network: record.intent.network, relayUrl: record.intent.relayUrl, maxRelayTipMist }) })
+}
+export async function observeHistoricalPreparedSoulPayload(params: {
+  record: WalrusSingleRecord; expectedOwner: string; execution: WalrusSingleExecution; signal: AbortSignal
+}) {
+  const record = structuredClone(params.record), execution = { ...params.execution }
+  return observeHistoricalWalrusBlob({ record, expectedOwner: params.expectedOwner, execution, signal: params.signal,
+    createClient: maxRelayTipMist => createWalrusClient({ suiClient: execution.client,
+      network: record.intent.network, relayUrl: record.intent.relayUrl, maxRelayTipMist }) })
+}
+export async function continuePreparedSoulPayload(params: {
+  record: WalrusSingleRecord; payload: Uint8Array; execution: WalrusSingleExecution; attachment: WalrusSingleAttachment
+  certifyGasBudget: bigint; verify: () => Promise<void>
+}): Promise<SoulUploadResult> {
+  const record = structuredClone(params.record), execution = { ...params.execution }, attachment = captureWalrusSingleAttachment(params.attachment)!
+  const network = record.intent.network
+  const uploaded = await continueRegisteredWalrusBlob({ ...params, record, execution, attachment,
+    createClient: maxRelayTipMist => createWalrusClient({ suiClient: execution.client, network,
+      relayUrl: record.intent.relayUrl, maxRelayTipMist }) })
+  return { ...uploaded, contentHash: record.intent.contentHash, blobUrl: getBlobUrl(uploaded.blobId, network), sealMaterial: null }
+}
+
+/** Read/query only, including after a page refresh without the original cover
+ * File. Pending ciphertext needs the original encryption material to resume;
+ * this API neither invents that material nor uploads/signs another transaction. */
+export async function recoverWalrusSingleBlobUpload(params: {
+  operationScope: string
+  walletAddress: string
+  execution: WalrusSingleExecution
+  attachment: WalrusSingleAttachment | null
+}) {
+  const network = getWalrusNetwork(), relayUrl = getUploadRelayUrl(network)
+  const key = walrusSingleKey({ network, owner: params.walletAddress, operationScope: params.operationScope })
+  const recovered = await recoverDurableWalrusBlob({ key, operationScope: params.operationScope,
+    execution: params.execution, attachment: params.attachment,
+    createClient: maxRelayTipMist => createWalrusClient({ suiClient: params.execution.client, network, relayUrl, maxRelayTipMist }),
   })
-
-  plaintext.fill(0)
-  if (encrypted) payload.fill(0)
-
-  return {
-    blobId: uploaded.blobId,
-    blobObjectId: uploaded.blobObjectId,
-    contentHash,
-    blobUrl: getBlobUrl(uploaded.blobId, network),
-    sealMaterial: encrypted?.material ?? null,
-    skillName: skillBundleMetadata?.skillName ?? null,
-    storageTxDigest: uploaded.storageTxDigest,
-    certifyTxDigest: uploaded.certifyTxDigest,
-    certifyTxResult: uploaded.certifyTxResult,
-    quoteId: quote.id,
+  if (recovered.status !== 'CERTIFIED') return recovered
+  if (recovered.record.intent.payloadHash !== recovered.record.intent.contentHash) {
+    return { status: 'SOURCE_REQUIRED' as const, recoveryKey: key, record: recovered.record, requiresSealMaterial: true }
   }
+  return { ...recovered, result: { ...recovered.result, contentHash: recovered.record.intent.contentHash,
+    blobUrl: getBlobUrl(recovered.result.blobId, network), sealMaterial: null, skillName: null } satisfies SoulUploadResult }
 }

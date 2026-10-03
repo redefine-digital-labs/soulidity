@@ -4,8 +4,8 @@ interface ProfileStatsPillProps {
   souls: number
   posts: number
   exp: number
-  followers: number
-  following: number
+  followers: number | string
+  following: number | string
   achievements: number
   isEmpty: boolean
   isOwner: boolean

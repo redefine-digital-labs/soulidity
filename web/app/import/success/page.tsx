@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { useImportSoul } from '@/components/providers/import-soul-provider'
+import { useImport } from '@/lib/hooks/use-import'
+import { Button } from '@/components/ui/button'
 
 const steps = [
   { label: 'Choose Source' },
@@ -24,8 +26,8 @@ function truncateId(id: string) {
 export default function ImportSuccessPage() {
   const router = useRouter()
   const ctx = useImportSoul()
-  const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
-  const networkLabel = network === 'mainnet' ? 'Mainnet' : network.charAt(0).toUpperCase() + network.slice(1)
+  const completion = useImport(async () => false)
+  const networkLabel = 'Mainnet'
 
   useEffect(() => {
     if (ctx.isHydrated && !ctx.importResult) {
@@ -39,7 +41,7 @@ export default function ImportSuccessPage() {
 
   return (
     <div className="relative z-10 border-t border-purple/20">
-      <FlowBar steps={steps} currentStep={5} />
+      <FlowBar steps={steps} currentStep={6} />
 
       <PageContainer size="sm" className="py-12 text-center">
         {/* Success icon */}
@@ -118,6 +120,17 @@ export default function ImportSuccessPage() {
           </Link>
         </div>
 
+        <div className="mb-5 space-y-2">
+          <Button variant="outline" disabled={completion.loadingRecovery || completion.status === 'building' || !completion.suiWallet}
+            onClick={async () => {
+              if (await completion.startAnother(txDigest, ctx.importResult!.authoringCompletionKey)) {
+                ctx.reset(); router.replace('/import')
+              }
+            }}>
+            {completion.status === 'building' ? 'Retaining completion proof…' : 'Import Another Soul'}
+          </Button>
+          {completion.error && <p role="alert" className="text-sm text-danger">{completion.error}</p>}
+        </div>
         <Link
           href="/market"
           className="text-sm text-muted underline underline-offset-4 transition hover:text-action-label"

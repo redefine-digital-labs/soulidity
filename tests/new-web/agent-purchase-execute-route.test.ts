@@ -37,6 +37,8 @@ const mockedPrisma = vi.hoisted(() => ({
     update: vi.fn(),
   },
 }))
+const mockedNativeExecute = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/animacraft/native-agent-purchase-execute', () => ({ executeNativeAgentPurchase: mockedNativeExecute }))
 
 vi.mock('@/lib/soulidity/agent-server', () => ({
   requireAgentWalletIdentity: mockedRequireAgentWalletIdentity,
@@ -149,6 +151,20 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
     return POST(makeRequest() as any, { params: Promise.resolve({ id: SOUL_ID }) })
   }
 
+  it.each(['native-packet','native-soul'])('delegates %s recovery before expiry, cached result and signature gates', async mode => {
+    const prepared={id:PREPARED_PURCHASE_ID,agentMemberId:'agent-member-1',expiresAt:new Date(0),executedAt:new Date(0),
+      resultBody:{dbSynced:true},resultStatusCode:200,...(mode==='native-packet'?{nativeOperation:{schema:1}}:{})}
+    mockedPrisma.soulPreparedPurchase.findUnique.mockResolvedValueOnce(prepared)
+    mockedFindSoulAssetDetailByRouteId.mockResolvedValueOnce({onChainId:SOUL_ID,stateOnChainId:STATE_ID,
+      provenanceKind:mode==='native-soul'?'animacraft':null})
+    mockedNativeExecute.mockResolvedValueOnce(new Response(JSON.stringify({recovery:true}),{status:202}))
+    const {POST}=await import('../../web/app/api/agent/souls/[id]/purchase/execute/route.ts')
+    const response=await POST(new Request('http://localhost/execute',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({preparedPurchaseId:PREPARED_PURCHASE_ID,action:'check'})}) as any,{params:Promise.resolve({id:SOUL_ID})})
+    expect(response.status).toBe(202);expect(mockedNativeExecute).toHaveBeenCalledWith(expect.objectContaining({prepared,body:expect.objectContaining({action:'check'})}))
+    expect(mockedSuiClient.executeTransactionBlock).not.toHaveBeenCalled();expect(mockedGetStoredSoulidityTxSync).not.toHaveBeenCalled()
+  })
+
   it('returns partial success instead of 500 when chain execution succeeds but local mirror sync fails', async () => {
     mockedSyncSoulProjectionFromChain.mockRejectedValueOnce(new Error('mirror offline'))
 
@@ -164,7 +180,7 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
     })
   })
 
-  it('accepts the dedicated v5 settlement event without requiring a legacy purchase event', async () => {
+  it('never interprets a retired v5 event as an ordinary receipt', async () => {
     mockedTryExtractAnimacraftV5SoulPurchasedEvent.mockReturnValueOnce({
       soulId: SOUL_ID,
     })
@@ -174,8 +190,9 @@ describe('POST /api/agent/souls/[id]/purchase/execute', () => {
 
     const response = await callRoute()
 
-    expect(response.status).toBe(200)
-    expect(mockedExtractSoulPurchasedEvent).not.toHaveBeenCalled()
+    expect(response.status).not.toBe(200)
+    expect(mockedExtractSoulPurchasedEvent).toHaveBeenCalled()
+    expect(mockedTryExtractAnimacraftV5SoulPurchasedEvent).not.toHaveBeenCalled()
   })
 
   it('returns a recoverable partial result when grant invalidation sync fails after ownership sync', async () => {

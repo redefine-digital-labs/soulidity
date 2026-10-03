@@ -1,37 +1,26 @@
 'use client'
 
+import { AuthoringRecoveryExport } from '@/components/souls/authoring-recovery-export'
+
 import { useEffect, useRef, useState } from 'react'
-import { useAutoConnectWallet, useCurrentWallet, useSuiClient } from '@mysten/dapp-kit'
+import { useAutoConnectWallet, useCurrentWallet } from '@mysten/dapp-kit'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
-import { buttonStyles } from '@/components/ui/button'
+import { Button, buttonStyles } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { TxRow } from '@/components/shared/tx-row'
-import {
-  formatBalance,
-  minimumSuiBalanceForWalletTransactions,
-  useWalletBalances,
-} from '@/lib/hooks/use-wallet-balances'
+import { formatBalance, minimumSuiBalanceForWalletTransactions, useWalletBalances } from '@/lib/hooks/use-wallet-balances'
 import { useImport } from '@/lib/hooks/use-import'
 import { useAuth } from '@/components/providers/auth-provider'
-import {
-  prepareSoulBlobsForBatchPublish,
-  WalrusUploadCancelledError,
-  type BatchSoulUploadFile,
-  type PreparedSoulBlobs,
-} from '@/lib/upload/client-upload'
-import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useLogin } from '@/lib/hooks/use-login'
 import { getWalletActionState } from '@/lib/wallet/wallet-action-state'
-import { useUploadCostReview } from '@/components/upload/upload-cost-review'
-import { captureFrontendException } from '@/lib/observability/posthog-client-errors'
-import { hasCurrentSoulidityDeploymentSignature } from '@soulidity/sdk'
-import {
-  useImportSoul,
-  type UploadResults,
-} from '@/components/providers/import-soul-provider'
+import { useImportSoul } from '@/components/providers/import-soul-provider'
+import { formatWal } from '@/components/upload/upload-cost-review'
+import { soulAuthoringCostReview } from '@/lib/soulidity/soul-authoring-cost-review'
+import type { SoulAuthoringPacketRecord } from '@/lib/soulidity/soul-authoring-packet'
 
 const steps = [
   { label: 'Choose Source' },
@@ -47,21 +36,6 @@ const royaltyLabels: Record<number, string> = {
   250: 'Low \u00b7 2.5% (locked on-chain)',
   500: 'Standard \u00b7 5% (locked on-chain)',
   1000: 'High \u00b7 10% (locked on-chain)',
-}
-
-type UploadPhase =
-  | 'idle'
-  | 'preparing-uploads'
-  | 'awaiting-register-signature'
-  | 'uploading-to-relay'
-  | 'done'
-
-const uploadPhaseLabels: Record<UploadPhase, string> = {
-  idle: '',
-  'preparing-uploads': 'Encrypting & encoding files\u2026',
-  'awaiting-register-signature': 'Awaiting wallet signature for batched register\u2026',
-  'uploading-to-relay': 'Uploading encoded payloads to Walrus\u2026',
-  done: 'Uploads complete',
 }
 
 const MIME_MAP: Record<string, string> = {
@@ -83,322 +57,65 @@ function truncateHash(hash: string, len = 16) {
   return `${hash.slice(0, 10)}…${hash.slice(-4)}`
 }
 
-function buildBatchFingerprint(walletAddress: string, files: BatchSoulUploadFile[]): string {
-  return JSON.stringify({
-    walletAddress: walletAddress.toLowerCase(),
-    files: files.map((f) => ({
-      name: f.file.name,
-      size: f.file.size,
-      lastModified: f.file.lastModified,
-      type: f.file.type,
-      uploadType: f.uploadType,
-      kind: f.kind,
-      sendObjectTo: f.sendObjectTo?.trim().toLowerCase() ?? null,
-    })),
-  })
-}
-
-function checkImportRecovery(userId: string | undefined): boolean {
-  if (typeof window === 'undefined' || !userId) return false
-  try {
-    const raw = sessionStorage.getItem('soul-import-recovery')
-    if (raw) {
-      const recovery = JSON.parse(raw)
-      return !!recovery.txDigest && recovery.userId === userId && hasCurrentSoulidityDeploymentSignature(recovery)
-    }
-  } catch {}
-  return false
-}
+type Approval = { review: ReturnType<typeof soulAuthoringCostReview>; finish: (accepted: boolean) => void }
 
 export default function ImportGasPage() {
-  const router = useRouter()
-  const suiClient = useSuiClient()
-  const ctx = useImportSoul()
+  const router = useRouter(), ctx = useImportSoul(), { user } = useAuth()
   const { setImportResult } = ctx
-  const { status, error, txDigest, importData, importSoul, suiWallet } = useImport()
-  const { signAndExecute } = useWalletSign()
-  const walletConnection = useCurrentWallet()
-  const autoConnectStatus = useAutoConnectWallet()
-  const openWalletLogin = useLogin()
-  const { requestUploadCostApproval } = useUploadCostReview()
-  const { user, getAuthHeaders } = useAuth()
-
-  const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle')
-  const [deployError, setDeployError] = useState<string | null>(null)
+  const [approval, setApproval] = useState<Approval | null>(null)
+  const approvalRef = useRef<Approval | null>(null)
+  const approve = (record: SoulAuthoringPacketRecord, signal: AbortSignal) => {
+    const review = soulAuthoringCostReview(record)
+    approvalRef.current?.finish(false)
+    if (signal.aborted) return Promise.resolve(false)
+    return new Promise<boolean>(resolve => {
+      const close = () => entry.finish(false)
+      const entry: Approval = { review, finish: accepted => {
+        if (approvalRef.current !== entry) return
+        signal.removeEventListener('abort', close); approvalRef.current = null
+        setApproval(null); resolve(accepted && !signal.aborted)
+      } }
+      approvalRef.current = entry; setApproval(entry)
+      signal.addEventListener('abort', close, { once: true })
+    })
+  }
+  useEffect(() => () => { approvalRef.current?.finish(false) }, [])
+  const { status, error, txDigest, importData, importSoul, suiWallet, recovery, loadingRecovery,
+    query, resume, retryPacket, retryFailed, retireExpired, exportRecovery, exportingRecovery } = useImport(approve)
+  const walletConnection = useCurrentWallet(), autoConnectStatus = useAutoConnectWallet(), openWalletLogin = useLogin()
   const [copied, setCopied] = useState(false)
   const completedDigestRef = useRef<string | null>(null)
-  const preparedBatchRef = useRef<{
-    walletAddress: string
-    fingerprint: string
-    prepared: PreparedSoulBlobs
-  } | null>(null)
-
   const balances = useWalletBalances(suiWallet?.address ?? null)
-  // Batched import uses one Walrus register PTB and one import+certify PTB.
-  const importWalletTransactionCount = 2
-  const minImportSuiBalance = minimumSuiBalanceForWalletTransactions(importWalletTransactionCount)
+  const minImportSuiBalance = minimumSuiBalanceForWalletTransactions(2)
   const suiInsufficient = balances.sui !== null && balances.sui < minImportSuiBalance
   const balanceBlocked = suiInsufficient
-
   const missing = !ctx.resolvedName || !ctx.resolvedDescription || !ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile
-  const [hasImportRecovery, setHasImportRecovery] = useState(false)
-  // Detect recovery from both sessionStorage (remount) and in-memory state (same-tab sync failure)
-  const inRecovery = (hasImportRecovery || (!!txDigest && status === 'error')) && status !== 'done'
-
-  // Re-evaluate recovery state reactively when auth resolves
+  const inRecovery = Boolean(recovery) && status !== 'done'
   useEffect(() => {
-    let cancelled = false
-    Promise.resolve().then(() => {
-      if (cancelled) return
-      setHasImportRecovery(checkImportRecovery(user?.id))
-    })
-    return () => { cancelled = true }
-  }, [user?.id])
-
+    if (suiWallet && !loadingRecovery && !recovery && status === 'idle' && missing) router.replace('/import/map')
+  }, [suiWallet?.address, loadingRecovery, recovery, status, missing, router])
   useEffect(() => {
-    if (!user?.id) return // Wait for auth before redirecting
-    if (status === 'done' || checkImportRecovery(user?.id)) return
-    if (missing) router.replace('/import/map')
-  }, [missing, status, router, user?.id])
-
-  useEffect(() => {
-    if (status === 'done' && importData) {
-      if (completedDigestRef.current === importData.txDigest) return
-      completedDigestRef.current = importData.txDigest
-      setImportResult(importData)
-      router.replace('/import/success')
-    }
+    if (status !== 'done' || !importData || completedDigestRef.current === importData.txDigest) return
+    completedDigestRef.current = importData.txDigest
+    setImportResult(importData); router.replace('/import/success')
   }, [status, importData, setImportResult, router])
-
   async function handleDeploy() {
-    if (!ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile || !suiWallet) return
-
-    setDeployError(null)
-    ctx.setImportResult(null)
-    const walletAddress = suiWallet.address
-
-    try {
-      const authHeaders = await getAuthHeaders()
-      const fileIndex = { cover: -1, char: -1, memory: -1, skills: -1 }
-      const batchFiles: BatchSoulUploadFile[] = []
-
-      fileIndex.cover = batchFiles.length
-      batchFiles.push({
-        file: withMime(ctx.coverImageFile),
-        uploadType: 'public',
-        kind: 'soul-content',
-      })
-
-      fileIndex.char = batchFiles.length
-      batchFiles.push({
-        file: withMime(ctx.charFile),
-        uploadType: 'encrypted',
-        kind: 'soul-content',
-        sendObjectTo: walletAddress,
-      })
-
-      fileIndex.memory = batchFiles.length
-      batchFiles.push({
-        file: withMime(ctx.memoryFile),
-        uploadType: 'encrypted',
-        kind: 'soul-content',
-        sendObjectTo: walletAddress,
-      })
-
-      if (ctx.skillsFile) {
-        fileIndex.skills = batchFiles.length
-        batchFiles.push({
-          file: withMime(ctx.skillsFile),
-          uploadType: 'encrypted',
-          kind: 'soul-content',
-          sendObjectTo: walletAddress,
-          // Skills bundle requires SKILL.md frontmatter parsing; other batch
-          // entries (cover image, char file, memory file) do not.
-          extractSkillMetadata: true,
-        })
-      }
-
-      const fingerprint = buildBatchFingerprint(walletAddress, batchFiles)
-      const cachedBatch = preparedBatchRef.current
-      const reusable =
-        !!cachedBatch
-        && cachedBatch.walletAddress === walletAddress
-        && cachedBatch.fingerprint === fingerprint
-      let prepared: PreparedSoulBlobs
-      if (reusable) {
-        prepared = cachedBatch.prepared
-      } else {
-        if (cachedBatch) preparedBatchRef.current = null
-        setUploadPhase('preparing-uploads')
-        prepared = await prepareSoulBlobsForBatchPublish({
-          files: batchFiles,
-          walletAddress,
-          suiClient,
-          signAndExecute,
-          authHeaders,
-          confirmQuote: async (quote) => {
-            setUploadPhase('awaiting-register-signature')
-            const approved = await requestUploadCostApproval(quote)
-            if (approved) setUploadPhase('uploading-to-relay')
-            return approved
-          },
-        })
-        preparedBatchRef.current = { walletAddress, fingerprint, prepared }
-      }
-
-      const cover = prepared.files[fileIndex.cover]
-      const char = prepared.files[fileIndex.char]
-      const memory = prepared.files[fileIndex.memory]
-      const skills = fileIndex.skills >= 0 ? prepared.files[fileIndex.skills] : null
-
-      if (!char.sealMaterial) {
-        throw new Error('Character file upload is missing Seal recovery data. Please retry.')
-      }
-      if (!memory.sealMaterial) {
-        throw new Error('Memory file upload is missing Seal recovery data. Please retry.')
-      }
-      if (skills && !skills.sealMaterial) {
-        throw new Error('Skills bundle upload is missing Seal recovery data. Please retry.')
-      }
-      if (!char.blobObjectId) {
-        throw new Error('Character file upload was deduplicated by Walrus. Please modify your character file slightly and retry.')
-      }
-      if (!memory.blobObjectId) {
-        throw new Error('Memory already exists on Walrus. Please modify your memory file slightly and retry.')
-      }
-      if (skills && !skills.blobObjectId) {
-        throw new Error('Skills bundle was deduplicated by Walrus. Please modify your skills file slightly and retry.')
-      }
-
-      const results: UploadResults = {
-        ownerAddress: walletAddress,
-        coverImage: {
-          blobId: cover.blobId,
-          blobObjectId: cover.blobObjectId,
-          contentHash: cover.contentHash,
-          blobUrl: cover.blobUrl,
-        },
-        charFile: {
-          blobId: char.blobId,
-          blobObjectId: char.blobObjectId,
-          contentHash: char.contentHash,
-          blobUrl: char.blobUrl,
-          sealMaterial: char.sealMaterial,
-          skillName: char.skillName ?? null,
-        },
-        memorySeed: {
-          blobId: memory.blobId,
-          blobObjectId: memory.blobObjectId,
-          contentHash: memory.contentHash,
-          blobUrl: memory.blobUrl,
-          sealMaterial: memory.sealMaterial,
-        },
-        skillsFile: skills && skills.sealMaterial
-          ? {
-              blobId: skills.blobId,
-              blobObjectId: skills.blobObjectId,
-              contentHash: skills.contentHash,
-              blobUrl: skills.blobUrl,
-              sealMaterial: skills.sealMaterial,
-              skillName: skills.skillName ?? null,
-            }
-          : undefined,
-      }
-      ctx.setUploadResults(results)
-      setUploadPhase('done')
-
-      if (process.env.NODE_ENV === 'development') {
-        ;(window as any).__e2eLastSealMaterial = {
-          char: char.sealMaterial,
-          memory: memory.sealMaterial,
-          skills: skills?.sealMaterial ?? null,
-        }
-      }
-
-      const parsedTags = ctx.tags.split(',').map((t) => t.trim()).filter(Boolean)
-
-      await importSoul({
-        name: ctx.resolvedName,
-        description: ctx.resolvedDescription,
-        tags: parsedTags,
-        imageUrl: cover.blobUrl,
-        previewImages: [cover.blobUrl],
-        protectedBlobObjectId: char.blobObjectId,
-        foundingMemoryBlobObjectId: memory.blobObjectId,
-        skillsBlobObjectId: skills?.blobObjectId ?? null,
-        initialSkillName: skills?.skillName ?? null,
-        skillsVisibility: 'private',
-        originRef: ctx.originRef,
-        creatorRoyaltyBps: ctx.royalty,
-        sealMaterial: char.sealMaterial ?? null,
-        memorySealMaterial: memory.sealMaterial ?? null,
-        skillsSealMaterial: skills?.sealMaterial ?? null,
-        attachWalrusCertifyCalls: prepared.attachCertifyCalls,
-        onImportTxExecuted: () => {
-          prepared.clearBatchRecovery()
-          preparedBatchRef.current = null
-        },
-      })
-    } catch (err) {
-      if (!(err instanceof WalrusUploadCancelledError)) {
-        captureFrontendException(err, {
-          scope: 'import_soul_deploy',
-          phase: uploadPhase,
-        })
-      }
-      setDeployError(err instanceof Error ? err.message : 'Deploy failed')
-      setUploadPhase('idle')
-    }
+    if (!ctx.coverImageFile || !ctx.charFile || !ctx.memoryFile) return
+    await importSoul({ name: ctx.resolvedName, description: ctx.resolvedDescription,
+      tags: ctx.tags.split(',').map(t => t.trim()).filter(Boolean), creatorRoyaltyBps: ctx.royalty,
+      originRef: ctx.originRef, cover: withMime(ctx.coverImageFile), character: withMime(ctx.charFile),
+      memory: withMime(ctx.memoryFile), skills: ctx.skillsFile ? withMime(ctx.skillsFile) : null })
   }
-
-  async function handleResume() {
-    if (!suiWallet || !txDigest) return
-    setDeployError(null)
-    try {
-      await importSoul({
-        name: '', description: '', tags: [], imageUrl: '',
-        previewImages: [], protectedBlobObjectId: '', foundingMemoryBlobObjectId: '',
-        creatorRoyaltyBps: 0,
-        originRef: ctx.originRef,
-      })
-    } catch (err) {
-      captureFrontendException(err, {
-        scope: 'import_soul_resume_sync',
-        txDigest,
-      })
-      setDeployError(err instanceof Error ? err.message : 'Resume failed')
-    }
-  }
-
-  function handleAbandonRecovery() {
-    ctx.reset()
-    router.replace('/import')
-  }
-
-  if (!inRecovery && status !== 'done' && missing) return null
-
-  const network = process.env.NEXT_PUBLIC_SUI_NETWORK ?? 'testnet'
-  const networkLabel = network === 'mainnet' ? 'Sui Mainnet' : `Sui ${network.charAt(0).toUpperCase() + network.slice(1)}`
-  const isBusy = (uploadPhase !== 'idle' && uploadPhase !== 'done') || status === 'building' || status === 'signing' || status === 'syncing'
-  const combinedError = deployError || error
+  const networkLabel = 'Sui Mainnet'
+  const isBusy = loadingRecovery || exportingRecovery || ['building', 'signing', 'syncing'].includes(status)
+  const combinedError = error
   const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
-  const walletActionState = getWalletActionState({
-    hasActiveWallet: !!suiWallet,
-    hasSessionWallet: !!user?.primarySuiAddress,
-    walletRestoring,
-    busy: isBusy,
-    busyLabel: uploadPhaseLabels[uploadPhase] || `${status}...`,
-    balanceBlocked,
-    recovery: inRecovery,
-    txDigest,
-    readyLabel: '✓ Sign & Deploy',
-  })
-
+  const walletActionState = getWalletActionState({ hasActiveWallet: !!suiWallet, hasSessionWallet: !!user?.primarySuiAddress,
+    walletRestoring, busy: isBusy, busyLabel: loadingRecovery ? 'Reading saved import…' : 'Importing Soul…',
+    balanceBlocked: inRecovery ? false : balanceBlocked, recovery: false, txDigest,
+    readyLabel: inRecovery ? retryPacket ? retryPacket.retired ? 'Retry Retired Transaction' : 'Retry Failed Transaction' : 'Resume Saved Import' : '✓ Sign & Deploy' })
   function handleWalletAction(action: () => void | Promise<void>) {
-    if (walletActionState.needsWalletReconnect) {
-      openWalletLogin()
-      return
-    }
+    if (walletActionState.needsWalletReconnect) { openWalletLogin(); return }
     void action()
   }
 
@@ -409,9 +126,9 @@ export default function ImportGasPage() {
       <PageContainer size="sm" className="space-y-5 pt-7 sm:pt-9">
         <SectionHeader
           label="Import Soul"
-          title={inRecovery ? 'Step 5 — Resume Sync' : 'Step 5 — Pay Gas'}
+          title={inRecovery ? 'Step 5 — Resume Import' : 'Step 5 — Pay Gas'}
           subtitle={inRecovery
-            ? 'Your previous import transaction succeeded. Complete the sync to finish importing your Soul.'
+            ? 'Your saved import is retained. Check its original transaction or explicitly resume it.'
             : 'Your imported Soul will be minted on Sui. Review the transaction before signing.'}
           className="mb-1"
         />
@@ -422,8 +139,8 @@ export default function ImportGasPage() {
               Pending Soul Import
             </div>
             <p className="text-sm leading-relaxed text-muted">
-              A previous import transaction succeeded on-chain but the mirror sync was interrupted.
-              Resume to complete the process, or start over.
+              This import has a saved identity and encrypted preparation. Query or resume the same operation;
+              a missing receipt does not mean payment failed.
             </p>
             {txDigest && (
               <div className="flex items-center justify-between rounded-lg border border-border/50 bg-black/20 px-3 py-2">
@@ -440,7 +157,7 @@ export default function ImportGasPage() {
               </div>
               <div className="divide-y divide-border/50">
                 <TxRow label="Contract">
-                  <span className="font-mono text-teal">market::mint_imported_in_personal_kiosk</span>
+                  <span className="font-mono text-teal">market::mint_imported_in_personal_kiosk_v2</span>
                 </TxRow>
                 <TxRow label="Network">
                   <span className="font-semibold text-foreground">{networkLabel}</span>
@@ -480,8 +197,8 @@ export default function ImportGasPage() {
                     Character locked after mint · Grant-gated memory writes · Skills private by default · Revocable
                   </span>
                 </TxRow>
-                <TxRow label="Estimated Gas">
-                  <span className="text-foreground">~0.005 SUI</span>
+                <TxRow label="Gas budget">
+                  <span className="text-foreground">Reviewed for each transaction before signing</span>
                 </TxRow>
                 <TxRow label="Walrus Storage">
                   <span className="text-muted">Paid by connected wallet after cost review</span>
@@ -558,13 +275,13 @@ export default function ImportGasPage() {
               <span className="text-sm text-muted">Status</span>
               <span className={`text-sm font-semibold ${
                 status === 'done' ? 'text-success'
-                  : status === 'error' || combinedError ? 'text-danger'
+                  : status === 'error' ? 'text-danger'
                     : 'text-action-label'
               }`}>
-                {uploadPhase !== 'idle' && uploadPhase !== 'done' && uploadPhaseLabels[uploadPhase]}
-                {uploadPhase === 'done' && status === 'building' && '⟳ Building TX…'}
+                {status === 'idle' && 'Awaiting your next action'}
+                {status === 'building' && 'Preparing saved import…'}
                 {status === 'signing' && '⟳ Signing…'}
-                {status === 'syncing' && '⟳ Syncing…'}
+                {status === 'syncing' && '⟳ Checking original transaction…'}
                 {status === 'done' && '✓ Imported'}
                 {status === 'error' && '✗ Failed'}
               </span>
@@ -589,32 +306,30 @@ export default function ImportGasPage() {
             <div className="mx-4 max-w-sm rounded-2xl border border-purple/30 bg-card2 p-10 text-center shadow-[0_24px_60px_rgba(124,58,237,0.25)]">
               <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-2 border-purple/30 border-t-purple" />
               <h2 className="mb-2 text-lg font-bold">
-                {uploadPhase !== 'idle' && uploadPhase !== 'done'
-                  ? 'Uploading to Walrus…'
-                  : 'Importing Soul…'}
+                {status === 'syncing' ? 'Checking transaction…' : 'Importing Soul…'}
               </h2>
               <p className="text-sm text-muted">
-                {uploadPhase !== 'idle' && uploadPhase !== 'done'
-                  ? uploadPhaseLabels[uploadPhase]
-                  : `Writing to ${networkLabel} · Registering Seal policy`}
+                {status === 'signing' ? 'Review the exact transaction before confirming in your wallet.' : 'Your saved import is retained during this operation.'}
               </p>
             </div>
           </div>
         )}
 
         {/* Navigation */}
+        {inRecovery && <AuthoringRecoveryExport disabled={isBusy || !suiWallet} onExport={exportRecovery} />}
         <div className="flex flex-col-reverse gap-2.5 sm:flex-row">
           {inRecovery ? (
             <button
               type="button"
-              onClick={handleAbandonRecovery}
+              disabled={walletActionState.disabled}
+              onClick={() => handleWalletAction(query)}
               className={buttonStyles({
                 variant: 'outline',
                 size: 'lg',
                 className: 'w-full rounded-[10px] border-purple/20 bg-transparent px-4 py-2.5 text-[13px] text-foreground hover:border-purple/45 hover:text-foreground sm:w-auto sm:min-w-[76px]',
               })}
             >
-              Start Over
+              Check Transaction
             </button>
           ) : (
             <Link
@@ -628,6 +343,9 @@ export default function ImportGasPage() {
               ← Back
             </Link>
           )}
+          {inRecovery && txDigest && !retryPacket && <button type="button" disabled={walletActionState.disabled}
+            onClick={() => handleWalletAction(retireExpired)}
+            className={buttonStyles({ variant: 'outline', size: 'lg' })}>Check Expiry &amp; Retire</button>}
           {status === 'done' ? (
             <Link
               href="/import/success"
@@ -639,7 +357,7 @@ export default function ImportGasPage() {
             <button
               type="button"
               disabled={walletActionState.disabled}
-              onClick={() => handleWalletAction(handleResume)}
+              onClick={() => handleWalletAction(retryPacket ? retryFailed : resume)}
               className={buttonStyles({
                 variant: 'gold',
                 size: 'lg',
@@ -666,6 +384,21 @@ export default function ImportGasPage() {
           )}
         </div>
       </PageContainer>
+      <Modal open={Boolean(approval)} onClose={() => approval?.finish(false)} title="Review Creation Transaction"
+        subtitle="Confirm this saved transaction before opening your wallet. Storage registration and Soul mint are separate transactions.">
+        {approval && <div className="space-y-4 text-sm">
+          <TxRow label="Stage">{approval.review.stage === 'REGISTER' ? 'Pay for storage' : 'Certify content & mint Soul'}</TxRow>
+          <TxRow label="WAL payment">{formatWal(approval.review.wal)}</TxRow>
+          <TxRow label="Maximum gas">{approval.review.gasBudgetMist.toString()} MIST</TxRow>
+          <TxRow label="Expires after epoch">{approval.review.expirationEpoch}</TxRow>
+          <div className="break-all font-mono text-xs">{approval.review.digest}</div>
+          <p className="text-muted">Cancelling retains the saved creation. It does not delete paid storage or create a replacement transaction.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => approval.finish(false)}>Cancel</Button>
+            <Button variant="gold" onClick={() => approval.finish(true)}>Continue to Wallet</Button>
+          </div>
+        </div>}
+      </Modal>
     </div>
   )
 }

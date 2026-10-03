@@ -26,7 +26,9 @@ export default defineConfig({
       { find: 'react-dom/client', replacement: requireExistingAliasTarget('./web/node_modules/react-dom/client.js') },
       { find: 'react-dom', replacement: requireExistingAliasTarget('./web/node_modules/react-dom/index.js') },
       { find: 'react', replacement: requireExistingAliasTarget('./web/node_modules/react/index.js') },
+      { find: /^@tanstack\/react-query$/, replacement: requireExistingAliasTarget('./web/node_modules/@tanstack/react-query/build/modern/index.js') },
       { find: 'server-only', replacement: requireExistingAliasTarget('./tests/mocks/server-only.ts') },
+      { find: /^electron$/, replacement: requireExistingAliasTarget('./tests/mocks/electron.ts') },
       { find: 'jose', replacement: requireExistingAliasTarget('./web/node_modules/jose/dist/webapi/index.js') },
       { find: '@mysten/dapp-kit', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/dapp-kit/src/index.ts') },
       // These pin the workspace tests to the web package's bundled ESM entrypoints. Revisit them
@@ -42,6 +44,8 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '.worktrees/**',
+      // This separately verified peer uses node:test, not this Vitest suite.
+      '_paired/**',
       // Playwright specs live alongside vitest files but use the Electron
       // driver from @playwright/test; they are invoked via `playwright test`
       // from the desktop workspace instead.

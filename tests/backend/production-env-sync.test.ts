@@ -9,17 +9,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
+import { mergeProductionChainEnv, parseCliOptions, PRODUCTION_CHAIN_ENV_KEYS } from '../../scripts/sync-vercel-production-env'
 
 const SCRIPT = 'scripts/sync-vercel-production-env.ts'
-const PRODUCTION_WALRUS_UPLOADER_URL = 'https://uploader.soulidity.ai'
 const VALID_PUBLIC_SEAL_CONFIG = JSON.stringify([{
   objectId: `0x${'9'.repeat(64)}`,
   weight: 1,
 }])
-const REQUIRED_HISTORICAL_SEAL_ROUTES = JSON.stringify([{
-  sealPackageId: '0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0',
-  callablePackageId: '0x6680f74155dd9f1c2ae0109556e459b1259f80b7597679292a70572887cfb1c0',
-}])
+const PROJECT = 'prj_TkRy8sVX44TBPB71sDfN03vF1A7S'
 const ACTIVE_SOULIDITY_PACKAGE_ID =
   '0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d'
 
@@ -29,6 +26,35 @@ const productionSupportEnv = {
   UPSTASH_REDIS_REST_TOKEN: 'test-upstash-token',
   NEXT_PUBLIC_POSTHOG_KEY: 'phc_testprojectkey',
   NEXT_PUBLIC_POSTHOG_HOST: '/ingest',
+}
+
+function nativeConfig() {
+  const id = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
+  const original = ACTIVE_SOULIDITY_PACKAGE_ID
+  const digest = '11111111111111111111111111111111'
+  return {
+    NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID: id(20),
+    NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID: id(21),
+    NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID: id(22),
+    NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID: id(23),
+    NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID: id(24),
+    NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+    NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON: JSON.stringify({
+      protocolConfigId: id(1), coreOriginalPackageId: id(2),
+      outputOriginalPackageId: id(3), outputCallablePackageId: id(3), outputCallableDigest: digest,
+      soulidityOriginalPackageId: original, soulidityCallablePackageId: original, soulidityCallableDigest: digest,
+      runtime: { originalPackageId: id(4), callablePackageId: id(4), callableDigest: digest },
+      release: { originalPackageId: id(5), callablePackageId: id(5), callableDigest: digest },
+      equipmentMarket: { originalPackageId: id(6), callablePackageId: id(6), callableDigest: digest, replacementId: id(7) },
+      expectedNativeBinding: {
+        soulOriginalType: `${original}::soul::Soul`, soulDefiningType: `${original}::soul::Soul`,
+        mintWitnessOriginalType: `${original}::animacraft_v8_binding::MintBindingWitnessV8`,
+        mintWitnessDefiningType: `${original}::animacraft_v8_binding::MintBindingWitnessV8`,
+        ownerWitnessOriginalType: `${original}::animacraft_v8_binding::SoulOwnerWitnessV8`,
+        ownerWitnessDefiningType: `${original}::animacraft_v8_binding::SoulOwnerWitnessV8`,
+      }, equipmentWritesEnabled: false, marketWritesEnabled: false,
+    }),
+  }
 }
 
 function writeEnvFile(extra: Record<string, string>) {
@@ -42,17 +68,12 @@ function writeEnvFile(extra: Record<string, string>) {
     NEXT_PUBLIC_KIOSK_PACKAGE_ID: `0x${'1'.repeat(64)}`,
     NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
     NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
-    NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
     NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
-    NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
-    NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID: `0x${'8'.repeat(64)}`,
-    NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: REQUIRED_HISTORICAL_SEAL_ROUTES,
-    NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED: 'false',
-    NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED: 'false',
     DEFAULT_PROVIDER: 'deepseek',
     DEEPSEEK_API_KEY: 'test-deepseek-key',
     NEXT_PUBLIC_SEAL_SERVER_CONFIGS: VALID_PUBLIC_SEAL_CONFIG,
     NEXT_PUBLIC_SEAL_THRESHOLD: '1',
+    ...nativeConfig(),
     ...extra,
   }
   const path = join(dir, '.env.production')
@@ -60,23 +81,10 @@ function writeEnvFile(extra: Record<string, string>) {
   return path
 }
 
-function runSync(envFile: string, deploymentHistoryFile?: string) {
-  const args = ['--import', 'tsx', SCRIPT, '--dry-run', '--env-file', envFile]
-  if (deploymentHistoryFile) {
-    args.push('--deployment-history-file', deploymentHistoryFile)
-  }
-  return spawnSync(process.execPath, args, {
-    cwd: process.cwd(),
-    encoding: 'utf8',
+function runSync(envFile: string, extra: string[] = []) {
+  return spawnSync(process.execPath, ['--import', 'tsx', SCRIPT, '--dry-run', '--project', PROJECT, '--env-file', envFile, ...extra], {
+    cwd: process.cwd(), encoding: 'utf8',
   })
-}
-
-function writeDeploymentHistory(entries: unknown[]) {
-  const dir = mkdtempSync(join(tmpdir(), 'soulidity-deployment-history-'))
-  tempDirs.push(dir)
-  const path = join(dir, 'deployment-manifest-history.json')
-  writeFileSync(path, JSON.stringify(entries))
-  return path
 }
 
 function runApplyWithFakeVercel(envFile: string) {
@@ -95,6 +103,7 @@ fs.appendFileSync(process.env.VERCEL_CALL_CAPTURE, JSON.stringify(process.argv.s
     'tsx',
     SCRIPT,
     '--apply',
+    '--project', PROJECT,
     '--env-file',
     envFile,
   ], {
@@ -119,6 +128,115 @@ afterEach(() => {
   }
 })
 
+// Independent literal12 projection matching export-config --format soulidity-env.
+// Valid local configuration is not an attestation of a real deployment/WAL.
+const CHAIN_KEYS = [
+  'NEXT_PUBLIC_SUI_NETWORK', 'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID', 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID',
+  'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID', 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID',
+  'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID', 'NEXT_PUBLIC_KIOSK_PACKAGE_ID',
+  'NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE', 'NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON',
+]
+function chainConfig(): Record<string, string> {
+  return { NEXT_PUBLIC_SUI_NETWORK: 'mainnet',
+    NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: ACTIVE_SOULIDITY_PACKAGE_ID,
+    NEXT_PUBLIC_KIOSK_PACKAGE_ID: `0x${'1'.repeat(64)}`, ...nativeConfig() }
+}
+function chainSource(config = chainConfig()) {
+  return Object.entries(config).map(([key, value]) => `${key}='${value}'`).join('\n') + '\n'
+}
+function chainFile(source: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'native-chain-env-')); tempDirs.push(dir)
+  const file = join(dir, 'chain.env'); writeFileSync(file, source); return file
+}
+describe('explicit native chain env overlay', () => {
+  it('accepts optional CLI path without changing default dry-run or explicit project enforcement', () => {
+    expect(parseCliOptions(['--project', PROJECT, '--chain-env-file', '/synthetic/chain.env'])).toEqual({
+      apply: false, envFile: '.env', project: PROJECT, chainEnvFile: '/synthetic/chain.env',
+    })
+    for (const args of [ ['--chain-env-file'], ['--chain-env-file', '--apply'],
+      ['--chain-env-file', 'a', '--chain-env-file', 'b'], ['--chain-env-file', 'a', '--project', 'wrong'] ]) {
+      expect(() => parseCliOptions(args)).toThrow()
+    }
+  })
+  it('overlays all12 chain keys, retains service bytes and preserves actual single-quoted JSON', () => {
+    expect([...PRODUCTION_CHAIN_ENV_KEYS].sort()).toEqual([...CHAIN_KEYS].sort())
+    const base = { ...Object.fromEntries(CHAIN_KEYS.map(k => [k, 'OLD_CHAIN_VALUE'])),
+      AUTH_SECRET: 'service-secret', DATABASE_URL: 'postgres://unchanged', NEXT_PUBLIC_BASE_URL: 'https://unchanged.example' }
+    const before = { ...base }, expected = chainConfig()
+    const merged = mergeProductionChainEnv(base, chainSource(expected))
+    for (const key of CHAIN_KEYS) expect(merged[key]).toBe(expected[key])
+    expect(merged.AUTH_SECRET).toBe(base.AUTH_SECRET); expect(merged.DATABASE_URL).toBe(base.DATABASE_URL)
+    expect(merged.NEXT_PUBLIC_BASE_URL).toBe(base.NEXT_PUBLIC_BASE_URL)
+    expect(merged.NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON).toBe(expected.NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON)
+    expect(JSON.parse(merged.NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON).marketWritesEnabled).toBe(false)
+    expect(base).toEqual(before)
+  })
+  it.each(CHAIN_KEYS)('rejects missing chain field %s instead of retaining its old base value', key => {
+    const config = chainConfig(); delete config[key]
+    expect(() => mergeProductionChainEnv(chainConfig(), chainSource(config))).toThrow('complete exported public chain configuration')
+  })
+  it.each(['AUTH_SECRET', 'DATABASE_URL', 'SEAL_SERVER_CONFIGS', 'NEXT_PUBLIC_BASE_URL',
+    'MAINNET_DEPLOYER_PRIV_KEY', 'NEXT_PUBLIC_SOULIDITY_PACKAGE_ID', 'UNKNOWN'])('rejects extra service/secret/retired key %s without echoing content', key => {
+    const source = chainSource() + `${key}='DO_NOT_PRINT_SECRET'\n`
+    let message = ''; try { mergeProductionChainEnv({}, source) } catch (error) { message = (error as Error).message }
+    expect(message).toContain('complete exported public chain configuration')
+    expect(message).not.toContain('DO_NOT_PRINT_SECRET'); expect(message).not.toContain(key)
+  })
+  it.each([
+    (s: string) => s.replace("NEXT_PUBLIC_SUI_NETWORK='mainnet'", "AUTH_SECRET='DO_NOT_PRINT_SECRET'"),
+    (s: string) => s.replace("NEXT_PUBLIC_SUI_NETWORK='mainnet'", "NEXT_PUBLIC_KIOSK_PACKAGE_ID='DO_NOT_PRINT_SECRET'"),
+    (s: string) => s.replace("NEXT_PUBLIC_SUI_NETWORK='mainnet'", "NEXT_PUBLIC_SUI_NETWORK=''"),
+    (s: string) => s.replace("NEXT_PUBLIC_SUI_NETWORK='mainnet'", 'INVALID DO_NOT_PRINT_SECRET'),
+    (s: string) => s.replace("NEXT_PUBLIC_SUI_NETWORK='mainnet'", "NEXT_PUBLIC_SUI_NETWORK='mainnet' # DO_NOT_PRINT_SECRET"),
+    (s: string) => s.replace(/\n/g, '\r\n'),
+    (s: string) => s + '\n',
+    (s: string) => s.replace('mainnet', 'main\0net'),
+  ])('rejects malformed, duplicate or hidden dotenv input rather than silently ignoring rows', mutate => {
+    expect(() => mergeProductionChainEnv({}, mutate(chainSource()))).toThrow('complete exported public chain configuration')
+  })
+  it('actual dry-run reads the overlay before full validation, replacing obsolete chain values only', () => {
+    const base = writeEnvFile({ ...productionSupportEnv,
+      ...Object.fromEntries(CHAIN_KEYS.map(key => [key, 'OLD_CHAIN_VALUE'])) })
+    const overlay = chainFile(chainSource()), result = runSync(base, ['--chain-env-file', overlay])
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('Dry run only. No network operation performed.')
+    expect(result.stdout).toContain(PROJECT)
+    for (const key of CHAIN_KEYS) expect(result.stdout).toContain(`- ${key}`)
+    for (const value of [ACTIVE_SOULIDITY_PACKAGE_ID, chainConfig().NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON,
+      'OLD_CHAIN_VALUE', 'test-auth-secret', 'test-upstash-token']) {
+      expect(result.stdout + result.stderr).not.toContain(value)
+    }
+  })
+  it('overlay does not hide retired base keys or missing service configuration', () => {
+    const overlay = chainFile(chainSource())
+    const legacy = runSync(writeEnvFile({ ...productionSupportEnv,
+      NEXT_PUBLIC_SOULIDITY_PACKAGE_ID: 'DO_NOT_PRINT_SECRET' }), ['--chain-env-file', overlay])
+    expect(legacy.status).toBe(1); expect(legacy.stderr).toContain('forbidden production env keys')
+    expect(legacy.stderr).not.toContain('DO_NOT_PRINT_SECRET')
+    const missing = runSync(writeEnvFile({ ...productionSupportEnv, AUTH_SECRET: '' }), ['--chain-env-file', overlay])
+    expect(missing.status).toBe(1); expect(missing.stderr).toContain('Missing required production env keys: AUTH_SECRET')
+  })
+  it('merged chain values still undergo exact mainnet/native-target validation', () => {
+    const config = chainConfig(); config.NEXT_PUBLIC_SUI_NETWORK = 'testnet'
+    const result = runSync(writeEnvFile({ ...productionSupportEnv }),
+      ['--chain-env-file', chainFile(chainSource(config))])
+    expect(result.status).toBe(1); expect(result.stderr).toContain('must be mainnet')
+  })
+  it('actual parser/read failures never reveal chain contents or a secret-looking path', () => {
+    const base = writeEnvFile({ ...productionSupportEnv })
+    const bad = runSync(base, ['--chain-env-file', chainFile(chainSource() + "AUTH_SECRET='DO_NOT_PRINT_SECRET'\n")])
+    expect(bad.status).toBe(1); expect(bad.stderr).toContain('complete exported public chain configuration')
+    expect(bad.stdout + bad.stderr).not.toContain('DO_NOT_PRINT_SECRET')
+    const missing = runSync(base, ['--chain-env-file', '/nonexistent/DO_NOT_PRINT_SECRET'])
+    expect(missing.status).toBe(1); expect(missing.stderr).toContain('Unable to read the requested chain env file')
+    expect(missing.stdout + missing.stderr).not.toContain('DO_NOT_PRINT_SECRET')
+  })
+})
+
 describe('Vercel production env sync guardrails', () => {
   it('rejects production sync when shared rate limiting or frontend PostHog env is absent', () => {
     const envFile = writeEnvFile({})
@@ -134,7 +252,6 @@ describe('Vercel production env sync guardrails', () => {
     const envFile = writeEnvFile({
       ...productionSupportEnv,
       NEXT_PUBLIC_POSTHOG_SESSION_REPLAY: 'true',
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
     })
 
     const result = runSync(envFile)
@@ -150,7 +267,6 @@ describe('Vercel production env sync guardrails', () => {
   it('does not require PostHog session replay env to sync production env', () => {
     const envFile = writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
     })
 
     const result = runSync(envFile)
@@ -159,226 +275,41 @@ describe('Vercel production env sync guardrails', () => {
     expect(result.stdout).not.toContain('NEXT_PUBLIC_POSTHOG_SESSION_REPLAY')
   })
 
-  it('syncs only complete explicit Soulidity package routing and rejects the legacy alias', () => {
-    const routed = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-      NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: '0x111',
-      NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: '0x222',
-      NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: '0x333',
-      NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: '0x444',
-    }))
-    expect(routed.status).toBe(0)
-    expect(routed.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-    expect(routed.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
-    expect(routed.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID')
-    expect(routed.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID')
-
-    const legacy = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-      NEXT_PUBLIC_SOULIDITY_PACKAGE_ID: '0x111',
-    }))
+  it('syncs complete native routing and rejects the ambiguous alias or noncanonical IDs', () => {
+    const base = { ...productionSupportEnv }
+    const routed = runSync(writeEnvFile(base))
+    expect(routed.status, routed.stderr).toBe(0)
+    for (const key of ['NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', 'NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID',
+      'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID', 'NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON']) {
+      expect(routed.stdout).toContain('- ' + key)
+    }
+    const legacy = runSync(writeEnvFile({ ...base, NEXT_PUBLIC_SOULIDITY_PACKAGE_ID: '0x111' }))
     expect(legacy.status).toBe(1)
     expect(legacy.stderr).toContain('Refusing to sync forbidden production env keys')
-
-    const zeroRouting = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-      NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: '0x0',
-      NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: '0x0',
-      NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: '0x333',
-      NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: '0x444',
-    }))
-    expect(zeroRouting.status).toBe(1)
-    expect(zeroRouting.stderr).toContain('must be a valid non-zero Sui package ID')
+    const zero = runSync(writeEnvFile({ ...base, NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: '0x0' }))
+    expect(zero.status).toBe(1)
+    expect(zero.stderr).toContain('must be a canonical non-zero Sui ID')
   })
 
-  it('requires and always selects the explicit historical Seal route payload', () => {
-    const included = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-    }))
-    expect(included.status).toBe(0)
-    expect(included.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES')
-
-    const missing = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-      NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: '',
-    }))
-    expect(missing.status).toBe(1)
-    expect(missing.stderr).toContain(
-      'Missing required production env keys: NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES',
-    )
-  })
-
-  it('requires the guarded Animacraft gates and always syncs explicit false values', () => {
-    const guarded = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-    }))
-    expect(guarded.status).toBe(0)
-    expect(guarded.stdout).toContain('- NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED')
-    expect(guarded.stdout).toContain('- NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED')
-
-    const omitted = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-      NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED: '',
-      NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED: '',
-    }))
-    expect(omitted.status).toBe(1)
-    expect(omitted.stderr).toContain(
-      'Missing required production env keys: NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED, NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
-    )
-
-    for (const key of [
-      'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
-      'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED',
-    ]) {
-      const enabled = runSync(writeEnvFile({
-        ...productionSupportEnv,
-        NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-        [key]: 'true',
-      }))
-      expect(enabled.status).toBe(1)
-      expect(enabled.stderr).toContain(
-        `${key} must be exactly false for the guarded v5/v6 rollout`,
-      )
+  it('rejects retired issuance and history keys instead of preserving a second release route', () => {
+    for (const key of ['NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES', 'NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED',
+      'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED', 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID']) {
+      const result = runSync(writeEnvFile({ ...productionSupportEnv, [key]: 'false' }))
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('forbidden production env keys')
     }
   })
 
-  it('fails closed when the deployment history file is missing', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'soulidity-missing-deployment-history-'))
-    tempDirs.push(dir)
-    const result = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-    }), join(dir, 'missing.json'))
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain(
-      'is missing; production Seal routing requires an explicit deployment history file',
-    )
-  })
-
-  it('allows an explicit empty canonical history for the first family', () => {
-    const result = runSync(writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-    }), writeDeploymentHistory([]))
-
-    expect(result.status).toBe(0)
+  it('works without any deployment history file or compatibility route', () => {
+    const result = runSync(writeEnvFile({ ...productionSupportEnv }))
+    expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('Dry run only')
-  })
-
-  it('forbids deployment-history overrides for Production apply', () => {
-    const envFile = writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-    })
-    const historyFile = writeDeploymentHistory([])
-    const result = spawnSync(process.execPath, [
-      '--import',
-      'tsx',
-      SCRIPT,
-      '--apply',
-      '--env-file',
-      envFile,
-      '--deployment-history-file',
-      historyFile,
-    ], {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-    })
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain(
-      '--apply must use the repository canonical deployment history',
-    )
-  })
-
-  it('fails closed when production env omits a family archived by fresh publish', () => {
-    const historyFile = writeDeploymentHistory([{
-      archivedAt: '2026-08-02T00:00:00.000Z',
-      network: 'mainnet',
-      reason: 'break-glass fresh publish before deployment-manifest overwrite',
-      deployment: {
-        originalPackageId: '0x5',
-        callablePackageId: '0x6',
-      },
-    }])
-    const base = {
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-      NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: '0x1',
-      NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: '0x2',
-      NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: '0x3',
-      NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: '0x4',
-    }
-
-    const omitted = runSync(writeEnvFile(base), historyFile)
-    expect(omitted.status).toBe(1)
-    expect(omitted.stderr).toContain('does not preserve archived Mainnet family')
-
-    const preserved = runSync(writeEnvFile({
-      ...base,
-      NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: JSON.stringify([{
-        sealPackageId: `0x${'0'.repeat(63)}5`,
-        callablePackageId: '0x6',
-      }]),
-    }), historyFile)
-    expect(preserved.status).toBe(0)
-    expect(preserved.stdout).toContain('- NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES')
-  })
-
-  it('rejects historical Seal routes that conflict after Sui ID normalization', () => {
-    const envFile = writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-      NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: '0x1',
-      NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: '0x2',
-      NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: '0x3',
-      NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: '0x4',
-      NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: JSON.stringify([
-        { sealPackageId: '0x5', callablePackageId: '0x6' },
-        {
-          sealPackageId: `0x${'0'.repeat(63)}5`,
-          callablePackageId: '0x7',
-        },
-      ]),
-    })
-
-    const result = runSync(envFile)
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('conflicts with callable')
-  })
-
-  it('rejects a historical Seal route that overrides the active package family', () => {
-    const envFile = writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
-      NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: '0x1',
-      NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: '0x2',
-      NEXT_PUBLIC_SOULIDITY_ANIMACRAFT_PROVENANCE_PACKAGE_ID: '0x3',
-      NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID: '0x4',
-      NEXT_PUBLIC_SOULIDITY_SEAL_PACKAGE_ROUTES: JSON.stringify([
-        { sealPackageId: '0x2', callablePackageId: '0x8' },
-      ]),
-    })
-
-    const result = runSync(envFile)
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('conflicts with callable')
+    expect(result.stdout).toContain('not chain publication')
   })
 
   it('requires a usable public Seal server list that meets the threshold', () => {
     const empty = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_SEAL_SERVER_CONFIGS: '[]',
     }))
     expect(empty.status).toBe(1)
@@ -388,15 +319,13 @@ describe('Vercel production env sync guardrails', () => {
 
     const belowThreshold = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_SEAL_THRESHOLD: '2',
     }))
     expect(belowThreshold.status).toBe(1)
-    expect(belowThreshold.stderr).toContain('has weight 1, below threshold 2')
+    expect(belowThreshold.stderr).toContain('has weight below threshold')
 
     const serverOnly = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_SEAL_SERVER_CONFIGS: '',
       SEAL_SERVER_CONFIGS: VALID_PUBLIC_SEAL_CONFIG,
     }))
@@ -408,7 +337,6 @@ describe('Vercel production env sync guardrails', () => {
     for (const weight of [0.5, 1.5]) {
       const fractional = runSync(writeEnvFile({
         ...productionSupportEnv,
-        NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
         NEXT_PUBLIC_SEAL_SERVER_CONFIGS: JSON.stringify([{
           objectId: `0x${'9'.repeat(64)}`,
           weight,
@@ -420,7 +348,6 @@ describe('Vercel production env sync guardrails', () => {
 
     const tooManyShares = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_SEAL_SERVER_CONFIGS: JSON.stringify([{
         objectId: `0x${'9'.repeat(64)}`,
         weight: 255,
@@ -431,7 +358,6 @@ describe('Vercel production env sync guardrails', () => {
 
     const weightedThreshold = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_SEAL_THRESHOLD: '2',
       NEXT_PUBLIC_SEAL_SERVER_CONFIGS: JSON.stringify([{
         objectId: `0x${'9'.repeat(64)}`,
@@ -442,11 +368,10 @@ describe('Vercel production env sync guardrails', () => {
   })
 
   it('keeps server-only Seal credentials on the public committee and preserves its weight', () => {
-    const objectId = '0x9'
+    const objectId = `0x${'0'.repeat(63)}9`
     const normalizedObjectId = `0x${'0'.repeat(63)}9`
     const inheritedWeight = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_SEAL_THRESHOLD: '2',
       NEXT_PUBLIC_SEAL_SERVER_CONFIGS: JSON.stringify([{ objectId, weight: 2 }]),
       SEAL_SERVER_CONFIGS: JSON.stringify([{
@@ -460,17 +385,15 @@ describe('Vercel production env sync guardrails', () => {
 
     const mismatchedWeight = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_SEAL_THRESHOLD: '2',
       NEXT_PUBLIC_SEAL_SERVER_CONFIGS: JSON.stringify([{ objectId, weight: 2 }]),
       SEAL_SERVER_CONFIGS: JSON.stringify([{ objectId: normalizedObjectId, weight: 1 }]),
     }))
     expect(mismatchedWeight.status).toBe(1)
-    expect(mismatchedWeight.stderr).toContain('must preserve public weight 2')
+    expect(mismatchedWeight.stderr).toContain('must preserve public weight')
 
     const unknownServer = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       SEAL_SERVER_CONFIGS: JSON.stringify([{
         objectId: `0x${'8'.repeat(64)}`,
         weight: 1,
@@ -481,7 +404,6 @@ describe('Vercel production env sync guardrails', () => {
 
     const incompleteCredentials = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       SEAL_SERVER_CONFIGS: JSON.stringify([{ objectId, apiKeyName: 'x-seal-key' }]),
     }))
     expect(incompleteCredentials.status).toBe(1)
@@ -489,7 +411,6 @@ describe('Vercel production env sync guardrails', () => {
 
     const exposedPublicSecret = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
       NEXT_PUBLIC_SEAL_SERVER_CONFIGS: JSON.stringify([{
         objectId,
         weight: 1,
@@ -501,66 +422,54 @@ describe('Vercel production env sync guardrails', () => {
     expect(exposedPublicSecret.stderr).toContain('must not expose API credentials')
   })
 
-  it('allows managed Walrus production env with the managed domain and token secret', () => {
-    const envFile = writeEnvFile({
+  it('accepts browser Walrus configuration with no owned uploader or token requirement', () => {
+    const result = runSync(writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'managed',
-      NEXT_PUBLIC_WALRUS_UPLOADER_URL: PRODUCTION_WALRUS_UPLOADER_URL,
-      WALRUS_UPLOADER_TOKEN_SECRET: 'test-uploader-secret',
-    })
-
-    const result = runSync(envFile)
-
-    expect(result.status).toBe(0)
-    expect(result.stdout).toContain('- NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT')
-    expect(result.stdout).toContain('- NEXT_PUBLIC_WALRUS_UPLOADER_URL')
-    expect(result.stdout).toContain('- WALRUS_UPLOADER_TOKEN_SECRET (sensitive)')
+      NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL: 'https://upload-relay.mainnet.walrus.space',
+      NEXT_PUBLIC_WALRUS_AGGREGATOR_URL: 'https://aggregator.walrus.mirai.cloud',
+      NEXT_PUBLIC_WALRUS_WASM_URL: '/walrus/current.wasm',
+      WALRUS_AGGREGATOR_URL: 'https://aggregator.walrus.mirai.cloud',
+    }))
+    expect(result.status, result.stderr).toBe(0)
+    for (const key of ['NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL', 'NEXT_PUBLIC_WALRUS_AGGREGATOR_URL',
+      'NEXT_PUBLIC_WALRUS_WASM_URL', 'WALRUS_AGGREGATOR_URL']) {
+      expect(result.stdout).toContain('- ' + key)
+    }
+    expect(result.stdout).toContain('- remove WALRUS_UPLOADER_TOKEN_SECRET')
+    expect(result.stdout).not.toContain('https://upload-relay.mainnet.walrus.space')
   })
 
-  it('rejects managed Walrus production env without uploader URL or token secret', () => {
-    const envFile = writeEnvFile({
-      ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'managed',
-    })
-
-    const result = runSync(envFile)
-
+  it.each([
+    'NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT', 'NEXT_PUBLIC_WALRUS_UPLOADER_URL',
+    'NEXT_PUBLIC_WALRUS_MANAGED_COMPLETE_CONCURRENCY', 'WALRUS_UPLOADER_TOKEN_SECRET',
+    'WALRUS_UPLOADER_TOKEN_TTL_MS', 'WALRUS_UPLOADER_TOKEN_MAX_FILES', 'WALRUS_UPLOADER_TOKEN_MAX_BYTES',
+  ])('rejects retired upload key %s before any environment write without printing its value', key => {
+    const { result, calls } = runApplyWithFakeVercel(writeEnvFile({
+      ...productionSupportEnv, [key]: 'RETIRED_PRIVATE_SENTINEL',
+    }))
     expect(result.status).toBe(1)
-    expect(result.stderr).toContain(
-      `Managed Walrus production env requires NEXT_PUBLIC_WALRUS_UPLOADER_URL=${PRODUCTION_WALRUS_UPLOADER_URL}`,
-    )
-    expect(result.stderr).toContain('Managed Walrus production env requires WALRUS_UPLOADER_TOKEN_SECRET')
+    expect(result.stderr).toContain('forbidden production env keys')
+    expect(result.stderr).toContain(key)
+    expect(result.stderr + result.stdout).not.toContain('RETIRED_PRIVATE_SENTINEL')
+    expect(calls).toHaveLength(0)
   })
 
-  it.each(['browser', 'server'] as const)(
-    'rejects %s Walrus rollback env when uploader credentials are still present',
-    (transport) => {
-      const envFile = writeEnvFile({
-        ...productionSupportEnv,
-        NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: transport,
-        NEXT_PUBLIC_WALRUS_UPLOADER_URL: PRODUCTION_WALRUS_UPLOADER_URL,
-        WALRUS_UPLOADER_TOKEN_SECRET: 'test-uploader-secret',
-      })
-
-      const result = runSync(envFile)
-
-      expect(result.status).toBe(1)
-      expect(result.stderr).toContain(
-        `NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT=${transport} must not sync NEXT_PUBLIC_WALRUS_UPLOADER_URL or WALRUS_UPLOADER_TOKEN_SECRET`,
-      )
-    },
-  )
+  it.each(['managed', 'browser', 'server'])('does not retain the retired transport selector even for %s', transport => {
+    const result = runSync(writeEnvFile({ ...productionSupportEnv, NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: transport }))
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('forbidden production env keys')
+  })
 
   it('passes explicit Vercel CLI 56 sensitivity flags for public and secret keys', () => {
     const envFile = writeEnvFile({
       ...productionSupportEnv,
-      NEXT_PUBLIC_WALRUS_UPLOAD_TRANSPORT: 'browser',
     })
     const { result, calls } = runApplyWithFakeVercel(envFile)
     expect(result.status, result.stderr).toBe(0)
 
     const publicCall = calls.find((args) =>
       args.slice(0, 4).join(' ') === 'vercel env add NEXT_PUBLIC_SUI_NETWORK')
+    for (const call of calls) expect(call[call.indexOf('--project') + 1]).toBe(PROJECT)
     expect(publicCall).toContain('--no-sensitive')
     expect(publicCall).not.toContain('--sensitive')
 

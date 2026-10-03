@@ -6,15 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { loadEnvFile } from '../../scripts/lib/dotenv'
 
-/**
- * R-003 regression — `scripts/lib/dotenv.ts` exposes `loadEnvFile(...)` for
- * specialty env files like `.env.soulidity-smoke`. The smoke script imports
- * the side-effect (.env / .env.local) and then calls `loadEnvFile(...)` to
- * pick up the documented smoke wallets. Without this contract, the smoke
- * harness fails immediately with `Missing SMOKE_PUBLISHER_KEY` even when the
- * file exists with all three keys filled in.
- */
-
 describe('scripts/lib/dotenv loadEnvFile (R-003)', () => {
   const originalEnv = { ...process.env }
   const originalCwd = process.cwd()
@@ -54,28 +45,6 @@ describe('scripts/lib/dotenv loadEnvFile (R-003)', () => {
     const result = loadEnvFile(`.env.does-not-exist-${Date.now()}`)
     expect(result.loaded).toBe(false)
     expect(result.applied).toEqual([])
-  })
-
-  it('smoke-soulidity.ts loads .env.soulidity-smoke before reading wallets', () => {
-    // The runbook documents `.env.soulidity-smoke` as the place to drop smoke
-    // wallets. If this regression breaks, `tsx scripts/smoke-soulidity.ts`
-    // fails immediately with `Missing SMOKE_PUBLISHER_KEY` even when the file
-    // exists with all three keys filled in.
-    const repoRoot = resolve(__dirname, '..', '..')
-    const source = readFileSync(
-      resolve(repoRoot, 'scripts/smoke-soulidity.ts'),
-      'utf8',
-    )
-    expect(source).toMatch(/import\s+['"]\.\/lib\/dotenv['"]/)
-    expect(source).toMatch(/import\s+\{\s*loadEnvFile\s*\}\s+from\s+['"]\.\/lib\/dotenv['"]/)
-    expect(source).toMatch(/loadEnvFile\([^)]*\.env\.soulidity-smoke[^)]*\)/)
-    // The load must happen BEFORE loadSmokeWallets() reads process.env.
-    const loaderIdx = source.indexOf('loadEnvFile(')
-    const walletReaderIdx = source.indexOf('function loadSmokeWallets')
-    expect(loaderIdx).toBeGreaterThanOrEqual(0)
-    expect(walletReaderIdx).toBeGreaterThan(loaderIdx)
-    // Honors `SOULIDITY_SMOKE_ENV_FILE` for ad-hoc per-network overrides.
-    expect(source).toContain('SOULIDITY_SMOKE_ENV_FILE')
   })
 
   it('e2e-setup-agents.ts loads .env.e2e before deriving agent wallets', () => {

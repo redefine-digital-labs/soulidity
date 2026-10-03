@@ -8,7 +8,7 @@ export function CreateShell({ children }: { children: React.ReactNode }) {
     <AuthGate
       icon="✨"
       label="Sign in to create a Soul"
-      sublabel="Minting a Soul uses authenticated routes and wallet signing across the full create flow."
+      sublabel="Connect your Sui wallet to create a Soul. Review each storage and mint transaction before signing."
       className="max-w-[680px]"
     >
       <CreateSoulProvider>

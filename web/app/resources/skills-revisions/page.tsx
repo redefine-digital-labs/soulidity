@@ -144,42 +144,8 @@ description: |
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Skills access API</h2>
-        <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground/90">
-          <code>{`GET /api/souls/[id]/content/2/my-skill/N/access
-
-// Public response
-{
-  visibility: "public",
-  artifact: { walrusBlobUrl, walrusBlobId, blobObjectId }
-}
-
-// Private response
-{
-  visibility: "private",
-  artifact: { walrusBlobUrl, walrusBlobId, blobObjectId },
-  accessPolicy: {
-    packageId,
-    stateObjectId,
-    contentObjectId,
-    kind: 2,
-    name: "my-skill",
-    versionIndex: N,
-    moduleName: "content",
-    functionName:
-      "seal_approve_content_owner"
-      | "seal_approve_content_granted_agent",
-    soulGrantObjectId: string | null,
-    documentIdHex: string,
-  },
-  seal: { ... },
-  sealSidecar: { ... },
-  viewerAddress, accessKind, sessionTtlMin
-}`}</code>
-        </pre>
-        <p className="text-xs text-muted">
-          The content-slot access endpoint <code>/api/souls/[id]/content/[kind]/[name]/[versionIndex]/access</code> serves specific skill versions. The legacy <code>/api/souls/[id]/access</code> route resolves only the canonical Soul document at <code>(KIND_SOUL_DOC, &quot;soul&quot;, 0)</code>.
-        </p>
+        <h2 className="text-lg font-semibold">Reading a skill version</h2>
+        <p className="text-sm text-muted">Select the exact skill name and decimal-string version in the Soul page, then use Open. The browser verifies the live slot and encrypted envelope, checks owner, scoped grant, paid or public read access as allowed by that slot, and uses an explicit Seal session. Downloads are bounded and hash-checked; no human access API or database mirror authorizes the read.</p>
       </div>
 
       <div className="flex items-center gap-3">

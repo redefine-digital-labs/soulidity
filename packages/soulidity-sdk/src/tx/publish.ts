@@ -1,3 +1,4 @@
+import { snapshotMintContentIdentity } from '../mint-content-identity'
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '../env'
 import {
@@ -86,6 +87,7 @@ function appendMintNativeMoveCall(
   env: PublishEnv,
   soul: BatchPublishSoulItem,
 ) {
+  const identity = snapshotMintContentIdentity(soul)
   const { initialContentVec, initialStateConfigVec } = buildInitialContentArgs(tx, env.packageId, {
     initialContent: soul.initialContent,
     initialStateConfig: soul.initialStateConfig,
@@ -105,6 +107,8 @@ function appendMintNativeMoveCall(
       initialContentVec,
       initialStateConfigVec,
       tx.pure.u16(soul.creatorRoyaltyBps),
+      tx.pure.vector('u8', identity.mintNonce),
+      tx.pure.id(identity.expectedContentObjectId),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })
@@ -118,9 +122,9 @@ function appendListSoulFixedPriceCall(
   priceAtomic: bigint | number,
 ) {
   return tx.moveCall({
-    target: `${env.packageId}::market::list_soul_fixed_price_v6`,
+    target: `${env.packageId}::market::list_soul_fixed_price_v2`,
     arguments: [
-      tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')),
+      tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')),
       tx.object(env.kioskRegistryId),
       personalKiosk.buyerKiosk,
       personalKiosk.buyerKioskCap,
@@ -139,9 +143,9 @@ function appendListSoulFixedPriceWithCollectionCall(
   priceAtomic: bigint | number,
 ) {
   return tx.moveCall({
-    target: `${env.packageId}::market::list_soul_fixed_price_with_collection_v6`,
+    target: `${env.packageId}::market::list_soul_fixed_price_with_collection_v2`,
     arguments: [
-      tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_ID')),
+      tx.object(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')),
       tx.object(env.kioskRegistryId),
       tx.object(collectionId),
       personalKiosk.buyerKiosk,
@@ -178,6 +182,7 @@ function appendFinalizeSoulListingCall(
 // ── Single-soul mint flows ──────────────────────────────────────────────
 
 export async function buildPublishSoulTx(params: PublishTxParams): Promise<Transaction> {
+  params = { ...params, ...snapshotMintContentIdentity(params), initialContent: structuredClone(params.initialContent) }
   validateSoulPublishArgs(params)
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
@@ -205,6 +210,7 @@ export type PublishSoulWithBindParams = PublishTxParams & {
 export async function buildPublishSoulWithBindTx(
   params: PublishSoulWithBindParams,
 ): Promise<Transaction> {
+  params = { ...params, ...snapshotMintContentIdentity(params), initialContent: structuredClone(params.initialContent) }
   validateSoulPublishArgs(params)
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
@@ -235,6 +241,7 @@ export type PublishSoulWithListParams = PublishTxParams & {
 export async function buildPublishSoulWithListTx(
   params: PublishSoulWithListParams,
 ): Promise<Transaction> {
+  params = { ...params, ...snapshotMintContentIdentity(params), initialContent: structuredClone(params.initialContent) }
   validateSoulPublishArgs(params)
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
@@ -267,6 +274,7 @@ export type PublishSoulWithCollectionAndListParams = PublishTxParams & {
 export async function buildPublishSoulWithCollectionAndListTx(
   params: PublishSoulWithCollectionAndListParams,
 ): Promise<Transaction> {
+  params = { ...params, ...snapshotMintContentIdentity(params), initialContent: structuredClone(params.initialContent) }
   validateSoulPublishArgs(params)
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
@@ -317,6 +325,7 @@ export async function buildPublishSoulWithCollectionAndListTx(
 export async function buildBatchPublishSoulTx(
   params: BatchPublishSoulParams,
 ): Promise<Transaction> {
+  params = { ...params, souls: params.souls.map(soul => ({ ...soul, ...snapshotMintContentIdentity(soul), initialContent: structuredClone(soul.initialContent) })) }
   if (params.souls.length === 0) {
     throw new Error('buildBatchPublishSoulTx requires at least one soul')
   }
@@ -368,6 +377,7 @@ export interface CollectionFastPathPtb2Params {
 export async function buildCollectionFastPathPtb2Tx(
   params: CollectionFastPathPtb2Params,
 ): Promise<Transaction> {
+  params = { ...params, souls: params.souls.map(soul => ({ ...soul, ...snapshotMintContentIdentity(soul), initialContent: structuredClone(soul.initialContent) })) }
   if (params.souls.length === 0) {
     throw new Error('buildCollectionFastPathPtb2Tx requires at least one soul (use buildCollectionCoverCertifyTx for empty collections)')
   }

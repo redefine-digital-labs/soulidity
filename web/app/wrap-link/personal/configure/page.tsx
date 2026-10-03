@@ -165,7 +165,7 @@ export default function ConfigurePage() {
               onClear={() => ctx.setCharFile(null)}
               tone="amber"
             />
-            {errors.charFile && <p className="text-[11px] font-medium text-danger">{errors.charFile}</p>}
+            {!ctx.charFile && errors.charFile && <p className="text-[11px] font-medium text-danger">{errors.charFile}</p>}
 
             <FileUploadCard
               label="Memory"
@@ -177,7 +177,7 @@ export default function ConfigurePage() {
               onClear={() => ctx.setMemoryFile(null)}
               tone="violet"
             />
-            {errors.memoryFile && <p className="text-[11px] font-medium text-danger">{errors.memoryFile}</p>}
+            {!ctx.memoryFile && errors.memoryFile && <p className="text-[11px] font-medium text-danger">{errors.memoryFile}</p>}
 
             <FileUploadCard
               label="Skills & Docs"

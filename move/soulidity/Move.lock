@@ -11,13 +11,13 @@ manifest_digest = "BA49968BFF7C4A4D9F013B59535CF8B89D935A7C6D63C121606B1FE844829
 deps = { Sui = "Sui_1" }
 
 [pinned.mainnet.MoveStdlib]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "b9149cbf0b2cb9ae5ed830407a9b48c7ae3fd36c" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "2a0becb2fcc6989e492981104af67f62f2c9511a" }
 use_environment = "mainnet"
 manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
 deps = {}
 
 [pinned.mainnet.MoveStdlib_1]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "433212f8f2768ac22dd412229c970b8a5281d4e5" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "6f6f095c246733e7b155abebb63a4e64d64e17b9" }
 use_environment = "mainnet"
 manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
 deps = {}
@@ -29,7 +29,7 @@ manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05
 deps = {}
 
 [pinned.mainnet.MoveStdlib_3]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "73dd2c2ba6f9fdb21d7ffde2b50a3f2f0ac39bc1" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "722ac4fcf4841346c91775f596c4ce23fb7fbd0f" }
 use_environment = "mainnet"
 manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
 deps = {}
@@ -41,13 +41,13 @@ manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05
 deps = {}
 
 [pinned.mainnet.Sui]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "b9149cbf0b2cb9ae5ed830407a9b48c7ae3fd36c" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "2a0becb2fcc6989e492981104af67f62f2c9511a" }
 use_environment = "mainnet"
 manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263195"
 deps = { MoveStdlib = "MoveStdlib" }
 
 [pinned.mainnet.Sui_1]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "433212f8f2768ac22dd412229c970b8a5281d4e5" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "6f6f095c246733e7b155abebb63a4e64d64e17b9" }
 use_environment = "mainnet"
 manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263195"
 deps = { MoveStdlib = "MoveStdlib_1" }
@@ -59,7 +59,7 @@ manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263
 deps = { MoveStdlib = "MoveStdlib_2" }
 
 [pinned.mainnet.Sui_3]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "73dd2c2ba6f9fdb21d7ffde2b50a3f2f0ac39bc1" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "722ac4fcf4841346c91775f596c4ce23fb7fbd0f" }
 use_environment = "mainnet"
 manifest_digest = "CD547CB1ACCE0880C835DAED2D8FFCB91D56C833AE5240D3AA5B918398263195"
 deps = { MoveStdlib = "MoveStdlib_3" }
@@ -82,23 +82,35 @@ use_environment = "mainnet"
 manifest_digest = "F5EE3601B0F0F292A09B1CF6BFF941E8BCD70C7624692070796849E0B7FB337B"
 deps = { Sui = "Sui_2", WAL = "WAL" }
 
-[pinned.mainnet.animacraft]
-source = { git = "https://github.com/redefine-digital-labs/animacraft.git", subdir = "move/animacraft", rev = "fde2d617bc0dba74f27ec255fd12434f632adc23" }
+[pinned.mainnet.animacraft_v8_core]
+source = { local = "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-mainnet-release/move/animacraft_v8_core" }
 use_environment = "mainnet"
-manifest_digest = "D102AD9D5653054ABB17E21F853CF4E888E04AB30025D5DAC19DAF483C2B899B"
-deps = { Sui = "Sui_3" }
+manifest_digest = "241DFAA87E2A440231998A2B8F2F42C67FC8E90384057EA4BE86A0A188DC3774"
+deps = { Sui = "Sui_3", Walrus = "Walrus" }
 
-[pinned.mainnet.animacraft_physical_v7]
-source = { git = "https://github.com/redefine-digital-labs/animacraft.git", subdir = "move/animacraft_physical_v7", rev = "fde2d617bc0dba74f27ec255fd12434f632adc23" }
+[pinned.mainnet.animacraft_v8_output]
+source = { local = "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-mainnet-release/move/animacraft_v8_output" }
 use_environment = "mainnet"
-manifest_digest = "812E34A88417553E7EA8336D64C4059C777C68F47CAAF877726FE35D6EE896A8"
-deps = { Sui = "Sui_3", animacraft = "animacraft" }
+manifest_digest = "C61C7616510950EE7335C255269E6A5FECF5F55FA3CD59054B051B1DF223CE47"
+deps = { Sui = "Sui_3", animacraft_v8_core = "animacraft_v8_core", animacraft_v8_runtime = "animacraft_v8_runtime", animacraft_v8_seal = "animacraft_v8_seal" }
+
+[pinned.mainnet.animacraft_v8_runtime]
+source = { local = "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-mainnet-release/move/animacraft_v8_runtime" }
+use_environment = "mainnet"
+manifest_digest = "14D905F1ABA17267CBB187DB57746AC180A65DC6D79C3B4A512365CA13BE795D"
+deps = { Sui = "Sui_3", animacraft_v8_core = "animacraft_v8_core", animacraft_v8_seal = "animacraft_v8_seal" }
+
+[pinned.mainnet.animacraft_v8_seal]
+source = { local = "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-mainnet-release/move/animacraft_v8_seal" }
+use_environment = "mainnet"
+manifest_digest = "C690CF960A84B4CA0E85357087B3967CF376CA7DB6BE3399351DDFFD198AA4EA"
+deps = { Sui = "Sui_3", animacraft_v8_core = "animacraft_v8_core" }
 
 [pinned.mainnet.soulidity]
 source = { root = true }
 use_environment = "mainnet"
-manifest_digest = "61C1E08DA4F36430E16AB146DBBF4972DC0009F15B324F24E88C2A3147E398CB"
-deps = { Kiosk = "Kiosk", Walrus = "Walrus", animacraft = "animacraft", animacraft_physical_v7 = "animacraft_physical_v7", stablecoin = "stablecoin", std = "MoveStdlib", sui = "Sui", sui_extensions = "sui_extensions", usdc = "usdc" }
+manifest_digest = "8A9EB2BE9F0CB731E123241E7461B96519BA32E1B9994502C2BA3C9C012676EE"
+deps = { Kiosk = "Kiosk", Walrus = "Walrus", animacraft_v8_core = "animacraft_v8_core", animacraft_v8_output = "animacraft_v8_output", stablecoin = "stablecoin", std = "MoveStdlib", sui = "Sui", sui_extensions = "sui_extensions", usdc = "usdc" }
 
 [pinned.mainnet.stablecoin]
 source = { git = "https://github.com/circlefin/stablecoin-sui.git", subdir = "packages/stablecoin", rev = "d0904aec1bbe46b38f811654070032363a5a2966" }

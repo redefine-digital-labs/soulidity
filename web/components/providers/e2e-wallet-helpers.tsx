@@ -3,7 +3,6 @@
 import { useEffect, useRef } from 'react'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { selectCoinObjectIdsForAmountAcrossPages } from '@soulidity/sdk'
-import { buildSetGrantCapacityTx } from '@soulidity/sdk'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -13,7 +12,6 @@ declare global {
       getWalletAddress: () => string | null
       getAuthHeaders: () => Promise<Record<string, string>>
       selectPaymentCoins: (params: { totalAtomic: string | number | bigint; coinType?: string }) => Promise<string[]>
-      setGrantCapacity: (params: { stateObjectId: string; capacity: number }) => Promise<unknown>
     }
   }
 }
@@ -34,15 +32,13 @@ function toAtomic(value: string | number | bigint, fieldName: string) {
 
 export function E2EWalletHelpers() {
   const { getAuthHeaders } = useAuth()
-  const { suiWallet, signAndExecute, suiClient } = useWalletSign()
+  const { suiWallet, suiClient } = useWalletSign()
   const getAuthHeadersRef = useRef(getAuthHeaders)
-  const signAndExecuteRef = useRef(signAndExecute)
   const suiClientRef = useRef(suiClient)
   const walletAddressRef = useRef<string | null>(suiWallet?.address ?? null)
 
   useEffect(() => {
     getAuthHeadersRef.current = getAuthHeaders
-    signAndExecuteRef.current = signAndExecute
     suiClientRef.current = suiClient
     walletAddressRef.current = suiWallet?.address ?? null
   })
@@ -67,21 +63,6 @@ export function E2EWalletHelpers() {
           throw new Error(`Insufficient payment balance for ${totalAtomic.toString()} atomic units`)
         }
         return selected
-      },
-      setGrantCapacity: async (params: { stateObjectId: string; capacity: number }) => {
-        const tx = buildSetGrantCapacityTx(params)
-        const result = await signAndExecuteRef.current(tx)
-        const authHeaders = await getAuthHeadersRef.current()
-        const syncRes = await fetch(`/api/souls/${encodeURIComponent(params.stateObjectId)}/grant-capacity`, {
-          method: 'POST',
-          headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ txDigest: result.digest }),
-        })
-        const syncBody = await syncRes.json().catch(() => null)
-        if (!syncRes.ok) {
-          throw new Error(syncBody?.error || `Grant capacity sync failed: ${syncRes.status}`)
-        }
-        return { digest: result.digest, sync: syncBody, effects: result.effects, events: result.events }
       },
     } satisfies NonNullable<Window['__e2eSoulidity']>
 

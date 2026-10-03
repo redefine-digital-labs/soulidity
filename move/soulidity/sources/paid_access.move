@@ -4,6 +4,7 @@ use sui::clock::Clock;
 use sui::event;
 use sui::table::{Self as table, Table};
 use std::string::String;
+use std::bcs;
 use soulidity::content::{Self as content, SoulContent};
 use soulidity::grant;
 use soulidity::kind_registry::{Self as kind_registry, KindRegistry};
@@ -23,6 +24,7 @@ const EKindScopeMismatch: u64 = 9;
 const EKindReadPaidNotAllowed: u64 = 11;
 const EKindConfigOwnerEpochMismatch: u64 = 12;
 const EMismatchedLengths: u64 = 13;
+const EMutationSnapshotMismatch: u64 = 14;
 const VERSION: u64 = 1;
 
 // ── Structs ──
@@ -132,8 +134,52 @@ public fun paid_access_list_version(self: &SoulPaidAccessList): u64 { self.versi
 
 public fun creator(self: &SoulPaidAccessList): address { self.creator }
 
+/// Freeze the physical config and optional buyer rows without changing any
+/// write authorization. None for grantee selects a config-only operation.
+public fun assert_mutation_snapshot(
+    self: &SoulPaidAccessList,
+    state: &SoulState,
+    expected_soul_id: ID,
+    kind: u32,
+    grantee: Option<address>,
+    expected_epoch: u64,
+    expected_config: Option<vector<u8>>,
+    expected_buyer_table: Option<vector<u8>>,
+    expected_entry: Option<vector<u8>>,
+) {
+    assert!(self.soul_id == expected_soul_id && soul::soul_id(state) == expected_soul_id, EMutationSnapshotMismatch);
+    assert!(*soul::access_list_id(state) == option::some(object::id(self)), EMutationSnapshotMismatch);
+    assert!(soul::ownership_epoch(state) == expected_epoch, EMutationSnapshotMismatch);
+    let config = if (self.kind_configs.contains(kind)) {
+        option::some(bcs::to_bytes(self.kind_configs.borrow(kind)))
+    } else { option::none() };
+    assert!(config == expected_config, EMutationSnapshotMismatch);
+    if (grantee.is_none()) {
+        assert!(expected_buyer_table.is_none() && expected_entry.is_none(), EMutationSnapshotMismatch);
+        return
+    };
+    let addr = *grantee.borrow();
+    let (buyer_table, entry) = if (self.entries.contains(addr)) {
+        let entries = self.entries.borrow(addr);
+        let entry = if (entries.contains(kind)) {
+            option::some(bcs::to_bytes(entries.borrow(kind)))
+        } else { option::none() };
+        (option::some(bcs::to_bytes(entries)), entry)
+    } else { (option::none(), option::none()) };
+    assert!(buyer_table == expected_buyer_table && entry == expected_entry, EMutationSnapshotMismatch);
+}
+
 public fun has_kind_config(self: &SoulPaidAccessList, kind: u32): bool {
     self.kind_configs.contains(kind)
+}
+
+#[test_only]
+public fun mutation_rows_for_testing(self: &SoulPaidAccessList, kind: u32, addr: address): (Option<vector<u8>>, Option<vector<u8>>, Option<vector<u8>>) {
+    let config = if (self.kind_configs.contains(kind)) { option::some(bcs::to_bytes(self.kind_configs.borrow(kind))) } else { option::none() };
+    if (!self.entries.contains(addr)) { return (config, option::none(), option::none()) };
+    let entries = self.entries.borrow(addr);
+    let entry = if (entries.contains(kind)) { option::some(bcs::to_bytes(entries.borrow(kind))) } else { option::none() };
+    (config, option::some(bcs::to_bytes(entries)), entry)
 }
 
 public fun kind_config_price_atomic(self: &SoulPaidAccessList, kind: u32): u64 {
@@ -452,6 +498,8 @@ fun renewal_base_ms(now_ms: u64, previous_expires_at_ms: Option<u64>): u64 {
 
 // ── Manual add (owner) ──
 
+// Clock remains in the public operation ABI; manual grants preserve their supplied expiry.
+#[allow(lint(unused_object_with_fields))]
 public fun add_access(
     paid_access_list: &mut SoulPaidAccessList,
     state: &SoulState,

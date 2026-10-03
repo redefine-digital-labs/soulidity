@@ -6,16 +6,18 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
-import { buttonStyles } from '@/components/ui/button'
+import { Button, buttonStyles } from '@/components/ui/button'
+import { useWrapPublish } from '@/lib/hooks/use-wrap-publish'
 import { useWrap, wrapSteps } from '@/components/providers/wrap-provider'
 
 export default function WrapSuccessPage() {
   const router = useRouter()
   const ctx = useWrap()
+  const completion = useWrapPublish(async () => false)
 
   useEffect(() => {
     if (!ctx.publishResult) {
-      router.replace('/wrap-link/personal')
+      router.replace('/wrap-link/personal/preview')
     }
   }, [ctx.publishResult, router])
 
@@ -26,7 +28,7 @@ export default function WrapSuccessPage() {
 
   return (
     <>
-      <FlowBar steps={wrapSteps} currentStep={3} />
+      <FlowBar steps={wrapSteps} currentStep={4} />
       <div className="relative z-10 border-t border-purple/20">
         <PageContainer size="sm" className="py-12 text-center space-y-6">
           {/* Icon */}
@@ -85,7 +87,14 @@ export default function WrapSuccessPage() {
           </div>
 
           {/* Actions */}
+          {completion.error && <p role="alert" className="text-danger">{completion.error}</p>}
           <div className="flex items-center justify-center gap-3">
+            <Button disabled={completion.loadingRecovery || completion.status === 'building' || completion.status === 'syncing'}
+              onClick={async () => {
+                if (await completion.startAnother(txDigest, ctx.publishResult?.authoringCompletionKey)) {
+                  ctx.reset(); router.push('/wrap-link/personal')
+                }
+              }}>Wrap Another NFT</Button>
             <Link
               href="/my-souls"
               className={buttonStyles({ variant: 'primary', size: 'lg', className: 'rounded-xl' })}

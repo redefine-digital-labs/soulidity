@@ -74,8 +74,7 @@ function parseExpectedSoulIds(
  * every relevant grant event server-side, and writes the
  * `SoulGrantRecord` / `SoulAsset` projection rows for each affected Soul.
  *
- * Key rules (mirrors the single-grant route at
- * `web/app/api/souls/[id]/grant/route.ts`):
+ * Key rules for this remaining Pet-specific projection route:
  *  - browser cookie auth + CSRF (`requireHumanWalletIdentity({ mutation })`).
  *  - the pet must belong to the calling account; otherwise 404.
  *  - the on-chain transaction sender must equal one of the caller's bound

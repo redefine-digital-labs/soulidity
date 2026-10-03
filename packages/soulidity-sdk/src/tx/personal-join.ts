@@ -1,3 +1,4 @@
+import { snapshotMintContentIdentity } from '../mint-content-identity'
 import { Transaction } from '@mysten/sui/transactions'
 import { getRequiredSoulidityEnv } from '../env'
 import { getKioskPackageAddress } from '../kiosk'
@@ -38,6 +39,8 @@ export interface PersonalJoinTxParams extends MintPtbInputs {
  * provenance for the new Soul.
  */
 export async function buildPersonalJoinSoulTx(params: PersonalJoinTxParams): Promise<Transaction> {
+  params = { ...params, initialContent: structuredClone(params.initialContent) }
+  const identity = snapshotMintContentIdentity(params)
   validateSoulPublishArgs(params)
   validateInitialContentEntries(params.initialContent)
   validateInitialStateConfigEntries(params.initialStateConfig)
@@ -107,6 +110,8 @@ export async function buildPersonalJoinSoulTx(params: PersonalJoinTxParams): Pro
       initialStateConfigVec,
       tx.pure.string(params.originRef),
       tx.pure.u16(params.creatorRoyaltyBps),
+      tx.pure.vector('u8', identity.mintNonce),
+      tx.pure.id(identity.expectedContentObjectId),
       tx.object(SUI_CLOCK_OBJECT_ID),
     ],
   })

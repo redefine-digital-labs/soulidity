@@ -3,11 +3,10 @@
 import { useState } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
-import type { SoulContentVersionRecord } from '@soulidity/sdk'
 
 interface PurgeConfirmModalProps {
   open: boolean
-  version: SoulContentVersionRecord | null
+  version: { kindName: string; name: string; versionIndex: number | string } | null
   pending: boolean
   onClose: () => void
   onConfirm: () => Promise<void> | void
@@ -39,14 +38,14 @@ function PurgeConfirmModal({ open, version, pending, onClose, onConfirm }: Purge
     <Modal open={open} onClose={handleClose} maxWidth="sm" title="Purge version permanently" subtitle={subtitle}>
       <div className="rounded-xl border border-danger/25 bg-danger/[0.06] px-4 py-3 mb-4">
         <p className="text-sm text-foreground">
-          This is the irreversible step after a soft-delete. Once you sign, the on-chain version object is destroyed and the storage rebate is reclaimed.
+          This is the irreversible step after a soft-delete. Once the transaction succeeds, the version's on-chain Walrus Blob object is burned and the retained content slot is marked purged.
         </p>
       </div>
 
       <ul className="mb-5 space-y-1.5 text-[12px] text-muted">
-        <li>· The Soul will no longer be able to serve this artifact — its Walrus blob reference is dropped from the content tree.</li>
+        <li>· The Soul will no longer hold the Blob object for this artifact. Its historical slot and blob ID remain on chain.</li>
         <li>· Anyone (agent runtimes, downstream caches) who already downloaded the bundle keeps their copy. Purge cannot retroactively wipe distributed copies.</li>
-        <li>· The version row is replaced by a tombstone in the mirror; future appends to the same slot will start at the next version index.</li>
+        <li>· Purged version indexes are not reused; future appends to the same named content use the next version index.</li>
       </ul>
 
       <div className="flex gap-2">

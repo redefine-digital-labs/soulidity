@@ -1,6 +1,8 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useCollectionDraft } from '@/lib/collections/use-collection-draft'
+import type { CollectionDraftSnapshot } from '@/lib/collections/collection-draft-store'
 import { useAuth } from '@/components/providers/auth-provider'
 import type { CollectionSyncResponse } from '@/lib/hooks/use-collection-publish'
 import {
@@ -9,7 +11,6 @@ import {
 } from '@soulidity/sdk'
 
 const PUBLISH_RESULT_KEY = 'collection-publish-result'
-const MINT_RECOVERY_KEY = 'collection-mint-recovery'
 
 // ── Shared step definitions ──
 
@@ -114,30 +115,24 @@ interface CreateCollectionContextValue {
   setPublishResult: (v: CollectionSyncResponse | null, snapshot?: CollectionSuccessSnapshot | null) => void
   successSnapshot: CollectionSuccessSnapshot | null
   isHydrated: boolean
-  /** True when a committed collection TX exists in recovery — allows bypassing File-dependent guards */
-  hasRecoveryTx: boolean
+  draftReady: boolean
 
   // Reset
-  reset: () => void
+  reset: () => Promise<void>
 }
 
 const CreateCollectionContext = createContext<CreateCollectionContextValue | null>(null)
 
-function formatAtomicUsdcDisplay(raw: unknown): string {
-  if (raw == null) return ''
-  try {
-    const v = BigInt(String(raw))
-    const factor = 10n ** 6n
-    const whole = v / factor
-    const frac = (v % factor).toString().padStart(6, '0').replace(/0+$/, '')
-    return frac ? `${whole}.${frac}` : whole.toString()
-  } catch {
-    return ''
-  }
+export function CreateCollectionProvider({ children }: { children: React.ReactNode }) {
+  const { walletAddress } = useAuth()
+  const scope = `collection-edit:${walletAddress?.toLowerCase() ?? 'local-anonymous'}`
+  return <ScopedCollectionProvider key={scope} scope={scope}>{children}</ScopedCollectionProvider>
 }
 
-export function CreateCollectionProvider({ children }: { children: React.ReactNode }) {
+function ScopedCollectionProvider({ children, scope }: { children: React.ReactNode; scope: string }) {
   const { user } = useAuth()
+  const providerAlive = useRef(false)
+  useEffect(() => { providerAlive.current = true; return () => { providerAlive.current = false } }, [])
 
   // Step 1
   const [name, setName] = useState('')
@@ -167,7 +162,6 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
   const [publishResult, setPublishResultRaw] = useState<CollectionSyncResponse | null>(null)
   const [successSnapshot, setSuccessSnapshot] = useState<CollectionSuccessSnapshot | null>(null)
   const [isHydrated, setIsHydrated] = useState(false)
-  const [hasRecoveryTx, setHasRecoveryTx] = useState(false)
 
   const setBatchData = useCallback((file: File | null, souls: BatchSoulEntry[], errors: string[]) => {
     setBatchFile(file)
@@ -216,49 +210,6 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
         }
       } catch { /* ignore corrupt/missing storage */ }
 
-      // Hydrate draft inputs from recovery state so the preview page
-      // can resume a partially-completed collection launch after refresh
-      try {
-        const recoveryRaw = sessionStorage.getItem(MINT_RECOVERY_KEY)
-        if (recoveryRaw) {
-          const recovery = JSON.parse(recoveryRaw)
-          const hasCollectionRecoveryTx = typeof recovery.collectionPtb1Digest === 'string' && recovery.collectionPtb1Digest.length > 0
-          if (recovery.userId === user?.id && hasCollectionRecoveryTx && recovery.collectionMeta && hasCurrentSoulidityDeploymentSignature(recovery)) {
-            const meta = recovery.collectionMeta
-            setName(meta.name ?? '')
-            setDescription(meta.description ?? '')
-            setExtraRoyaltyBps(meta.extraRoyaltyBps ?? 500)
-            setTradeable(meta.tradeable ?? true)
-            if (typeof meta.maxSupply === 'number' && meta.maxSupply > 0) {
-              setSupplyCap(String(meta.maxSupply))
-              setUnlimitedSupply(false)
-            } else if (meta.maxSupply === null) {
-              setUnlimitedSupply(true)
-            }
-            if (meta.floorPriceAtomic) {
-              // Convert atomic back to display string (inverse of parseDisplayAmountToAtomic)
-              setFloorPrice(formatAtomicUsdcDisplay(meta.floorPriceAtomic))
-            }
-            if (recovery.collectionRightListing) {
-              setListCollectionRightOnLaunch(true)
-              setCollectionRightListingPrice(formatAtomicUsdcDisplay(recovery.collectionRightListing.priceAtomic))
-            }
-            if (Array.isArray(recovery.souls) && recovery.souls.length > 0) {
-              setAddSoulsMethod('batch-upload')
-              setBatchSouls(recovery.souls.map((s: { input?: BatchSoulEntry }) => ({
-                name: s.input?.name ?? '',
-                description: s.input?.description ?? '',
-                tags: Array.isArray(s.input?.tags) ? s.input.tags : [],
-                creatorRoyaltyBps: s.input?.creatorRoyaltyBps ?? 0,
-              })))
-            } else {
-              setAddSoulsMethod('skip')
-            }
-            setHasRecoveryTx(true)
-          }
-        }
-      } catch { /* ignore corrupt/missing recovery */ }
-
       setIsHydrated(true)
     })
     return () => { cancelled = true }
@@ -279,7 +230,58 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
     } catch { /* storage quota exceeded */ }
   }
 
-  const reset = useCallback(() => {
+  const snapshot = useMemo<CollectionDraftSnapshot>(() => ({
+    fields: { name, description, supplyCap, unlimitedSupply, floorPrice, extraRoyaltyBps, tradeable,
+      addSoulsMethod, listCollectionRightOnLaunch, collectionRightListingPrice },
+    rows: batchSouls, errors: { batch: batchErrors, folders: folderErrors },
+    files: [
+      ...(coverImageFile ? [{ role: 'cover' as const, row: 0, file: coverImageFile }] : []),
+      ...(batchFile ? [{ role: 'template' as const, row: 0, file: batchFile }] : []),
+      ...[...soulFolders].flatMap(([row, files]) => [
+        { role: 'character' as const, row, file: files.characterFile },
+        { role: 'memory' as const, row, file: files.memoryFile },
+        ...(files.imageFile ? [{ role: 'image' as const, row, file: files.imageFile }] : []),
+        ...(files.skillsFile ? [{ role: 'skills' as const, row, file: files.skillsFile }] : []),
+      ]),
+    ],
+  }), [name, description, supplyCap, unlimitedSupply, floorPrice, extraRoyaltyBps, tradeable,
+    addSoulsMethod, listCollectionRightOnLaunch, collectionRightListingPrice, batchSouls,
+    batchErrors, folderErrors, coverImageFile, batchFile, soulFolders])
+  const draft = useCollectionDraft(scope, snapshot, saved => {
+    const f = saved.fields
+    for (const key of ['name', 'description', 'supplyCap', 'floorPrice', 'collectionRightListingPrice'])
+      if (typeof f[key] !== 'string') throw Error('Invalid saved Collection field')
+    for (const key of ['unlimitedSupply', 'tradeable', 'listCollectionRightOnLaunch'])
+      if (typeof f[key] !== 'boolean') throw Error('Invalid saved Collection option')
+    if (!Number.isSafeInteger(f.extraRoyaltyBps) || ![null, 'batch-upload', 'skip'].includes(f.addSoulsMethod as any)) throw Error('Invalid saved Collection configuration')
+    const folders = new Map<number, Partial<SoulFolderFiles>>()
+    for (const item of saved.files) {
+      if (item.role === 'cover' || item.role === 'template') continue
+      const entry = folders.get(item.row) ?? {}
+      const key = { character: 'characterFile', memory: 'memoryFile', image: 'imageFile', skills: 'skillsFile' }[item.role]
+      Object.assign(entry, { [key]: item.file }); folders.set(item.row, entry)
+    }
+    for (const entry of folders.values()) if (!entry.characterFile || !entry.memoryFile) throw Error('Saved Collection folder is incomplete')
+    setName(f.name as string); setDescription(f.description as string); setSupplyCap(f.supplyCap as string)
+    setUnlimitedSupply(f.unlimitedSupply as boolean); setFloorPrice(f.floorPrice as string)
+    setExtraRoyaltyBps(f.extraRoyaltyBps as number); setTradeable(f.tradeable as boolean)
+    setAddSoulsMethod(f.addSoulsMethod as 'batch-upload' | 'skip' | null)
+    setListCollectionRightOnLaunch(f.listCollectionRightOnLaunch as boolean)
+    setCollectionRightListingPrice(f.collectionRightListingPrice as string)
+    setCoverImage(saved.files.find(file => file.role === 'cover')?.file ?? null)
+    setBatchData(saved.files.find(file => file.role === 'template')?.file ?? null, saved.rows, saved.errors.batch)
+    setSoulFolders(folders as SoulFolderMap); setFolderErrors(saved.errors.folders)
+  })
+
+  const reset = async () => {
+    if (!providerAlive.current) throw Error('Collection wallet scope changed')
+    // Completion was archived by the caller. Persist an empty editor before
+    // dropping in-memory files, so a storage failure leaves this result intact.
+    await draft.save({ fields: { name: '', description: '', supplyCap: '10000', unlimitedSupply: false,
+      floorPrice: '', extraRoyaltyBps: 500, tradeable: true, addSoulsMethod: null,
+      listCollectionRightOnLaunch: false, collectionRightListingPrice: '' }, rows: [],
+      errors: { batch: [], folders: [] }, files: [] })
+    if (!providerAlive.current) throw Error('Collection wallet scope changed')
     setName('')
     setDescription('')
     setCoverImage(null)
@@ -296,12 +298,10 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
     setCollectionRightListingPrice('')
     setPublishResultRaw(null)
     setSuccessSnapshot(null)
-    setHasRecoveryTx(false)
     try {
       sessionStorage.removeItem(PUBLISH_RESULT_KEY)
-      sessionStorage.removeItem(MINT_RECOVERY_KEY)
     } catch {}
-  }, [setCoverImage, setBatchData])
+  }
 
   return (
     <CreateCollectionContext value={{
@@ -321,11 +321,16 @@ export function CreateCollectionProvider({ children }: { children: React.ReactNo
       collectionRightListingPrice, setCollectionRightListingPrice,
       publishResult, setPublishResult,
       successSnapshot,
-      isHydrated,
-      hasRecoveryTx,
+      isHydrated: isHydrated && draft.settled,
+      draftReady: draft.ready,
       reset,
     }}>
-      {children}
+      <div role="status" className="mx-auto max-w-[560px] px-6 py-2 text-xs text-muted">
+        {draft.status}
+        {draft.status.includes('NOT saved') || draft.status.includes('could not be opened')
+          ? <button type="button" onClick={draft.retry} className="ml-2 underline">Retry local draft</button> : null}
+      </div>
+      {draft.settled ? children : null}
     </CreateCollectionContext>
   )
 }

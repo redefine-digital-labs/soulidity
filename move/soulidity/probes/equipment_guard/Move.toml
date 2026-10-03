@@ -1,0 +1,9 @@
+[package]
+name = "equipment_guard"
+edition = "2024.beta"
+
+[dependencies]
+soulidity = { local = "../.." }
+
+[addresses]
+equipment_guard = "0x0"

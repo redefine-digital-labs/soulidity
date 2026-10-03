@@ -7,6 +7,7 @@ import type {
   SoulListingObject,
 } from './types'
 import { OnChainVerificationError, getTrustedPackageIds, normalizeSuiValue, scopeMaskToScopes } from './queries'
+import { quoteAnimacraftV8SoulSale } from './native-market-quote'
 
 /**
  * Phase 2 writer-kind enum mirrored from `content.move`. Phase 1 emitted this
@@ -146,24 +147,6 @@ function readString(value: unknown, fieldName: string) {
   throw new OnChainVerificationError(`${fieldName} is missing on chain`)
 }
 
-function readByteVector(value: unknown, fieldName: string): Uint8Array {
-  if (Array.isArray(value)) {
-    const bytes = value.map((byte) =>
-      typeof byte === 'number'
-        ? byte
-        : typeof byte === 'string' && /^\d+$/.test(byte)
-          ? Number(byte)
-          : Number.NaN)
-    if (
-      bytes.every(
-        (byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255,
-      )
-    ) {
-      return Uint8Array.from(bytes)
-    }
-  }
-  throw new OnChainVerificationError(`${fieldName} is malformed on chain`)
-}
 
 function readOptionalString(value: unknown, fieldName: string): string | null {
   if (value == null) return null
@@ -381,80 +364,8 @@ export function extractAllSoulMintedToKioskEvents(transaction: TransactionLike, 
   return events.map(parseSoulMintedToKioskEvent)
 }
 
-function parseAnimacraftOutputProvenanceV5CreatedEvent(
-  event: Record<string, unknown>,
-) {
-  const completeOutputSealId = readByteVector(
-    event.complete_output_seal_id,
-    'AnimacraftOutputProvenanceV5Created complete_output_seal_id',
-  )
-  if (completeOutputSealId.length !== 32) {
-    throw new OnChainVerificationError(
-      'AnimacraftOutputProvenanceV5Created complete_output_seal_id must be exactly 32 bytes',
-    )
-  }
-  return {
-    outputProvenanceId: readObjectId(
-      event.output_provenance_id,
-      'AnimacraftOutputProvenanceV5Created output_provenance_id',
-    ),
-    baseProvenanceId: readObjectId(
-      event.base_provenance_id,
-      'AnimacraftOutputProvenanceV5Created base_provenance_id',
-    ),
-    soulId: readObjectId(
-      event.soul_id,
-      'AnimacraftOutputProvenanceV5Created soul_id',
-    ),
-    stateId: readObjectId(
-      event.state_id,
-      'AnimacraftOutputProvenanceV5Created state_id',
-    ),
-    makerRootId: readObjectId(
-      event.maker_root_id,
-      'AnimacraftOutputProvenanceV5Created maker_root_id',
-    ),
-    completeOutputSealId,
-  }
-}
 
-/**
- * Exact frozen companion emitted by the commerce-v5 mint PTB. Consumers must
- * pair all six fields with the Soul mint, MakerRoot and protected Complete
- * receipt before accepting the output-provenance object ID.
- */
-export function extractAnimacraftOutputProvenanceV5CreatedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(
-    transaction,
-    `${packageId}::animacraft_output_provenance_v5::AnimacraftOutputProvenanceV5Created`,
-    trustedPackageIds,
-  )
-  if (!event) {
-    throw new OnChainVerificationError(
-      'AnimacraftOutputProvenanceV5Created event is missing from the transaction',
-    )
-  }
-  return parseAnimacraftOutputProvenanceV5CreatedEvent(event)
-}
 
-export function tryExtractAnimacraftOutputProvenanceV5CreatedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(
-    transaction,
-    `${packageId}::animacraft_output_provenance_v5::AnimacraftOutputProvenanceV5Created`,
-    trustedPackageIds,
-  )
-  return event
-    ? parseAnimacraftOutputProvenanceV5CreatedEvent(event)
-    : null
-}
 
 function parseSoulListedEvent(event: Record<string, unknown>) {
   return {
@@ -502,139 +413,76 @@ export function extractSoulPurchasedEvent(transaction: TransactionLike, packageI
   }
 }
 
-/**
- * Read the isolated Animacraft v5 gross-price settlement event. This must not
- * be inferred from `SoulPurchased`: v5 uses a different fee model and emits
- * the seller residual explicitly.
- */
-function parseAnimacraftV5SoulPurchasedEvent(event: Record<string, unknown>) {
-  return {
-    listingId: readObjectId(event.listing_id, 'AnimacraftV5SoulPurchased listing_id'),
-    soulId: readObjectId(event.soul_id, 'AnimacraftV5SoulPurchased soul_id'),
-    provenanceId: readObjectId(event.provenance_id, 'AnimacraftV5SoulPurchased provenance_id'),
-    sellerAddress: readAddress(event.seller, 'AnimacraftV5SoulPurchased seller'),
-    buyerAddress: readAddress(event.buyer, 'AnimacraftV5SoulPurchased buyer'),
-    makerSourceRecipientAddress: readAddress(
-      event.maker_source_recipient,
-      'AnimacraftV5SoulPurchased maker_source_recipient',
-    ),
-    priceAtomic: readBigInt(event.price, 'AnimacraftV5SoulPurchased price'),
-    sellerPayoutAtomic: readBigInt(event.seller_payout, 'AnimacraftV5SoulPurchased seller_payout'),
-    protocolFeeAtomic: readBigInt(event.protocol_fee, 'AnimacraftV5SoulPurchased protocol_fee'),
-    soulCreatorRoyaltyBps: readNumber(
-      event.soul_creator_royalty_bps,
-      'AnimacraftV5SoulPurchased soul_creator_royalty_bps',
-    ),
-    soulCreatorRoyaltyAtomic: readBigInt(
-      event.soul_creator_royalty,
-      'AnimacraftV5SoulPurchased soul_creator_royalty',
-    ),
-    makerSourceRoyaltyBps: readNumber(
-      event.maker_source_royalty_bps,
-      'AnimacraftV5SoulPurchased maker_source_royalty_bps',
-    ),
-    makerSourceRoyaltyAtomic: readBigInt(
-      event.maker_source_royalty,
-      'AnimacraftV5SoulPurchased maker_source_royalty',
-    ),
-  }
-}
 
-export function extractAnimacraftV5SoulPurchasedEvent(
+
+
+/** Native V8 uses an immutable Output NativeSoulBindingV8, not V5 provenance.
+ * Accept only the configured original package; historical trusted packages are
+ * deliberately not consulted for this fresh-deployment event. */
+export function tryExtractAnimacraftV8SoulPurchasedEvent(
   transaction: TransactionLike,
   packageId: string,
-  trustedPackageIds?: string[],
 ) {
-  const event = extractTypedEvent(
-    transaction,
-    `${packageId}::market::AnimacraftV5SoulPurchased`,
-    trustedPackageIds,
-  )
-  if (!event) {
-    throw new OnChainVerificationError('AnimacraftV5SoulPurchased event is missing from the transaction')
+  const original = readAddress(packageId, 'Native purchase package')
+  const matches = (transaction.events ?? []).filter(event => {
+    if (typeof event.type !== 'string') return false
+    const parts = event.type.split('::')
+    return parts.length === 3 && normalizeSuiValue(parts[0]) === original
+      && parts[1] === 'market' && parts[2] === 'AnimacraftV8SoulPurchased'
+  })
+  if (!matches.length) return null
+  if (matches.length !== 1) throw new OnChainVerificationError('Native purchase event is ambiguous')
+  const event = asRecord(matches[0].parsedJson)
+  if (!event || Array.isArray(event)) throw new OnChainVerificationError('Native purchase event is malformed')
+  const uint = (field: string, max = 18446744073709551615n) => {
+    const value = event[field]
+    if (!(typeof value === 'bigint'
+      || (typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value))
+      || (typeof value === 'number' && Number.isSafeInteger(value)))) {
+      throw new OnChainVerificationError(`AnimacraftV8SoulPurchased ${field} is malformed`)
+    }
+    const result = BigInt(value)
+    if (result < 0n || result > max) throw new OnChainVerificationError(`AnimacraftV8SoulPurchased ${field} exceeds its range`)
+    return result
   }
-  return parseAnimacraftV5SoulPurchasedEvent(event)
+  const parsed = {
+    listingId: readObjectId(event.listing_id, 'AnimacraftV8SoulPurchased listing_id'),
+    soulId: readObjectId(event.soul_id, 'AnimacraftV8SoulPurchased soul_id'),
+    provenanceId: readObjectId(event.provenance_id, 'AnimacraftV8SoulPurchased provenance_id'),
+    sellerAddress: readAddress(event.seller, 'AnimacraftV8SoulPurchased seller'),
+    buyerAddress: readAddress(event.buyer, 'AnimacraftV8SoulPurchased buyer'),
+    makerSourceRecipientAddress: readAddress(event.maker_source_recipient, 'AnimacraftV8SoulPurchased maker_source_recipient'),
+    priceAtomic: uint('price'),
+    sellerPayoutAtomic: uint('seller_payout'),
+    protocolFeeAtomic: uint('protocol_fee'),
+    soulCreatorRoyaltyBps: Number(uint('soul_creator_royalty_bps', 1000n)),
+    soulCreatorRoyaltyAtomic: uint('soul_creator_royalty'),
+    makerSourceRoyaltyBps: Number(uint('maker_source_royalty_bps', 1000n)),
+    makerSourceRoyaltyAtomic: uint('maker_source_royalty'),
+  }
+  // Native Market quote uses Core's rights bounds and independent floor-bps
+  // amounts, all deducted from the gross USDC price (never added on top).
+  const quote = quoteAnimacraftV8SoulSale(parsed.priceAtomic, parsed)
+  if (parsed.protocolFeeAtomic !== quote.protocolFeeAtomic
+    || parsed.soulCreatorRoyaltyAtomic !== quote.soulCreatorRoyaltyAtomic
+    || parsed.makerSourceRoyaltyAtomic !== quote.makerSourceRoyaltyAtomic) {
+    throw new OnChainVerificationError('Native purchase settlement differs from the native floor-bps quote')
+  }
+  if (parsed.sellerPayoutAtomic + parsed.protocolFeeAtomic + parsed.soulCreatorRoyaltyAtomic
+    + parsed.makerSourceRoyaltyAtomic !== parsed.priceAtomic) {
+    throw new OnChainVerificationError('Native purchase settlement does not equal its gross price')
+  }
+  return parsed
 }
 
-export function tryExtractAnimacraftV5SoulPurchasedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(
-    transaction,
-    `${packageId}::market::AnimacraftV5SoulPurchased`,
-    trustedPackageIds,
-  )
-  return event ? parseAnimacraftV5SoulPurchasedEvent(event) : null
+export function extractAnimacraftV8SoulPurchasedEvent(transaction: TransactionLike, packageId: string) {
+  const event = tryExtractAnimacraftV8SoulPurchasedEvent(transaction, packageId)
+  if (!event) throw new OnChainVerificationError('AnimacraftV8SoulPurchased event is missing from the transaction')
+  return event
 }
 
-export function extractAnimacraftV6SoulListedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(
-    transaction,
-    `${packageId}::market::AnimacraftV6SoulListed`,
-    trustedPackageIds,
-  )
-  if (!event) {
-    throw new OnChainVerificationError('AnimacraftV6SoulListed event is missing from the transaction')
-  }
-  return {
-    listingId: readObjectId(event.listing_id, 'AnimacraftV6SoulListed listing_id'),
-    soulId: readObjectId(event.soul_id, 'AnimacraftV6SoulListed soul_id'),
-    appearanceStateId: readObjectId(event.appearance_state_id, 'AnimacraftV6SoulListed appearance_state_id'),
-    appearanceRevision: readNumber(event.appearance_revision, 'AnimacraftV6SoulListed appearance_revision'),
-    ownershipEpoch: readNumber(event.ownership_epoch, 'AnimacraftV6SoulListed ownership_epoch'),
-    loadoutHash: readByteVector(event.loadout_hash, 'AnimacraftV6SoulListed loadout_hash'),
-  }
-}
 
-export function extractAnimacraftV6SoulListingCancelledEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(
-    transaction,
-    `${packageId}::market::AnimacraftV6SoulListingCancelled`,
-    trustedPackageIds,
-  )
-  if (!event) {
-    throw new OnChainVerificationError('AnimacraftV6SoulListingCancelled event is missing from the transaction')
-  }
-  return {
-    listingId: readObjectId(event.listing_id, 'AnimacraftV6SoulListingCancelled listing_id'),
-    soulId: readObjectId(event.soul_id, 'AnimacraftV6SoulListingCancelled soul_id'),
-    appearanceRevision: readNumber(event.appearance_revision, 'AnimacraftV6SoulListingCancelled appearance_revision'),
-  }
-}
 
-export function extractAnimacraftV6SoulPurchasedEvent(
-  transaction: TransactionLike,
-  packageId: string,
-  trustedPackageIds?: string[],
-) {
-  const event = extractTypedEvent(
-    transaction,
-    `${packageId}::market::AnimacraftV6SoulPurchased`,
-    trustedPackageIds,
-  )
-  if (!event) {
-    throw new OnChainVerificationError('AnimacraftV6SoulPurchased event is missing from the transaction')
-  }
-  return {
-    listingId: readObjectId(event.listing_id, 'AnimacraftV6SoulPurchased listing_id'),
-    soulId: readObjectId(event.soul_id, 'AnimacraftV6SoulPurchased soul_id'),
-    appearanceStateId: readObjectId(event.appearance_state_id, 'AnimacraftV6SoulPurchased appearance_state_id'),
-    appearanceRevision: readNumber(event.appearance_revision, 'AnimacraftV6SoulPurchased appearance_revision'),
-    previousOwnershipEpoch: readNumber(event.previous_ownership_epoch, 'AnimacraftV6SoulPurchased previous_ownership_epoch'),
-    ownershipEpoch: readNumber(event.ownership_epoch, 'AnimacraftV6SoulPurchased ownership_epoch'),
-    buyerAddress: readAddress(event.buyer, 'AnimacraftV6SoulPurchased buyer'),
-  }
-}
 
 export function extractSoulListingCancelledEvent(transaction: TransactionLike, packageId: string, trustedPackageIds?: string[]) {
   const event = extractTypedEvent(transaction, `${packageId}::market::SoulListingCancelled`, trustedPackageIds)

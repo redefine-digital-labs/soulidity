@@ -66,7 +66,6 @@ interface ResetCounts {
   soulPaidAccessEntry: number
   soulPaidAccessKindConfig: number
   soulGrantRecord: number
-  bookmark: number
   soulPreparedPurchase: number
   soulUploadBinding: number
   soulTxSync: number
@@ -82,7 +81,6 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
     soulPaidAccessEntry,
     soulPaidAccessKindConfig,
     soulGrantRecord,
-    bookmark,
     soulPreparedPurchase,
     soulUploadBinding,
     soulTxSync,
@@ -95,7 +93,6 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
     prisma.soulPaidAccessEntry.count(),
     prisma.soulPaidAccessKindConfig.count(),
     prisma.soulGrantRecord.count(),
-    prisma.bookmark.count(),
     prisma.soulPreparedPurchase.count(),
     prisma.soulUploadBinding.count(),
     prisma.soulTxSync.count(),
@@ -110,7 +107,6 @@ async function collectCounts(prisma: PrismaClient): Promise<ResetCounts> {
     soulPaidAccessEntry,
     soulPaidAccessKindConfig,
     soulGrantRecord,
-    bookmark,
     soulPreparedPurchase,
     soulUploadBinding,
     soulTxSync,
@@ -127,7 +123,6 @@ function printCounts(label: string, counts: ResetCounts) {
   console.log(`  SoulPaidAccessEntry:                    ${counts.soulPaidAccessEntry}`)
   console.log(`  SoulPaidAccessKindConfig:               ${counts.soulPaidAccessKindConfig}`)
   console.log(`  SoulGrantRecord:                        ${counts.soulGrantRecord}`)
-  console.log(`  Bookmark:                               ${counts.bookmark}`)
   console.log(`  SoulPreparedPurchase:                   ${counts.soulPreparedPurchase}`)
   console.log(`  SoulUploadBinding:                      ${counts.soulUploadBinding}`)
   console.log(`  SoulTxSync:                             ${counts.soulTxSync}`)
@@ -170,7 +165,6 @@ async function main() {
       prisma.soulPaidAccessEntry.deleteMany({}),
       prisma.soulPaidAccessKindConfig.deleteMany({}),
       prisma.soulGrantRecord.deleteMany({}),
-      prisma.bookmark.deleteMany({}),
       prisma.soulPreparedPurchase.deleteMany({}),
       prisma.soulUploadBinding.deleteMany({}),
       prisma.soulTxSync.deleteMany({}),
@@ -192,7 +186,6 @@ async function main() {
       after.soulPaidAccessEntry +
       after.soulPaidAccessKindConfig +
       after.soulGrantRecord +
-      after.bookmark +
       after.soulPreparedPurchase +
       after.soulUploadBinding +
       after.soulTxSync +

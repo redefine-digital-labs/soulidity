@@ -1,0 +1,21 @@
+{
+  "name": "@soulidity/animacraft-render-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./maker-v8-render-core.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./maker-v8-render-core.js",
+      "default": "./maker-v8-render-core.js"
+    }
+  },
+  "files": ["maker-v8-render-core.js", "index.d.ts", "source.json", "README.md"],
+  "dependencies": {
+    "@noble/hashes": "^2.2.0",
+    "@mysten/sui": "^2.16.0"
+  }
+}

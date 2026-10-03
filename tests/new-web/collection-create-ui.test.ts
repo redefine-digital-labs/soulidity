@@ -7,11 +7,12 @@ function readSource(relativePath: string) {
 }
 
 describe('web collection create regression guards', () => {
-  it('keeps the collection create hook pointed at the dedicated sync route', () => {
-    const source = readSource('web/lib/hooks/use-collections.ts')
+  it('uses durable Collection authoring without owned API or destructive recovery reset', () => {
+    const source = readSource('web/lib/hooks/use-collection-publish.ts')
 
-    expect(source).toContain("fetch('/api/collections/create'")
-    expect(source).not.toContain("fetch('/api/collections', {")
+    expect(source).toContain("useSingleSoulAuthoring(approve, 'COLLECTION')")
+    expect(source).not.toContain('fetch(')
+    expect(source).not.toContain('resetRecovery')
   })
 
   it('keeps the desktop create menu pointed at /collections/create', () => {
@@ -71,63 +72,14 @@ describe('web collection create regression guards', () => {
     expect(source).toContain('emptyCollection: batchSouls.length === 0')
   })
 
-  it('shows a distinct post-sign Walrus completion status instead of waiting for signature', () => {
+  it('reads frozen metadata from the durable manifest instead of old session recovery', () => {
     const preview = readSource('web/app/collections/create/preview/page.tsx')
-
-    expect(preview).toContain("'completing-walrus': 'Completing Walrus upload…'")
-    expect(preview).toContain("status === 'completing-walrus'")
-  })
-
-  it('moves collection launch out of signing status before post-register Walrus completion', () => {
-    const source = readSource('web/lib/hooks/use-collection-publish.ts')
-    const signingIdx = source.indexOf("setStatus('signing')")
-    const digestIdx = source.indexOf('setTxDigest(ptb1Digest)', signingIdx)
-    const completionStatusIdx = source.indexOf("setStatus('completing-walrus')", digestIdx)
-    const completionCallIdx = source.indexOf('completeBatchWalrusUploadAfterRegister({', digestIdx)
-
-    expect(signingIdx).toBeGreaterThanOrEqual(0)
-    expect(digestIdx).toBeGreaterThan(signingIdx)
-    expect(completionStatusIdx).toBeGreaterThan(digestIdx)
-    expect(completionStatusIdx).toBeLessThan(completionCallIdx)
-  })
-
-  it('uses bounded waits and fetches for post-paid collection publish boundaries', () => {
-    const source = readSource('web/lib/hooks/use-collection-publish.ts')
-
-    expect(source).toContain('COLLECTION_PUBLISH_FETCH_TIMEOUT_MS')
-    expect(source).toContain('COLLECTION_PUBLISH_SUI_RPC_TIMEOUT_MS')
-    expect(source).toContain('fetchCollectionPublishJson')
-    expect(source).toContain('waitForCollectionPublishTransaction')
-    expect(source).toContain('withCollectionPublishTimeout(')
-
-    expect(source).toContain("await waitForCollectionPublishTransaction(suiClient, recovery.collectionPtb1Digest")
-    expect(source).toContain("await fetchCollectionPublishJson<CollectionSyncResponse>('/api/collections/create'")
-    expect(source).toContain("await fetchCollectionPublishJson<{ listingStatus?: string }>(")
-    expect(source).toContain("await fetchCollectionPublishJson<{")
-    expect(source).not.toContain("await fetch('/api/collections/create'")
-    expect(source).not.toContain("await fetch('/api/souls/publish/batch'")
-    expect(source).not.toContain('const addRes = await fetch(')
-  })
-
-  it('hydrates collection v12 recovery from collectionPtb1Digest instead of the removed txDigest field', () => {
     const provider = readSource('web/components/providers/create-collection-provider.tsx')
-    const hydrateStart = provider.indexOf('// Hydrate draft inputs from recovery state')
-    expect(hydrateStart).toBeGreaterThanOrEqual(0)
-    const block = provider.slice(hydrateStart, provider.indexOf('setIsHydrated(true)', hydrateStart))
-
-    expect(block).toContain('recovery.collectionPtb1Digest')
-    expect(block).toContain('recovery.collectionRightListing')
-    expect(block).toContain('setListCollectionRightOnLaunch(true)')
-    expect(block).not.toContain('recovery.txDigest')
-  })
-
-  it('treats batch publish success as Phase 2 content-root sync, not legacy memory-object sync', () => {
-    const source = readSource('web/lib/hooks/use-collection-publish.ts')
-
-    expect(source).toContain('contentOnChainId: string')
-    expect(source).toContain('sync.contentOnChainId')
-    expect(source).not.toContain('sync.memoryOnChainId')
-    expect(source).not.toContain('missing founding memory')
+    expect(preview).toContain('recovery?.manifest.request.collection')
+    expect(preview).toContain('Check Saved Collection')
+    expect(preview).not.toContain('Start Over')
+    expect(provider).not.toContain('collection-mint-recovery')
+    expect(provider).not.toContain('collectionPtb1Digest')
   })
 
   it('does not enforce a stale supply cap while unlimited mode is active', () => {
@@ -186,33 +138,28 @@ describe('web collection create regression guards', () => {
     expect(createSource).toContain('setCollectionBindTarget(')
     expect(providerSource).toContain("const COLLECTION_BIND_TARGET_KEY = 'soul-create-collection-bind-target'")
     expect(gasSource).toContain('collectionBindTarget: ctx.collectionBindTarget')
-    // Bind now lives in the same PTB as mint via buildPublishSoulWithBindTx /
-    // buildPublishSoulWithCollectionAndListTx — there is no separate add-soul
-    // signAndExecute branch in use-publish anymore.
-    expect(publishHookSource).toContain('buildPublishSoulWithBindTx')
-    expect(publishHookSource).toContain('buildPublishSoulWithCollectionAndListTx')
-    // Mirror still uses the add-soul route, but with txDigest = mint digest.
-    expect(publishHookSource).toContain('/api/collections/${encodeURIComponent(recoveredBindOnChainId)}/add-soul')
-    // Critical regression guard: only one signAndExecute per publish() call.
-    const signAndExecuteOccurrences = (publishHookSource.match(/await signAndExecute\(/g) ?? []).length
-    expect(signAndExecuteOccurrences).toBe(1)
+    // One saved authoring intent: storage REGISTER then a combined mint/bind/
+    // list PTB. There is no post-mint backend or additional bind signature.
+    expect(publishHookSource).toContain('createSoulAuthoringWallet')
+    expect(publishHookSource).toContain('collectionObjectId: request.bindCollectionId')
+    expect(publishHookSource).toContain('collectionAddTxDigest: collection ? digest : null')
+    expect(publishHookSource).not.toContain('/api/')
+    expect(publishHookSource).not.toContain('signAndExecute')
   })
 
   it('preflights collection bind target before the paid Soul mint transaction', () => {
     const source = readSource('web/lib/hooks/use-publish.ts')
-    const preflightIdx = source.indexOf('await preflightCollectionBindTarget(authHeaders, collectionBindOnChainId)')
-    // Builder selection happens after preflight; check the publish-soul builder
-    // family is present and runs after the preflight.
-    const builderIdx = source.indexOf('buildPublishSoulTx(baseBuilderParams)')
+    const preflightIdx = source.indexOf('await preflightCollectionBindTarget({')
+    const builderIdx = source.indexOf('await execution.run(')
 
     expect(preflightIdx).toBeGreaterThanOrEqual(0)
     expect(builderIdx).toBeGreaterThan(preflightIdx)
   })
 
   it('preflights collection bind target before paid Walrus upload preparation', () => {
-    const source = readSource('web/app/create/gas/page.tsx')
-    const preflightIdx = source.indexOf('await preflightCollectionBindTarget(preflightAuthHeaders, ctx.collectionBindTarget.collectionOnChainId)')
-    const uploadIdx = source.indexOf('prepared = await prepareSoulBlobsForBatchPublish')
+    const source = readSource('web/lib/hooks/use-publish.ts')
+    const preflightIdx = source.indexOf('await preflightCollectionBindTarget({')
+    const uploadIdx = source.indexOf('preparation = await prepareSoulAuthoring(', preflightIdx)
 
     expect(preflightIdx).toBeGreaterThanOrEqual(0)
     expect(uploadIdx).toBeGreaterThan(preflightIdx)

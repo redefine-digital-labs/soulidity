@@ -12,18 +12,9 @@
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "typecheck:root": "npm run prisma:generate && tsc -p tsconfig.json --noEmit",
     "typecheck:web": "npm --prefix web run typecheck",
+    "move:native-witness-boundary": "node scripts/verify-native-witness-boundary.mjs",
     "typecheck": "npm run typecheck:root && npm run typecheck:web",
     "build:web:production-env": "CLAWNEWS_LOAD_ENV_LOCAL=false npm --prefix web run build",
-    "publish:soulidity": "tsx scripts/publish-soulidity-and-sync.ts",
-    "pause:soulidity-legacy-market": "tsx scripts/retire-soulidity-legacy-market.ts --pause-only",
-    "upgrade:soulidity-mainnet": "tsx scripts/upgrade-soulidity-mainnet.ts",
-    "retire:soulidity-legacy-market": "tsx scripts/retire-soulidity-legacy-market.ts",
-    "smoke:soulidity": "tsx scripts/smoke-soulidity.ts",
-    "smoke:phase2": "tsx scripts/phase2-smoke.ts",
-    "preflight:animacraft-market-retirement": "tsx scripts/preflight-animacraft-market-retirement.ts",
-    "postflight:animacraft-market-retirement": "tsx scripts/preflight-animacraft-market-retirement.ts",
-    "phase2:prepare": "tsx scripts/phase2-mainnet-prepare.ts",
-    "phase2:fund": "tsx scripts/phase2-mainnet-fund.ts",
     "collect": "tsx src/collector/run.ts",
     "collect:x": "tsx src/collector/run.ts x",
     "produce": "tsx src/producer/run.ts",
@@ -35,9 +26,11 @@
     "vercel:sync-production-env": "tsx scripts/sync-vercel-production-env.ts"
   },
   "dependencies": {
+    "@soulidity/animacraft-render-core": "file:./packages/animacraft-render-core",
     "@mysten/sui": "^2.16.0",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.8.0",
+    "@protobuf-ts/grpcweb-transport": "2.11.1",
     "@soulidity/sdk": "file:./packages/soulidity-sdk",
     "dotenv": "^17.4.2",
     "grammy": "^1.42.0",
@@ -60,7 +53,8 @@
     "prisma": "^7.8.0",
     "tsx": "^4.23.1",
     "typescript": "^6.0.0",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.5",
+    "yaml": "2.8.4"
   },
   "overrides": {
     "@hono/node-server": "2.0.12",

@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { SoulArtworkImage } from './soul-artwork-image'
 import { useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { useGrant } from '@/lib/hooks/use-grant'
-import type { MySoulEntry } from '@soulidity/sdk'
+import { SoulAccessRecoveryPanel } from './soul-access-recovery'
+import type { PortfolioSoul } from '@/lib/soulidity/soul-portfolio-model'
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -14,11 +16,6 @@ import type { MySoulEntry } from '@soulidity/sdk'
 
 function formatAddress(value: string) {
   return `${value.slice(0, 6)}\u2026${value.slice(-4)}`
-}
-
-function formatDate(iso: string) {
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
 }
 
 const fallbackSoulEmojis = ['\uD83E\uDD16', '\uD83E\uDD8A', '\uD83D\uDC7E', '\uD83D\uDEF0\uFE0F', '\uD83D\uDCE1', '\u2699\uFE0F', '\uD83C\uDF38', '\uD83E\uDDFF']
@@ -37,7 +34,8 @@ function getFallbackEmoji(name: string) {
 /* ------------------------------------------------------------------ */
 
 interface GrantModalProps {
-  soul: MySoulEntry
+  soul: Pick<PortfolioSoul, 'onChainId' | 'stateOnChainId' | 'originalPackageId' | 'contentOnChainId' | 'paidAccessListOnChainId'
+    | 'name' | 'imageUrl' | 'effectiveGrantCount' | 'activeGrantDetails'>
   open: boolean
   onClose: () => void
 }
@@ -49,24 +47,34 @@ interface GrantModalProps {
 export function GrantModal({ soul, open, onClose }: GrantModalProps) {
   const [agentAddress, setAgentAddress] = useState('')
   const [reassignmentNotice, setReassignmentNotice] = useState<string | null>(null)
-  const { pending, error, issueGrant, revokeGrant } = useGrant(soul)
+  const [replaceSelected, setReplaceSelected] = useState(false)
+  const [selectedAddress, setSelectedAddress] = useState<string | null>(null)
+  const { pending, error, identityKey, issueGrant, revokeGrant } = useGrant(soul)
+  const identity = useRef(identityKey)
+  useLayoutEffect(() => { identity.current = identityKey }, [identityKey])
+  const formScope = identityKey
+  const [previousFormScope, setPreviousFormScope] = useState(formScope)
+  if (previousFormScope !== formScope) { setPreviousFormScope(formScope); setReassignmentNotice(null); setSelectedAddress(null); setReplaceSelected(false); setAgentAddress('') }
   const queryClient = useQueryClient()
 
-  const hasActiveGrant = soul.activeGrantCount > 0 && soul.activeGrantDetails.length > 0
-  const activeGrant = hasActiveGrant ? soul.activeGrantDetails[0] : null
+  const hasActiveGrant = BigInt(soul.effectiveGrantCount) > 0n && soul.activeGrantDetails.length > 0
+  const activeGrant = hasActiveGrant ? soul.activeGrantDetails.find(grant => grant.granteeAddress === selectedAddress) ?? soul.activeGrantDetails[0] : null
   const { showToast } = useToast()
 
   async function handleAuthorize() {
+    const started = identity.current
     const addr = agentAddress.trim()
     if (!addr) return
     setReassignmentNotice(null)
     try {
-      // If a different grantee already holds the slot, revoke first (capacity=1)
-      if (activeGrant && activeGrant.granteeAddress !== addr) {
+      // Replacement is explicit. A Soul can have multiple concurrent grantees.
+      if (replaceSelected && activeGrant && activeGrant.granteeAddress !== addr) {
         await revokeGrant(activeGrant.granteeAddress)
+        if (identity.current !== started) return
         try {
           await issueGrant(addr)
         } catch (issueError) {
+          if (identity.current !== started) return
           setReassignmentNotice('Current grant was revoked. Issue a new grant to complete reassignment.')
           showToast('Grant reassignment failed — previous grant revoked', 'danger')
           throw issueError
@@ -74,6 +82,7 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
       } else {
         await issueGrant(addr)
       }
+      if (identity.current !== started) return
       setAgentAddress('')
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
       showToast('Agent authorized successfully', 'success')
@@ -84,9 +93,11 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
   }
 
   async function handleRevoke() {
+    const started = identity.current
     if (!activeGrant) return
     try {
       await revokeGrant(activeGrant.granteeAddress)
+      if (identity.current !== started) return
       void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
       showToast('Grant revoked', 'default')
       onClose()
@@ -102,7 +113,7 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-[linear-gradient(135deg,var(--card2),var(--purple-deep))] text-xl">
           {soul.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={soul.imageUrl} alt="" className="h-full w-full rounded-lg object-cover" />
+            <SoulArtworkImage src={soul.imageUrl} alt="" className="h-full w-full rounded-lg object-cover" />
           ) : (
             <span aria-hidden="true">{getFallbackEmoji(soul.name)}</span>
           )}
@@ -139,14 +150,18 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
 
       {/* Info text */}
       <p className="text-xs text-muted mb-5">
-        {'\uD83D\uDD10'} One active grant at a time. Only the grantee can access this Soul&apos;s data &mdash; no one else, including Soulidity.
+        {'\uD83D\uDD10'} Grants are scoped to each address. Adding a grantee preserves other grants and merges its existing live scopes. Owners retain access; public and paid read access are separate.
       </p>
 
       {/* Current Grant section */}
       <div className="mb-5">
         <p className="text-[10px] font-bold text-muted uppercase tracking-[0.1em] mb-2">
-          Current Grant
+          Selected Grant ({soul.activeGrantDetails.length} shown)
         </p>
+        {soul.activeGrantDetails.length > 1 && <select aria-label="Select active grant" value={activeGrant?.granteeAddress ?? ''}
+          onChange={e => setSelectedAddress(e.target.value)} className="mb-2 w-full rounded border border-border bg-card2 p-2 text-xs">
+          {soul.activeGrantDetails.map(grant => <option key={grant.granteeAddress} value={grant.granteeAddress}>{grant.granteeAddress}</option>)}
+        </select>}
         {activeGrant ? (
           <div className="flex items-center justify-between rounded-xl border border-border bg-card2/60 px-4 py-3">
             <div className="flex items-center gap-2 min-w-0">
@@ -159,7 +174,7 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
             <Button
               variant="danger"
               size="sm"
-              disabled={pending === 'revoke'}
+              disabled={pending !== null}
               onClick={handleRevoke}
             >
               {pending === 'revoke' ? 'Revoking\u2026' : 'Revoke'}
@@ -176,10 +191,10 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
       {/* Authorize section */}
       <div className="mb-5">
         <p className="text-[10px] font-bold text-muted uppercase tracking-[0.1em] mb-2">
-          {activeGrant ? 'Reassign to a Different Agent' : 'Authorize an Agent'}
+          Authorize or Update an Agent
         </p>
         <label className="block text-[10px] font-bold text-muted uppercase tracking-[0.1em] mb-1.5">
-          Agent Address or OpenClaw Agent ID
+          Grantee Sui Address
         </label>
         <input
           type="text"
@@ -189,21 +204,23 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
             setReassignmentNotice(null)
           }}
           disabled={!!pending}
-          placeholder="0x_agent_address_or_ocl_id"
+          placeholder="0x…"
           className="w-full rounded-lg border border-border bg-card2 px-3 py-2.5 text-sm text-foreground placeholder:text-muted/50 outline-none focus:border-teal transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         />
         <p className="mt-1.5 text-[11px] text-muted">
-          {activeGrant
-            ? 'Reassigning revokes the current grant first. If the second signature fails, no agent remains authorized until you issue a new grant again.'
+          {replaceSelected && activeGrant
+            ? 'Replacing revokes the selected grant first. If the next action fails, use the recovery record below; the previous grant is not automatically restored.'
             : 'The agent must have a valid Sui identity.'}
         </p>
+        {activeGrant && <label className="mt-2 flex gap-2 text-xs text-muted"><input type="checkbox" checked={replaceSelected}
+          disabled={pending !== null} onChange={e => setReplaceSelected(e.target.checked)} />Replace the selected grant first (two transactions)</label>}
       </div>
 
       {/* Authorize button */}
       <Button
         variant="teal"
         full
-        disabled={!agentAddress.trim() || !!pending || (!!activeGrant && activeGrant.granteeAddress === agentAddress.trim())}
+        disabled={!agentAddress.trim() || !!pending}
         onClick={handleAuthorize}
       >
         {pending === 'revoke' ? 'Revoking\u2026' : pending === 'issue' ? 'Authorizing\u2026' : 'Authorize Agent \u2192'}
@@ -217,6 +234,8 @@ export function GrantModal({ soul, open, onClose }: GrantModalProps) {
       {reassignmentNotice && (
         <p className="mt-3 text-xs text-gold/90">{reassignmentNotice}</p>
       )}
+
+      <SoulAccessRecoveryPanel soul={soul} />
 
       {/* Warning */}
       <p className="mt-4 text-[11px] text-gold/80">

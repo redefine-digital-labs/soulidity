@@ -1,5 +1,7 @@
 'use client'
 
+import { AuthoringRecoveryExport } from '@/components/souls/authoring-recovery-export'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAutoConnectWallet, useCurrentWallet } from '@mysten/dapp-kit'
 import Image from 'next/image'
@@ -9,7 +11,7 @@ import { FlowBar } from '@/components/nav/flow-bar'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { Tag } from '@/components/ui/tag'
-import { buttonStyles } from '@/components/ui/button'
+import { Button, buttonStyles } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { parseDisplayAmountToAtomic } from '@soulidity/sdk'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -22,8 +24,19 @@ import {
   type BatchSoulEntry,
   type SoulFolderFiles,
 } from '@/components/providers/create-collection-provider'
-import { buildCollectionDraftSignature, useCollectionPublish } from '@/lib/hooks/use-collection-publish'
+import { useCollectionPublish } from '@/lib/hooks/use-collection-publish'
 
+import { Modal } from '@/components/ui/modal'
+import { TxRow } from '@/components/shared/tx-row'
+import { formatWal } from '@/components/upload/upload-cost-review'
+import { soulAuthoringCostReview } from '@/lib/soulidity/soul-authoring-cost-review'
+import type { SoulAuthoringPacketRecord } from '@/lib/soulidity/soul-authoring-packet'
+type Approval = { review: ReturnType<typeof soulAuthoringCostReview>; finish: (accepted: boolean) => void }
+function displayAtomic(raw: string | null) {
+  if (raw === null) return ''
+  const value = BigInt(raw), part = (value % 1000000n).toString().padStart(6, '0').replace(/0+$/, '')
+  return (value / 1000000n).toString() + (part ? '.' + part : '')
+}
 // ── Helpers ──
 
 function formatRoyalty(bps: number) {
@@ -80,11 +93,13 @@ function SoulRow({
   folder,
   index,
   recovered,
+  completion,
 }: {
   soul: BatchSoulEntry
   folder?: SoulFolderFiles
   index: number
   recovered?: boolean
+  completion?: 'unchecked' | 'completed' | 'remaining'
 }) {
   const ready = isSoulReady(soul, folder, recovered)
 
@@ -94,7 +109,10 @@ function SoulRow({
 
       <div className="min-w-0 flex-1">
         <span className="text-sm font-semibold text-foreground">{soul.name}</span>
-        <span className="text-sm text-muted"> · #{index + 1} · will mint on Launch</span>
+        <span className="text-sm text-muted"> · #{index + 1} · {completion === 'completed'
+          ? 'already completed; will not mint again' : completion === 'remaining'
+            ? 'remaining in this creation' : completion === 'unchecked'
+              ? 'saved; completion not checked' : 'will mint on Launch'}</span>
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
@@ -118,7 +136,8 @@ function SoulRow({
         </span>
 
         {ready ? (
-          <Tag color="success" className="ml-1 text-[10px]">Ready</Tag>
+          <Tag color="success" className="ml-1 text-[10px]">{completion === 'completed' ? 'Completed'
+            : completion === 'unchecked' ? 'Saved' : completion === 'remaining' ? 'Remaining' : 'Ready'}</Tag>
         ) : (
           <Tag color="danger" className="ml-1 text-[10px]">Incomplete</Tag>
         )}
@@ -179,15 +198,48 @@ const statusLabels: Record<string, string> = {
 
 export default function PreviewPage() {
   const router = useRouter()
-  const ctx = useCreateCollection()
+  const draftCtx = useCreateCollection()
+  const [approval, setApproval] = useState<Approval | null>(null)
+  const approvalRef = useRef<Approval | null>(null)
+  const approve = (record: SoulAuthoringPacketRecord, signal: AbortSignal) => {
+    const review = soulAuthoringCostReview(record)
+    approvalRef.current?.finish(false)
+    if (signal.aborted) return Promise.resolve(false)
+    return new Promise<boolean>(resolve => {
+      const close = () => entry.finish(false)
+      const entry: Approval = { review, finish: accepted => {
+        if (approvalRef.current !== entry) return
+        signal.removeEventListener('abort', close); approvalRef.current = null
+        setApproval(null); resolve(accepted && !signal.aborted)
+      } }
+      approvalRef.current = entry; setApproval(entry)
+      signal.addEventListener('abort', close, { once: true })
+    })
+  }
+  useEffect(() => () => { approvalRef.current?.finish(false) }, [])
+  const { status, error, txDigest, syncData, progress, publish, suiWallet, recovery, loadingRecovery,
+    query, resume, retryPacket, retryFailed, retireExpired, exportRecovery, exportingRecovery } = useCollectionPublish(approve)
+  const saved = recovery?.manifest.request.collection
+  const ctx = saved ? { ...draftCtx, name: saved.name, description: saved.description,
+    extraRoyaltyBps: saved.extraRoyaltyBps, tradeable: saved.tradeable,
+    floorPrice: displayAtomic(saved.floorPriceAtomic), unlimitedSupply: saved.maxSupply === null,
+    supplyCap: saved.maxSupply ?? '', collectionRightListingPrice: displayAtomic(saved.listingPriceAtomic),
+    listCollectionRightOnLaunch: saved.listingPriceAtomic !== null,
+    batchSouls: recovery!.manifest.request.mints.map(m => ({ name: m.name, description: m.description,
+      tags: m.publicPreview.tags, creatorRoyaltyBps: m.creatorRoyaltyBps })),
+    coverImagePreviewUrl: null, soulFolders: new Map<number, SoulFolderFiles>(),
+    addSoulsMethod: recovery!.manifest.request.mints.length ? 'batch-upload' as const : 'skip' as const,
+  } : draftCtx
   const { name, floorPrice, extraRoyaltyBps, tradeable, batchSouls, collectionRightListingPrice, setPublishResult } = ctx
+  const checkedProgress = Boolean(recovery) && progress.totalSouls > 0
+    && progress.totalSouls === recovery!.manifest.request.mints.length
   const { user } = useAuth()
   const completedDigestRef = useRef<string | null>(null)
   // When recovery state has a committed collection TX, bypass File-dependent guards
   // (File objects cannot survive page refresh, but recovery has all uploaded asset refs)
-  const missingStep1 = !ctx.hasRecoveryTx && (!ctx.name.trim() || !ctx.description.trim() || !ctx.coverImageFile)
+  const missingStep1 = !Boolean(recovery) && (!ctx.name.trim() || !ctx.description.trim() || !ctx.coverImageFile)
   const isSkipFlow = ctx.addSoulsMethod === 'skip'
-  const missingStep2 = !ctx.hasRecoveryTx && !isSkipFlow && (!ctx.batchFile || ctx.batchSouls.length === 0 || ctx.batchErrors.length > 0 || ctx.folderErrors.length > 0)
+  const missingStep2 = !Boolean(recovery) && !isSkipFlow && (!ctx.batchFile || ctx.batchSouls.length === 0 || ctx.batchErrors.length > 0 || ctx.folderErrors.length > 0)
   const maxSupplyParam = ctx.unlimitedSupply ? null : parseCollectionSupplyCapInput(ctx.supplyCap)
   // Parse the optional collection-right listing price defensively so render
   // does not crash on intermediate input (e.g. ".", "abc"), and so toggling
@@ -214,24 +266,6 @@ export default function PreviewPage() {
   }, [collectionRightListingActive, collectionRightListingPrice])
   const collectionRightListingPriceAtomic = collectionRightListingParse.atomic
   const collectionRightListingPriceError = collectionRightListingParse.error
-  const draftSignature = !missingStep1 && !missingStep2
-    ? buildCollectionDraftSignature({
-        name: ctx.name,
-        description: ctx.description,
-        extraRoyaltyBps: ctx.extraRoyaltyBps,
-        tradeable: ctx.tradeable,
-        floorPriceAtomic: ctx.floorPrice ? parseDisplayAmountToAtomic(ctx.floorPrice).toString() : null,
-        maxSupply: maxSupplyParam,
-        collectionRightListing: collectionRightListingPriceAtomic ? { priceAtomic: collectionRightListingPriceAtomic } : null,
-        souls: ctx.batchSouls.map((s) => ({
-          name: s.name,
-          description: s.description,
-          tags: s.tags,
-          creatorRoyaltyBps: s.creatorRoyaltyBps,
-        })),
-      })
-    : null
-  const { status, error, txDigest, syncData, progress, publish, suiWallet, resetRecovery } = useCollectionPublish(draftSignature)
   const { showToast } = useToast()
   const walletConnection = useCurrentWallet()
   const autoConnectStatus = useAutoConnectWallet()
@@ -242,7 +276,7 @@ export default function PreviewPage() {
   const displayName = user?.displayName || user?.tgName || 'you'
   const soulNames = batchSouls.map((s) => s.name).join(', ')
 
-  const isBusy = status !== 'idle' && status !== 'done' && status !== 'error'
+  const isBusy = loadingRecovery || exportingRecovery || status !== 'idle' && status !== 'done' && status !== 'error'
   const walletRestoring = !suiWallet && (walletConnection.isConnecting || autoConnectStatus === 'idle')
   const walletActionState = getWalletActionState({
     hasActiveWallet: !!suiWallet,
@@ -251,18 +285,17 @@ export default function PreviewPage() {
     busy: isBusy,
     busyLabel: statusLabels[status] ?? 'Processing...',
     balanceBlocked: false,
-    recovery: !!txDigest && !ctx.coverImageFile,
+    recovery: false,
     txDigest,
-    readyLabel: 'Sign & Launch',
+    readyLabel: recovery ? retryPacket ? retryPacket.retired ? 'Retry Retired Transaction' : 'Retry Failed Transaction' : 'Resume Saved Collection' : 'Sign & Launch',
     recoveryReadyLabel: 'Resume Launch',
     reconnectLabel: 'Reconnect Sui Wallet',
     connectLabel: 'Connect Sui Wallet',
   })
-  const missingLaunchInput = !ctx.coverImageFile && !txDigest
+  const missingLaunchInput = !ctx.coverImageFile && !recovery
   const launchDisabled =
     walletActionState.disabled
-    || missingLaunchInput
-    || collectionRightListingPriceError !== null
+    || (!walletActionState.needsWalletReconnect && (missingLaunchInput || collectionRightListingPriceError !== null))
 
   // Store publish result in context and navigate to success when done
   useEffect(() => {
@@ -293,15 +326,15 @@ export default function PreviewPage() {
   }, [status, error, showToast])
 
   useEffect(() => {
-    if (!ctx.isHydrated) return
+    if (!ctx.isHydrated || loadingRecovery || recovery || !suiWallet) return
     if (missingStep1) {
       router.replace('/collections/create')
     } else if (missingStep2) {
       router.replace('/collections/create/souls')
     }
-  }, [ctx.isHydrated, missingStep1, missingStep2, router])
+  }, [ctx.isHydrated, loadingRecovery, recovery, suiWallet, missingStep1, missingStep2, router])
 
-  if (!ctx.isHydrated) {
+  if (!ctx.isHydrated || loadingRecovery) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-8">
         <div className="h-[420px] rounded-xl bg-card animate-pulse" />
@@ -309,12 +342,13 @@ export default function PreviewPage() {
     )
   }
 
-  if (missingStep1 || missingStep2) {
+  if (suiWallet && !recovery && (missingStep1 || missingStep2)) {
     return null
   }
 
   async function handleLaunch() {
-    if (!ctx.coverImageFile && !txDigest) return
+    if (recovery) { await (retryPacket ? retryFailed() : resume()); return }
+    if (!ctx.coverImageFile) return
     if (collectionRightListingPriceError) {
       showToast(collectionRightListingPriceError, 'danger')
       return
@@ -387,7 +421,7 @@ export default function PreviewPage() {
                   {ctx.name || 'Untitled Collection'}
                 </h3>
                 <p className="mt-0.5 text-sm text-muted">
-                  by {displayName} · {ctx.batchSouls.length} new Soul{ctx.batchSouls.length !== 1 ? 's' : ''} · Floor: {floor} USDC
+                  by {displayName} · {ctx.batchSouls.length} {recovery ? 'saved' : 'new'} Soul{ctx.batchSouls.length !== 1 ? 's' : ''} · Floor: {floor} USDC
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Tag color="purple">+ Collection</Tag>
@@ -405,7 +439,7 @@ export default function PreviewPage() {
             {ctx.batchSouls.length > 0 && (
               <div>
                 <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-muted">
-                  Souls ({ctx.batchSouls.length} new · 0 existing)
+                  {recovery ? `Souls (${ctx.batchSouls.length} in saved creation)` : `Souls (${ctx.batchSouls.length} new · 0 existing)`}
                 </p>
                 <div className="space-y-2">
                   {ctx.batchSouls.map((soul, i) => (
@@ -414,7 +448,9 @@ export default function PreviewPage() {
                       soul={soul}
                       folder={ctx.soulFolders.get(i + 1)}
                       index={i}
-                      recovered={ctx.hasRecoveryTx && ctx.soulFolders.size === 0}
+                      recovered={Boolean(recovery) && ctx.soulFolders.size === 0}
+                      completion={!recovery ? undefined : !checkedProgress ? 'unchecked'
+                        : i < progress.mintedSouls ? 'completed' : 'remaining'}
                     />
                   ))}
                 </div>
@@ -431,9 +467,12 @@ export default function PreviewPage() {
               <SettingRow label="Action" value="Launch Soul Collection" bold />
               <SettingRow label="Soul Collection" value={ctx.name || 'Untitled'} bold />
               <SettingRow
-                label="Souls to mint"
+                label={recovery ? 'Saved creation progress' : 'Souls to mint'}
                 value={
-                  ctx.batchSouls.length === 0
+                  recovery && ctx.batchSouls.length > 0
+                    ? checkedProgress ? `${ctx.batchSouls.length - progress.mintedSouls} remaining · ${progress.mintedSouls} already completed`
+                      : `${ctx.batchSouls.length} saved · check completed count before continuing`
+                    : ctx.batchSouls.length === 0
                     ? `0 now · capacity ${ctx.unlimitedSupply ? 'Unlimited' : (ctx.supplyCap || 'Unlimited')}`
                     : `${ctx.batchSouls.length} (${soulNames})`
                 }
@@ -480,6 +519,7 @@ export default function PreviewPage() {
               <label className="flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
+                  disabled={Boolean(recovery)}
                   checked={ctx.listCollectionRightOnLaunch}
                   onChange={(e) => ctx.setListCollectionRightOnLaunch(e.currentTarget.checked)}
                   className="h-4 w-4 accent-purple"
@@ -493,6 +533,7 @@ export default function PreviewPage() {
                     <input
                       type="text"
                       inputMode="decimal"
+                      disabled={Boolean(recovery)}
                       value={ctx.collectionRightListingPrice}
                       onChange={(e) => ctx.setCollectionRightListingPrice(e.currentTarget.value)}
                       placeholder="e.g. 100.00"
@@ -514,18 +555,7 @@ export default function PreviewPage() {
           {error && (
             <div className="rounded-xl border border-danger/30 bg-danger/8 px-4 py-3">
               <p className="text-[13px] font-medium text-danger">{error}</p>
-              {txDigest && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetRecovery()
-                    router.push('/collections/create')
-                  }}
-                  className="mt-2 text-[13px] font-semibold text-danger underline underline-offset-2 hover:text-foreground"
-                >
-                  Start Over
-                </button>
-              )}
+
             </div>
           )}
 
@@ -538,9 +568,18 @@ export default function PreviewPage() {
             </p>
           </div>
 
+          {recovery && <div className="space-y-3" aria-label="Saved Collection">
+            <p role="status">{recovery.manifest.request.mints.length === 0
+              ? 'No initial Souls. Check Saved Collection to verify the Collection and its stored files.' : checkedProgress
+              ? `${progress.mintedSouls} of ${recovery.manifest.request.mints.length} Souls proved complete.`
+              : 'Completed count has not been checked on this page. Check Saved Collection to verify existing progress.'} Saved files and paid storage are retained.</p>
+            <AuthoringRecoveryExport disabled={isBusy || !suiWallet} onExport={exportRecovery} />
+            <Button disabled={isBusy || !suiWallet} onClick={() => void query()}>Check Saved Collection</Button>
+            {txDigest && !retryPacket && <Button disabled={isBusy || !suiWallet} onClick={() => void retireExpired()}>Check Expiry &amp; Retire</Button>}
+          </div>}
           {/* ── Action buttons ── */}
           <div className="flex items-center gap-3">
-            <Link
+            {!recovery && <Link
               href="/collections/create/souls"
               className={buttonStyles({
                 variant: 'outline',
@@ -549,7 +588,7 @@ export default function PreviewPage() {
               })}
             >
               ← Back
-            </Link>
+            </Link>}
             <button
               type="button"
               disabled={launchDisabled}
@@ -569,21 +608,28 @@ export default function PreviewPage() {
         </PageContainer>
       </div>
 
+      <Modal open={Boolean(approval)} onClose={() => approval?.finish(false)} title="Review Creation Transaction"
+        subtitle="Confirm this saved transaction before opening your wallet. Storage registration and Soul mint are separate transactions.">
+        {approval && <div className="space-y-4 text-sm">
+          <TxRow label="Stage">{approval.review.stage === 'REGISTER' ? 'Pay for storage' : 'Certify content & mint Soul'}</TxRow>
+          <TxRow label="WAL payment">{formatWal(approval.review.wal)}</TxRow>
+          <TxRow label="Maximum gas">{approval.review.gasBudgetMist.toString()} MIST</TxRow>
+          <TxRow label="Expires after epoch">{approval.review.expirationEpoch}</TxRow>
+          <div className="break-all font-mono text-xs">{approval.review.digest}</div>
+          <p className="text-muted">Cancelling retains the saved creation. It does not delete paid storage or create a replacement transaction.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => approval.finish(false)}>Cancel</Button>
+            <Button variant="gold" onClick={() => approval.finish(true)}>Continue to Wallet</Button>
+          </div>
+        </div>}
+      </Modal>
       {/* ── Launching overlay ── */}
-      {isBusy && (
+      {isBusy && !approval && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="mx-4 rounded-2xl border border-purple/40 bg-[linear-gradient(135deg,rgba(28,17,63,0.97),rgba(18,10,41,0.98))] px-14 py-10 text-center shadow-[0_24px_64px_rgba(124,58,237,0.3)]">
             <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-purple/30 border-t-purple" />
             <h3 className="text-lg font-bold text-foreground">
-              {status === 'uploading'
-                ? 'Uploading collection assets…'
-                : status === 'completing-walrus'
-                  ? 'Completing Walrus Upload…'
-                : status === 'minting-souls'
-                ? `Minting Soul ${progress.mintedSouls + 1} of ${progress.totalSouls}…`
-                : status === 'binding-souls'
-                  ? `Binding Soul ${progress.boundSouls + 1} of ${progress.totalSouls}…`
-                  : 'Creating Collection…'}
+              {statusLabels[status] ?? 'Preparing saved Collection…'}
             </h3>
             <p className="mt-1.5 text-sm text-muted">
               {statusLabels[status] ?? 'Processing…'}

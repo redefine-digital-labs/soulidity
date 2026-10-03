@@ -22,7 +22,7 @@ import { config, parse } from 'dotenv'
 //
 // Import this module for its side effect at the top of any script that
 // reads env vars: `import './lib/dotenv'`. For specialty env files (e.g.
-// `.env.soulidity-smoke` consumed only by the smoke harness), call
+// `.env.e2e` consumed only by the E2E setup tool), call
 // `loadEnvFile(relativePath)` after the side-effect import.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 

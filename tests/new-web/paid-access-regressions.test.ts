@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -7,31 +7,24 @@ function readSource(relativePath: string) {
 }
 
 describe('paid-access revoke recovery', () => {
-  it('persists the committed revoke digest before mirror sync and replays it before signing again', () => {
+  it('routes revoke through exact-byte recovery and retires digest-only mirror replay', () => {
     const source = readSource('web/lib/hooks/use-paid-access.ts')
-    const signed = source.indexOf('const result = await signAndExecute(tx)')
-    const asserted = source.indexOf("const executed = assertSoulidityTxSucceeded(result, 'Paid-access revoke transaction')")
-    const persisted = source.indexOf('persistPaidAccessRevokePending({')
-    const synced = source.indexOf('const synced = await postRevokeSync({ txDigest: executed.digest, buyerAddress, kind })')
-
-    expect(signed).toBeGreaterThanOrEqual(0)
-    expect(asserted).toBeGreaterThan(signed)
-    expect(persisted).toBeGreaterThan(asserted)
-    expect(synced).toBeGreaterThan(persisted)
-    expect(source).toContain('assertSoulidityTxSucceeded,')
-    expect(source).toContain('readPaidAccessRevokePendingForSoul({')
-    expect(source).toContain('samePendingTarget(record, buyerAddress, kind)')
-    expect(source).toContain('await replayPendingRecord(record)')
+    expect(source).toContain('useSoulAccessMutations(soul, onSynced)')
+    expect(source).toContain("access.mutate({ action: 'paid-revoke', granteeAddress: buyerAddress, kind })")
+    expect(source).not.toContain('signAndExecute')
+    expect(source).not.toContain('postRevokeSync')
+    expect(readSource('web/lib/upload/walrus-recovery.ts')).not.toContain('persistPaidAccessRevokePending')
+    for (const route of ['paid-access', 'grant', 'grant-capacity'])
+      expect(existsSync(resolve(process.cwd(), `web/app/api/souls/[id]/${route}/route.ts`))).toBe(false)
   })
 })
 
 describe('paid-access ownership epoch filtering', () => {
-  it('exposes the live SoulState ownership epoch on the human detail payload', () => {
-    const route = readSource('web/app/api/souls/[id]/route.ts')
-
-    expect(route).toContain('getSoulStateObject(soul.stateOnChainId, packageId')
-    expect(route).toContain('currentOwnershipEpoch = state.ownershipEpoch')
-    expect(route).toContain('currentOwnershipEpoch,')
+  it('exposes the verified raw SoulState ownership epoch on browser detail without a Number conversion', () => {
+    const model = readSource('web/lib/soulidity/soul-detail-model.ts')
+    expect(model).toContain('s.ownershipEpoch === a.ownershipEpoch')
+    expect(model).toContain('currentOwnershipEpoch: s.ownershipEpoch')
+    expect(model).toContain('ownershipEpochSnapshot: e.ownership_epoch_snapshot')
   })
 
   it('counts and labels only same-epoch paid-access rows as active', () => {

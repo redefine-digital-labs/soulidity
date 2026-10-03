@@ -22,44 +22,16 @@ const EStateConfigKeyEmpty: u64 = 17;
 const EStateConfigKeyMissing: u64 = 18;
 const EAnimacraftProvenanceAlreadyBound: u64 = 19;
 const EAnimacraftProvenanceMissing: u64 = 20;
-const EAnimacraftAppearanceV6AlreadyBound: u64 = 21;
-const EAnimacraftAppearanceV6Missing: u64 = 22;
-const EAnimacraftWardrobeV7AlreadyBound: u64 = 23;
-const EAnimacraftWardrobeV7Missing: u64 = 24;
-const EAnimacraftPhysicalV7ProfileAlreadyBound: u64 = 25;
-const EAnimacraftPhysicalV7ProfileMissing: u64 = 26;
-const EAnimacraftPhysicalV7RecipeHashInvalid: u64 = 27;
+const EAnimacraftNativeEquipmentBound: u64 = 28;
+const EAnimacraftNativeEquipmentMarketRequired: u64 = 29;
 
 const PROVENANCE_NATIVE: u8 = 0;
 const PROVENANCE_IMPORTED: u8 = 1;
 const PROVENANCE_PERSONAL_JOIN: u8 = 2;
 const PROVENANCE_ANIMACRAFT: u8 = 3;
-/// Protocol-reserved dynamic-field key. Using a framework primitive keeps the
-/// binding queryable after future package upgrades; a package-defined key type
-/// would remain pinned to the version that first introduced it.
-const ANIMACRAFT_PROVENANCE_KEY: u8 = 1;
-/// Commerce-v5 companion provenance. This deliberately uses a second
-/// primitive dynamic-field key instead of changing `SoulState` or the already
-/// deployed `AnimacraftProvenance` layout.
-const ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY: u8 = 2;
-/// Composable-assets-v6 companion state. As with the v5 provenance binding,
-/// the primitive key deliberately preserves the deployed `SoulState` layout.
-const ANIMACRAFT_APPEARANCE_V6_KEY: u8 = 3;
-/// Physical-composition-v7 companion. The exact shared wardrobe object ID is
-/// bound atomically during canonical mint without changing deployed state
-/// layout. Legacy market entry points use this marker to fail closed instead
-/// of bypassing the wardrobe's external-asset transfer invariant.
-const ANIMACRAFT_WARDROBE_V7_KEY: u8 = 4;
-/// Trusted physical-composition-v7 mint identity. These three primitive
-/// fields are written only by the dedicated canonical Complete boundary;
-/// the public wardrobe adapter may verify them but cannot create them.
-const ANIMACRAFT_PHYSICAL_V7_ROOT_KEY: u8 = 5;
-const ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY: u8 = 6;
-const ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY: u8 = 7;
-/// Exact Complete selection hash authenticated by CommerceV5. This is copied
-/// from the non-droppable authorization by the canonical v7 mint boundary;
-/// neither the wallet nor the later wardrobe adapter can substitute it.
-const ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY: u8 = 8;
+/// Exact immutable V8 native binding; product provenance kind remains Animacraft.
+const ANIMACRAFT_NATIVE_V8_BINDING_KEY: u8 = 9;
+const ANIMACRAFT_NATIVE_V8_EQUIPMENT_KEY: u8 = 10;
 const VERSION: u64 = 1;
 
 public struct SOUL has drop {}
@@ -77,6 +49,18 @@ public struct Soul has key, store {
     provenance_kind: u8,
     origin_ref: Option<String>,
     creator: address,
+}
+
+/// One immutable backlink on the Soul UID. The key is constructible only in
+/// this module; no mutable UID, update, or removal API is exposed.
+public struct SoulStatePointerKeyV1 has copy, drop, store {
+    version: u8,
+}
+
+/// A single private-library head slot, distinct from public config_ext. Only
+/// this module can construct the key; sibling modules never receive the UID.
+public struct NamedLoadoutHeadKeyV1 has copy, drop, store {
+    version: u8,
 }
 
 public struct ActiveGrantSlot has copy, drop, store {
@@ -254,142 +238,37 @@ public fun is_listed(self: &SoulState): bool {
 }
 
 public fun has_animacraft_provenance(self: &SoulState): bool {
-    df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_PROVENANCE_KEY)
+    has_animacraft_native_v8_binding(self)
 }
 
-public fun animacraft_provenance_id(self: &SoulState): ID {
-    assert!(
-        df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_PROVENANCE_KEY),
-        EAnimacraftProvenanceMissing,
-    );
-    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_PROVENANCE_KEY)
+public fun has_animacraft_native_v8_binding(self: &SoulState): bool {
+    df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_NATIVE_V8_BINDING_KEY)
 }
 
-public fun has_animacraft_output_provenance_v5(self: &SoulState): bool {
-    df::exists_with_type<u8, ID>(
-        &self.id,
-        ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
-    )
+public fun animacraft_native_v8_binding_id(self: &SoulState): ID {
+    assert!(has_animacraft_native_v8_binding(self), EAnimacraftProvenanceMissing);
+    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_NATIVE_V8_BINDING_KEY)
 }
 
-public fun animacraft_output_provenance_v5_id(self: &SoulState): ID {
-    assert!(
-        df::exists_with_type<u8, ID>(
-            &self.id,
-            ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
-        ),
-        EAnimacraftProvenanceMissing,
-    );
-    *df::borrow<u8, ID>(
-        &self.id,
-        ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
-    )
+public(package) fun bind_animacraft_native_v8(state: &mut SoulState, binding_id: ID) {
+    assert!(!has_animacraft_provenance(state), EAnimacraftProvenanceAlreadyBound);
+    df::add(&mut state.id, ANIMACRAFT_NATIVE_V8_BINDING_KEY, binding_id);
 }
 
-public fun has_animacraft_appearance_v6(self: &SoulState): bool {
-    df::exists_with_type<u8, ID>(
-        &self.id,
-        ANIMACRAFT_APPEARANCE_V6_KEY,
-    )
+public fun has_animacraft_native_equipment_v8(state: &SoulState): bool {
+    df::exists_with_type<u8, ID>(&state.id, ANIMACRAFT_NATIVE_V8_EQUIPMENT_KEY)
 }
-
-public fun animacraft_appearance_v6_id(self: &SoulState): ID {
-    assert!(
-        df::exists_with_type<u8, ID>(
-            &self.id,
-            ANIMACRAFT_APPEARANCE_V6_KEY,
-        ),
-        EAnimacraftAppearanceV6Missing,
-    );
-    *df::borrow<u8, ID>(
-        &self.id,
-        ANIMACRAFT_APPEARANCE_V6_KEY,
-    )
+public fun animacraft_native_equipment_id_v8(state: &SoulState): ID {
+    *df::borrow<u8, ID>(&state.id, ANIMACRAFT_NATIVE_V8_EQUIPMENT_KEY)
 }
-
-public fun has_animacraft_wardrobe_v7(self: &SoulState): bool {
-    df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_WARDROBE_V7_KEY)
+public(package) fun bind_animacraft_native_equipment_v8(state: &mut SoulState, loadout_id: ID) {
+    assert!(has_animacraft_native_v8_binding(state), EAnimacraftProvenanceMissing);
+    assert!(!has_animacraft_native_equipment_v8(state), EAnimacraftNativeEquipmentBound);
+    df::add(&mut state.id, ANIMACRAFT_NATIVE_V8_EQUIPMENT_KEY, loadout_id);
 }
-
-public fun animacraft_wardrobe_v7_id(self: &SoulState): ID {
-    assert!(
-        df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_WARDROBE_V7_KEY),
-        EAnimacraftWardrobeV7Missing,
-    );
-    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_WARDROBE_V7_KEY)
-}
-
-public fun has_animacraft_physical_v7_profile(self: &SoulState): bool {
-    df::exists_with_type<u8, ID>(&self.id, ANIMACRAFT_PHYSICAL_V7_ROOT_KEY)
-        && df::exists_with_type<u8, ID>(
-            &self.id,
-            ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
-        )
-        && df::exists_with_type<u8, ID>(
-            &self.id,
-            ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY,
-        )
-        && df::exists_with_type<u8, vector<u8>>(
-            &self.id,
-            ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
-        )
-}
-
-public fun animacraft_physical_v7_root_id(self: &SoulState): ID {
-    assert!(
-        df::exists_with_type<u8, ID>(
-            &self.id,
-            ANIMACRAFT_PHYSICAL_V7_ROOT_KEY,
-        ),
-        EAnimacraftPhysicalV7ProfileMissing,
-    );
-    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_PHYSICAL_V7_ROOT_KEY)
-}
-
-public fun animacraft_physical_v7_composition_profile_id(
-    self: &SoulState,
-): ID {
-    assert!(
-        df::exists_with_type<u8, ID>(
-            &self.id,
-            ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
-        ),
-        EAnimacraftPhysicalV7ProfileMissing,
-    );
-    *df::borrow<u8, ID>(
-        &self.id,
-        ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
-    )
-}
-
-public fun animacraft_physical_v7_profile_id(self: &SoulState): ID {
-    assert!(
-        df::exists_with_type<u8, ID>(
-            &self.id,
-            ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY,
-        ),
-        EAnimacraftPhysicalV7ProfileMissing,
-    );
-    *df::borrow<u8, ID>(&self.id, ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY)
-}
-
-/// Package-private because this value is a cross-package authorization input,
-/// not client metadata. The public RPC can still audit the primitive dynamic
-/// field, while only Soulidity code can feed it to Animacraft wardrobe mint.
-public(package) fun animacraft_physical_v7_recipe_hash(
-    self: &SoulState,
-): &vector<u8> {
-    assert!(
-        df::exists_with_type<u8, vector<u8>>(
-            &self.id,
-            ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
-        ),
-        EAnimacraftPhysicalV7ProfileMissing,
-    );
-    df::borrow<u8, vector<u8>>(
-        &self.id,
-        ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
-    )
+public(package) fun unbind_animacraft_native_equipment_v8(state: &mut SoulState, loadout_id: ID) {
+    assert!(animacraft_native_equipment_id_v8(state) == loadout_id, EAnimacraftNativeEquipmentBound);
+    let _: ID = df::remove(&mut state.id, ANIMACRAFT_NATIVE_V8_EQUIPMENT_KEY);
 }
 
 public fun has_state_config(self: &SoulState, key: String): bool {
@@ -481,6 +360,18 @@ public(package) fun create_state(
     }
 }
 
+/// Called once by the common mint path before the Soul enters Kiosk custody.
+/// Binding a foreign State or binding twice aborts the complete mint PTB.
+public(package) fun bind_state_pointer(soul: &mut Soul, state: &SoulState) {
+    assert!(state.soul_id == object::id(soul), ESoulStateMismatch);
+    df::add(&mut soul.id, SoulStatePointerKeyV1 { version: 1 }, object::id(state));
+}
+
+#[test_only]
+public fun state_pointer_for_testing(soul: &Soul): ID {
+    *df::borrow<SoulStatePointerKeyV1, ID>(&soul.id, SoulStatePointerKeyV1 { version: 1 })
+}
+
 /// Emit `SoulCreated` only after `content_id` has been bound. The market
 /// mint flow guarantees this ordering; aborts if called too early.
 public(package) fun emit_created_after_content_bound(
@@ -515,111 +406,27 @@ public(package) fun provenance_animacraft(): u8 {
     PROVENANCE_ANIMACRAFT
 }
 
-public(package) fun bind_animacraft_provenance(
-    state: &mut SoulState,
-    provenance_id: ID,
-) {
-    assert!(
-        !df::exists_with_type<u8, ID>(&state.id, ANIMACRAFT_PROVENANCE_KEY),
-        EAnimacraftProvenanceAlreadyBound,
-    );
-    df::add(&mut state.id, ANIMACRAFT_PROVENANCE_KEY, provenance_id);
-}
-
-public(package) fun bind_animacraft_output_provenance_v5(
-    state: &mut SoulState,
-    provenance_id: ID,
-) {
-    assert!(
-        !df::exists_with_type<u8, ID>(
-            &state.id,
-            ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
-        ),
-        EAnimacraftProvenanceAlreadyBound,
-    );
-    df::add(
-        &mut state.id,
-        ANIMACRAFT_OUTPUT_PROVENANCE_V5_KEY,
-        provenance_id,
-    );
-}
-
-public(package) fun bind_animacraft_appearance_v6(
-    state: &mut SoulState,
-    appearance_state_id: ID,
-) {
-    assert!(
-        !df::exists_with_type<u8, ID>(
-            &state.id,
-            ANIMACRAFT_APPEARANCE_V6_KEY,
-        ),
-        EAnimacraftAppearanceV6AlreadyBound,
-    );
-    df::add(
-        &mut state.id,
-        ANIMACRAFT_APPEARANCE_V6_KEY,
-        appearance_state_id,
-    );
-}
-
-public(package) fun bind_animacraft_wardrobe_v7(
-    state: &mut SoulState,
-    wardrobe_id: ID,
-) {
-    assert!(
-        !df::exists_with_type<u8, ID>(&state.id, ANIMACRAFT_WARDROBE_V7_KEY),
-        EAnimacraftWardrobeV7AlreadyBound,
-    );
-    df::add(&mut state.id, ANIMACRAFT_WARDROBE_V7_KEY, wardrobe_id);
-}
-
-public(package) fun bind_animacraft_physical_v7_profile(
-    state: &mut SoulState,
-    root_id: ID,
-    composition_profile_id: ID,
-    physical_profile_id: ID,
-    authenticated_recipe_hash: vector<u8>,
-) {
-    assert!(
-        authenticated_recipe_hash.length() == 32,
-        EAnimacraftPhysicalV7RecipeHashInvalid,
-    );
-    assert!(
-        !df::exists_with_type<u8, ID>(
-            &state.id,
-            ANIMACRAFT_PHYSICAL_V7_ROOT_KEY,
-        ) && !df::exists_with_type<u8, ID>(
-            &state.id,
-            ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
-        ) && !df::exists_with_type<u8, ID>(
-            &state.id,
-            ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY,
-        ) && !df::exists_with_type<u8, vector<u8>>(
-            &state.id,
-            ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
-        ),
-        EAnimacraftPhysicalV7ProfileAlreadyBound,
-    );
-    df::add(&mut state.id, ANIMACRAFT_PHYSICAL_V7_ROOT_KEY, root_id);
-    df::add(
-        &mut state.id,
-        ANIMACRAFT_PHYSICAL_V7_COMPOSITION_PROFILE_KEY,
-        composition_profile_id,
-    );
-    df::add(
-        &mut state.id,
-        ANIMACRAFT_PHYSICAL_V7_PROFILE_KEY,
-        physical_profile_id,
-    );
-    df::add(
-        &mut state.id,
-        ANIMACRAFT_PHYSICAL_V7_RECIPE_HASH_KEY,
-        authenticated_recipe_hash,
-    );
-}
-
 public(package) fun assert_owner(state: &SoulState, owner: address) {
     assert!(state.current_owner == owner, ENotSoulOwner);
+}
+
+/// The fixed key avoids a Soul <-> named-loadout module dependency cycle.
+/// These package-only helpers cannot address any other child or expose the UID.
+public(package) fun has_named_loadout_head_v1(state: &SoulState): bool {
+    df::exists(&state.id, NamedLoadoutHeadKeyV1 { version: 1 })
+}
+
+public(package) fun named_loadout_head_v1<T: store>(state: &SoulState): &T {
+    df::borrow(&state.id, NamedLoadoutHeadKeyV1 { version: 1 })
+}
+
+public(package) fun replace_named_loadout_head_v1<T: store + drop>(state: &mut SoulState, head: T) {
+    let key = NamedLoadoutHeadKeyV1 { version: 1 };
+    if (df::exists(&state.id, key)) {
+        *df::borrow_mut<NamedLoadoutHeadKeyV1, T>(&mut state.id, key) = head;
+    } else {
+        df::add(&mut state.id, key, head);
+    };
 }
 
 public(package) fun assert_matches_state(self: &Soul, state: &SoulState) {
@@ -635,6 +442,9 @@ public(package) fun bind_collection(state: &mut SoulState, collection_id: ID) {
 /// list flows and back to `false` by cancel / buy paths so other modules
 /// (currently `collection::add_soul`) can reject conflicting transitions.
 public(package) fun set_listed(state: &mut SoulState, listed: bool) {
+    // The generic Market cannot silently sell a Soul with wallet-owned locked
+    // components. Dedicated V8 custody/recovery integration must precede release.
+    assert!(!listed || !has_animacraft_native_equipment_v8(state), EAnimacraftNativeEquipmentMarketRequired);
     state.is_listed = listed;
 }
 
@@ -731,6 +541,13 @@ public(package) fun active_grant_contains_id(state: &SoulState, grant_id: ID): b
         && state.active_grant_count > 0
 }
 
+/// Read the actual grant epoch/index for upper-package integration assertions.
+/// No grant mutation or production visibility is added.
+#[test_only]
+public fun active_grant_contains_grantee_for_testing(state: &SoulState, grantee: address): bool {
+    active_grant_contains_grantee(state, grantee)
+}
+
 public(package) fun active_grant_has_grantee_row(
     state: &SoulState,
     grantee: address,
@@ -774,6 +591,7 @@ public(package) fun rotate_owner(
     new_owner: address,
     new_kiosk_id: ID,
 ) {
+    assert!(!has_animacraft_native_equipment_v8(state), EAnimacraftNativeEquipmentMarketRequired);
     assert!(new_owner != @0x0, EInvalidOwner);
 
     let previous_owner = state.current_owner;

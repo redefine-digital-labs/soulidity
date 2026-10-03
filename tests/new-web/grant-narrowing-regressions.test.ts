@@ -6,65 +6,33 @@ function readSource(relativePath: string) {
   return readFileSync(resolve(process.cwd(), relativePath), 'utf8')
 }
 
-/**
- * Regression locks for the "grant::issue narrows scope" class of bug:
- *
- *   grant::issue REPLACES an existing grantee's slot wholesale with the
- *   new scope_mask. If any Authorize entry point issues with the bare
- *   single-bit `kindScopeMask` for an agent who already holds other
- *   scopes, the supersede silently NARROWS them. Auto-grant on sprite
- *   upload (c1e3ab5) already merges via the plan endpoint, but three
- *   other entry points used to issue with the single-bit mask:
- *
- *     - banner: web/components/souls/agent-grant-recommendations.tsx
- *     - pet batch: web/app/account/pets/_components/PetGrantDialog.tsx
- *     - manual form: web/app/souls/[id]/page.tsx (GrantsPanel)
- *
- *   Plus the related Issue 2: owner's first sprite upload would skip
- *   set-active if the user unchecked the box, leaving the desktop
- *   catalog with no active binding → no download button.
- *
- *   These tests lock the fix in place: banner reads desiredScopeMask
- *   from the plan response, pet/form preflight /grant-merge-masks and
- *   issue with mergedScopeMask, and sprite-first-upload forces
- *   setActive regardless of the checkbox.
- */
-
-describe('agent-grant-recommendations banner', () => {
-  it('issues with the plan-returned desiredScopeMask, not the single-bit kindScopeMask', () => {
-    const source = readSource('web/components/souls/agent-grant-recommendations.tsx')
-
-    // Type: target carries desiredScopeMask
-    expect(source).toMatch(/desiredScopeMask:\s*number/)
-    // Call site: issueGrant uses target.desiredScopeMask + the per-target
-    // capacity bump derived from the response's currentCapacity /
-    // activeGrantCount / isNewGrantee (R-001).
-    expect(source).toContain(
-      'await grant.issueGrant(target.address, null, target.desiredScopeMask, { setCapacityTo })',
-    )
-    // Regression guard: the previous single-bit form must NOT come back
-    expect(source).not.toContain('await grant.issueGrant(target.address, null, kindScopeMask)')
-    // Regression guard: the previous no-options form must NOT come back
-    // (it left full-capacity new grantees with a guaranteed-abort PTB).
-    expect(source).not.toContain('await grant.issueGrant(target.address, null, target.desiredScopeMask)')
+// Wiring complements real domain, original-page, recommendation and append-hook
+// behavior tests. Pet retains its separate private batch flow below.
+describe('human grant cutover wiring', () => {
+  it('uses private discovery only for addresses and delegates merge/capacity to the raw-chain operation', () => {
+    const banner = readSource('web/components/souls/agent-grant-recommendations.tsx')
+    expect(banner).toContain('auto-grant-targets?scopeMask=${kindScopeMask}')
+    expect(banner).toContain('readBrowserContentWriteState')
+    expect(banner).not.toContain('body.currentCapacity')
+    expect(banner).not.toContain('target.desiredScopeMask')
+    const hook = readSource('web/lib/hooks/use-grant.ts')
+    expect(hook).toContain("access.mutate({ action: 'grant-issue'")
+    expect(hook).not.toContain('fetch(')
   })
-
-  // ── R-001: per-target capacity bump must be derived from the response ──
-  it('derives per-target setCapacityTo from the auto-grant-targets response', () => {
-    const source = readSource('web/components/souls/agent-grant-recommendations.tsx')
-
-    // Component must read currentCapacity + activeGrantCount from the
-    // response so it can compute the per-target bump at click time.
-    expect(source).toContain('body.currentCapacity')
-    expect(source).toContain('body.activeGrantCount')
-    // Derivation must match the GrantsPanel preflight contract (F-452):
-    // projected count > current capacity → bump, else null.
-    expect(source).toContain('const projectedActive = activeGrantCount + (target.isNewGrantee ? 1 : 0)')
-    expect(source).toContain('const setCapacityTo = projectedActive > currentCapacity ? projectedActive : null')
-    // Fail-fast above the on-chain ceiling so the wallet never sees a
-    // guaranteed-abort PTB.
-    expect(source).toContain('MAX_GRANT_CAPACITY')
-    expect(source).toContain('setCapacityTo > MAX_GRANT_CAPACITY')
+  it('preserves Assets selection without a mirror capacity signing gate', () => {
+    const page = readSource('web/app/souls/[id]/page.tsx')
+    expect(page).toContain("id: 'assets' as const")
+    expect(page).toContain("title: 'Sprite & Audio'")
+    expect(page).toContain('assetsScope ? SOUL_GRANT_SCOPE_ASSETS : 0')
+    expect(page).toContain('await issueGrant(addr, expiry, scopeMask)')
+    expect(page).not.toContain('/api/souls/grant-merge-masks')
+    expect(page).not.toMatch(/disabled=\{[^}]*mirrorLooksFullForNewGrantee/)
+  })
+  it('retains first-Sprite activation in the browser append intent, not a removed sync payload', () => {
+    const append = readSource('web/lib/hooks/use-soul-content-append.ts')
+    expect(append).toContain("setActive: role === 'owner' && params.kind === KIND_SPRITE")
+    expect(append).toContain('Boolean(params.setActive) || !state.activeBindings.some(b => b.kind === KIND_SPRITE)')
+    expect(append).not.toContain('/content/sync')
   })
 })
 
@@ -129,74 +97,5 @@ describe('PetGrantDialog batch issue', () => {
     // Throw before any `signAndExecute` call so the wallet never sees a
     // PTB that would abort on-chain.
     expect(source).toMatch(/m\.isNewGrantee && m\.requiredCapacity > MAX_GRANT_CAPACITY/)
-  })
-})
-
-describe('GrantsPanel manual Authorize form', () => {
-  it('exposes an Assets (sprite & audio) scope checkbox', () => {
-    const source = readSource('web/app/souls/[id]/page.tsx')
-
-    expect(source).toContain("id: 'assets' as const")
-    expect(source).toContain("title: 'Sprite & Audio'")
-    expect(source).toContain('setAssetsScope')
-    // scopeMask formula includes the SOUL_GRANT_SCOPE_ASSETS bit
-    expect(source).toMatch(/assetsScope \? SOUL_GRANT_SCOPE_ASSETS : 0/)
-  })
-
-  it('preflights /api/souls/grant-merge-masks and issues with merged mask', () => {
-    const source = readSource('web/app/souls/[id]/page.tsx')
-
-    expect(source).toContain("'/api/souls/grant-merge-masks'")
-    expect(source).toContain('addedScopeMask: scopeMask')
-    expect(source).toContain('await issueGrant(addr, null, mergedScopeMask, { setCapacityTo })')
-    // The pre-fix path issued with raw scopeMask. That must not return.
-    expect(source).not.toContain('await issueGrant(addr, null, scopeMask)')
-  })
-
-  // ── R-001: preflight isNewGrantee + requiredCapacity govern the gate ──
-  it('honors the preflight requiredCapacity contract before signing', () => {
-    const source = readSource('web/app/souls/[id]/page.tsx')
-
-    // The hard mirror-only block is gone — preflight is authoritative.
-    // (Chain-only existing grants would otherwise be misclassified as
-    // "capacity full new grantee" by the local mirror.)
-    expect(source).not.toMatch(/if \(capacityFullForNewGrantee\) \{[\s\S]+?return\s*$/m)
-
-    // Preflight fields used: isNewGrantee, currentCapacity, requiredCapacity.
-    expect(source).toContain('isNewGrantee: boolean')
-    expect(source).toContain('currentCapacity: number')
-    expect(source).toContain('requiredCapacity: number')
-
-    // Capacity bump is derived from preflight, not from local mirror.
-    expect(source).toContain('const setCapacityTo = requiredCapacity > currentCapacity ? requiredCapacity : null')
-
-    // Fail-fast when the bump would exceed the on-chain ceiling.
-    expect(source).toContain('isNewGrantee && requiredCapacity > MAX_GRANT_CAPACITY')
-
-    // Disable state no longer references the stale-mirror block flag.
-    expect(source).not.toMatch(/disabled=\{[\s\S]+?capacityFullForNewGrantee[\s\S]+?\}/)
-  })
-})
-
-describe('sprite first-upload set-active', () => {
-  it('forces effectiveSetActive when owner uploads first sprite without active binding', () => {
-    const source = readSource('web/lib/hooks/use-soul-content-actions.ts')
-
-    // The override logic exists and uses kind + role + activeSpriteName as guard.
-    expect(source).toContain('ownerFirstSpriteForcesActive')
-    expect(source).toContain('params.kind === KIND_SPRITE')
-    expect(source).toContain("role === 'owner'")
-    expect(source).toContain('!soul.activeSpriteName')
-    expect(source).toContain('const effectiveSetActive = Boolean(params.setActive) || ownerFirstSpriteForcesActive')
-
-    // All three callers (PTB splice, pending record, postSync) read effectiveSetActive,
-    // not params.setActive (would re-introduce the bug if reverted).
-    expect(source).toContain('if (effectiveSetActive) {')
-    expect(source).toContain('setActive: effectiveSetActive,')
-    // No remaining `if (params.setActive) {` blocks for sprite owner branch
-    // (the replay path is separate and gated on rec.sprite.setActive which
-    // is itself set to effectiveSetActive at persist-time).
-    const occurrencesOfParamsSetActive = source.match(/if \(params\.setActive\)/g)?.length ?? 0
-    expect(occurrencesOfParamsSetActive).toBe(0)
   })
 })

@@ -1,5 +1,7 @@
 'use client'
 
+import { AuthoringRecoveryImport } from '@/components/souls/authoring-recovery-import'
+
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -13,6 +15,7 @@ import { parseDisplayAmountToAtomic } from '@soulidity/sdk'
 import { MAX_COLLECTION_SUPPLY } from '@soulidity/sdk'
 import { parseCollectionSupplyCapInput } from '@/lib/collections/supply-cap'
 import { useCreateCollection, collectionSteps } from '@/components/providers/create-collection-provider'
+import { useCollectionPublish } from '@/lib/hooks/use-collection-publish'
 
 const royaltyOptions = [
   { value: 0, label: 'Off', desc: '0%' },
@@ -42,6 +45,7 @@ const memoryPolicyRules = [
 export default function CreateCollectionPage() {
   const router = useRouter()
   const ctx = useCreateCollection()
+  const saved = useCollectionPublish(async () => false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   function handleNext() {
@@ -79,12 +83,24 @@ export default function CreateCollectionPage() {
     router.push('/collections/create/souls')
   }
 
+  const recoveryLink = saved.recovery && <Link href={saved.recovery.manifest.request.collection ? '/collections/create/preview'
+    : saved.recovery.manifest.request.mints[0]?.kind === 'JOINED' ? '/wrap-link/personal/preview'
+    : saved.recovery.manifest.request.mints[0]?.kind === 'IMPORTED' ? '/import/gas' : '/create/gas'}
+    className={buttonStyles({ variant: 'primary' })}>Open Saved Creation</Link>
+  if (ctx.draftReady === false) return <PageContainer size="sm" className="space-y-4 py-8">
+    <AuthoringRecoveryImport />
+    <p>Editing is unavailable until the local draft can be read. Saved launch transactions are separate and can still be recovered.</p>
+    {recoveryLink || <Link href="/collections/create/preview">Open Launch Recovery</Link>}
+  </PageContainer>
+
   return (
     <>
       <FlowBar steps={collectionSteps} currentStep={0} />
 
       <div className="relative z-10 border-t border-purple/20">
         <PageContainer size="sm" className="space-y-6 pt-7 sm:pt-9">
+          {recoveryLink}
+          <AuthoringRecoveryImport />
           <SectionHeader
             label="Create Soul Collection"
             title="Step 1 — Collection Info"

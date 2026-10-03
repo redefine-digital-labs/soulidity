@@ -20,6 +20,7 @@ import {
 } from '@soulidity/sdk'
 import { VisualThemeProvider } from './visual-theme-provider'
 import { SOULIDITY_DAPP_KIT_THEME } from '@/lib/theme/dapp-kit-theme'
+import { PrivateBookmarksProvider } from '@/lib/hooks/use-private-bookmarks'
 
 // dapp-kit v1 still types its context as SuiJsonRpcClient. The factory keeps
 // that method surface while all network requests use Sui's supported gRPC API.
@@ -65,7 +66,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
                   <UploadCostReviewProvider>
                     <E2EWalletHelpers />
                     <WalletLoginModal />
-                    {children}
+                    <PrivateBookmarksProvider>{children}</PrivateBookmarksProvider>
                   </UploadCostReviewProvider>
                 </ToastProvider>
               </AuthProvider>

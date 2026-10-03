@@ -1,188 +1,44 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const issuedByAddress = `0x${'1'.repeat(64)}`
-const granteeAddress = `0x${'2'.repeat(64)}`
-const soulOnChainId = `0x${'3'.repeat(64)}`
-const grantOnChainId = `0x${'4'.repeat(64)}`
-
-const mockedRequireIdentity = vi.hoisted(() => vi.fn())
-const mockedGetMemberSuiWalletAddresses = vi.hoisted(() => vi.fn())
-const mockedPrisma = vi.hoisted(() => ({
-  soulAsset: {
-    findMany: vi.fn(),
-  },
-  soulCollectionAsset: {
-    findMany: vi.fn(),
-  },
-  soulTxSync: {
-    findMany: vi.fn(),
-  },
-  soulGrantRecord: {
-    findMany: vi.fn(),
-  },
-}))
-
-vi.mock('@web/lib/auth/identity', () => ({
-  requireIdentity: mockedRequireIdentity,
-}))
-
-vi.mock('@web/lib/auth/sui-wallet', () => ({
-  getMemberSuiWalletAddresses: mockedGetMemberSuiWalletAddresses,
-}))
-
-vi.mock('@web/lib/prisma', () => ({
-  prisma: mockedPrisma,
-}))
-
-function makeGrantRecord(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'grant-db-1',
-    onChainId: grantOnChainId,
-    soulOnChainId,
-    issuedByAddress,
-    issuedByMemberId: 'issuer-1',
-    granteeAddress,
-    granteeMemberId: 'grantee-1',
-    scopes: ['assets'],
-    status: 'active',
-    expiresAt: null,
-    endedAt: null,
-    replacedByGrantOnChainId: null,
-    createdAt: new Date('2026-04-11T00:00:00.000Z'),
-    updatedAt: new Date('2026-04-11T00:00:00.000Z'),
-    ...overrides,
-  } as any
-}
-
-function makeSoulSummary(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'soul-db-1',
-    onChainId: soulOnChainId,
-    stateOnChainId: `0x${'5'.repeat(64)}`,
-    contentOnChainId: `0x${'6'.repeat(64)}`,
-    paidAccessListOnChainId: `0x${'7'.repeat(64)}`,
-    name: 'Purchased Soul',
-    description: 'A purchased Soul',
-    imageUrl: '',
-    activeSpriteName: null,
-    activeSpriteVersionIndex: null,
-    activeSpriteDownloadPolicy: null,
-    activeVoiceName: null,
-    activeVoiceVersionIndex: null,
-    activeVoiceDownloadPolicy: null,
-    spriteConfigJson: null,
-    voiceConfigJson: null,
-    provenanceKind: 'native',
-    personaKind: 'characters',
-    originRef: null,
-    tags: [],
-    previewImages: [],
-    creatorAddress: issuedByAddress,
-    creatorRoyaltyBps: 500,
-    currentOwnerAddress: granteeAddress,
-    currentKioskId: `0x${'8'.repeat(64)}`,
-    currentKioskCapOnChainId: `0x${'9'.repeat(64)}`,
-    listingObjectOnChainId: null,
-    listedPriceAtomic: null,
-    listingStatus: 'held',
-    collectionOnChainId: null,
-    grantCapacity: 1,
-    activeGrantCount: 0,
-    createdAt: new Date('2026-04-12T00:00:00.000Z'),
-    updatedAt: new Date('2026-04-12T00:00:00.000Z'),
-    collection: null,
-    grantRecords: [],
-    ...overrides,
-  } as any
-}
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { composeMySoulsPortfolio } from '../../web/lib/soulidity/soul-portfolio-model'
+import { mySoulsFixture, id } from './fixtures/my-souls'
 
 describe('Soul grant serialization', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-    vi.resetModules()
-
-    mockedRequireIdentity.mockResolvedValue({
-      error: null,
-      identity: { memberId: 'member-1' },
-    })
-    mockedGetMemberSuiWalletAddresses.mockResolvedValue([])
-    mockedPrisma.soulAsset.findMany.mockResolvedValue([])
-    mockedPrisma.soulCollectionAsset.findMany.mockResolvedValue([])
-    mockedPrisma.soulTxSync.findMany.mockResolvedValue([])
-    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([makeGrantRecord()])
-  })
-
-  it('preserves the assets scope in repository grant records', async () => {
+  it('preserves the assets scope in the still-used private repository grant records', async () => {
     const { toSoulGrantRecord } = await import('../../web/lib/soulidity/repository')
-
-    expect(toSoulGrantRecord(makeGrantRecord()).scopes).toEqual(['assets'])
+    expect(toSoulGrantRecord({ id: 'grant-db-1', onChainId: id(4), soulOnChainId: id(3),
+      issuedByAddress: id(1), issuedByMemberId: 'issuer-1', granteeAddress: id(2), granteeMemberId: 'grantee-1',
+      scopes: ['assets'], status: 'active', expiresAt: null, endedAt: null, replacedByGrantOnChainId: null,
+      createdAt: new Date('2026-04-11T00:00:00.000Z'), updatedAt: new Date('2026-04-11T00:00:00.000Z'),
+    } as any).scopes).toEqual(['assets'])
   })
 
-  it('returns the assets scope from GET /api/souls/my', async () => {
-    const { GET } = await import('../../web/app/api/souls/my/route')
-    const response = await GET()
-
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
-      grants: [
-        expect.objectContaining({
-          onChainId: grantOnChainId,
-          scopes: ['assets'],
-        }),
-      ],
-      purchases: [],
-    })
+  it('preserves assets scope and exact issue time through the replacement chain portfolio projection', () => {
+    const f = mySoulsFixture(), activity = f.activity()
+    activity.activity.grants[0].scopes = ['assets']; activity.activity.grants[0].scopeMask = 8
+    const portfolio = composeMySoulsPortfolio({ owner: f.owner, originalPackageId: id(1), owned: null, collections: null, activity })
+    expect(portfolio.grants).toEqual([expect.objectContaining({ onChainId: id(900), scopes: ['assets'],
+      createdAtMs: '123', createdAt: '1970-01-01T00:00:00.123Z', status: null })])
   })
 
-  it('returns current member Soul purchase activity from tx sync rows', async () => {
-    mockedPrisma.soulTxSync.findMany.mockResolvedValueOnce([
-      {
-        id: 'tx-sync-1',
-        txDigest: 'abc123',
-        resourceKey: soulOnChainId,
-        responseBody: {
-          soulOnChainId,
-          paidAtomic: '100000',
-          totalAtomic: '107500',
-        },
-        createdAt: new Date('2026-04-12T00:00:00.000Z'),
-      },
-    ])
-    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([makeSoulSummary()])
-
-    const { GET } = await import('../../web/app/api/souls/my/route')
-    const response = await GET()
-
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
-      purchases: [
-        {
-          txDigest: 'abc123',
-          soulOnChainId,
-          soulName: 'Purchased Soul',
-          paidAtomic: '100000',
-          totalAtomic: '107500',
-          createdAt: '2026-04-12T00:00:00.000Z',
-        },
-      ],
-    })
+  it('preserves every verified purchase with exact totals and dates without current ownership or a SQL sync row', () => {
+    const f = mySoulsFixture(), activity = f.activity('COMPLETE', 61)
+    Object.assign(activity.activity.purchases[60], { soulOnChainId: id(1666), paidAtomic: '100000', totalAtomic: '107500',
+      platformFeeAtomic: '2500', creatorRoyaltyAtomic: '5000', createdAtMs: '1775952000000', createdAt: '2026-04-12T00:00:00.000Z' })
+    const portfolio = composeMySoulsPortfolio({ owner: f.owner, originalPackageId: id(1), owned: f.owned(), collections: null, activity })
+    expect(portfolio.owned).toHaveLength(0); expect(portfolio.purchases).toHaveLength(61)
+    expect(portfolio.purchases[60]).toMatchObject({ soulOnChainId: id(1666), soulName: null,
+      paidAtomic: '100000', totalAtomic: '107500', createdAtMs: '1775952000000', createdAt: '2026-04-12T00:00:00.000Z' })
+    expect(portfolio.purchases[0].paidAtomic).toBe('9007199254740993')
   })
 
-  it('keeps agent access route selector and Seal byte-compare script wired', async () => {
-    const routeSource = await import('node:fs').then((fs) =>
-      fs.readFileSync('web/app/api/agent/souls/[id]/access/route.ts', 'utf8'),
-    )
-    const scriptSource = await import('node:fs').then((fs) =>
-      fs.readFileSync('web/scripts/e2e-agent-decrypt.ts', 'utf8'),
-    )
-    const paidAccessScriptSource = await import('node:fs').then((fs) =>
-      fs.readFileSync('web/scripts/e2e-paid-access-lifecycle.ts', 'utf8'),
-    )
-
+  it('keeps agent access route selector and Seal byte-compare script wired', () => {
+    const routeSource = readFileSync('web/app/api/agent/souls/[id]/access/route.ts', 'utf8')
+    const scriptSource = readFileSync('web/scripts/e2e-agent-decrypt.ts', 'utf8')
+    const paidAccessScriptSource = readFileSync('web/scripts/e2e-paid-access-lifecycle.ts', 'utf8')
     expect(routeSource).toContain("searchParams.get('kind')")
     expect(routeSource).toContain('version.kind === selector.kind')
-    expect(scriptSource).toContain('CONTENT_KIND')
-    expect(scriptSource).toContain('OK byte compare')
+    expect(scriptSource).toContain('CONTENT_KIND'); expect(scriptSource).toContain('OK byte compare')
     expect(paidAccessScriptSource).toContain('createSuiGrpcCompatClient')
     expect(paidAccessScriptSource).not.toContain('new SuiJsonRpcClient')
   })

@@ -1,10 +1,5 @@
 import { Tag } from '@/components/ui/tag'
-import type { CollectionDetailResponse } from '@soulidity/sdk'
-
-function formatDate(iso: string) {
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-}
+import type { ChainCollectionDetail } from '@/lib/collections/collection-detail-model'
 
 function formatAddress(value: string | null | undefined) {
   if (!value) return '\u2014'
@@ -12,7 +7,7 @@ function formatAddress(value: string | null | undefined) {
 }
 
 interface CollectionHeaderProps {
-  collection: CollectionDetailResponse
+  collection: ChainCollectionDetail
   actions: React.ReactNode
 }
 
@@ -20,7 +15,7 @@ export function CollectionHeader({ collection, actions }: CollectionHeaderProps)
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
       {/* Left: image + info */}
-      <div className="flex items-start gap-5">
+      <div className="flex min-w-0 flex-1 items-start gap-5">
         <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl border border-border bg-[linear-gradient(135deg,var(--card2),var(--purple-deep))] text-4xl overflow-hidden">
           {collection.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -34,11 +29,11 @@ export function CollectionHeader({ collection, actions }: CollectionHeaderProps)
           <p className="text-[10px] font-bold text-action-label uppercase tracking-[0.1em] mb-1">
             Soul Collection
           </p>
-          <h1 className="font-display text-2xl font-bold lg:text-3xl">{collection.name}</h1>
+          <h1 className="font-display text-2xl font-bold lg:text-3xl break-words">{collection.name}</h1>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
             <span>by {formatAddress(collection.creatorAddress)}</span>
             <span>&middot;</span>
-            <span>Launched {formatDate(collection.createdAt)}</span>
+            <span>Launch date unavailable</span>
             <span>&middot;</span>
             <span>
               {collection.maxSoulSupply == null
@@ -54,7 +49,7 @@ export function CollectionHeader({ collection, actions }: CollectionHeaderProps)
       </div>
 
       {/* Right: actions zone */}
-      <div className="shrink-0 lg:text-right">
+      <div className="min-w-0 shrink-0 lg:text-right">
         {actions}
       </div>
     </div>

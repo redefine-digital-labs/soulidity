@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 import { takeRateLimitToken } from '@/lib/rate-limit'
 import {
-  extractAnimacraftV6SoulListingCancelledEvent,
   extractSoulListingCancelledEvent,
-  getAnimacraftAppearanceV6Id,
 } from '@soulidity/sdk'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { syncSoulProjectionFromChain } from '@/lib/soulidity/mirror/sync-helpers'
@@ -12,6 +10,8 @@ import { parseRequiredTxDigest } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@soulidity/sdk'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
+import { verifyNativeMarketCancellation } from '@/lib/animacraft/native-market-cancellation'
+import { createNativeReceiveClient, readNativeReceiveTarget, NativeReceiveError } from '@/lib/animacraft/native-receive'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,34 +68,24 @@ export async function POST(
       return senderError
     }
 
-    const cancelled = extractSoulListingCancelledEvent(transaction, packageId)
-    if (cancelled.soulId !== soul.onChainId) {
-      return NextResponse.json({ error: 'Transaction delisted a different Soulidity object' }, { status: 422 })
-    }
-    if (
-      soul.listingObjectOnChainId
-      && cancelled.listingId !== soul.listingObjectOnChainId
-    ) {
-      return NextResponse.json({ error: 'Transaction cancelled a different Soulidity listing' }, { status: 422 })
-    }
-
-    const appearanceV6Id = await getAnimacraftAppearanceV6Id(soul.stateOnChainId)
-    if (appearanceV6Id) {
-      const v6EventPackageId = getRequiredSoulidityEnv(
-        'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID',
-      )
-      const v6Cancelled = extractAnimacraftV6SoulListingCancelledEvent(
-        transaction,
-        v6EventPackageId,
-      )
-      if (
-        v6Cancelled.soulId !== soul.onChainId
-        || v6Cancelled.listingId !== cancelled.listingId
-      ) {
-        return NextResponse.json(
-          { error: 'Transaction cancelled a different Animacraft v6 listing' },
-          { status: 422 },
-        )
+    let expectedNativeHeldState
+    if (soul.provenanceKind === 'animacraft') {
+      const target = readNativeReceiveTarget()
+      if (target.soulidityOriginalPackageId !== packageId) {
+        throw new NativeReceiveError('NATIVE_CANCELLATION_TARGET_MISMATCH', 'Cancellation package differs from native target', 503)
+      }
+      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(25000)])
+      expectedNativeHeldState = await verifyNativeMarketCancellation(createNativeReceiveClient(signal), target, {
+        soulId: soul.onChainId, stateId: soul.stateOnChainId, txDigest,
+        sender: readTransactionSender(transaction)!, transaction,
+      }, signal)
+    } else {
+      const cancelled = extractSoulListingCancelledEvent(transaction, packageId)
+      if (cancelled.soulId !== soul.onChainId) {
+        return NextResponse.json({ error: 'Transaction delisted a different Soulidity object' }, { status: 422 })
+      }
+      if (soul.listingObjectOnChainId && cancelled.listingId !== soul.listingObjectOnChainId) {
+        return NextResponse.json({ error: 'Transaction cancelled a different Soulidity listing' }, { status: 422 })
       }
     }
 
@@ -107,10 +97,11 @@ export async function POST(
       previewImages: soul.previewImages,
       readme: soul.readme,
       creatorMemberId: soul.creatorMemberId,
-      currentOwnerMemberId: soul.currentOwnerMemberId,
+      currentOwnerMemberId: expectedNativeHeldState ? auth.identity.memberId : soul.currentOwnerMemberId,
       listingObjectOnChainId: null,
       listedPriceAtomic: null,
       listingStatus: 'held',
+      expectedNativeHeldState,
     })
 
     const responseBody = {
@@ -130,6 +121,9 @@ export async function POST(
 
     return NextResponse.json(responseBody)
   } catch (error) {
+    if (error instanceof NativeReceiveError) {
+      return NextResponse.json({ code: error.code }, { status: error.status })
+    }
     console.error('[soul-delist] Failed to mirror Soulidity delist', {
       memberId: auth.identity.memberId,
       txDigest,

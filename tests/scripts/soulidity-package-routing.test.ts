@@ -31,73 +31,39 @@ function productionTransactionSources(): string {
 
 describe('Soulidity operational script package routing', () => {
   it.each([
-    'web/lib/hooks/use-publish.ts',
-    'web/lib/hooks/use-import.ts',
-    'web/lib/hooks/use-wrap-publish.ts',
-    'web/lib/hooks/use-collection-publish.ts',
-    'web/lib/hooks/use-animacraft-mint.ts',
-    'web/lib/hooks/use-soul-content-actions.ts',
-  ])('%s encrypts Living Content with the immutable original Seal namespace', (path) => {
+    ['web/lib/hooks/use-import.ts', 'IMPORTED'],
+    ['web/lib/hooks/use-wrap-publish.ts', 'JOINED'],
+    ['web/lib/hooks/use-collection-publish.ts', 'COLLECTION'],
+  ])('%s delegates initial content to the shared durable authoring flow', (path, kind) => {
     const text = source(path)
-    const calls = text.split('buildContentSidecarsForVersionsWithSuiClient({').slice(1)
-    expect(calls.length).toBeGreaterThan(0)
-    for (const call of calls) {
-      const args = call.slice(0, call.indexOf('})') + 2)
-      expect(args).toContain(
-        "sealPackageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')",
-      )
-      expect(args).not.toContain('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-    }
+    expect(text).toContain(`useSingleSoulAuthoring(approve, '${kind}')`)
+    expect(text).not.toContain('buildContentSidecarsForVersionsWithSuiClient')
+    expect(text).not.toContain('/api/')
   })
 
   it('keeps Living Content encryption/session identity separate from approval routing', () => {
-    const sidecars = source('web/lib/hooks/phase2-mint-helpers.ts')
-    const access = source('web/lib/soulidity/access.ts')
     const actions = source('web/lib/hooks/use-soul-content-actions.ts')
-    const seal = source('web/lib/services/seal.ts')
-
-    expect(sidecars).toContain('packageId: args.sealPackageId')
-    expect(sidecars).toContain('sealPackageId: args.sealPackageId')
-    expect(access).toContain('resolveSouliditySealPackageRoute(')
-    expect(access).toContain('getSealEnvelopePackageId(params.version.sealSidecar)')
-    expect(access).toContain('callablePackageId: route.callablePackageId')
-    expect(actions).toContain('packageId: sealPackageId')
-    expect(actions).toContain('access.accessPolicy.callablePackageId')
-    expect(seal).toContain('packageId: trustedSealPackageId')
-    expect(seal).not.toContain('packageId: getSoulObjectPackageId()')
+    expect(actions).toContain('useSoulContentRead(soul,')
+    expect(actions).toContain('useSoulContentAppend(soul,')
+    expect(source('web/lib/hooks/use-soul-content-read.ts')).toContain('await openBrowserSoulContent(')
+    expect(source('web/lib/hooks/use-soul-content-append.ts')).toContain('await prepareContentAppend(')
+    for (const path of ['web/lib/soulidity/content-append-preparation.ts', 'web/lib/upload/walrus-batch-seal.ts']) {
+      expect(source(path)).toContain('await encryptContentKeyEnvelope(')
+    }
+    const envelope = source('web/lib/soulidity/content-key-envelope.ts')
+    expect(envelope).toContain('encrypt({ packageId: originalPackageId,')
+    expect(envelope).not.toContain('callablePackageId')
+    const open = source('web/lib/soulidity/browser-content-open.ts')
+    expect(open).toContain('packageId: access.accessPolicy.sealPackageId')
+    expect(open).toContain('`${p.callablePackageId}::${p.moduleName}::${p.functionName}`')
   })
 
-  it('routes Animacraft output approval through the latest callable package', () => {
-    const animacraft = source('packages/soulidity-sdk/src/tx/animacraft.ts')
-    const builder = animacraft.slice(
-      animacraft.indexOf('export function buildAnimacraftCompleteOutputSealApprovalTx'),
-      animacraft.indexOf('export function buildBuyAnimacraftSoulTx'),
-    )
-    expect(builder).toContain("'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'")
-    expect(builder).toContain('::animacraft_output_seal::seal_approve_animacraft_complete_output_v5')
-    expect(builder).not.toContain('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
-  })
-
-  it.each([
-    'scripts/phase2-smoke.ts',
-    'scripts/phase2-mainnet-execute-rest.ts',
-    'scripts/phase2-retry-failed.ts',
-    'scripts/phase2-finish-skipped.ts',
-  ])('%s wires SDK transactions with explicit callable and original ids', (path) => {
-    const text = source(path)
-    expect(text).toContain('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
-    expect(text).toContain('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')
-    expect(text).not.toMatch(/process\.env\.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID\s*=/)
-  })
-
-  it('uses original package identity for smoke event extraction', () => {
-    const text = source('scripts/smoke-soulidity.ts')
-    expect(text).toContain(
-      "getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID')",
-    )
-    expect(text).not.toContain(
-      "getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID')",
-    )
+  it('routes native Complete approval through the attested Release callable, not the retired Soulidity entry', () => {
+    const builder = source('packages/soulidity-sdk/src/tx/animacraft-native-read-v8.ts')
+    expect(builder).toContain('p.releaseCallablePackageId')
+    expect(builder).toContain('::release_v8::seal_approve_complete_v8')
+    expect(builder).not.toContain('::animacraft_output_seal::')
+    expect(builder).not.toContain('getRequiredSoulidityEnv')
   })
 
   it('keeps paid-access dev-inspect calls and event mirroring on separate package roles', () => {
@@ -129,7 +95,7 @@ describe('Soulidity operational script package routing', () => {
     expect(text).toContain("'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID',")
   })
 
-  it('routes commerce-v5 production env and accepts only an HTTPS Animacraft origin', () => {
+  it('uses one explicit native chain validator for production and the local E2E harness', () => {
     const sync = source('scripts/sync-vercel-production-env.ts')
     const e2e = source('scripts/e2e-check-env.ts')
     for (const key of [
@@ -141,77 +107,53 @@ describe('Soulidity operational script package routing', () => {
       'NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_PROTOCOL_TREASURY_ID',
     ]) {
       expect(sync).toContain(`'${key}',`)
-      expect(e2e).toContain(`'${key}'`)
     }
     expect(sync).toContain("url.protocol === 'https:'")
     expect(sync).toContain('value.replace(/\\/+$/, \'\') === url.origin')
-    expect(sync).toContain('Commerce v5 requires NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED=true')
+    expect(sync).toContain("'NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON',")
+    expect(sync).toContain('assertNativeProductionTarget(env)')
+    expect(sync).toContain("'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID',")
+    expect(sync).toContain("'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID',")
+    expect(sync).not.toContain('Commerce v5 requires NEXT_PUBLIC_ANIMACRAFT_CANONICAL_MINT_ENABLED=true')
     expect(sync).toContain('function isNonZeroSuiId(value: string)')
     expect(sync).toContain('&& /[1-9a-fA-F]/.test(value.slice(2))')
-    expect(sync).toContain('if (value && !isNonZeroSuiId(value))')
-    expect(sync).toContain('else if (animacraftEnabled && !value)')
-    expect(sync).toContain('else if (animacraftCommerceV5Enabled && !value)')
-    expect(e2e).toContain("url.protocol === 'https:'")
-    expect(e2e).toContain('expected "true" for mainnet E2E')
-    expect(e2e).toContain('function isNonZeroSuiId(value: string)')
-    expect(e2e).toContain('&& /[1-9a-fA-F]/.test(value.slice(2))')
-    expect(e2e).toContain('if (value && !isNonZeroSuiId(value))')
+    expect(sync).toContain('Refusing to sync forbidden production env keys')
+    expect(sync).toContain('assertProductionChainEnv(env)')
+    expect(e2e).toContain('assertProductionChainEnv(chainEnv)')
+    expect(e2e).not.toContain('readManifestMainnet')
+    expect(e2e).not.toContain('expected "true" for mainnet E2E')
+    expect(e2e).not.toContain('NEXT_PUBLIC_ANIMACRAFT_COMMERCE_V5_ENABLED')
   })
 
-  it('verifies successor objects against their stable defining-package TypeOrigin', () => {
-    const text = source('scripts/preflight-animacraft-market-retirement.ts')
-    expect(text).toContain('assertMainnetDeploymentRecord(snapshot.mainnet)')
-    expect(text).toContain("objectAddressOwner(upgradeCap, 'Soulidity UpgradeCap')")
-    expect(text).toContain("import { verifyRetiredState } from './retire-soulidity-legacy-market'")
-    expect(text).toContain('await verifyRetiredState(client, {')
-    expect(text).toContain('marketConfigV2PackageId,')
-    expect(text).toContain('marketConfigV6PackageId,')
-    expect(text).toContain('marketConfigV2Id: successorConfigId')
-    expect(text).toContain('marketAdminCapV2Id: successorAdminCapId')
-    expect(text).toContain('marketConfigV6Id: successorConfigV6Id')
-    expect(text).toContain('marketAdminCapV6Id: successorAdminCapV6Id')
-    expect(text).toContain('v2SecondaryEnabled: false')
-    expect(text).toContain('v6SecondaryEnabled: args.expectSecondaryEnabled')
-    expect(text).not.toContain('SOULIDITY_MAINNET_ADMIN')
-    expect(text).toContain("module: 'animacraft_provenance'")
-    expect(text).toContain("struct: 'MarketConfigV2'")
-    expect(text).toContain("struct: 'MarketConfigV6'")
-    expect(text).not.toContain("module: 'soul',\n      struct: 'AnimacraftProvenance'")
-  })
-
-  it('keeps v4 canonical mint compatible and requires authenticated commerce-v5 royalty', () => {
+  it('uses only the native Complete authorization and frozen Maker rights for Animacraft mint', () => {
     const market = source('move/soulidity/sources/market.move')
-    expect(market).toContain('CanonicalSoulMintAuthorization')
-    expect(market).toContain('CommerceV5SoulMintAuthorization')
-    expect(market).toContain(
-      'animacraft::consume_canonical_soul_mint_authorization(authorization)',
-    )
-    expect(market).toContain(
-      'animacraft_commerce_v5::consume_commerce_v5_soul_mint_authorization',
-    )
-    expect(market).toMatch(
-      /public fun mint_animacraft_v5_in_personal_kiosk_v2\([\s\S]*?authorization:\s*CommerceV5SoulMintAuthorization,[\s\S]*?\): SoulState/,
-    )
-    expect(market).not.toContain(
-      'public fun mint_animacraft_v5_in_personal_kiosk_with_creator_royalty_v2',
-    )
-    expect(market).not.toMatch(/^\s*SoulMintAuthorization,\s*$/m)
-    expect(market).not.toMatch(/authorization:\s*SoulMintAuthorization/)
+    const native = market.slice(market.indexOf('public fun mint_animacraft_v8_in_personal_kiosk<'),
+      market.indexOf('public fun mint_native_in_personal_kiosk_v2('))
+    expect(native.includes('authorization: SoulMintAuthorizationV8')).toBe(true)
+    expect(native.includes('output_v8::bind_native_soul_v8(')).toBe(true)
+    expect(native.includes('maker_v8::rights_soul_creator_royalty_bps_v2(&rights)')).toBe(true)
+    expect(native.includes('soul::bind_animacraft_native_v8(')).toBe(true)
+    expect(market.match(/public fun mint_animacraft_[A-Za-z0-9_]+/g)).toEqual([
+      'public fun mint_animacraft_v8_in_personal_kiosk',
+    ])
+    expect(market.includes('CanonicalSoulMintAuthorization')).toBe(false)
+    expect(market.includes('CommerceV5SoulMintAuthorization')).toBe(false)
   })
 
   it.each([
-    'web/app/api/souls/[id]/route.ts',
     'web/app/api/agent/souls/[id]/route.ts',
     'web/app/api/agent/souls/[id]/purchase/route.ts',
-  ])('%s reads MarketConfigV6 using its defining-package type origin', (path) => {
+  ])('%s uses the fresh V2 defining-package type origin and native authority', (path) => {
     const text = source(path)
     const configRead = text.slice(
-      text.indexOf('getMarketConfigV6('),
-      text.indexOf('getMarketConfigV6(') + 300,
+      text.indexOf('getMarketConfigV2('),
+      text.indexOf('getMarketConfigV2(') + 300,
     )
     expect(configRead).toContain(
-      "getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V6_PACKAGE_ID')",
+      "getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID')",
     )
+    expect(text.includes('getMarketConfigV6')).toBe(false)
+    expect(text.includes(path.includes('/purchase/') ? 'prepareNativeAgentPurchase({' : 'readNativeMarketSnapshot(')).toBe(true)
   })
 
   it('has no production transaction target that accepts the retired MarketConfig', () => {

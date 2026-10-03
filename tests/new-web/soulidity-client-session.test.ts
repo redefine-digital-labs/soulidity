@@ -5,6 +5,7 @@ import {
   SOULIDITY_SESSION_KEYS,
   attachSoulidityDeploymentSignature,
   getSoulidityDeploymentSignature,
+  getSoulidityDeployment,
   hasCurrentSoulidityDeploymentSignature,
   syncSoulidityDeploymentSession,
 } from '@soulidity/sdk'
@@ -43,6 +44,27 @@ describe('Soulidity client deployment session', () => {
       userId: 'member-1',
       deploymentSignature: getSoulidityDeploymentSignature(),
     })
+  })
+
+  it('scopes a fresh deployment without requiring or aliasing a legacy market ID', () => {
+    const deployment = getSoulidityDeployment()
+    const priorLegacy = deployment.marketConfigId, priorV2 = deployment.marketConfigV2Id
+    try {
+      delete deployment.marketConfigId
+      deployment.marketConfigV2Id = `0x${'7'.repeat(64)}`
+      const first = getSoulidityDeploymentSignature()
+      expect(first).toContain(deployment.marketConfigV2Id)
+      expect(deployment.marketConfigId).toBeUndefined()
+      const record = attachSoulidityDeploymentSignature({ txDigest: 'unresolved' })
+      expect(hasCurrentSoulidityDeploymentSignature(record)).toBe(true)
+      deployment.marketConfigV2Id = `0x${'8'.repeat(64)}`
+      expect(getSoulidityDeploymentSignature()).not.toBe(first)
+      expect(hasCurrentSoulidityDeploymentSignature(record)).toBe(false)
+    } finally {
+      if (priorLegacy === undefined) delete deployment.marketConfigId
+      else deployment.marketConfigId = priorLegacy
+      deployment.marketConfigV2Id = priorV2
+    }
   })
 
   it('accepts only payloads scoped to the active deployment signature', () => {

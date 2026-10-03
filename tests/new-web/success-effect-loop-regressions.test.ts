@@ -11,16 +11,16 @@ describe('success effect loop regression guards', () => {
     const source = readSource('web/app/create/gas/page.tsx')
 
     expect(source).toContain('const completedDigestRef = useRef<string | null>(null)')
-    expect(source).toContain('if (completedDigestRef.current === publishData.txDigest) return')
+    expect(source).toContain('completedDigestRef.current === publishData.txDigest) return')
     expect(source).not.toContain('[status, publishData, ctx, router, showToast]')
-    expect(source).toContain('[status, publishData, setPublishResult, router, showToast]')
+    expect(source).toContain('[status, publishData, ctx.setPublishResult, router, showToast]')
   })
 
   it('guards import gas success writes against provider rerenders', () => {
     const source = readSource('web/app/import/gas/page.tsx')
 
     expect(source).toContain('const completedDigestRef = useRef<string | null>(null)')
-    expect(source).toContain('if (completedDigestRef.current === importData.txDigest) return')
+    expect(source).toContain('completedDigestRef.current === importData.txDigest) return')
     expect(source).not.toContain('[status, importData, ctx, router]')
     expect(source).toContain('[status, importData, setImportResult, router]')
   })

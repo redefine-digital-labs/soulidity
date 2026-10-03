@@ -8,6 +8,7 @@ export interface WrapPublishResult {
   soulOnChainId: string
   provenanceKind: string
   originRef: string
+  authoringCompletionKey?: string
 }
 
 interface WrapContextValue {

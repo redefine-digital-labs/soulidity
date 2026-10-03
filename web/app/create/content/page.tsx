@@ -573,7 +573,7 @@ export default function CreateContentPage() {
 
         <div className="flex flex-col-reverse gap-2.5 sm:flex-row">
           <Link
-            href="/create"
+            href={ctx.collectionBindTarget ? `/create?collectionId=${encodeURIComponent(ctx.collectionBindTarget.collectionOnChainId)}` : '/create'}
             className={buttonStyles({
               variant: 'outline',
               size: 'lg',

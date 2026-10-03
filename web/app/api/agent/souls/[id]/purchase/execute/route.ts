@@ -7,7 +7,6 @@ import { takeRateLimitToken } from '@/lib/rate-limit'
 import { getRequiredSoulidityEnv } from '@soulidity/sdk'
 import {
   extractSoulPurchasedEvent,
-  tryExtractAnimacraftV5SoulPurchasedEvent,
 } from '@soulidity/sdk'
 import {
   endActiveSoulGrantProjectionsFromChain,
@@ -17,6 +16,7 @@ import { getStoredSoulidityTxSync, storeSoulidityTxSync } from '@/lib/soulidity/
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import { getSuccessfulTransactionBlock, readTransactionSender, sameSuiValue, waitForTransactionBestEffort } from '@soulidity/sdk'
 import { requireAgentWalletIdentity } from '@/lib/soulidity/agent-server'
+import { executeNativeAgentPurchase } from '@/lib/animacraft/native-agent-purchase-execute'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,8 +65,8 @@ export async function POST(
   const preparedPurchaseId = typeof body?.preparedPurchaseId === 'string' ? body.preparedPurchaseId.trim() : null
   const signature = typeof body?.signature === 'string' ? body.signature.trim() : null
 
-  if (!preparedPurchaseId || !signature) {
-    return NextResponse.json({ error: 'preparedPurchaseId and signature are required' }, { status: 400 })
+  if (!preparedPurchaseId) {
+    return NextResponse.json({ error: 'preparedPurchaseId is required' }, { status: 400 })
   }
 
   const prepared = await prisma.soulPreparedPurchase.findUnique({
@@ -78,14 +78,23 @@ export async function POST(
   if (prepared.agentMemberId !== auth.agent.agentMemberId) {
     return NextResponse.json({ error: 'Prepared purchase belongs to a different agent' }, { status: 403 })
   }
-  if (!prepared.executedAt && new Date() > prepared.expiresAt) {
-    return NextResponse.json({ error: 'Prepared purchase has expired' }, { status: 410 })
-  }
-
   const { id } = await params
   const soul = await findSoulAssetDetailByRouteId(id)
   if (!soul) {
     return NextResponse.json({ error: 'Soul not found' }, { status: 404 })
+  }
+
+  // Native recovery precedes wall-clock expiration and all legacy result caches.
+  // External agents may have signed any packet already returned by prepare.
+  if (prepared.nativeOperation != null || soul.provenanceKind === 'animacraft') {
+    return executeNativeAgentPurchase({request,body,prepared,soul,
+      agentMemberId:auth.agent.agentMemberId,walletAddresses:auth.walletAddresses})
+  }
+  if (!signature) {
+    return NextResponse.json({ error: 'preparedPurchaseId and signature are required' }, { status: 400 })
+  }
+  if (!prepared.executedAt && new Date() > prepared.expiresAt) {
+    return NextResponse.json({ error: 'Prepared purchase has expired' }, { status: 410 })
   }
 
   const txBytes = Buffer.from(prepared.txBytesBase64, 'base64')
@@ -160,9 +169,7 @@ export async function POST(
       return NextResponse.json(responseBody, { status: 422 })
     }
 
-    const purchased =
-      tryExtractAnimacraftV5SoulPurchasedEvent(executedTransaction, packageId)
-      ?? extractSoulPurchasedEvent(executedTransaction, packageId)
+    const purchased = extractSoulPurchasedEvent(executedTransaction, packageId)
     if (!sameSuiValue(purchased.soulId, soul.onChainId)) {
       const responseBody = { error: 'Transaction purchased a different Soul' }
       await persistPreparedResultBestEffort({

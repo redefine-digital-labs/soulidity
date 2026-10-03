@@ -129,19 +129,19 @@ public struct KindPaidEntry has copy, drop, store {
         <h2 className="text-lg font-semibold">Purchase flow</h2>
         <ol className="text-sm text-muted space-y-2 ml-5 list-decimal">
           <li>Owner configures the kind with <code>configure_paid_access_kind</code>: price in atomic USDC, scope mask (must equal the kind&apos;s <code>default_grant_scope_mask</code>), and an optional <code>duration_ms</code>. The config snapshots the current ownership epoch.</li>
-          <li>Buyer signs a purchase TX. The market module splits USDC (platform fee + creator royalty + optional collection royalty) and calls <code>paid_access::record_purchase</code> internally.</li>
+          <li>In the Soul&apos;s Grants → Paid access section, the buyer reviews a frozen USDC quote: price to the current Soul owner plus <code>ceil(price × platform_fee_bps / 10000)</code> to the Market fee recipient. This purchase does not add creator or collection royalties. Sui network gas is separate.</li>
           <li><code>record_purchase</code> asserts the config&apos;s epoch matches the current epoch (rejecting purchases against a stale config from a previous owner), computes the new <code>expires_at_ms</code> from the renewal base, and writes a fresh <code>KindPaidEntry</code> under the buyer&apos;s row.</li>
-          <li>The post-TX API mirrors the entry into <code>SoulPaidAccessEntry</code> for the My Souls UI and any indexers.</li>
+          <li>The browser persists exact transaction bytes before signing, verifies the original transaction and historical objects, and rereads the same chain entry for the existing content Open controls. No grant or paid-access mirror POST is required.</li>
         </ol>
         <p className="text-sm text-muted">
-          Free access can be granted by the owner via <code>paid_access::add_access</code>, which writes the same entry shape with <code>price_paid_atomic = 0</code> and a <code>SoulPaidAccessGranted</code> event.
+          The SDK also supports owner-issued free access via <code>paid_access::add_access</code>. Its event records zero paid amount; the stored entry itself has no price-paid field. Setting a configuration price to zero disables purchases rather than offering a free checkout.
         </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Renewal &amp; expiry</h2>
         <ul className="text-sm text-muted space-y-2">
-          <li><strong className="text-foreground">Time-bound entry.</strong> When <code>duration_ms</code> is <code>Some(d)</code>, the entry&apos;s <code>expires_at_ms = renewal_base + d</code>. The renewal base is <code>max(now, previous_expires_at_ms)</code> — re-purchasing before expiry extends from the existing end, not from <em>now</em>.</li>
+          <li><strong className="text-foreground">Time-bound entry.</strong> Renewal is explicit, including for an expired same-epoch entry. With <code>Some(d)</code>, expiry is <code>max(execution Clock, previous same-epoch expiry) + d</code>. Zero duration adds no time; the displayed quote time is only an estimate.</li>
           <li><strong className="text-foreground">Lifetime entry.</strong> When <code>duration_ms</code> is <code>None</code>, the entry has no expiry and a re-purchase aborts with <code>EAlreadyHasAccess</code> — there is nothing to renew.</li>
           <li><strong className="text-foreground">Stale-epoch overwrite.</strong> If the entry pre-dates the current ownership epoch, the buyer&apos;s next purchase overwrites it instead of aborting — the old entry was already invalidated.</li>
         </ul>
@@ -153,7 +153,7 @@ public struct KindPaidEntry has copy, drop, store {
           <code>paid_access::revoke_access(grantee, kind)</code> removes the buyer&apos;s entry and emits <code>SoulPaidAccessRevoked</code>. Subsequent <code>seal_approve_content_paid_access</code> calls for that buyer fail until they re-purchase. The owner may also <code>content::delete_*</code> or <code>purge_*</code> the underlying slot, which makes the entry useless even without explicit revoke.
         </p>
         <p className="text-sm text-muted">
-          No on-chain refund rail exists. Any refund or credit policy must be handled off-chain. If you intend to offer guaranteed-term access, build a slot-level delete lock and an explicit refund path into your front-end — the protocol does not enforce one.
+          No on-chain refund or guaranteed-term protection exists. A front-end promise cannot prevent an owner from using the contract&apos;s revoke or content-management permissions. Removing a pricing configuration leaves existing buyer entries unchanged.
         </p>
       </div>
 
@@ -219,13 +219,8 @@ public struct KindPaidEntry has copy, drop, store {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">REST API</h2>
-        <ul className="text-sm text-muted space-y-2">
-          <li>
-            <div className="font-mono text-xs text-foreground mb-1">POST /api/souls/[id]/paid-access</div>
-            Mirror an owner revoke paid-access TX. Body includes <code>action: &quot;revoke&quot;</code>, <code>txDigest</code>, <code>buyerAddress</code>, and <code>kind</code>. The route is idempotent on digest.
-          </li>
-        </ul>
+        <h2 className="text-lg font-semibold">Interrupted operation recovery</h2>
+        <p className="text-sm text-muted">Access changes &amp; recovery remains outside the content tabs. Check original transaction is read-only and works without a connected wallet. Resume uses the same captured bytes, price, recipients and coins; an unknown result never creates another purchase, even after a configuration change. Cancel is available only before this journal requested a signature. Public receipts remain exportable instead of expiring from a 24-hour retry cache.</p>
       </div>
 
       <div className="flex items-center gap-3">

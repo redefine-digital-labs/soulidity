@@ -1,4 +1,6 @@
 {
-  "framework": "nextjs",
-  "buildCommand": "npm run build:vercel"
+  "framework": "vite",
+  "buildCommand": "npm run build:vercel",
+  "outputDirectory": "dist-spa",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }

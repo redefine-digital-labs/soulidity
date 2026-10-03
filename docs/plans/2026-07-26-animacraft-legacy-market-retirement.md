@@ -1,8 +1,9 @@
 # Animacraft legacy-market retirement runbook
 
-Status: mandatory P0 release gate. Do not merge or execute the Soulidity
-upgrade until the Animacraft v4 release commit is frozen and Soulidity pins
-that exact commit.
+Status: HISTORICAL ONLY — superseded by the fresh unified release. The scripts
+and commands below were removed; do not execute this retirement/upgrade runbook.
+Current entry and acceptance: [single fresh release](2026-10-01-single-release-entry.md).
+The remaining text records historical decisions, not a current release gate.
 
 ## Why routing is insufficient
 

@@ -108,11 +108,10 @@ describe('walrus batch helper 3-phase split', () => {
       const block = source.slice(fnStart, fnEnd)
       const recoveryDecision = block.indexOf("mode = 'resume'")
       const freshGuard = block.indexOf("if (mode === 'fresh')")
-      const earlyManagedGuard = block.indexOf("transport === 'managed' && !preUploadMayResume")
       const firstConfirmCall = block.indexOf('params.confirmQuote(quote)')
       const confirmCall = block.lastIndexOf('params.confirmQuote(quote)')
       expect(recoveryDecision).toBeGreaterThanOrEqual(0)
-      expect(firstConfirmCall).toBeGreaterThan(earlyManagedGuard)
+      expect(firstConfirmCall).toBe(confirmCall)
       expect(freshGuard).toBeGreaterThan(recoveryDecision)
       expect(confirmCall).toBeGreaterThan(freshGuard)
       expect(block.slice(freshGuard, confirmCall)).not.toContain("mode = 'resume'")
@@ -195,15 +194,15 @@ describe('walrus batch helper 3-phase split', () => {
       expect(helper).toContain('Timed out resolving Walrus register transaction')
     })
 
-    it('keeps the browser rollback path sequential when writeEncodedBlobAndBuildCertificate is selected', () => {
+    it('writes directly from the browser sequentially without an owned upload proxy', () => {
       const fnStart = source.indexOf('export async function completeBatchWalrusUploadAfterRegister')
       const fnEnd = source.indexOf('export async function prepareSoulBlobsForBatchPublish', fnStart)
       const block = source.slice(fnStart, fnEnd)
-      expect(block).toContain("transport === 'server'")
-      expect(block).toContain('completeEncodedBlobsViaServer({')
-      expect(block).toContain('const browserUploaded: Awaited<ReturnType<typeof writeEncodedBlobAndBuildCertificate>>[] = []')
+      expect(block).not.toContain('completeEncodedBlobsViaServer')
+      expect(block).not.toContain('/api/walrus/')
+      expect(block).toContain('const uploaded: Awaited<ReturnType<typeof writeEncodedBlobAndBuildCertificate>>[] = []')
       expect(block).toMatch(/for\s*\(\s*let i = 0;\s*i < prepared\.length;\s*i\+\+\s*\)/)
-      expect(block).toContain('browserUploaded.push(await writeEncodedBlobAndBuildCertificate({')
+      expect(block).toContain('uploaded.push(await writeEncodedBlobAndBuildCertificate({')
       expect(block).toContain('writeEncodedBlobAndBuildCertificate(')
     })
 
@@ -238,7 +237,7 @@ describe('walrus batch helper 3-phase split', () => {
       }
       const intent = buildResumeIntentWithWalrusClient(fakeWalrusClient, 2)
 
-      await completeBatchWalrusUploadAfterRegister({ intent, transport: 'browser' })
+      await completeBatchWalrusUploadAfterRegister({ intent })
 
       expect(maxInFlight).toBe(1)
       expect(writeOrder).toEqual([
@@ -304,7 +303,7 @@ describe('walrus batch helper 3-phase split', () => {
       }
       const intent = buildResumeIntentWithWalrusClient(fakeWalrusClient)
 
-      const result = await completeBatchWalrusUploadAfterRegister({ intent, transport: 'browser' })
+      const result = await completeBatchWalrusUploadAfterRegister({ intent })
 
       expect(fakeWalrusClient.certificateFromConfirmations).toHaveBeenCalledTimes(2)
       expect(fakeWalrusClient.certificateFromConfirmations).toHaveBeenNthCalledWith(1, {
@@ -359,7 +358,7 @@ describe('walrus batch helper 3-phase split', () => {
       const intent = buildResumeIntentWithWalrusClient(fakeWalrusClient)
 
       try {
-        const pending = completeBatchWalrusUploadAfterRegister({ intent, transport: 'browser' })
+        const pending = completeBatchWalrusUploadAfterRegister({ intent })
         await vi.advanceTimersByTimeAsync(20_000)
         const result = await pending
 
@@ -392,7 +391,7 @@ describe('walrus batch helper 3-phase split', () => {
       const intent = buildResumeIntentWithWalrusClient(fakeWalrusClient)
 
       try {
-        const pending = expect(completeBatchWalrusUploadAfterRegister({ intent, transport: 'browser' })).rejects.toThrow(
+        const pending = expect(completeBatchWalrusUploadAfterRegister({ intent })).rejects.toThrow(
           /Timed out fetching Walrus storage confirmations/,
         )
         await vi.advanceTimersByTimeAsync(40_000)
@@ -427,7 +426,7 @@ describe('walrus batch helper 3-phase split', () => {
       }
       const intent = buildResumeIntentWithWalrusClient(fakeWalrusClient)
 
-      await expect(completeBatchWalrusUploadAfterRegister({ intent, transport: 'browser' })).rejects.toThrow(
+      await expect(completeBatchWalrusUploadAfterRegister({ intent })).rejects.toThrow(
         /blob-id-0.*blob-object-id-0.*signing weight 2.*n_shards 10/s,
       )
       expect(fakeWalrusClient.getStorageConfirmations).toHaveBeenCalledTimes(2)

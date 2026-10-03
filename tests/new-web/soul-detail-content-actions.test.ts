@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -15,29 +15,30 @@ describe('Soul detail content action source contract', () => {
     expect(page).not.toContain('Decrypt unavailable')
     expect(page).toContain('useSoulContentActions')
     expect(page).toContain('SkillBundleFormatHint')
-    expect(hook).toContain("pendingAction: 'append' | 'open' | 'delete' | 'purge' | 'set-active' | 'clear-active' | null")
+    expect(hook).toContain("pendingAction: 'append' | 'open' | 'delete' | 'purge' | 'set-active' | 'clear-active' | 'recovery' | null")
     expect(hook).toContain('contentActionError')
   })
 
-  it('uses the Phase 2 typed-content builders and unified sync route', () => {
+  it('routes encrypted append through the atomic envelope attachment while retaining other typed mutations', () => {
     const hook = source('web/lib/hooks/use-soul-content-actions.ts')
-
-    expect(hook).toContain('uploadSoulPayload')
-    // Append now splices into the Walrus certify PTB so a single skill
-    // upload costs 2 wallet signatures instead of 3 (register +
-    // certify+append). The legacy standalone `buildAppendContentVersion*Tx`
-    // helpers still exist in the SDK for non-upload callers (scripts), but
-    // the hook uses the in-PTB `addAppendContentVersion*Calls` helpers.
-    expect(hook).toContain('addAppendContentVersionAsOwnerCalls')
-    expect(hook).toContain('addAppendContentVersionAsGrantedAgentCalls')
-    expect(hook).toContain('attachAfterCertify')
-    expect(hook).toContain('buildDeleteContentVersionAsOwnerTx')
-    expect(hook).toContain('buildDeleteContentVersionAsGrantedAgentTx')
-    expect(hook).toContain('buildPurgeContentVersionAsOwnerTx')
-    expect(hook).toContain('buildSetActiveContentTx')
-    expect(hook).toContain('buildClearActiveContentTx')
-    expect(hook).toContain('buildContentSidecarsForVersionsWithSuiClient')
-    expect(hook).toContain('/content/sync')
+    const operation = source('web/lib/soulidity/content-append-operation.ts')
+    expect(hook).toContain('useSoulContentAppend')
+    expect(operation).toContain('uploadPreparedSoulPayload')
+    expect(operation).toContain('addAppendContentVersionAsOwnerCalls')
+    expect(operation).toContain('addAppendContentVersionAsGrantedAgentCalls')
+    expect(operation).toContain('expectedVersionIndex: s.versionIndex')
+    expect(operation).toContain('encryptedEnvelope: contentAppendPreparedEnvelope(record, blobObjectId)')
+    const mutation = source('web/lib/soulidity/content-mutation-transaction.ts')
+    expect(mutation).toContain('buildDeleteContentVersionAsOwnerTx')
+    expect(mutation).toContain('buildDeleteContentVersionAsGrantedAgentTx')
+    expect(mutation).toContain('buildPurgeContentVersionAsOwnerTx')
+    expect(mutation).toContain('buildSetActiveContentTx')
+    expect(mutation).toContain('buildClearActiveContentTx')
+    expect(hook).toContain('useSoulContentMutations')
+    expect(hook).not.toContain('buildContentSidecarsForVersionsWithSuiClient')
+    expect(hook).not.toContain('/content/sync')
+    expect(hook).not.toContain('signAndExecute')
+    expect(hook).not.toContain('setStateConfig')
     expect(hook).not.toContain('memory.move')
     expect(hook).not.toContain('skills.move')
   })
@@ -64,32 +65,36 @@ describe('Soul detail content action source contract', () => {
     expect(page).toContain('clearActiveContent')
   })
 
-  it('checkpoints post-certify sync state before rebuilding the Seal sidecar', () => {
-    const hook = source('web/lib/hooks/use-soul-content-actions.ts')
-    const eventIndex = hook.indexOf('const event = extractContentVersionAppendedEvent(upload.certifyTxResult as never, packageId)')
-    const persistIndex = hook.indexOf('persistContentSyncPending(pendingTemplate)', eventIndex)
-    const sidecarIndex = hook.indexOf('const sidecars = await buildContentSidecarsForVersionsWithSuiClient', eventIndex)
-
-    expect(eventIndex).toBeGreaterThan(-1)
-    expect(persistIndex).toBeGreaterThan(eventIndex)
-    expect(sidecarIndex).toBeGreaterThan(eventIndex)
-    expect(persistIndex).toBeLessThan(sidecarIndex)
+  it('persists the signed encrypted stage before payment and acknowledges only after exact raw final readback', () => {
+    const hook = source('web/lib/hooks/use-soul-content-append.ts')
+    const operation = source('web/lib/soulidity/content-append-operation.ts')
+    expect(hook.indexOf('await store.create(key, record)')).toBeGreaterThan(hook.indexOf('record = await prepareContentAppend'))
+    expect(hook.indexOf('await store.create(key, record)')).toBeLessThan(hook.lastIndexOf('return run(record, controller, guard)'))
+    expect(operation.indexOf('const version = assertContentAppendFinal')).toBeLessThan(operation.indexOf('deps.acknowledge ??'))
+    expect(source('web/lib/upload/walrus-recovery.ts')).not.toContain('persistContentSyncPending')
   })
 
-  it('mounts pending content-sync replay at the detail workspace level', () => {
+  it('mounts explicit encrypted recovery for all detail tabs without an automatic SQL replay', () => {
     const page = source('web/app/souls/[id]/page.tsx')
     const hook = source('web/lib/hooks/use-soul-content-actions.ts')
     const workspace = page.slice(page.indexOf('function Workspace'), page.indexOf('function PanelHead'))
-    const replayHook = hook.slice(
-      hook.indexOf('export function useSoulContentSyncReplay'),
-      hook.indexOf('export function useSoulContentActions'),
-    )
-
-    expect(page).toContain('useSoulContentSyncReplay')
-    expect(workspace.indexOf('useSoulContentSyncReplay({ soul, detailQueryId, viewerId })')).toBeGreaterThan(-1)
-    expect(workspace.indexOf('useSoulContentSyncReplay({ soul, detailQueryId, viewerId })')).toBeLessThan(workspace.indexOf("{tab === 'info'"))
-    expect(replayHook).toContain('readContentSyncPendingForSoul')
-    expect(replayHook).not.toContain("role !== 'owner'")
-    expect(replayHook).not.toContain("role !== 'owner' && role !== 'grantee'")
+    expect(page).not.toContain('useSoulContentSyncReplay')
+    expect(hook).not.toContain('useSoulContentSyncReplay')
+    expect(workspace.indexOf('<ContentAppendRecoveryPanel')).toBeGreaterThan(-1)
+    expect(workspace.indexOf('<ContentAppendRecoveryPanel')).toBeLessThan(workspace.indexOf("{tab === 'info'"))
+    expect(workspace.indexOf('<ContentMutationRecoveryPanel')).toBeGreaterThan(-1)
+    expect(workspace.indexOf('<ContentMutationRecoveryPanel')).toBeLessThan(workspace.indexOf("{tab === 'info'"))
+    expect(page).toContain('Check imported transaction')
+    expect(page).toContain('Resume recorded upload')
+  })
+  it('removes the replaced mutation transport and its dedicated mirror writers', () => {
+    expect(existsSync(resolve(process.cwd(), 'web/app/api/souls/[id]/content/sync/route.ts'))).toBe(false)
+    for (const name of ['markContentVersionDeleted', 'markContentVersionPurged']) {
+      expect(source('web/lib/soulidity/mirror/sync-helpers.ts')).not.toContain(name)
+      expect(source('web/lib/soulidity/mirror/upsert-content-version.ts')).not.toContain(name)
+    }
+    expect(source('web/app/resources/api-sdk/page.tsx')).not.toContain('/content/sync')
+    expect(source('web/lib/soulidity/mirror/tx-sync.ts')).not.toContain("'content:delete'")
+    expect(source('web/lib/soulidity/mirror/tx-sync.ts')).not.toContain("'state-config:upsert'")
   })
 })

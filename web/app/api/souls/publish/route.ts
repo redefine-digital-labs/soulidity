@@ -24,7 +24,7 @@ import {
 } from '@soulidity/sdk'
 import { assertTransactionSender, requireSoulCreateWalletIdentity } from '@/lib/soulidity/server'
 import { normalizeTags } from '@soulidity/sdk'
-import { parseContentSidecars } from '@/lib/soulidity/mirror/parse-content-sidecars'
+import { assertExactContentSidecarSlots, parseContentSidecars } from '@/lib/soulidity/mirror/parse-content-sidecars'
 
 export const dynamic = 'force-dynamic'
 
@@ -127,6 +127,8 @@ export async function POST(request: Request) {
         { status: 422 },
       )
     }
+
+    assertExactContentSidecarSlots(contentSidecars, versionsForSoul)
 
     const paidAccessListEvent = (() => {
       const all = tryExtractSoulPaidAccessListCreatedEvent(transaction, packageId)

@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useCollectionsList } from '@/lib/hooks/use-collections'
 import { useSoulsList, type SoulsSortOption } from '@/lib/hooks/use-souls'
-import { useAuth } from '@/components/providers/auth-provider'
-import { useBookmarkStatus, useToggleBookmark } from '@/lib/hooks/use-social'
+import { usePrivateBookmarks } from '@/lib/hooks/use-private-bookmarks'
+import { PrivateBookmarkControls } from '@/components/bookmarks/private-bookmark-controls'
 import { PageContainer } from '@/components/layout/page-container'
 import { SectionHeader } from '@/components/layout/section-header'
 import { FilterTabs } from '@/components/nav/filter-tabs'
@@ -14,8 +14,10 @@ import { Tag } from '@/components/ui/tag'
 import { buttonStyles } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
+import { EquipmentMarketBrowser } from '@/components/souls/equipment-market-browser'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
-import type { SoulCollectionAssetSummary, SoulAssetSummary } from '@soulidity/sdk'
+import type { CollectionPublicSnapshot, PersonaFilter } from '@soulidity/sdk'
+import type { PublicMarketPage, PublicMarketSoul } from '@/lib/soulidity/public-market-model'
 
 // Tag colors removed — tags now use uniform 'muted' styling
 
@@ -42,34 +44,31 @@ function avatarInitial(name: string) {
 }
 
 // ── Bookmark Button ──
-function BookmarkButton({ soul }: { soul: SoulAssetSummary }) {
-  const { user } = useAuth()
-  const { data } = useBookmarkStatus(soul.id)
-  const toggleBookmark = useToggleBookmark()
-  const [optimistic, setOptimistic] = useState<boolean | undefined>(undefined)
-
-  if (!user) return null
-
-  const isBookmarked = optimistic !== undefined ? optimistic : (data?.bookmarked ?? false)
+function BookmarkButton({ soul }: { soul: Pick<PublicMarketSoul, 'onChainId'> }) {
+  const bookmarks = usePrivateBookmarks()
+  if (!bookmarks.connected) return null
+  const isBookmarked = bookmarks.entries?.some(entry => entry.soulId === soul.onChainId) ?? null
+  const label = bookmarks.locked ? 'Unlock private bookmarks' : isBookmarked ? 'Remove bookmark' : 'Bookmark this Soul'
 
   function handleClick(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    const next = !isBookmarked
-    setOptimistic(next)
-    toggleBookmark.mutate(soul.id, {
-      onError: () => setOptimistic(!next),
-      onSuccess: () => setOptimistic(undefined),
-    })
+    // Unlock first when state is private. The subsequent explicit click freezes
+    // a desired boolean and the actual chain Soul ID before any paid operation.
+    // Saved appearance comes only from the shared verified library, never an
+    // optimistic toggle or the marketplace's retired SQL row identifier.
+    if (bookmarks.locked) void bookmarks.unlock().catch(() => {})
+    else void bookmarks.setBookmark(soul.onChainId, !isBookmarked).catch(() => {})
   }
 
   return (
     <button
       onClick={handleClick}
-      disabled={toggleBookmark.isPending}
-      aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this Soul'}
-      className="flex items-center justify-center w-7 h-7 rounded-lg text-base transition hover:scale-110"
-      title={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
+      disabled={bookmarks.busy || bookmarks.loading || bookmarks.pending || !bookmarks.locked && !bookmarks.writesEnabled}
+      aria-label={label}
+      aria-pressed={isBookmarked === null ? undefined : isBookmarked}
+      className="ph-no-capture flex items-center justify-center w-7 h-7 rounded-lg text-base transition hover:scale-110"
+      title={label}
     >
       {isBookmarked ? (
         <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-value-text">
@@ -84,8 +83,11 @@ function BookmarkButton({ soul }: { soul: SoulAssetSummary }) {
   )
 }
 
-function CollectionStateRibbon({ collection }: { collection: SoulCollectionAssetSummary }) {
-  if (!collection.tradeable) {
+function CollectionStateRibbon({ collection }: { collection: CollectionPublicSnapshot }) {
+  if (collection.status === 'UNAVAILABLE') return (
+    <div className="border-b border-border bg-card2 px-4 py-2 text-xs text-muted">Listing state unavailable · refresh to verify</div>
+  )
+  if (!collection.rightTradeable) {
     return (
       <div className="flex items-center gap-2 border-b border-[var(--ui-border)] bg-[var(--ui-surface-muted)] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-muted">
         <span aria-hidden="true">🔒</span>
@@ -93,11 +95,11 @@ function CollectionStateRibbon({ collection }: { collection: SoulCollectionAsset
       </div>
     )
   }
-  if (collection.listingStatus === 'listed' && collection.listedPriceAtomic) {
+  if (collection.status === 'LISTED' && collection.priceAtomic) {
     return (
       <div className="flex items-center justify-between border-b border-gold/40 bg-gold/12 px-4 py-2 text-[11px] font-bold tracking-[0.06em] text-value-text">
         <span className="uppercase">Cap listed</span>
-        <span className="font-mono text-[12px] normal-case">{formatAtomicAmountForDisplay(collection.listedPriceAtomic)}</span>
+        <span className="font-mono text-[12px] normal-case">{formatAtomicAmountForDisplay(collection.priceAtomic)}</span>
       </div>
     )
   }
@@ -111,10 +113,10 @@ function CollectionStateRibbon({ collection }: { collection: SoulCollectionAsset
   )
 }
 
-function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary }) {
+function CollectionCard({ collection }: { collection: CollectionPublicSnapshot }) {
   return (
     <Link
-      href={`/collections/${encodeURIComponent(collection.onChainId)}`}
+      href={`/collections/${encodeURIComponent(collection.collectionId)}`}
       className="card card-hover group overflow-hidden cursor-pointer"
     >
       <CollectionStateRibbon collection={collection} />
@@ -127,7 +129,7 @@ function CollectionCard({ collection }: { collection: SoulCollectionAssetSummary
         <div className="grid gap-2 rounded-lg border border-border bg-card2 p-3 text-xs text-muted">
           <div className="flex items-center justify-between">
             <span>Souls</span>
-            <span className="font-semibold text-foreground">{collection.soulCount}</span>
+            <span className="font-semibold text-foreground">{collection.currentSupply}</span>
           </div>
           <div className="flex items-center justify-between">
             <span>Holder</span>
@@ -159,20 +161,50 @@ function SoulCardSkeleton() {
 
 const USDC_DECIMALS = 6
 
-function humanPriceToAtomic(value: string): string {
-  if (!value.trim()) return ''
+function humanPriceToAtomic(value: string): { atomic: string; error: string | null } {
+  if (!value.trim()) return { atomic: '', error: null }
   try {
-    return parseDisplayAmountToAtomic(value, { decimals: USDC_DECIMALS }).toString()
+    const atomic = parseDisplayAmountToAtomic(value, { decimals: USDC_DECIMALS })
+    if (atomic < 0n || atomic > 18446744073709551615n) throw new Error('Price is outside the on-chain range.')
+    return { atomic: atomic.toString(), error: null }
   } catch {
-    return ''
+    return { atomic: '', error: 'Enter a non-negative USDC price with at most 6 decimal places, within the on-chain range.' }
   }
 }
 
+function MarketScanStatus({ label, read }: { label: string; read: Pick<ReturnType<typeof useCollectionsList>,
+  'progress' | 'error' | 'pause' | 'resume' | 'refresh'> }) {
+  const p = read.progress
+  return <section aria-label={`${label} scan`} className="space-y-2 rounded-xl border border-border bg-card2 p-4 text-xs text-muted">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <span>{label} · {p.coverage === 'COMPLETE' ? 'Scan complete' : p.coverage === 'LIMIT_REACHED' ? 'Scan limit reached'
+        : p.busy ? 'Reading chain candidates' : p.coverage === 'UNSCANNED' ? 'Not scanned yet' : 'Partial results'} · {p.pages} pages</span>
+      <button className="underline" onClick={() => void read.refresh()}>Refresh {label}</button>
+    </div>
+    {p.phase && <p>{p.phase === 'LISTINGS' ? 'Verifying listing candidates' : 'Verifying assets'}{p.checkpoint ? ` · index checkpoint ${p.checkpoint}` : ''}</p>}
+    <p>Discovery and current ownership are read separately. Counts, tags and sorting are provisional until the scan completes.</p>
+    {read.error && <p role="alert">{read.error.message}</p>}
+    {p.coverage === 'LIMIT_REACHED' ? <p>The configured scan limit was reached; these are not complete Market totals. Refresh starts a new scan.</p>
+      : p.busy ? <button className="underline" onClick={read.pause}>Pause {label}</button>
+        : p.coverage !== 'COMPLETE' && <button className="underline" onClick={() => void (p.phase ? read.resume() : read.refresh())}>Continue / retry {label}</button>}
+  </section>
+}
+
+function MarketPagination({ data, onPage }: { data: PublicMarketPage<unknown> | undefined; onPage: (page: number) => void }) {
+  if (!data) return null
+  return <nav aria-label="Market pagination" className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
+    <span>{data.total}{data.complete ? '' : '+'} matching verified assets · page {data.page} of {data.totalPages}{data.complete ? '' : ' so far'}</span>
+    <div className="flex gap-3"><button disabled={data.page <= 1} onClick={() => onPage(data.page - 1)} className="underline disabled:opacity-40">Previous page</button>
+      <button disabled={data.page >= data.totalPages} onClick={() => onPage(data.page + 1)} className="underline disabled:opacity-40">Next page</button></div>
+  </nav>
+}
+
 export default function MarketPage() {
+  const bookmarks = usePrivateBookmarks()
   const [activeFilter, setActiveFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [marketView, setMarketView] = useState<'souls' | 'collections'>('souls')
+  const [marketView, setMarketView] = useState<'souls' | 'collections' | 'equipment'>('souls')
   const [collectionTab, setCollectionTab] = useState<'for-sale' | 'all'>('all')
   const [sort, setSort] = useState<SoulsSortOption>('newest')
   const [minPrice, setMinPrice] = useState('')
@@ -180,7 +212,9 @@ export default function MarketPage() {
   const [creator, setCreator] = useState('')
   const [debouncedCreator, setDebouncedCreator] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [hotTags, setHotTags] = useState<Array<{ tag: string; count: number }>>([])
+  const [persona, setPersona] = useState<PersonaFilter>('all')
+  const [soulPage, setSoulPage] = useState({ filter: '', page: 1 })
+  const [collectionPage, setCollectionPage] = useState({ filter: '', page: 1 })
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Debounce search query 300ms
@@ -206,33 +240,29 @@ export default function MarketPage() {
     }
   }, [creator])
 
-  useEffect(() => {
-    fetch('/api/souls/tags')
-      .then((r) => r.json())
-      .then((data) => setHotTags(data.tags ?? []))
-      .catch(() => {})
-  }, [])
-
-  const filterTabs = [
-    { id: 'all', label: 'All' },
-    ...hotTags.slice(0, 8).map((t) => ({ id: t.tag, label: t.tag })),
-  ]
-
-  const { data: soulsData, isLoading: soulsLoading } = useSoulsList({
-    page: 1,
+  const minimum = humanPriceToAtomic(minPrice), maximum = humanPriceToAtomic(maxPrice)
+  const priceError = minimum.error ?? maximum.error ?? (minimum.atomic && maximum.atomic && BigInt(minimum.atomic) > BigInt(maximum.atomic)
+    ? 'Minimum price must not exceed maximum price.' : null)
+  const soulFilter = JSON.stringify([activeFilter, debouncedQuery, sort, minPrice, maxPrice, debouncedCreator, persona])
+  const collectionFilter = JSON.stringify([debouncedQuery, collectionTab])
+  const souls = useSoulsList({
+    page: soulPage.filter === soulFilter ? soulPage.page : 1,
     tag: activeFilter === 'all' ? '' : activeFilter,
     q: debouncedQuery,
     sort,
-    minPrice: humanPriceToAtomic(minPrice),
-    maxPrice: humanPriceToAtomic(maxPrice),
+    minPrice: minimum.atomic,
+    maxPrice: maximum.atomic,
     creator: debouncedCreator,
+    persona,
   })
-  const { data: collectionsData, isLoading: collectionsLoading } = useCollectionsList({
-    page: 1,
-    q: searchQuery,
+  const collections = useCollectionsList({
+    page: collectionPage.filter === collectionFilter ? collectionPage.page : 1,
+    q: debouncedQuery,
+    listed: collectionTab === 'for-sale',
   })
-
-  const visibleSouls = (soulsData?.items ?? []).filter((soul) => soul.listingStatus === 'listed')
+  const { data: soulsData, isLoading: soulsLoading } = souls, { data: collectionsData, isLoading: collectionsLoading } = collections
+  const filterTabs = [{ id: 'all', label: 'All' }, ...(soulsData?.tags ?? []).slice(0, 8).map(t => ({ id: t.tag, label: t.tag }))]
+  const visibleSouls = priceError ? [] : (soulsData?.items ?? []).filter(soul => soul.listingStatus === 'listed')
   const visibleCollections = collectionsData?.items ?? []
 
   return (
@@ -249,8 +279,14 @@ export default function MarketPage() {
         }
       />
 
+      {bookmarks.connected && <details open={bookmarks.pending || !!bookmarks.error} className="ph-no-capture space-y-3">
+        <summary className="cursor-pointer text-sm text-muted">Private bookmarks{bookmarks.pending ? ' · request pending' : ''}</summary>
+        <PrivateBookmarkControls />
+      </details>}
+
       <div className="space-y-4">
         {/* Search + Advanced toggle row */}
+        {marketView!=='equipment'&&<>
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
           <div className="relative flex-1 max-w-[360px]">
             <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -269,6 +305,8 @@ export default function MarketPage() {
           {/* Sort dropdown */}
           <div className="relative w-full sm:w-[200px]">
             <Select
+              aria-label="Soul sort order"
+              disabled={marketView !== 'souls'}
               value={sort}
               onChange={(e) => setSort(e.target.value as SoulsSortOption)}
               className="w-full text-xs"
@@ -292,9 +330,9 @@ export default function MarketPage() {
               <path d="M3 6h18M7 12h10M11 18h2" strokeLinecap="round" />
             </svg>
             Filters
-            {(minPrice || maxPrice || creator) && (
+            {(minPrice || maxPrice || creator || persona !== 'all') && (
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-purple text-[9px] font-bold text-white">
-                {[minPrice, maxPrice, creator].filter(Boolean).length}
+                {[minPrice, maxPrice, creator, persona !== 'all' ? persona : ''].filter(Boolean).length}
               </span>
             )}
           </button>
@@ -347,9 +385,15 @@ export default function MarketPage() {
               </div>
 
               {/* Clear button */}
-              {(minPrice || maxPrice || creator) && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Persona</span>
+                <Select aria-label="Persona filter" value={persona} onChange={e => setPersona(e.target.value as PersonaFilter)} className="py-2 text-xs">
+                  <option value="all">All personas</option><option value="agents">AI agents</option><option value="characters">Characters</option>
+                </Select>
+              </div>
+              {(minPrice || maxPrice || creator || persona !== 'all') && (
                 <button
-                  onClick={() => { setMinPrice(''); setMaxPrice(''); setCreator('') }}
+                  onClick={() => { setMinPrice(''); setMaxPrice(''); setCreator(''); setPersona('all') }}
                   className="inline-flex items-center gap-1.5 self-end rounded-lg border border-border bg-transparent px-3 py-2 text-xs text-muted transition-colors hover:border-purple hover:text-action-label cursor-pointer"
                 >
                   Clear filters
@@ -359,13 +403,15 @@ export default function MarketPage() {
           </div>
         )}
 
+        </>}
         <FilterTabs
           tabs={[
             { id: 'souls', label: 'Souls' },
             { id: 'collections', label: '+ Collections' },
+            { id: 'equipment', label: 'Components' },
           ]}
           activeId={marketView}
-          onChange={(id) => setMarketView(id as 'souls' | 'collections')}
+          onChange={(id) => setMarketView(id as 'souls' | 'collections' | 'equipment')}
         />
 
         {marketView === 'souls' && (
@@ -375,17 +421,28 @@ export default function MarketPage() {
 
       {marketView === 'souls' && (
         <>
+          <MarketScanStatus label="Souls" read={souls} />
+          {priceError && <p role="alert" className="text-sm text-red-400">{priceError}</p>}
+          {(souls.creators.loading || souls.creators.error || souls.creators.unavailable > 0 || soulsData?.identityIncomplete) && (
+            <div aria-label="Creator identity status" className="space-y-2 text-xs text-muted">
+              <p>{souls.creators.loading ? 'Reading public creator names and handles…' : 'Some creator names or handles are unavailable. Address matches remain visible; name filtering may be incomplete.'}</p>
+              {souls.creators.error && <p role="alert">{souls.creators.error.message}</p>}
+              {!souls.creators.loading && <button className="underline" onClick={() => void souls.creators.retry()}>Retry creator identities</button>}
+            </div>
+          )}
           {soulsLoading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 6 }).map((_, index) => (
                 <SoulCardSkeleton key={index} />
               ))}
             </div>
-          ) : visibleSouls.length === 0 ? (
+          ) : visibleSouls.length === 0 && !priceError && !souls.error ? (
             <EmptyState
               icon="🔍"
-              label={searchQuery ? `No listed Souls for "${searchQuery}"` : 'No live Soul listings'}
-              sublabel="Listed Soulidity assets will appear here once a kiosk listing is mirrored."
+              label={!soulsData?.complete ? 'No matching Souls in the verified results so far'
+                : debouncedQuery ? `No listed Souls for "${debouncedQuery}"` : 'No live Soul listings'}
+              sublabel={soulsData?.complete ? 'Verified on-chain listings matching these filters will appear here.'
+                : 'The scan or creator lookup is incomplete. Continue or retry before treating this as an empty Market.'}
               actionLabel="Clear filters"
               onAction={() => {
                 setSearchQuery('')
@@ -394,17 +451,19 @@ export default function MarketPage() {
                 setMaxPrice('')
                 setCreator('')
                 setSort('newest')
+                setPersona('all')
               }}
             />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {visibleSouls.map((soul) => (
-                <div key={soul.id} className="card card-hover group overflow-hidden relative">
+                <div key={soul.onChainId} className="card card-hover group overflow-hidden relative">
                   <Link
                     href={`/souls/${encodeURIComponent(soul.onChainId)}`}
                     className="block cursor-pointer"
                   >
                     <SoulCoverImage
+                      soul={soul}
                       imageUrl={soul.imageUrl}
                       className="aspect-[4/5]"
                       fallbackStyle={{ backgroundImage: avatarGradientFor(soul.onChainId) }}
@@ -435,7 +494,10 @@ export default function MarketPage() {
                           <p className="font-display text-[16px] font-extrabold leading-none tracking-[-0.01em] text-value-text">
                             {formatAtomicAmountForDisplay(soul.listedPriceAtomic)}
                           </p>
-                          <p className="mt-1 font-mono text-[10.5px] text-muted">+ network fee at checkout</p>
+                          <p className="mt-1 font-mono text-[10.5px] text-muted">{soul.quote
+                            ? `Buyer total ${formatAtomicAmountForDisplay(soul.quote.totalAtomic)} + SUI gas`
+                            : 'Exact total and fees must be verified at checkout'}</p>
+                          {!soul.purchaseAvailable && <p className="mt-1 text-[10.5px] text-muted">Purchase currently unavailable · view details</p>}
                         </div>
                       )}
                     </div>
@@ -447,11 +509,14 @@ export default function MarketPage() {
               ))}
             </div>
           )}
+          {!priceError && <MarketPagination data={soulsData} onPage={page => setSoulPage({ filter: soulFilter, page })} />}
         </>
       )}
 
+      {marketView === 'equipment' && <EquipmentMarketBrowser/>}
       {marketView === 'collections' && (
         <>
+          <MarketScanStatus label="Collections" read={collections} />
           <FilterTabs
             tabs={[
               { id: 'all', label: `All Collections` },
@@ -468,21 +533,21 @@ export default function MarketPage() {
               ))}
             </div>
           ) : (() => {
-            const filtered = collectionTab === 'for-sale'
-              ? visibleCollections.filter((c) => c.listingStatus === 'listed')
-              : visibleCollections
-            return filtered.length === 0 ? (
+            const filtered = visibleCollections
+            return filtered.length === 0 && !collections.error ? (
               <EmptyState
                 icon="📦"
                 label={
-                  searchQuery
-                    ? `No collections matching "${searchQuery}"`
+                  !collectionsData?.complete ? 'No matching Collections in the verified results so far'
+                    : debouncedQuery
+                    ? `No collections matching "${debouncedQuery}"`
                     : collectionTab === 'for-sale'
                       ? 'No collection caps listed for sale yet'
                       : 'No collections yet'
                 }
                 sublabel={
-                  collectionTab === 'for-sale'
+                  !collectionsData?.complete ? 'Continue or retry the scan before treating these results as an empty Market.'
+                    : collectionTab === 'for-sale'
                     ? 'Collection caps will appear here when holders list them for sale.'
                     : 'Soul collections will appear here once created.'
                 }
@@ -490,11 +555,12 @@ export default function MarketPage() {
             ) : (
               <div className="grid grid-cols-1 gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-3">
                 {filtered.map((collection) => (
-                  <CollectionCard key={collection.id} collection={collection} />
+                  <CollectionCard key={collection.collectionId} collection={collection} />
                 ))}
               </div>
             )
           })()}
+          <MarketPagination data={collectionsData} onPage={page => setCollectionPage({ filter: collectionFilter, page })} />
         </>
       )}
     </PageContainer>

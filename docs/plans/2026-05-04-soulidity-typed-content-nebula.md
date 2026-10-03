@@ -1,5 +1,8 @@
 # Typed-Content Nebula - Soulidity Content 抽象统一
 
+> Historical design, not an executable release guide. Publication instructions
+> below are superseded by [single fresh release](2026-10-01-single-release-entry.md).
+
 ## Context
 
 用户观察到 `skill / sprite / voice` 三者在 CRUD 形态上同构：per-name 多 version、`is_public` 标志、Walrus blob、Seal document、owner / granted-agent 双轨写入。当前 `move/soulidity/sources/skills.move` 和 `move/soulidity/sources/assets.move` 是有意拷贝（`docs/plans/2026-04-11-soul-assets-and-content-access-plan.md:96` 写明 "与 skills.move 同构，新增 asset_type，不另起存储语义"），但这份同构已经把产品演进绑在 ABI break 上。
@@ -1178,7 +1181,7 @@ npm run build:web:production-env
 
 NEXT_PUBLIC_SUI_NETWORK=testnet npm run publish:soulidity -- --testnet-e2e
 NEXT_PUBLIC_SUI_NETWORK=testnet tsx scripts/reset-soulidity-mirror.ts --apply --package-id=<newPackageId>
-NEXT_PUBLIC_SUI_NETWORK=testnet tsx scripts/smoke-soulidity.ts
+# Historical testnet smoke command removed; see 2026-10-01-single-release-entry.md.
 NEXT_PUBLIC_SUI_NETWORK=testnet tsx scripts/bench-fast-path.ts
 
 # Required before mainnet publish: attach PTB economics proof + audit sign-off to release notes.
@@ -1186,13 +1189,16 @@ NEXT_PUBLIC_SUI_NETWORK=testnet tsx scripts/bench-fast-path.ts
 NEXT_PUBLIC_SUI_NETWORK=mainnet tsx scripts/precheck-live-soulidity-collections.ts
 NEXT_PUBLIC_SUI_NETWORK=mainnet npm run publish:soulidity -- --mainnet-e2e
 NEXT_PUBLIC_SUI_NETWORK=mainnet tsx scripts/reset-soulidity-mirror.ts --apply --package-id=<newPackageId>
-NEXT_PUBLIC_SUI_NETWORK=mainnet tsx scripts/smoke-soulidity.ts
+# Historical mainnet smoke command removed; live acceptance is now S12/S13.
 NEXT_PUBLIC_SUI_NETWORK=mainnet npm run publish:soulidity -- --resume-cap-transfer-from-manifest --transfer-caps-to=<multisig>
 ```
 
 注：mainnet 流程不再调 `export-soulidity-paid-access-impact.ts`（用户决策"不考虑生产历史数据"，旧 paid-access 直接 wipe）。
 
-Mainnet `smoke-soulidity` must pass before cap transfer. If smoke fails after publish, rollback is product-side: keep old deployment manifest active and do not sync/list the new package until fixed. Since this plan is hard cut, rollback is not an on-chain object migration.
+Historical gate superseded: the old PTB/mirror smoke runner and separate cap-transfer
+flow have been removed. Current fresh-release and S12/S13 evidence requirements are
+in `2026-10-01-single-release-entry.md` and the linked AC roadmap. None of this
+historical command block is an executable current release runbook.
 
 ## Critical Files
 
@@ -1235,7 +1241,7 @@ Mainnet `smoke-soulidity` must pass before cap transfer. If smoke fails after pu
 - `move/soulidity/sources/protocol_tests.move`
 - `scripts/publish-soulidity-and-sync.ts`（捕获 `kindRegistryId` + `kindAdminCapId`，校验 cap 不在 deployer）
 - `scripts/reset-soulidity-mirror.ts`
-- `scripts/smoke-soulidity.ts`
+- Historical PTB/mirror smoke runner (removed; not a current executable file).
 - `scripts/bench-fast-path.ts`
 - `scripts/precheck-live-soulidity-collections.ts`（新增 KindAdminCap 归属检查）
 - `web/lib/soulidity/deployment.ts`

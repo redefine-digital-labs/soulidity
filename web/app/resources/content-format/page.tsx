@@ -123,16 +123,13 @@ export default function ContentFormatPage() {
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Slot addressing</h2>
         <p className="text-sm text-muted">
-          Every content slot is addressed by the triple <code>(kind, name, version_index)</code>. This is the canonical addressing scheme across the on-chain layer, the access API, and DB mirrors. Legacy phase 1 addressing — separate <code>SoulMemory</code> / <code>SoulSkills</code> object IDs, <code>timestamp_key</code>, etc. — does not exist post-phase 2.
+          Every content slot is addressed by the triple <code>(kind, name, version_index)</code> within its SoulContent object. The browser resolves the Soul&apos;s immutable State pointer and checks the actual slot, permissions, encrypted envelope and certified Walrus Blob. Version indexes remain exact decimal strings.
         </p>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground/90">
-          <code>{`// Legacy Soul document route — fixed to (KIND_SOUL_DOC, "soul", 0)
-GET /api/souls/[id]/access
-
-// Content-slot access route
-GET /api/souls/[id]/content/1/default/3/access
-GET /api/souls/[id]/content/2/my-skill/0/access
-GET /api/souls/[id]/content/3/idle/2/access`}</code>
+          <code>{`// Exact typed-content selectors, not HTTP endpoints
+{ kind: 1, name: "default", versionIndex: "3" }
+{ kind: 2, name: "my-skill", versionIndex: "0" }
+{ kind: 3, name: "idle", versionIndex: "2" }`}</code>
         </pre>
       </div>
 

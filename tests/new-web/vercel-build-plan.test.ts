@@ -21,15 +21,14 @@ describe('Vercel build plan', () => {
     expect(plan({ VERCEL_ENV: 'preview' })).toEqual(['build'])
   })
 
-  it('runs migrations before a production build', () => {
+  it('never runs database operations even if historical credentials are present', () => {
     expect(plan({
       VERCEL_ENV: 'production',
       DIRECT_URL: 'postgresql://production.example/soulidity',
-    })).toEqual(['prisma:migrate:deploy', 'build'])
+    })).toEqual(['build'])
   })
 
-  it('fails closed when a production build has no database URL', () => {
-    expect(() => plan({ VERCEL_ENV: 'production' }))
-      .toThrow(/Production Vercel builds require DIRECT_URL or DATABASE_URL/)
+  it('builds production with no database credentials', () => {
+    expect(plan({ VERCEL_ENV: 'production' })).toEqual(['build'])
   })
 })

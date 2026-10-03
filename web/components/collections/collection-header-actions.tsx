@@ -2,7 +2,7 @@
 
 import { buttonStyles } from '@/components/ui/button'
 import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
-import type { CollectionDetailResponse } from '@soulidity/sdk'
+import type { ChainCollectionDetail } from '@/lib/collections/collection-detail-model'
 import type { CollectionAction } from '@/components/collections/collection-row-card'
 
 export type CollectionViewVariant =
@@ -12,8 +12,10 @@ export type CollectionViewVariant =
   | 'owner-listed'
   | 'owner-held'
   | 'creator-sold'
+  | 'unavailable'
 
-export function resolveCollectionViewVariant(collection: CollectionDetailResponse): CollectionViewVariant {
+export function resolveCollectionViewVariant(collection: ChainCollectionDetail): CollectionViewVariant {
+  if (collection.listingStatus === 'unavailable') return 'unavailable'
   if (!collection.tradeable) return 'non-tradeable'
   if (collection.isHolder) {
     return collection.listingStatus === 'listed' ? 'owner-listed' : 'owner-held'
@@ -27,7 +29,7 @@ function formatAddress(value: string) {
 }
 
 interface CollectionHeaderActionsProps {
-  collection: CollectionDetailResponse
+  collection: ChainCollectionDetail
   variant: CollectionViewVariant
   onAction: (type: CollectionAction) => void
   onBuy?: () => void
@@ -42,6 +44,11 @@ export function CollectionHeaderActions({ collection, variant, onAction, onBuy, 
     : null
 
   switch (variant) {
+    case 'unavailable':
+      return <div className="rounded-xl border border-border bg-card2 px-5 py-4 max-w-xs">
+        <p className="text-sm font-bold">Listing state unavailable</p>
+        <p className="mt-2 text-xs text-muted">The current reservation is not a verified Market listing. Refresh its chain state before trading.</p>
+      </div>
     case 'non-tradeable':
       return (
         <div className="rounded-xl border border-border bg-card2 px-5 py-4 max-w-xs">
@@ -61,20 +68,24 @@ export function CollectionHeaderActions({ collection, variant, onAction, onBuy, 
       return (
         <div className="rounded-xl border border-gold/30 bg-card2 px-5 py-4 max-w-xs">
           {listedPrice && (
-            <div className="font-display text-2xl font-bold text-gold mb-2">{listedPrice}</div>
+            <div className="font-display text-2xl font-bold text-gold mb-2 break-all">{listedPrice}</div>
           )}
           <button
             onClick={onBuy}
-            disabled={buyPending}
+            disabled={buyPending || !collection.purchaseAvailable}
             className={buttonStyles({ variant: 'gold', full: true, className: buyPending ? 'opacity-60 cursor-wait' : '' })}
           >
             {buyPending ? 'Purchasing…' : 'Buy Collection Cap'}
           </button>
+          {collection.quote && <p className="mt-2 text-xs text-muted break-words">
+            Platform fee: {formatAtomicAmountForDisplay(collection.quote.platformFeeAtomic)} · Total: {formatAtomicAmountForDisplay(collection.quote.totalAtomic)} + SUI gas
+          </p>}
+          {!collection.purchaseAvailable && <p className="mt-2 text-xs text-muted">Purchases are currently unavailable.</p>}
           {buySuccess && (
-            <p className="mt-2 text-[11px] font-semibold text-teal">Purchase successful — you now own this collection cap.</p>
+            <p className="mt-2 text-[11px] font-semibold text-teal">Original purchase confirmed. Current custody is shown by the refreshed chain read.</p>
           )}
           {buyError && (
-            <p className="mt-2 text-[11px] font-medium text-danger">{buyError}</p>
+            <p className="mt-2 text-[11px] font-medium text-danger break-words">{buyError}</p>
           )}
           <p className="mt-2 text-[11px] text-muted leading-relaxed">
             Buying the collection cap transfers royalty participation for all Souls in this collection.
@@ -120,7 +131,7 @@ export function CollectionHeaderActions({ collection, variant, onAction, onBuy, 
             Your Collection &middot; Listed
           </p>
           {listedPrice && (
-            <div className="font-display text-2xl font-bold text-gold mb-3">{listedPrice}</div>
+            <div className="font-display text-2xl font-bold text-gold mb-3 break-all">{listedPrice}</div>
           )}
           <div className="flex gap-2">
             <button

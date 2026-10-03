@@ -6,6 +6,7 @@ const config = [
   {
     ignores: [
       '.next/**',
+      'dist-spa/**',
       'node_modules/**',
       'public/**',
     ],

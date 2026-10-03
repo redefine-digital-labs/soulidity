@@ -26,6 +26,29 @@ function sidecarKey(kind: number, name: string, versionIndex: number) {
   return `${kind}::${name}::${versionIndex}`
 }
 
+/** Reject unrelated slots; encrypted events require sidecars, public slots may omit null. */
+export function assertExactContentSidecarSlots(
+  sidecars: ContentSidecarMap,
+  versions: ReadonlyArray<Pick<ContentSidecarRequestEntry, 'kind' | 'name' | 'versionIndex'> & { sealEncrypted: boolean }>,
+) {
+  const expected = new Set<string>()
+  for (const version of versions) {
+    const key = sidecarKey(version.kind, version.name, version.versionIndex)
+    if (expected.has(key)) {
+      throw new SealSidecarRequestError(`Selected Soul content events contain duplicate slot ${key}`)
+    }
+    expected.add(key)
+    if (version.sealEncrypted && !sidecars.has(key)) {
+      throw new SealSidecarRequestError(`contentSidecars is missing selected Soul slot ${key}`)
+    }
+  }
+  for (const key of sidecars.keys()) {
+    if (!expected.has(key)) {
+      throw new SealSidecarRequestError(`contentSidecars contains unexpected selected Soul slot ${key}`)
+    }
+  }
+}
+
 export function parseContentSidecars(value: unknown, fieldName: string): ContentSidecarMap {
   const out: ContentSidecarMap = new Map()
   if (value == null) {

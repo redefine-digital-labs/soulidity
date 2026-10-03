@@ -6,18 +6,26 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { SoulCoverImage } from '@/components/souls/soul-cover-image'
+import { useNativeMarketListActions } from '@/lib/hooks/use-native-market-list-actions'
+import { NativeListingRecovery } from '@/components/souls/native-listing-recovery'
+import { NativeListingQuote } from '@/components/souls/native-listing-quote'
 import { useSoulDetail } from '@/lib/hooks/use-souls'
 import {
-  ANIMACRAFT_V5_PROTOCOL_FEE_BPS,
   formatAtomicAmountForDisplay,
   parseDisplayAmountToAtomic,
-  sameSuiValue,
 } from '@soulidity/sdk'
 
 export default function SellPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { user, getAuthHeaders } = useAuth()
-  const { data: soul, isLoading, error } = useSoulDetail(id, getAuthHeaders, user?.id)
+  const { data: soul, isLoading, error } = useSoulDetail(id)
+  const isNative = soul?.provenanceKind === 'animacraft'
+  const nativeActions = useNativeMarketListActions(isNative && soul
+    ? {soulId:soul.onChainId,stateId:soul.stateOnChainId,listingId:soul.listingObjectOnChainId??null} : null)
+  const native = isNative ? nativeActions : null
+  const equipmentSale = native?.snapshot?.equipmentSale
+  const nativeCanList = native?.canList && !!native.snapshot
+    && (native.snapshot.equipmentId === null || !!equipmentSale)
   const [price, setPrice] = useState('')
 
   let priceAtomic: bigint | null = null
@@ -25,13 +33,14 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
   if (price.trim()) {
     try {
       priceAtomic = parseDisplayAmountToAtomic(price)
+      if (priceAtomic > 18446744073709551615n) throw new Error('Listing price exceeds the supported maximum')
     } catch (parseError) {
       priceError = parseError instanceof Error ? parseError.message : 'Invalid amount'
     }
   }
 
   // Floor price enforcement: soul in a collection must list at or above the floor
-  const collectionFloor = soul?.collection?.floorPriceAtomic ? BigInt(soul.collection.floorPriceAtomic) : null
+  const collectionFloor = !native && soul?.collection?.floorPriceAtomic ? BigInt(soul.collection.floorPriceAtomic) : null
   const invalidPrice = priceAtomic != null && priceAtomic <= 0n
   const belowFloor = priceAtomic != null && collectionFloor != null && priceAtomic < collectionFloor
 
@@ -59,7 +68,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     )
   }
 
-  if (!soul.isOwner) {
+  if (!native && !soul.isOwner) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-10">
         <EmptyState
@@ -75,24 +84,7 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     )
   }
 
-  const isAnimacraftV5 = soul.animacraftProvenance?.animacraftVersion === 5
-  if (isAnimacraftV5 && soul.collectionOnChainId) {
-    return (
-      <div className="max-w-[560px] mx-auto px-6 py-10">
-        <EmptyState
-          icon="🔒"
-          label="Collection-bound v5 Soul cannot be listed"
-          sublabel="Animacraft v5 secondary sales use frozen Soul-creator and Maker-source royalties and cannot include a collection royalty. This release has no on-chain collection-removal path, so listing is blocked without changing the Soul."
-          actionLabel="Back to Soul"
-          onAction={() => {
-            window.location.href = `/souls/${encodeURIComponent(soul.onChainId)}`
-          }}
-        />
-      </div>
-    )
-  }
-
-  if ((soul.listingStatus === 'listed' || soul.listingStatus === 'floor-violation') && soul.listedPriceAtomic) {
+  if (!native && (soul.listingStatus === 'listed' || soul.listingStatus === 'floor-violation') && soul.listedPriceAtomic) {
     return (
       <div className="max-w-[560px] mx-auto px-6 py-10">
         <EmptyState
@@ -112,26 +104,11 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     )
   }
 
-  const makerSourceRoyaltyBps = isAnimacraftV5
-    ? soul.animacraftProvenance!.makerRoyaltyBps
-    : 0
-  const platformFeeBps = isAnimacraftV5
-    ? ANIMACRAFT_V5_PROTOCOL_FEE_BPS
-    : soul.platformFeeBps
+  const platformFeeBps = soul.platformFeeBps
   const platformFeePct = platformFeeBps != null ? platformFeeBps / 100 : null
   const creatorRoyaltyPct = soul.creatorRoyaltyBps / 100
-  const makerSourceRoyaltyPct = makerSourceRoyaltyBps / 100
-  const collectionRoyaltyPct = !isAnimacraftV5 && soul.collection
-    ? soul.collection.extraRoyaltyBps / 100
-    : 0
+  const collectionRoyaltyPct = soul.collection ? soul.collection.extraRoyaltyBps / 100 : 0
   const creatorRoyaltyReturnsToSeller = soul.isCreator && creatorRoyaltyPct > 0
-  const makerSourceRoyaltyReturnsToSeller =
-    makerSourceRoyaltyPct > 0
-    && soul.animacraftProvenance != null
-    && sameSuiValue(
-      soul.animacraftProvenance.makerCreatorAddress,
-      soul.currentOwnerAddress,
-    )
   // Mirrors `market::buy_soul_impl`: collection royalty is paid only when the
   // collection holder differs from the seller. If the seller IS the current
   // collection holder, the royalty stays with them.
@@ -143,13 +120,12 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
     ? (
         100
         - platformFeePct
-        - (makerSourceRoyaltyReturnsToSeller ? 0 : makerSourceRoyaltyPct)
         - (creatorRoyaltyReturnsToSeller ? 0 : creatorRoyaltyPct)
         - (collectionRoyaltyReturnsToSeller ? 0 : collectionRoyaltyPct)
       ).toFixed(1)
     : null
 
-  const authorizeHref = priceAtomic != null && priceAtomic > 0n && !belowFloor
+  const authorizeHref = priceAtomic != null && priceAtomic > 0n && !belowFloor && !priceError && (!native || nativeCanList)
     ? `/souls/${encodeURIComponent(soul.onChainId)}/sell/authorize?price=${encodeURIComponent(price)}`
     : null
 
@@ -182,6 +158,8 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
         {/* Soul preview card */}
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card2 p-4">
           <SoulCoverImage
+            compact
+            soul={soul}
             imageUrl={soul.imageUrl}
             className="w-12 h-12 rounded-lg border border-border bg-card shrink-0"
             fallback={<span className="text-lg font-semibold">{soul.name.slice(0, 1).toUpperCase()}</span>}
@@ -191,9 +169,19 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
             <p className="text-xs text-muted capitalize">{soul.tags[0] ?? 'Soul'}</p>
           </div>
           <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-success/10 text-success border border-success/30">
-            For Sale
+            Set price
           </span>
         </div>
+
+        {native && <section aria-label="Selected sale scope" className="rounded-xl border border-border bg-card2 p-4 space-y-2 text-xs">
+          <p className="font-semibold">For sale: 1 Animacraft Soul only</p>
+          <p className="break-all">Soul ID: {soul.onChainId}</p>
+          <p>Equipment is not for sale. Selecting this Soul does not select any equipment for sale.</p>
+          {native.snapshot?.equipmentId && (equipmentSale ? <>
+            <p>{equipmentSale.removals.length} equipped selections will be removed and the empty equipment binding closed atomically with listing. Owned equipment stays in the seller’s wallet.</p>
+            <p>Review the exact removal list on the next step. Cancelling a successful listing does not re-equip anything.</p>
+          </> : <p>Complete verified equipment removal plan unavailable. Refresh before listing; no partial removal or listing will be submitted.</p>)}
+        </section>}
 
         {/* Listing price input */}
         <div className="space-y-2">
@@ -217,19 +205,8 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           )}
         </div>
 
-        {isAnimacraftV5 && (
-          <div className="rounded-xl border border-purple/30 bg-purple/5 px-4 py-3 text-sm">
-            <p className="font-semibold text-action-label">Animacraft v5 gross-price resale</p>
-            <p className="mt-1 text-xs leading-relaxed text-muted">
-              The buyer pays exactly the price you enter. The 2.5% protocol fee,
-              frozen Soul-creator royalty and immutable Maker-source royalty are
-              distributed from that gross amount on-chain.
-            </p>
-          </div>
-        )}
-
         {/* Fee breakdown */}
-        <div className="rounded-xl border border-border bg-card2 overflow-hidden">
+        {native ? <NativeListingQuote snapshot={native.snapshot} priceAtomic={priceAtomic}/> : <div className="rounded-xl border border-border bg-card2 overflow-hidden">
           {soul.listedPriceAtomic && (
             <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
               <span className="text-muted">Current listing price</span>
@@ -242,19 +219,11 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
           </div>
           <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
             <span className="text-muted">
-              {isAnimacraftV5 ? 'Soul creator royalty' : 'Creator royalty'}{' '}
+              {'Creator royalty'}{' '}
               <span className="text-[10px] text-teal ml-1">on-chain enforced</span>
             </span>
             <span>{creatorRoyaltyPct}%{creatorRoyaltyReturnsToSeller ? ' (returns to you)' : ''}</span>
           </div>
-          {isAnimacraftV5 && (
-            <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
-              <span className="text-muted">Maker-source royalty</span>
-              <span>
-                {makerSourceRoyaltyPct}%{makerSourceRoyaltyReturnsToSeller ? ' (returns to you)' : ''}
-              </span>
-            </div>
-          )}
           {collectionRoyaltyPct > 0 && (
             <div className="flex justify-between text-sm px-4 py-2.5 border-b border-border">
               <span className="text-muted">Collection royalty</span>
@@ -265,10 +234,18 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
             <span className="font-semibold">You receive</span>
             <span className="font-semibold text-success">{youReceivePct != null ? `${youReceivePct}% of sale price` : '—'}</span>
           </div>
-        </div>
+        </div>}
+
+        {native && <>
+          {!nativeCanList && <p className="text-xs text-muted">{native.snapshot?.equipmentId && !equipmentSale
+            ? 'Listing is blocked until the complete equipment removal plan can be verified. Saved transactions remain recoverable below.'
+            : native.snapshot?.listed ? 'This Soul is already listed. Open the Soul page to update its price; saved transactions remain recoverable below.'
+            : 'Listing requires the current owner, verified release readiness and no pending saved transaction.'}</p>}
+          <NativeListingRecovery actions={native}/>
+        </>}
 
         {/* Warning: grants voided */}
-        {soul.activeGrantCount > 0 && <div className="rounded-xl border border-gold/30 bg-gold/5 px-4 py-3 text-sm">
+        {BigInt(soul.activeGrantCount) > 0n && <div className="rounded-xl border border-gold/30 bg-gold/5 px-4 py-3 text-sm">
           <p className="font-semibold text-gold mb-1">
             <svg className="inline-block w-4 h-4 mr-1 -mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             Active SoulGrant will be voided on sale.
@@ -281,8 +258,10 @@ export default function SellPage({ params }: { params: Promise<{ id: string }> }
 
         {/* Info: escrow notice */}
         <div className="rounded-xl border border-purple/30 bg-purple/5 px-4 py-3 text-sm leading-relaxed text-action-label">
-          Your Soul will be <span className="font-semibold text-action-label">escrowed</span> in the contract during the listing.
-          You can delist and reclaim it anytime before a sale.
+          {native ? 'Only this Soul will be listed in its current kiosk. Equipment is not included. You can cancel an unsold listing; removed equipment stays unequipped in your wallet.' : <>
+            Your Soul will be <span className="font-semibold text-action-label">escrowed</span> in the contract during the listing.
+            You can delist and reclaim it anytime before a sale.
+          </>}
         </div>
 
         {/* Action buttons */}

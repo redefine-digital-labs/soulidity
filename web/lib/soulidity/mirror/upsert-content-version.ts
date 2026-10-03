@@ -9,12 +9,9 @@ import {
 } from '@soulidity/sdk'
 import type { SoulDownloadPolicy } from '@soulidity/sdk'
 
-// Helpers accept an optional client so future routes can thread a
-// `prisma.$transaction` client when they need to atomically batch multiple
-// writes. The single-row upsert/update is naturally idempotent, so the
-// `/content/sync` route deliberately runs it OUTSIDE a transaction —
-// otherwise a downstream rollback would lose the Seal sidecar (the only
-// off-chain copy of the encrypted DEK + IV) and brick the Walrus blob.
+// Retained mint/publish consumers may batch projection writes with a Prisma
+// transaction. Ordinary append envelopes now persist atomically on chain;
+// delete/purge/active recovery never relies on this mirror or a Seal sidecar.
 type MirrorDbClient = Prisma.TransactionClient | typeof prisma
 
 /**
@@ -100,56 +97,6 @@ export async function upsertContentVersionProjection(
       downloadPolicy: downloadPolicyU8,
       sealSidecar,
       createdAtMs,
-    },
-  })
-}
-
-export async function markContentVersionDeleted(
-  params: {
-    contentOnChainId: string
-    kind: number
-    name: string
-    versionIndex: number
-    deletedAt?: Date | null
-  },
-  client: MirrorDbClient = prisma,
-) {
-  return client.soulContentVersionRecord.update({
-    where: {
-      contentOnChainId_kind_name_versionIndex: {
-        contentOnChainId: params.contentOnChainId,
-        kind: params.kind,
-        name: params.name,
-        versionIndex: params.versionIndex,
-      },
-    },
-    data: {
-      deletedAt: params.deletedAt ?? new Date(),
-    },
-  })
-}
-
-export async function markContentVersionPurged(
-  params: {
-    contentOnChainId: string
-    kind: number
-    name: string
-    versionIndex: number
-    purgedAt?: Date | null
-  },
-  client: MirrorDbClient = prisma,
-) {
-  return client.soulContentVersionRecord.update({
-    where: {
-      contentOnChainId_kind_name_versionIndex: {
-        contentOnChainId: params.contentOnChainId,
-        kind: params.kind,
-        name: params.name,
-        versionIndex: params.versionIndex,
-      },
-    },
-    data: {
-      purgedAt: params.purgedAt ?? new Date(),
     },
   })
 }

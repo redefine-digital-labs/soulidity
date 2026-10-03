@@ -1,10 +1,11 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
-import { useCollectionDetail, useCollectionActions } from '@/lib/hooks/use-collections'
-import { useAuth } from '@/components/providers/auth-provider'
+import { useCollectionDetail } from '@/lib/hooks/use-collections'
+import { useCollectionBuy } from '@/lib/hooks/use-collection-buy'
+import { CollectionPurchasePanel } from '@/components/collections/collection-purchase-panel'
 import { useToast } from '@/components/ui/toast'
 import { EmptyState } from '@/components/ui/empty-state'
 import { CollectionHeader } from '@/components/collections/collection-header'
@@ -17,30 +18,49 @@ import type { CollectionAction } from '@/components/collections/collection-row-c
 
 export default function CollectionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const { user, getAuthHeaders } = useAuth()
-  const { data: collection, isLoading, error } = useCollectionDetail(id, getAuthHeaders, user?.id)
-  const { pending: actionPending, error: actionError, buyCollection } = useCollectionActions(collection ?? null)
+  const [page, setPage] = useState(1)
+  const result = useCollectionDetail(id, page)
+  return <CollectionDetailContent key={result.identityKey} routeId={id} result={result} page={page} setPage={setPage} />
+}
+
+function CollectionReadStatus({ name, source }: { name: string; source: ReturnType<typeof useCollectionDetail>['detail'] | ReturnType<typeof useCollectionDetail>['members'] }) {
+  return <div aria-label={`${name} scan`} className="rounded-xl border border-border bg-card2 p-3 text-xs space-y-2">
+    <p>{name}: {source.progress.coverage} · {source.progress.pages} verified pages{source.progress.busy ? ' · Reading chain…' : ''}</p>
+    <p className="text-muted">Candidate coverage and later current reads are non-atomic observations, not transaction authorization.</p>
+    {source.error && <p role="alert" className="text-danger break-words">{source.error.message}</p>}
+    <div className="flex flex-wrap gap-3">
+      {source.progress.busy ? <button onClick={source.pause}>Pause {name}</button>
+        : !['COMPLETE', 'LIMIT_REACHED'].includes(source.coverage) && <button onClick={() => void (source.lifetime ? source.resume() : source.refresh())}>Continue {name}</button>}
+      <button onClick={() => void source.refresh()}>Refresh {name}</button>
+    </div>
+    {source.coverage === 'LIMIT_REACHED' && <p>Discovery limit reached. These results are incomplete.</p>}
+  </div>
+}
+
+function CollectionDetailContent({ result, routeId, page, setPage }: { result: ReturnType<typeof useCollectionDetail>; routeId: string; page: number; setPage: (page: number) => void }) {
+  const { data: collection, isLoading, error, detail, members } = result
+  const id = routeId
   const queryClient = useQueryClient()
   const { showToast } = useToast()
   const [activeModal, setActiveModal] = useState<CollectionAction | null>(null)
   const [buySuccess, setBuySuccess] = useState(false)
+  const [buyOpen, setBuyOpen] = useState(false)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
-  async function handleBuy() {
-    try {
-      await buyCollection()
-      queryClient.invalidateQueries({ queryKey: ['collection', id] })
-      queryClient.invalidateQueries({ queryKey: ['my-souls'] })
-      queryClient.invalidateQueries({ queryKey: ['collections'] })
-      showToast('Collection purchased successfully!', 'success')
-      setBuySuccess(true)
-      setTimeout(() => setBuySuccess(false), 4000)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Purchase failed'
-      showToast(`Collection purchase failed: ${msg}`, 'danger')
-    }
-  }
+  const purchase = useCollectionBuy({ onChainId: id, name: collection?.name ?? 'Collection',
+    listedPriceAtomic: collection?.listedPriceAtomic ?? null, listingObjectOnChainId: collection?.listingObjectOnChainId ?? null }, () => {
+    if (!mounted.current) return
+    showToast('Original Collection purchase confirmed on chain.', 'success'); setBuySuccess(true)
+    void queryClient.invalidateQueries({ queryKey: ['collection', id] })
+    void queryClient.invalidateQueries({ queryKey: ['my-souls'] })
+    void queryClient.invalidateQueries({ queryKey: ['collections'] })
+  })
+  const purchasePanel = <CollectionPurchasePanel key={purchase.identityKey} purchase={purchase}
+    offered={collection?.purchaseAvailable ?? false} expanded={buyOpen} onExpand={() => setBuyOpen(true)} />
 
   function handleModalClose() {
+    if (!mounted.current) return
     setActiveModal(null)
     queryClient.invalidateQueries({ queryKey: ['collection', id] })
     queryClient.invalidateQueries({ queryKey: ['my-souls'] })
@@ -50,6 +70,8 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
   if (isLoading) {
     return (
       <div className="max-w-[1100px] mx-auto px-6 py-8 space-y-6">
+        <CollectionReadStatus name="Collection" source={detail} />
+        {purchasePanel}
         <div className="h-6 w-32 rounded bg-card2 animate-pulse" />
         <div className="flex gap-5">
           <div className="h-24 w-24 rounded-xl bg-card2 animate-pulse shrink-0" />
@@ -72,10 +94,12 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
   if (error || !collection) {
     return (
       <div className="max-w-[760px] mx-auto px-6 py-10">
+        <CollectionReadStatus name="Collection" source={detail} />
+        {purchasePanel}
         <EmptyState
           icon={'\uD83D\uDCE6'}
-          label="Collection not found"
-          sublabel="The Soulidity projection does not have this collection yet."
+          label="Collection read unavailable"
+          sublabel={error?.message ?? 'The chain read has not established this Collection yet. Continue or refresh the read.'}
           actionLabel="Back to Market"
           onAction={() => { window.location.href = '/market' }}
         />
@@ -87,6 +111,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="max-w-[1100px] mx-auto px-6 py-8 relative z-10 space-y-6">
+      <CollectionReadStatus name="Collection" source={detail} />
       {/* Header with actions */}
       <CollectionHeader
         collection={collection}
@@ -95,13 +120,15 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
             collection={collection}
             variant={variant}
             onAction={(type) => setActiveModal(type)}
-            onBuy={handleBuy}
-            buyPending={actionPending === 'purchase'}
-            buyError={actionError}
+            onBuy={() => setBuyOpen(true)}
+            buyPending={purchase.pending}
+            buyError={purchase.error}
             buySuccess={buySuccess}
           />
         }
       />
+
+      {purchasePanel}
 
       {/* Stats row */}
       <CollectionStatsRow collection={collection} />
@@ -121,9 +148,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
             </span>
             {collection.isCreator && (
               (() => {
-                const cap = collection.maxSoulSupply == null ? null : Number(collection.maxSoulSupply)
-                const atCapacity = cap != null && collection.currentSoulSupply >= cap
-                if (atCapacity) {
+                if (collection.atCapacity) {
                   return (
                     <span className="rounded-full border border-border bg-card2/60 px-3 py-1 text-[11px] font-semibold text-muted">
                       Supply reached
@@ -143,23 +168,32 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
           </div>
         </div>
 
+        <CollectionReadStatus name="Member Souls" source={members} />
+        {collection.memberSupplyMismatch && <p role="status" className="my-3 text-xs text-muted">The discovered members differ from the current supply. Chain state may have changed during the scan; refresh both reads before relying on aggregate counts.</p>}
+
         {collection.souls.length === 0 ? (
           <EmptyState
             icon={'\uD83E\uDEE5'}
-            label={collection.isCreator ? 'No Souls yet' : 'No Souls mirrored yet'}
+            label={collection.membersComplete ? 'No Souls yet' : 'No member Souls verified yet'}
             sublabel={
-              collection.isCreator
+              collection.membersComplete && collection.isCreator
                 ? 'Mint your first Soul and bind it to this collection from the create flow.'
-                : 'Souls will appear here after mint or sync.'
+                : 'Continue or refresh member discovery. An incomplete read is not an empty Collection.'
             }
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {collection.souls.map((soul) => (
-              <CollectionSoulCard key={soul.id} soul={soul} collectionName={collection.name} />
+              <CollectionSoulCard key={soul.onChainId} soul={soul} collectionName={collection.name} />
             ))}
           </div>
         )}
+        <div className="mt-4 flex flex-wrap items-center gap-4 text-xs">
+          <span>{collection.memberCount} verified members · page {collection.page} of {collection.pages}{collection.membersComplete ? '' : ' · incomplete totals'}</span>
+          <button disabled={collection.page <= 1} onClick={() => setPage(Math.max(1, collection.page - 1))}>Previous members</button>
+          <button disabled={collection.page >= collection.pages} onClick={() => setPage(collection.page + 1)}>Next members</button>
+          {page !== collection.page && <button onClick={() => setPage(1)}>First members</button>}
+        </div>
       </section>
 
       {/* Back to Market */}

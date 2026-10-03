@@ -45,7 +45,10 @@ export async function generateMetadata({
       : ''
   const title = `${soul.name}${priceSuffix}`
   const description = soul.description?.slice(0, 200) || `${soul.name} on Soulidity.`
-  const ogImages = soul.imageUrl ? [{ url: soul.imageUrl }] : undefined
+  // Crawlers cannot resolve a browser-only native artwork reference. Never
+  // turn protected Walrus content into an unauthenticated social image URL.
+  const artworkUrl = soul.imageUrl?.startsWith('https://') ? soul.imageUrl : null
+  const ogImages = artworkUrl ? [{ url: artworkUrl }] : undefined
 
   return {
     title,
@@ -63,7 +66,7 @@ export async function generateMetadata({
       card: 'summary_large_image',
       title: `${soul.name} · Soulidity`,
       description,
-      images: soul.imageUrl ? [soul.imageUrl] : undefined,
+      images: artworkUrl ? [artworkUrl] : undefined,
     },
   }
 }

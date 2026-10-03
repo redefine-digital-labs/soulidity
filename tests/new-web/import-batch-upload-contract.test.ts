@@ -1,48 +1,27 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+const readSource = (file: string) => readFileSync(resolve(process.cwd(), file), 'utf8')
 
-function readSource(relativePath: string) {
-  return readFileSync(resolve(process.cwd(), relativePath), 'utf8')
-}
-
-describe('import batch upload contract', () => {
-  it('uses one batched Walrus cost review for all import files', () => {
-    const source = readSource('web/app/import/gas/page.tsx')
-    const deployStart = source.indexOf('async function handleDeploy()')
-    const deployEnd = source.indexOf('async function handleResume()', deployStart)
-    expect(deployStart).toBeGreaterThanOrEqual(0)
-    expect(deployEnd).toBeGreaterThan(deployStart)
-    const handleDeploy = source.slice(deployStart, deployEnd)
-
-    expect(handleDeploy).toContain('prepareSoulBlobsForBatchPublish({')
-    expect(handleDeploy).toContain('confirmQuote: async (quote)')
-    expect(handleDeploy).toContain('setUploadPhase(\'awaiting-register-signature\')')
-    expect(handleDeploy).toContain('attachWalrusCertifyCalls: prepared.attachCertifyCalls')
-    expect(handleDeploy).toContain('onImportTxExecuted: () => {')
-    expect(handleDeploy).not.toContain('uploadFile(')
-    expect(handleDeploy).not.toContain('uploadSoulPayload(')
+// Structural removal guards; actual field/order/recovery behavior is exercised
+// by ordinary-create-controller and import-create-page, not inferred here.
+describe('import durable authoring entry contract', () => {
+  it('submits original Files to the shared identity-first flow, with no pre-upload or fake resume inputs', () => {
+    const page = readSource('web/app/import/gas/page.tsx'), hook = readSource('web/lib/hooks/use-import.ts')
+    expect(page).toContain('originRef: ctx.originRef')
+    expect(page).toContain('cover: withMime(ctx.coverImageFile)')
+    expect(page).toContain('character: withMime(ctx.charFile)')
+    expect(page).toContain('memory: withMime(ctx.memoryFile)')
+    expect(hook).toContain("useSingleSoulAuthoring(approve, 'IMPORTED')")
+    for (const old of ['prepareSoulBlobsForBatchPublish', 'attachWalrusCertifyCalls', 'sealMaterial', '__e2eLastSealMaterial', 'Resume Sync', 'Start Over'])
+      expect(page).not.toContain(old)
+    expect(hook).not.toContain('/api/'); expect(hook).not.toContain('sessionStorage')
+    expect(readSource('web/components/providers/import-soul-provider.tsx')).not.toContain('PendingSealMaterial')
   })
-
-  it('marks the selected import royalty tier as pressed for browser automation and accessibility', () => {
-    const source = readSource('web/app/import/map/page.tsx')
-
-    expect(source).toContain('aria-pressed={ctx.royalty === opt.value}')
-    expect(source).toContain("desc: '5%', recommended: true")
-  })
-
-  it('wires Walrus certify calls into the import mint PTB before signing', () => {
-    const source = readSource('web/lib/hooks/use-import.ts')
-    const buildStart = source.indexOf('const tx: Transaction = await buildImportSoulTx({')
-    const signStart = source.indexOf('const result = await signAndExecute(tx)', buildStart)
-    expect(buildStart).toBeGreaterThanOrEqual(0)
-    expect(signStart).toBeGreaterThan(buildStart)
-    const beforeSign = source.slice(buildStart, signStart)
-
-    expect(source).toContain('attachWalrusCertifyCalls?: (tx: Transaction) => void | Promise<void>')
-    expect(source).toContain('onImportTxExecuted?: () => void')
-    expect(beforeSign).toContain('attachBeforeMint: params.attachWalrusCertifyCalls')
-    expect(beforeSign).not.toContain('await params.attachWalrusCertifyCalls?.(tx)')
-    expect(source).toContain('try { params.onImportTxExecuted?.() } catch { /* swallow callback errors */ }')
+  it('preserves selected royalty accessibility and original import contract label', () => {
+    const map = readSource('web/app/import/map/page.tsx')
+    expect(map).toContain('aria-pressed={ctx.royalty === opt.value}')
+    expect(map).toContain("desc: '5%', recommended: true")
+    expect(readSource('web/app/import/gas/page.tsx')).toContain('market::mint_imported_in_personal_kiosk_v2')
   })
 })

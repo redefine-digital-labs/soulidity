@@ -19,7 +19,7 @@ const variantStyles: Record<ButtonVariant, string> = {
   teal:
     'border border-transparent bg-[var(--ui-tech)] text-[var(--ui-tech-action-text)] hover:opacity-85',
   outline:
-    'border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text)] hover:border-[var(--ui-action)] hover:text-[var(--ui-action)]',
+    'border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text)] hover:border-[var(--ui-action)] hover:bg-[var(--ui-soft-action)] hover:text-[var(--ui-action-label)]',
   ghost:
     'border border-transparent bg-transparent text-[var(--ui-muted)] hover:bg-[var(--ui-surface-muted)] hover:text-[var(--ui-text)]',
   danger:
@@ -64,7 +64,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
       disabled={disabled}
       className={cn(
         buttonStyles({ variant, size, full, className }),
-        disabled && 'opacity-40 pointer-events-none cursor-not-allowed',
+        disabled && 'cursor-not-allowed opacity-50 grayscale-[25%]',
       )}
       {...props}
     >

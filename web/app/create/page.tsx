@@ -1,5 +1,7 @@
 'use client'
 
+import { AuthoringRecoveryImport } from '@/components/souls/authoring-recovery-import'
+
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -225,6 +227,7 @@ export default function CreateSoulPage() {
   return (
     <div className="relative z-10 border-t border-purple/20">
       <PageContainer size="sm" className="space-y-6 pt-7 sm:pt-9">
+        <AuthoringRecoveryImport />
         {isHydratingHandoff && (
           <div className="rounded-xl border border-purple/35 bg-card2/60 px-4 py-3 text-sm text-muted">
             Importing draft from desktop...

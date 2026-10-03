@@ -9,6 +9,8 @@ import { parseRequiredTxDigest } from '@soulidity/sdk'
 import { findSoulAssetDetailByRouteId } from '@/lib/soulidity/repository'
 import { getSuccessfulTransactionBlock, readTransactionSender, waitForTransactionBestEffort } from '@soulidity/sdk'
 import { assertTransactionSender, requireHumanWalletIdentity } from '@/lib/soulidity/server'
+import { verifyNativeMarketListing } from '@/lib/animacraft/native-market-listing'
+import { createNativeReceiveClient, readNativeReceiveTarget, NativeReceiveError } from '@/lib/animacraft/native-receive'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +53,7 @@ export async function POST(
     actorKey: auth.identity.memberId,
     resourceKey: soul.onChainId,
   })
-  if (stored) {
+  if (stored && soul.provenanceKind !== 'animacraft') {
     return NextResponse.json(stored.responseBody, { status: stored.statusCode })
   }
 
@@ -67,10 +69,30 @@ export async function POST(
     // The TX may contain multiple SoulListed events (e.g. mint + bind +
     // list bundled, or chunked batches). Select the event whose soul_id
     // matches the route Soul, not the first one in the digest.
-    const listedEvents = extractAllSoulListedEvents(transaction, packageId)
-    const listed = listedEvents.find((e) => e.soulId === soul.onChainId)
+    let expectedNativeListedState
+    if (soul.provenanceKind === 'animacraft') {
+      const target = readNativeReceiveTarget()
+      if (target.soulidityOriginalPackageId !== packageId) {
+        throw new NativeReceiveError('NATIVE_LISTING_TARGET_MISMATCH', 'Listing package differs from native target', 503)
+      }
+      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(25000)])
+      expectedNativeListedState = await verifyNativeMarketListing(createNativeReceiveClient(signal), target, {
+        soulId: soul.onChainId, stateId: soul.stateOnChainId, txDigest,
+        sender: readTransactionSender(transaction)!, transaction,
+      }, signal)
+    }
+    const listed = soul.provenanceKind === 'animacraft'
+      ? expectedNativeListedState
+      : extractAllSoulListedEvents(transaction, packageId).find((event) => event.soulId === soul.onChainId)
     if (!listed) {
       return NextResponse.json({ error: 'Transaction did not list this Soulidity object' }, { status: 422 })
+    }
+
+    // An old successful sync is historical evidence, not proof that this listing
+    // survived a subsequent reprice, cancellation or purchase.
+    if (stored) {
+      await expectedNativeListedState!.verifyReadSet()
+      return NextResponse.json(stored.responseBody, { status: stored.statusCode })
     }
 
     // Always mirror the committed chain state first — on-chain is source of truth.
@@ -83,10 +105,11 @@ export async function POST(
       previewImages: soul.previewImages,
       readme: soul.readme,
       creatorMemberId: soul.creatorMemberId,
-      currentOwnerMemberId: soul.currentOwnerMemberId,
+      currentOwnerMemberId: expectedNativeListedState ? auth.identity.memberId : soul.currentOwnerMemberId,
       listingObjectOnChainId: listed.listingId,
       listedPriceAtomic: listed.priceAtomic,
       listingStatus: 'listed',
+      expectedNativeListedState,
     })
 
     let responseBody: Record<string, unknown> = {
@@ -101,7 +124,7 @@ export async function POST(
     // Below-floor listings are valid on-chain but suppressed from marketplace reads via
     // a distinct listing status so they don't appear alongside policy-compliant listings.
     const floorViolation = (() => {
-      if (!soul.collection?.floorPriceAtomic) return false
+      if (expectedNativeListedState || !soul.collection?.floorPriceAtomic) return false
       const floorAtomic = BigInt(soul.collection.floorPriceAtomic.toString())
       return listed.priceAtomic < floorAtomic
     })()
@@ -129,6 +152,9 @@ export async function POST(
 
     return NextResponse.json(responseBody)
   } catch (error) {
+    if (error instanceof NativeReceiveError) {
+      return NextResponse.json({ code: error.code }, { status: error.status })
+    }
     console.error('[soul-list] Failed to mirror Soulidity listing transaction', {
       memberId: auth.identity.memberId,
       txDigest,
