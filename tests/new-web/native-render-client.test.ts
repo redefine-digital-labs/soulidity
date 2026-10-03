@@ -9,7 +9,7 @@ vi.mock('@soulidity/animacraft-render-core', async original => {
   return { ...core, renderResolvedMakerV8RecipePngV8: (options: any) => core.renderResolvedMakerV8RecipePngV8({ ...options,
     canvasFactory: () => ({ getContext: () => ({ clearRect() {}, save() {}, restore() {}, translate() {}, rotate() {}, scale() {}, drawImage() {} }),
       convertToBlob: async () => new Blob([new Uint8Array([9])], { type: 'image/png' }) }) as any,
-    decodeImage: async () => ({ source: {} as CanvasImageSource }),
+    decodeImage: async () => ({ source: { width: 8, height: 8 } as CanvasImageSource }),
   }) }
 })
 const blobId = Buffer.alloc(32, 3).toString('base64url')

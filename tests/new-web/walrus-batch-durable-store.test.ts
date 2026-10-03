@@ -318,23 +318,41 @@ it('cold authoring read reports a missing upload instead of permitting a fresh p
   expect(result.read).toContain('UPLOAD_RECORD_MISSING'); expect(result.create).toContain('UPLOAD_RECORD_MISSING')
 })
 it('the author lane locks preparation and packet journals across actual browser tabs', async () => {
-  await run(input => {
-    const g = globalThis as any; g.authorKey = g.A.soulAuthoringStoreKey(input.manifest.request)
-    g.authorEntered = false
-    g.authorLock = g.A.browserSoulAuthoringStore().exclusive(g.authorKey, async () => {
-      g.authorEntered = true; await new Promise<void>(resolve => { g.releaseAuthorLock = resolve })
-    }); return true
-  }, authoring)
-  const entered = await run(() => (globalThis as any).authorEntered)
-  expect(entered).toBe(true)
-  const error = await run(async input => {
-    const g = globalThis as any
-    const value = { ...input, preparation: g.P.importWalrusBatchPreparation(JSON.stringify(input.preparation)) }
-    try { await g.J.browserSoulAuthoringPacketJournal(value).exclusive(`${g.A.soulAuthoringStoreKey(input.manifest.request)}:packets`, async () => true); return null }
-    catch (error) { return (error as Error).message }
-  }, authoring, secondary)
-  await run(async () => { const g = globalThis as any; g.releaseAuthorLock(); await g.authorLock })
-  expect(error).toContain('BUSY_IN_ANOTHER_TAB')
+  try {
+    await run(input => {
+      const g = globalThis as any; g.authorKey = g.A.soulAuthoringStoreKey(input.manifest.request)
+      g.authorEntered = false
+      // Deliberately hold callback entry: CDP completion is not lock readiness.
+      g.authorStart = new Promise<void>(resolve => { g.startAuthor = resolve })
+      const held = new Promise<void>(resolve => { g.releaseAuthorLock = resolve })
+      let entered!: () => void, failed!: (error: unknown) => void
+      g.authorReady = new Promise<void>((resolve, reject) => { entered = resolve; failed = reject })
+      g.authorLock = g.A.browserSoulAuthoringStore().exclusive(g.authorKey, async () => {
+        await g.authorStart
+        g.authorEntered = true; entered(); await held
+      })
+      void g.authorLock.catch(failed)
+      return true
+    }, authoring)
+    expect(await run(() => (globalThis as any).authorEntered)).toBe(false)
+    const entered = await run(async () => {
+      const g = globalThis as any; g.startAuthor(); await g.authorReady; return g.authorEntered
+    })
+    expect(entered).toBe(true)
+    const error = await run(async input => {
+      const g = globalThis as any
+      const value = { ...input, preparation: g.P.importWalrusBatchPreparation(JSON.stringify(input.preparation)) }
+      try { await g.J.browserSoulAuthoringPacketJournal(value).exclusive(`${g.A.soulAuthoringStoreKey(input.manifest.request)}:packets`, async () => true); return null }
+      catch (error) { return (error as Error).message }
+    }, authoring, secondary)
+    expect(error).toContain('BUSY_IN_ANOTHER_TAB')
+  } finally {
+    // Release even if readiness, CDP, or an assertion fails, before the next test.
+    await run(async () => { const g = globalThis as any; g.startAuthor?.(); g.releaseAuthorLock?.(); await g.authorLock })
+  }
+  expect(await run(async () => {
+    const g = globalThis as any; return g.A.browserSoulAuthoringStore().exclusive(g.authorKey, async () => true)
+  })).toBe(true)
 })
 it('packet journals require the durable parent, hold exact bytes and forbid replacing unknown signing packets', async () => {
   const result = await run(async input => {

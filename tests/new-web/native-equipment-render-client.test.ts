@@ -95,7 +95,7 @@ it.each(['base', 'owned-base', 'pack'] as const)('renders %s using original tran
     expectedEquipment: { ...s.view.snapshot, ownershipEpoch: s.view.ownershipEpoch } })
   expect(decoded[0].bytes).toEqual(new Uint8Array([4, 5, 6])); expect(s.plain).toEqual(new Uint8Array(3))
   expect(decoded[0].type).toBe('image/png')
-  expect(canvases[0].context.translate).toHaveBeenCalledWith(2, -3)
+  expect(canvases[0].context.translate.mock.calls).toEqual([[3, -2], [-2, -2]])
   expect(canvases[0].context.rotate).toHaveBeenCalledWith(Math.PI / 2)
   expect(canvases[0].context.scale).toHaveBeenCalledWith(0.5, 0.5)
   expect(canvases[1].context.putImageData).toHaveBeenCalled()
@@ -178,7 +178,7 @@ it('snapshots caller scene mutation before awaiting reads', async () => {
   s.readScene.mockImplementation(async () => snapshot)
   const pending = renderNativeEquipmentScene(s.view, s.params); s.view.scene.layers[0].transform.x = 999
   await pending
-  expect(canvases[0].context.translate).toHaveBeenCalledWith(2, -3)
+  expect(canvases[0].context.translate.mock.calls).toEqual([[3, -2], [-2, -2]])
 })
 it('closes late bitmap and clears canvases when cancelled during decode', async () => {
   const s = fixture(), wait = defer<ImageBitmap>(), entered = defer<void>()

@@ -96,3 +96,31 @@ it('retains original error fields and deterministic color output through the pac
   const result = mapMakerV8SmartColorPixelsV8(input, { key: 'red', rgba: '#ff0000ff', stops: [] })
   expect([...result.data]).toEqual([255, 1, 1, 255]); expect([...input.data]).toEqual([128, 128, 128, 255])
 })
+
+it('renders native PNG extent with the original source-center pivot through the packaged API', async () => {
+  const calls: unknown[][] = []
+  const content = new Uint8Array([1, 2, 3])
+  const source = { width: 800, height: 400 }
+  const context = {
+    clearRect() {}, save() {}, restore() {},
+    translate(...args: number[]) { calls.push(['translate', ...args]) },
+    rotate(...args: number[]) { calls.push(['rotate', ...args]) },
+    scale(...args: number[]) { calls.push(['scale', ...args]) },
+    drawImage(...args: unknown[]) { calls.push(['draw', ...args]) },
+  }
+  await renderResolvedMakerV8RecipePngV8({
+    document: { canvas: { width: 1080, height: 1920, pixelMode: 'smooth' } },
+    layers: [{ selectionIndex: 0, selection: { source: 'BASE', partKey: 'body', itemKey: 'part', styleKey: 'default' },
+      asset: { assetId: 'part', sha256: hash(content), byteLength: content.length, mediaType: 'image/png' },
+      transform: { x: 140, y: 560, scale: 0.5, rotation: 90 }, opacity: 1,
+      blendMode: 'normal', trackOrder: 0, displayOrder: 0, swatch: null, protected: false }],
+    loadAsset: async (asset: object) => ({ ...asset, bytesBase64: Buffer.from(content).toString('base64') }),
+    decodeImage: async () => ({ source, close() { calls.push(['close']) } }),
+    canvasFactory: () => ({ getContext: () => context,
+      convertToBlob: async () => new Blob([content], { type: 'image/png' }) }),
+  })
+  expect(calls).toEqual([
+    ['translate', 340, 660], ['rotate', Math.PI / 2], ['scale', 0.5, 0.5],
+    ['translate', -400, -200], ['draw', source, 0, 0, 800, 400], ['close'],
+  ])
+})
