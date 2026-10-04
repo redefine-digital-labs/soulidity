@@ -30,7 +30,8 @@ export default defineConfig({
       { find: 'server-only', replacement: requireExistingAliasTarget('./tests/mocks/server-only.ts') },
       { find: /^electron$/, replacement: requireExistingAliasTarget('./tests/mocks/electron.ts') },
       { find: 'jose', replacement: requireExistingAliasTarget('./web/node_modules/jose/dist/webapi/index.js') },
-      { find: '@mysten/dapp-kit', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/dapp-kit/src/index.ts') },
+      { find: /^@mysten\/dapp-kit$/, replacement: requireExistingAliasTarget('./web/node_modules/@mysten/dapp-kit/src/index.ts') },
+      { find: '@mysten/dapp-kit/dist/index.css', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/dapp-kit/dist/index.css') },
       // These pin the workspace tests to the web package's bundled ESM entrypoints. Revisit them
       // when upgrading `@mysten/sui`, because the dist layout is an external package contract.
       { find: '@mysten/sui/transactions', replacement: requireExistingAliasTarget('./web/node_modules/@mysten/sui/dist/transactions/index.mjs') },

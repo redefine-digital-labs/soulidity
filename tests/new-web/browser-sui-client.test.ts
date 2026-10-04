@@ -23,7 +23,7 @@ it('wires the provider to the browser factory without changing networks or walle
   expect(source).toContain('return createBrowserSuiClient(name as SuiNetwork)')
   expect(source).toContain('createClient={createGrpcClient}')
   expect(source).toContain('defaultNetwork={defaultNetwork}')
-  expect(source).toContain('<WalletProvider autoConnect theme={SOULIDITY_DAPP_KIT_THEME}>')
+  expect(source).toContain("<WalletProvider autoConnect theme={SOULIDITY_DAPP_KIT_THEME} slushWallet={{ name: 'Soulidity' }}>")
   expect(source).not.toContain('createSuiGrpcCompatClient')
 })
 

@@ -59,7 +59,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
             defaultNetwork={defaultNetwork}
             createClient={createGrpcClient}
           >
-            <WalletProvider autoConnect theme={SOULIDITY_DAPP_KIT_THEME}>
+            <WalletProvider autoConnect theme={SOULIDITY_DAPP_KIT_THEME} slushWallet={{ name: 'Soulidity' }}>
               <AuthProvider>
                 <WalletAuthBridge />
                 <ToastProvider>
