@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Duplex } from 'node:stream'
+import { chromeCdp } from '../helpers/chrome-cdp'
 import { contentAppendRebaseFixture } from './fixtures/content-append-rebase'
 
 // Reuses the existing store suite's real Chrome/CDP/IndexedDB/Web Locks harness
@@ -18,14 +18,21 @@ const root = fileURLToPath(new URL('../../', import.meta.url))
 let chrome: ChildProcess, server: Server, profile: string, sessionId: string
 let fixture: Awaited<ReturnType<typeof contentAppendRebaseFixture>>
 let alternate: Awaited<ReturnType<typeof fixture.nextRecord>>, second: Awaited<ReturnType<typeof fixture.advance>>
-let nextId = 0
-const pending = new Map<number, { resolve: (value: any) => void; reject: (reason: Error) => void }>()
-function cdp(method: string, params: any = {}, session?: string): Promise<any> {
-  const id = ++nextId
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    ;(chrome.stdio[3] as Duplex).write(`${JSON.stringify({ id, method, params, ...(session ? { sessionId: session } : {}) })}\0`)
-  })
+let connection: ReturnType<typeof chromeCdp> | undefined
+let setupPhase = 'fixture'
+let setupStopped = false
+async function cleanupBrowser() {
+  await connection?.close()
+  if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
+  // Only this suite's exact isolated mkdtemp profile, never a user/workspace path.
+  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+}
+async function checkSetup() {
+  if (setupStopped) { await cleanupBrowser(); throw Error(`Browser startup cancelled at ${setupPhase}`) }
+}
+const cdp = (method: string, params: any = {}, session?: string) => {
+  if (!connection) return Promise.reject(Error('Chrome connection not initialized'))
+  return connection.call(method, params, session)
 }
 async function run<T>(fn: (value: any) => T | Promise<T>, value: any = {}): Promise<T> {
   const result = await cdp('Runtime.evaluate', { expression: `(${fn.toString()})(${JSON.stringify(value)})`, awaitPromise: true,
@@ -35,8 +42,11 @@ async function run<T>(fn: (value: any) => T | Promise<T>, value: any = {}): Prom
 }
 beforeAll(async () => {
   fixture = await contentAppendRebaseFixture()
+  await checkSetup()
   alternate = await fixture.nextRecord({ rebase: { ...fixture.rebase, nonce: 'cd'.repeat(16) } })
+  await checkSetup()
   second = await fixture.advance()
+  await checkSetup()
   const entry = `import * as S from ${JSON.stringify(resolve(root, 'web/lib/soulidity/content-append-store.ts'))};
 import * as P from ${JSON.stringify(resolve(root, 'web/lib/soulidity/content-append-preparation.ts'))};
 import * as R from ${JSON.stringify(resolve(root, 'web/lib/soulidity/content-append-rebase-store.ts'))};
@@ -44,42 +54,43 @@ import * as E from ${JSON.stringify(resolve(root, 'web/lib/soulidity/content-app
 import * as C from ${JSON.stringify(resolve(root, 'web/lib/soulidity/content-append-rebase.ts'))};
 import * as W from ${JSON.stringify(resolve(root, 'web/lib/upload/walrus-single-operation.ts'))};
 Object.assign(globalThis, { S, P, R, E, C, W });`
+  setupPhase = 'bundle'
   const bundle = await build({ stdin: { contents: entry, resolveDir: resolve(root, 'web'), sourcefile: 'content-append-rebase-store-browser.ts' },
     bundle: true, platform: 'browser', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
     define: { 'process.env.NODE_ENV': '"test"', 'process.env': '{}' }, alias: { '@': resolve(root, 'web') } })
+  await checkSetup()
+  setupPhase = 'HTTP server'
   server = createServer((request, response) => {
     if (request.url === '/suite.js') { response.setHeader('content-type', 'text/javascript'); response.end(bundle.outputFiles[0].contents) }
     else { response.setHeader('content-type', 'text/html'); response.end('<!doctype html><script>globalThis.__bootErrors=[];addEventListener("error",e=>__bootErrors.push(e.message));addEventListener("unhandledrejection",e=>__bootErrors.push(String(e.reason)))</script><script type="module" src="/suite.js"></script>') }
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  await checkSetup()
   const address = server.address(); if (!address || typeof address === 'string') throw Error('Local server unavailable')
   profile = await mkdtemp(join(tmpdir(), 'content-append-rebase-idb-'))
+  await checkSetup()
   const executable = process.env.CHROME_BIN ?? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(existsSync)
   if (!executable || !existsSync(executable)) throw Error('Real IndexedDB tests require installed Chrome/Chromium or CHROME_BIN')
+  setupPhase = 'spawn Chrome'
   chrome = spawn(executable, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
     '--disable-background-networking', '--disable-component-update', '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank'],
   { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
-  let buffered = ''
-  ;(chrome.stdio[4] as Duplex).on('data', (chunk: Buffer) => {
-    buffered += chunk.toString('utf8')
-    for (;;) {
-      const end = buffered.indexOf('\0'); if (end < 0) break
-      const wire = buffered.slice(0, end); buffered = buffered.slice(end + 1); if (!wire) continue
-      const message = JSON.parse(wire), call = pending.get(message.id)
-      if (call) { pending.delete(message.id); if (message.error) call.reject(Error(message.error.message)); else call.resolve(message.result) }
-    }
-  })
-  chrome.on('error', error => { for (const call of pending.values()) call.reject(error); pending.clear() })
-  chrome.on('exit', () => { for (const call of pending.values()) call.reject(Error('Isolated Chrome exited')); pending.clear() })
+  connection = chromeCdp(chrome, 'content-append-rebase-store.test.ts')
+  setupPhase = 'create/attach target'
   const { targetId } = await cdp('Target.createTarget', { url: `http://127.0.0.1:${address.port}` })
+  await checkSetup()
   sessionId = (await cdp('Target.attachToTarget', { targetId, flatten: true })).sessionId
+  await checkSetup()
   for (let tries = 0; tries < 100; tries++) {
+    await checkSetup()
     if (await run(() => Boolean((globalThis as any).R))) break
     await new Promise(resolve => setTimeout(resolve, 50))
   }
   const ready = await run(() => ({ ready: Boolean((globalThis as any).R && indexedDB && navigator.locks), errors: (globalThis as any).__bootErrors }))
   if (!ready.ready) throw Error(`Browser suite failed to load: ${JSON.stringify(ready.errors)}`)
+  await checkSetup()
+  setupPhase = 'ready'
 }, 30000)
 beforeEach(async () => {
   await run(async ({ previous, next, alternate, second, link, alternateLink, secondLink }) => {
@@ -148,14 +159,9 @@ beforeEach(async () => {
 })
 afterEach(() => { vi.unstubAllEnvs() })
 afterAll(async () => {
-  if (chrome) {
-    const exited = new Promise<void>(resolve => chrome.once('exit', () => resolve()))
-    try { await cdp('Browser.close') } catch {}
-    if (chrome.exitCode === null) { chrome.kill(); await exited }
-  }
-  if (server) await new Promise<void>(resolve => server.close(() => resolve()))
-  // Only this suite's exact isolated mkdtemp profile, never a user/workspace path.
-  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  setupStopped = true
+  if (setupPhase !== 'ready') console.error(`Browser setup stopped at ${setupPhase}; ${connection?.diagnostics() ?? 'Chrome not started'}`)
+  await cleanupBrowser()
   vi.restoreAllMocks()
 })
 

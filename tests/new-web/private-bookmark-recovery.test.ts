@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Duplex } from 'node:stream'
+import { chromeCdp } from '../helpers/chrome-cdp'
 import { privateBookmarkRecoveryFixture } from './fixtures/private-bookmark-recovery'
 
 // Real Chrome IndexedDB/Web Locks, using only existing Chrome + esbuild + Node.
@@ -15,13 +15,21 @@ import { privateBookmarkRecoveryFixture } from './fixtures/private-bookmark-reco
 const root = fileURLToPath(new URL('../../', import.meta.url))
 let chrome: ChildProcess, server: Server, profile: string, sessionId: string
 let fixture: Awaited<ReturnType<typeof privateBookmarkRecoveryFixture>>
-let nextId = 0, pending = new Map<number, { resolve: (value: any) => void; reject: (reason: Error) => void }>()
-function cdp(method: string, params: any = {}, session?: string): Promise<any> {
-  const id = ++nextId
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    ;(chrome.stdio[3] as Duplex).write(`${JSON.stringify({ id, method, params, ...(session ? { sessionId: session } : {}) })}\0`)
-  })
+let connection: ReturnType<typeof chromeCdp> | undefined
+let setupPhase = 'fixture'
+let setupStopped = false
+async function cleanupBrowser() {
+  await connection?.close()
+  if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
+  // Exact mkdtemp output only; no workspace or user profile is removed.
+  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+}
+async function checkSetup() {
+  if (setupStopped) { await cleanupBrowser(); throw Error(`Browser startup cancelled at ${setupPhase}`) }
+}
+const cdp = (method: string, params: any = {}, session?: string) => {
+  if (!connection) return Promise.reject(Error('Chrome connection not initialized'))
+  return connection.call(method, params, session)
 }
 async function run<T>(fn: (value: any) => T | Promise<T>, value: any = {}): Promise<T> {
   const result = await cdp('Runtime.evaluate', { expression: `(${fn.toString()})(${JSON.stringify(value)})`, awaitPromise: true,
@@ -32,6 +40,7 @@ async function run<T>(fn: (value: any) => T | Promise<T>, value: any = {}): Prom
 
 beforeAll(async () => {
   fixture = await privateBookmarkRecoveryFixture()
+  await checkSetup()
   const entry = `import * as R from ${JSON.stringify(resolve(root, 'web/lib/bookmarks/private-bookmark-recovery.ts'))};
 import * as W from ${JSON.stringify(resolve(root, 'web/lib/upload/walrus-single-operation.ts'))};
 import * as C from ${JSON.stringify(resolve(root, 'web/lib/bookmarks/private-bookmark-crypto.ts'))};
@@ -39,45 +48,45 @@ import { toBase64, fromBase64, toHex } from '@mysten/sui/utils';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { EncryptedObject } from '@mysten/seal';
 Object.assign(globalThis, { R, W, C, toBase64, fromBase64, toHex, sha256, EncryptedObject });`
+  setupPhase = 'bundle'
   const bundle = await build({ stdin: { contents: entry, resolveDir: resolve(root, 'web'), sourcefile: 'recovery-browser-suite.ts' },
     bundle: true, platform: 'browser', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
     define: { 'process.env.NODE_ENV': '"test"', 'process.env': '{}' }, alias: { '@': resolve(root, 'web') } })
+  await checkSetup()
   const script = bundle.outputFiles[0].contents
+  setupPhase = 'HTTP server'
   server = createServer((request, response) => {
     if (request.url === '/suite.js') { response.setHeader('content-type', 'text/javascript'); response.end(script) }
     else { response.setHeader('content-type', 'text/html'); response.end('<!doctype html><script>globalThis.__bootErrors=[];addEventListener("error",e=>__bootErrors.push(e.message));addEventListener("unhandledrejection",e=>__bootErrors.push(String(e.reason)))</script><script type="module" src="/suite.js"></script>') }
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  await checkSetup()
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Local server unavailable')
   profile = await mkdtemp(join(tmpdir(), 'private-bookmark-idb-'))
+  await checkSetup()
   const executable = process.env.CHROME_BIN ?? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(existsSync)
   if (!executable || !existsSync(executable)) throw new Error('Real IndexedDB tests require installed Chrome/Chromium or CHROME_BIN; no mock fallback')
+  setupPhase = 'spawn Chrome'
   chrome = spawn(executable, [
     '--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking',
     '--disable-component-update', '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
-  let buffered = ''
-  ;(chrome.stdio[4] as Duplex).on('data', (chunk: Buffer) => {
-    buffered += chunk.toString('utf8')
-    for (;;) {
-      const end = buffered.indexOf('\0'); if (end < 0) break
-      const wire = buffered.slice(0, end); buffered = buffered.slice(end + 1)
-      if (!wire) continue
-      const message = JSON.parse(wire), call = pending.get(message.id)
-      if (call) { pending.delete(message.id); if (message.error) call.reject(new Error(message.error.message)); else call.resolve(message.result) }
-    }
-  })
-  chrome.on('error', error => { for (const call of pending.values()) call.reject(error); pending.clear() })
-  chrome.on('exit', () => { for (const call of pending.values()) call.reject(new Error('Isolated Chrome exited')); pending.clear() })
+  connection = chromeCdp(chrome, 'private-bookmark-recovery.test.ts')
+  setupPhase = 'create/attach target'
   const { targetId } = await cdp('Target.createTarget', { url: `http://127.0.0.1:${address.port}` })
+  await checkSetup()
   sessionId = (await cdp('Target.attachToTarget', { targetId, flatten: true })).sessionId
+  await checkSetup()
   for (let tries = 0; tries < 100; tries++) {
+    await checkSetup()
     if (await run(() => Boolean((globalThis as any).R))) break
     await new Promise(resolve => setTimeout(resolve, 50))
   }
   const ready = await run(() => ({ ready: Boolean((globalThis as any).R && indexedDB && navigator.locks), errors: (globalThis as any).__bootErrors }))
   if (!ready.ready) throw new Error(`Isolated browser suite failed to load: ${JSON.stringify(ready.errors)}`)
+  await checkSetup()
+  setupPhase = 'ready'
 }, 30000)
 
 beforeEach(async () => {
@@ -115,14 +124,9 @@ beforeEach(async () => {
 })
 
 afterAll(async () => {
-  if (chrome) {
-    const exited = new Promise<void>(resolve => chrome.once('exit', () => resolve()))
-    try { await cdp('Browser.close') } catch {}
-    if (chrome.exitCode === null) { chrome.kill(); await exited }
-  }
-  if (server) await new Promise<void>(resolve => server.close(() => resolve()))
-  // Exact mkdtemp output only; no workspace or user profile is removed.
-  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  setupStopped = true
+  if (setupPhase !== 'ready') console.error(`Browser setup stopped at ${setupPhase}; ${connection?.diagnostics() ?? 'Chrome not started'}`)
+  await cleanupBrowser()
 })
 
 it('persists exact encrypted bytes through genuine IndexedDB and a fresh store instance', async () => {

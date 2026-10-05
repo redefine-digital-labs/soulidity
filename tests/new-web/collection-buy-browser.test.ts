@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Duplex } from 'node:stream'
+import { chromeCdp } from '../helpers/chrome-cdp'
 import { bcs } from '@mysten/sui/bcs'
 import { fromBase64, toBase64 } from '@mysten/sui/utils'
 import { CollectionPublicListingBcs, SoulPublicMarketConfigBcs } from '@soulidity/sdk'
@@ -25,15 +25,21 @@ import { MAINNET_GENESIS_DIGEST } from '../../web/lib/animacraft/mainnet-chain'
 const root = fileURLToPath(new URL('../../', import.meta.url))
 let chrome: ChildProcess, server: Server, profile: string, origin: string, payload: any
 let primary: string, secondary: string, secondaryTarget: string
-let nextId = 0
-const calls = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
-function cdp(method: string, params: any = {}, sessionId?: string): Promise<any> {
-  const id = ++nextId
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { calls.delete(id); reject(Error(`Chrome command timed out: ${method}`)) }, 15000)
-    calls.set(id, { resolve, reject, timer })
-    ;(chrome.stdio[3] as Duplex).write(`${JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })}\0`)
-  })
+let connection: ReturnType<typeof chromeCdp> | undefined
+let setupPhase = 'fixture'
+let setupStopped = false
+async function cleanupBrowser() {
+  await connection?.close()
+  if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
+  // Only this exact isolated mkdtemp result; never an existing user profile.
+  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+}
+async function checkSetup() {
+  if (setupStopped) { await cleanupBrowser(); throw Error(`Browser startup cancelled at ${setupPhase}`) }
+}
+const cdp = (method: string, params: any = {}, session?: string) => {
+  if (!connection) return Promise.reject(Error('Chrome connection not initialized'))
+  return connection.call(method, params, session)
 }
 async function run<T>(fn: (value: any) => T | Promise<T>, value: any = {}, session = primary): Promise<T> {
   const result = await cdp('Runtime.evaluate', { expression: `(${fn.toString()})(${JSON.stringify(value)})`, awaitPromise: true, returnByValue: true }, session)
@@ -46,18 +52,38 @@ function wire(value: any): any {
   if (Array.isArray(value)) return value.map(wire)
   return value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, wire(entry)])) : value
 }
-async function ready(session: string) {
+async function ready(session: string, generation?: number) {
   for (let attempt = 0; attempt < 100; attempt++) {
+    await checkSetup()
+    if (generation !== undefined && generation !== secondaryGeneration) throw Error('Secondary tab setup cancelled after test ended')
     if (await run(() => Boolean((globalThis as any).J && (globalThis as any).T && (globalThis as any).P), {}, session)) return
     await new Promise(resolve => setTimeout(resolve, 25))
   }
   throw Error(`Chrome bundle unavailable: ${JSON.stringify(await run(() => (globalThis as any).__bootErrors, {}, session))}`)
 }
+let secondaryGeneration = 0, secondarySetup: Promise<void> | undefined
 async function freshSecondary() {
-  if (secondaryTarget) await cdp('Target.closeTarget', { targetId: secondaryTarget })
-  const { targetId } = await cdp('Target.createTarget', { url: `${origin}/cold` }); secondaryTarget = targetId
-  secondary = (await cdp('Target.attachToTarget', { targetId, flatten: true })).sessionId; await ready(secondary)
+  const generation = ++secondaryGeneration
+  const previousTarget = secondaryTarget
+  secondary = ''; secondaryTarget = ''
+  const setup = (async () => {
+    let ownedTarget: string | undefined
+    try {
+      if (previousTarget) await cdp('Target.closeTarget', { targetId: previousTarget })
+      const { targetId } = await cdp('Target.createTarget', { url: `${origin}/cold` })
+      ownedTarget = targetId
+      const session = (await cdp('Target.attachToTarget', { targetId, flatten: true })).sessionId
+      await ready(session, generation)
+      if (generation !== secondaryGeneration) throw Error('Secondary tab setup cancelled after test ended')
+      secondaryTarget = targetId; secondary = session; ownedTarget = undefined
+    } finally {
+      if (ownedTarget) await cdp('Target.closeTarget', { targetId: ownedTarget })
+    }
+  })()
+  secondarySetup = setup
+  try { await setup } finally { if (secondarySetup === setup) secondarySetup = undefined }
 }
+
 function variant(base: CollectionBuyPlan, kind: 'listing' | 'callable' | 'market') {
   const p = structuredClone(base), oldId = kind === 'listing' ? p.request.listingId : kind === 'callable' ? p.target.callablePackageId : p.target.marketConfigId
   const nextId = cid(kind === 'listing' ? 7001 : kind === 'callable' ? 7002 : 7003), row = p.objects.find(row => row.objectId === oldId)!
@@ -174,6 +200,7 @@ beforeAll(async () => {
   const samples: any[] = []
   for (const options of [{ price: '1000001' }, { price: '1000002' }, { newKiosk: true, price: '1000001' }]) {
     const f = await collectionBuyFixture(options), prepared = await f.adapter.prepare(f.plan)
+  await checkSetup()
     expect(prepared.packet.bytes).toBe(f.record.packet.bytes); parseCollectionBuyRecord(f.record)
     const current = f.plan.objects.map(row => {
       const value = f.rows.get(`${row.objectId}:${row.version}`)
@@ -189,47 +216,44 @@ import * as T from ${JSON.stringify(resolve(root, 'web/lib/collections/collectio
 import * as P from ${JSON.stringify(resolve(root, 'web/lib/collections/collection-buy-plan.ts'))};
 import * as X from '@mysten/sui/transactions'; import * as U from '@mysten/sui/utils';
 Object.assign(globalThis, { J, T, P, X, U });`
+  setupPhase = 'bundle'
   const bundle = await build({ stdin: { contents: entry, resolveDir: resolve(root, 'web'), sourcefile: 'collection-buy-browser.ts' },
     bundle: true, platform: 'browser', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
     define: { 'process.env.NODE_ENV': '"test"', 'process.env': '{}' }, alias: { '@': resolve(root, 'web') } })
+  await checkSetup()
+  setupPhase = 'HTTP server'
   server = createServer((request, response) => {
     if (request.url === '/suite.js') { response.setHeader('content-type', 'text/javascript'); response.end(bundle.outputFiles[0].contents) }
     else { response.setHeader('content-type', 'text/html'); response.end('<!doctype html><script>globalThis.__bootErrors=[];addEventListener("error",e=>__bootErrors.push(e.message));addEventListener("unhandledrejection",e=>__bootErrors.push(String(e.reason)))</script><script type="module" src="/suite.js"></script>') }
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  await checkSetup()
   const address = server.address(); if (!address || typeof address === 'string') throw Error('Local server unavailable')
   origin = `http://127.0.0.1:${address.port}`; profile = await mkdtemp(join(tmpdir(), 'collection-buy-chrome-'))
+  await checkSetup()
   const executable = process.env.CHROME_BIN ?? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(existsSync)
   if (!executable || !existsSync(executable)) throw Error('This suite requires installed Chrome/Chromium or CHROME_BIN')
+  setupPhase = 'spawn Chrome'
   chrome = spawn(executable, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
     '--disable-background-networking', '--disable-component-update', '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank'],
   { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
-  let buffered = ''
-  ;(chrome.stdio[4] as Duplex).on('data', (chunk: Buffer) => {
-    buffered += chunk.toString('utf8')
-    for (;;) {
-      const end = buffered.indexOf('\0'); if (end < 0) break
-      const wire = buffered.slice(0, end); buffered = buffered.slice(end + 1); if (!wire) continue
-      const message = JSON.parse(wire), call = calls.get(message.id)
-      if (call) { calls.delete(message.id); clearTimeout(call.timer); message.error ? call.reject(Error(message.error.message)) : call.resolve(message.result) }
-    }
-  })
-  const rejectPending = (error: Error) => { for (const call of calls.values()) { clearTimeout(call.timer); call.reject(error) } calls.clear() }
-  chrome.on('error', rejectPending); chrome.on('exit', () => rejectPending(Error('Isolated Chrome exited')))
+  connection = chromeCdp(chrome, 'collection-buy-browser.test.ts')
+  setupPhase = 'create/attach target'
   const { targetId } = await cdp('Target.createTarget', { url: origin }); primary = (await cdp('Target.attachToTarget', { targetId, flatten: true })).sessionId; await ready(primary)
+  await checkSetup()
+  await checkSetup()
+  setupPhase = 'ready'
 }, 30000)
 beforeEach(async () => { await run(() => localStorage.clear()); await initialize(primary) })
 afterEach(async () => {
+  if (secondarySetup) { const setup = secondarySetup; ++secondaryGeneration; await setup }
   if (primary) expect(await run(() => (globalThis as any).__bootErrors)).toEqual([])
   if (secondary) expect(await run(() => (globalThis as any).__bootErrors, {}, secondary)).toEqual([])
 })
 afterAll(async () => {
-  if (chrome) { const exited = new Promise<void>(resolve => chrome.once('exit', () => resolve()))
-    try { await cdp('Browser.close') } catch {}
-    if (chrome.exitCode === null) { chrome.kill(); await exited } }
-  if (server) await new Promise<void>(resolve => server.close(() => resolve()))
-  // Only this exact isolated mkdtemp result; never an existing user profile.
-  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  setupStopped = true
+  if (setupPhase !== 'ready') console.error(`Browser setup stopped at ${setupPhase}; ${connection?.diagnostics() ?? 'Chrome not started'}`)
+  await cleanupBrowser()
 })
 
 it.each([0, 2])('cold real tab discovers and verifies exact signed bytes for Kiosk sample %s without volatile state', async index => {
