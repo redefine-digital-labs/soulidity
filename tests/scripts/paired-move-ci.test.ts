@@ -16,6 +16,16 @@ it('accepts a required per-run exact peer input without changing repository vari
   expect(workflow.on.workflow_dispatch?.inputs?.animacraft_commit_sha).toMatchObject({ required: true, type: 'string' })
   expect(job.env.ANIMACRAFT_COMMIT_SHA).toBe('${{ inputs.animacraft_commit_sha || vars.ANIMACRAFT_COMMIT_SHA }}')
 })
+it('emits actual paired source identity only for explicit release runs and scopes it to the attempt', () => {
+  const bind = step('Bind checked paired sources to this CI attempt')
+  const retain = step('Retain paired source identity')
+  expect(bind.if).toBe("github.event_name == 'workflow_dispatch'")
+  expect(retain.if).toBe(bind.if)
+  expect(steps.indexOf(bind)).toBeGreaterThan(steps.indexOf(step('Run paired eight-package Move and joint gates')))
+  expect(bind.run).toContain('write-pair-receipt.mjs so "$ANIMACRAFT_WORKSPACE" "$GITHUB_WORKSPACE"')
+  expect(retain.with.name).toBe('paired-source-so-${{ github.run_id }}-${{ github.run_attempt }}')
+  expect(retain.with['if-no-files-found']).toBe('error')
+})
 it('requires an exact public peer commit and proves the checkout before source execution', () => {
   const validate = step('Require exact paired source revision'), checkout = step('Checkout paired Animacraft source')
   const verify = step('Verify paired source checkout')
