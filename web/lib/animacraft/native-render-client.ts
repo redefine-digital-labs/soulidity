@@ -1,6 +1,6 @@
 import type { RenderAssetEvidence } from '@soulidity/animacraft-render-core'
-import { getBlobUrl } from '@soulidity/sdk'
-import { fromBase64, toBase64 } from '@mysten/sui/utils'
+import { nativeAssetStorageUrl } from './native-asset-storage'
+import { toBase64 } from '@mysten/sui/utils'
 
 /** Shared bounded ciphertext/public-media loader; never caches decrypted bytes. */
 export function createNativeRenderAssetLoader(signal: AbortSignal, fetcher: typeof fetch = fetch) {
@@ -18,11 +18,9 @@ export function createNativeRenderAssetLoader(signal: AbortSignal, fetcher: type
       cachedBytes += asset.byteLength; cachedSizes.set(key, asset.byteLength)
       assets.set(key, (async () => {
       signal.throwIfAborted()
-      if (!asset.blobId || !/^[A-Za-z0-9_-]{43}$/.test(asset.blobId)
-        || toBase64(fromBase64(asset.blobId.replaceAll('-', '+').replaceAll('_', '/') + '='))
-          .replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '') !== asset.blobId) throw new Error('Invalid certified Blob ID.')
+      const assetUrl = nativeAssetStorageUrl(asset.blobId ?? '')
       const assetSignal = AbortSignal.any([signal, AbortSignal.timeout(15000)])
-      const response = await fetcher(getBlobUrl(asset.blobId), { credentials: 'omit', redirect: 'error', cache: 'no-store', signal: assetSignal })
+      const response = await fetcher(assetUrl, { credentials: 'omit', redirect: 'error', cache: 'no-store', signal: assetSignal })
       if (!response.ok || !response.body) throw new Error('Original artwork media is unavailable. Retry when the connection recovers.')
       const length = response.headers.get('content-length')
       if (length !== null && (!/^\d+$/.test(length) || Number(length) !== asset.byteLength)) {

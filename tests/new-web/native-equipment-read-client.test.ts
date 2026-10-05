@@ -165,3 +165,15 @@ it('captures initial UI snapshot and validated target without retaining mutable 
   expect(() => assertNativeEquipmentReadTarget(target, s.params.soulId, s.params.owner, 3,
     { ...s.params.expectedEquipment, loadoutRevision: '8' })).toThrow('snapshot changed')
 })
+
+it.each(['base', 'owned-base', 'pack'] as const)('downloads and validates a protected %s Quilt patch before Seal access', async kind => {
+  const s = setup(kind), bytes = new Uint8Array(37)
+  bytes.set(Buffer.from(s.target.ciphertext.blobId, 'base64url')); bytes[32] = 1
+  const range = new DataView(bytes.buffer); range.setUint16(33, 1, true); range.setUint16(35, 5, true)
+  const patch = Buffer.from(bytes).toString('base64url'); s.target.ciphertext.blobId = patch
+  await decryptNativeEquipmentLayer(s.params)
+  expect(s.fetcher).toHaveBeenCalledWith(expect.stringContaining(`/v1/blobs/by-quilt-patch-id/${patch}`),
+    expect.objectContaining({ credentials: 'omit', redirect: 'error' }))
+  expect(s.sign).toHaveBeenCalledTimes(1)
+  expect(mocks.decrypt).toHaveBeenCalledTimes(1)
+})

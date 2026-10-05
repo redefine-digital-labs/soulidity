@@ -1,3 +1,4 @@
+import { nativeAssetStorageId } from './native-asset-storage'
 import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { decodeNativeBcs, NativeReceiveError, type NativeReceiveTarget } from './native-receive'
@@ -15,7 +16,7 @@ import { createNativeProtectedReadContext, readNativeProtectedReadPolicy, comple
 import type { NativeEquipmentReadTarget } from './native-equipment-read-types'
 import { toBase64 } from '@mysten/sui/utils'
 import { equipmentUtf8 } from './native-equipment-bytes'
-import { nativeArtworkBlobId, nativeArtworkHex as hex } from './native-artwork-bytes'
+import { nativeArtworkHex as hex } from './native-artwork-bytes'
 
 const A = bcs.Address, U = bcs.u64(), V = bcs.vector(bcs.u8()), S = bcs.string()
 const OwnedPricing = bcs.struct('OwnedBaseItemCommitmentInputV8', { domain: V, version: U, item_id: A,
@@ -205,7 +206,7 @@ export async function readNativeEquipmentReadTarget(client: SuiGrpcClient, targe
     const aad = EquipmentSealIdBcs.serialize({ ...registry, ...key,
       domain: 'animacraft-fresh-v8/seal/ciphertext-id/v2', schema_revision: '2' }).toBytes()
     const sealId = completeReadHash(aad), blobId = selection.asset_blob_id
-    check(nativeArtworkBlobId(blobId), 'Invalid ciphertext Blob identity')
+    check(nativeAssetStorageId(blobId), 'Invalid ciphertext Blob identity')
     check(asset.scope_kind === key.scope_kind && asset.scope_key === key.scope_key && asset.asset_key === key.asset_key
       && eq(asset.scope_commitment, scopeCommitment) && eq(asset.asset_content_commitment, selection.asset_content_commitment)
       && asset.ciphertext_blob_id === blobId && eq(asset.ciphertext_sha256, selection.asset_sha256)

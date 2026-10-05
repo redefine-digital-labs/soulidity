@@ -163,3 +163,12 @@ it('rejects unbounded or inconsistent committee weights and captures an immutabl
   expect(copy.policy.keyServers[0].weight).toBe(2)
   expect(() => assertNativeCompleteReadTarget(target, target.soulId, target.owner)).toThrow('threshold')
 })
+
+it('keeps completed Soul artwork identity raw-Blob-only despite equipment Quilt support', async () => {
+  const s = setup(), bytes = new Uint8Array(37)
+  bytes.set(Buffer.from(s.target.ciphertext.blobId, 'base64url')); bytes[32] = 1
+  const range = new DataView(bytes.buffer); range.setUint16(33, 1, true); range.setUint16(35, 5, true)
+  s.target.ciphertext.blobId = Buffer.from(bytes).toString('base64url')
+  await expect(decryptNativeCompleteArtwork(s.params)).rejects.toThrow()
+  expect(s.fetcher).not.toHaveBeenCalled(); expect(s.sign).not.toHaveBeenCalled()
+})

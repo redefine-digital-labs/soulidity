@@ -1,5 +1,6 @@
 import { Transaction } from '@mysten/sui/transactions'
-import { fromBase64, normalizeStructTag, toBase64 } from '@mysten/sui/utils'
+import { normalizeStructTag } from '@mysten/sui/utils'
+import { parseWalrusAssetId } from '../walrus-asset-id'
 
 /** Metadata is not authorization: Release independently verifies live native
  * Soul ownership, its exact equipment binding and the existing asset entitlement.
@@ -82,10 +83,8 @@ export function buildAnimacraftEquipmentReadApprovalV8(input: AnimacraftEquipmen
   args.push(obj(p.sealRegistryId, 'sealRegistryId'), obj(p.sealPolicyId, 'sealPolicyId'),
     tx.pure.u64(p.selectionIndex), tx.pure.string(p.partKey), tx.pure.string(p.itemKey), tx.pure.string(p.styleKey))
   if (p.kind === 'pack') {
-    if (typeof p.ciphertextBlobId !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(p.ciphertextBlobId)
-      || toBase64(fromBase64(p.ciphertextBlobId.replace(/-/g, '+').replace(/_/g, '/') + '='))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') !== p.ciphertextBlobId) {
-      throw new Error('ciphertextBlobId must be one canonical Walrus blob ID')
+    if (!parseWalrusAssetId(p.ciphertextBlobId)) {
+      throw new Error('ciphertextBlobId must be one canonical Walrus blob or Quilt patch ID')
     }
     args.push(bytes(p.assetContentCommitment, 'assetContentCommitment'), tx.pure.string(p.ciphertextBlobId),
       bytes(p.ciphertextSha256, 'ciphertextSha256'))

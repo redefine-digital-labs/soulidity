@@ -92,3 +92,20 @@ it('never uses a Player approval or inferred coin/blob authority', () => {
     expect(() => buildAnimacraftEquipmentReadApprovalV8({ ...fixture('pack'), ciphertextBlobId } as any)).toThrow('Walrus blob')
   }
 })
+
+it('BUG-013: Pack approval preserves a canonical Quilt patch, rejecting malformed ranges and aliases', () => {
+  const bytes = new Uint8Array(37); bytes.fill(42, 0, 32); bytes[32] = 1
+  const range = new DataView(bytes.buffer); range.setUint16(33, 1, true); range.setUint16(35, 13, true)
+  const patch = Buffer.from(bytes).toString('base64url')
+  const tx = buildAnimacraftEquipmentReadApprovalV8({ ...fixture('pack'), ciphertextBlobId: patch } as any)
+  const data = tx.getData(), call = data.commands[0].MoveCall!
+  const input = data.inputs[(call.arguments[18] as { Input: number }).Input]
+  expect(bcs.string().fromBase64(input.Pure!.bytes)).toBe(patch)
+  const invalid = [patch + '==', patch.slice(0, -1) + 'B', `https://example.com/${patch}`]
+  for (const [offset, value] of [[32, 2], [33, 0], [35, 1]]) {
+    const bad = new Uint8Array(bytes); bad[offset] = value; invalid.push(Buffer.from(bad).toString('base64url'))
+  }
+  for (const ciphertextBlobId of invalid) {
+    expect(() => buildAnimacraftEquipmentReadApprovalV8({ ...fixture('pack'), ciphertextBlobId } as any)).toThrow('canonical Walrus')
+  }
+})
