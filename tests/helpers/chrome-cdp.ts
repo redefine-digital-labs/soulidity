@@ -52,6 +52,12 @@ export function chromeCdp(chrome: ChildProcess, label: string, commandTimeoutMs 
       })
     })
   }
+  let startup: Promise<void> | undefined
+  function ready(timeoutMs = 20000): Promise<void> {
+    // A spawned process can exist before Chrome serves CDP. Give that lifecycle
+    // its own bounded handshake; subsequent commands retain their short timeout.
+    return startup ??= call('Browser.getVersion', {}, undefined, timeoutMs).then(() => undefined)
+  }
   const exited = () => chrome.exitCode !== null || chrome.signalCode !== null
   async function waitForExit(timeoutMs: number) {
     if (exited()) return
@@ -69,5 +75,5 @@ export function chromeCdp(chrome: ChildProcess, label: string, commandTimeoutMs 
     fail(Error(`Chrome test cleanup; ${diagnostics()}`))
     if (!exited()) throw Error(`Isolated Chrome did not exit; ${diagnostics()}`)
   }
-  return { call, close, diagnostics }
+  return { call, ready, close, diagnostics }
 }

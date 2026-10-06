@@ -78,6 +78,9 @@ Object.assign(globalThis, { S, P, R, E, T, C, W, Q, X });`
     '--disable-background-networking', '--disable-component-update', '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank'],
   { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
   connection = chromeCdp(chrome, 'content-append-restore-store.test.ts')
+  setupPhase = 'Chrome CDP startup'
+  await connection.ready()
+  await checkSetup()
   setupPhase = 'create/attach target'
   const { targetId } = await cdp('Target.createTarget', { url: `http://127.0.0.1:${address.port}` })
   await checkSetup()

@@ -238,6 +238,9 @@ Object.assign(globalThis, { J, T, P, X, U });`
     '--disable-background-networking', '--disable-component-update', '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank'],
   { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
   connection = chromeCdp(chrome, 'collection-buy-browser.test.ts')
+  setupPhase = 'Chrome CDP startup'
+  await connection.ready()
+  await checkSetup()
   setupPhase = 'create/attach target'
   const { targetId } = await cdp('Target.createTarget', { url: origin }); primary = (await cdp('Target.attachToTarget', { targetId, flatten: true })).sessionId; await ready(primary)
   await checkSetup()

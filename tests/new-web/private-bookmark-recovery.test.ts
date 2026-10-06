@@ -73,6 +73,9 @@ Object.assign(globalThis, { R, W, C, toBase64, fromBase64, toHex, sha256, Encryp
     '--disable-component-update', '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
   connection = chromeCdp(chrome, 'private-bookmark-recovery.test.ts')
+  setupPhase = 'Chrome CDP startup'
+  await connection.ready()
+  await checkSetup()
   setupPhase = 'create/attach target'
   const { targetId } = await cdp('Target.createTarget', { url: `http://127.0.0.1:${address.port}` })
   await checkSetup()

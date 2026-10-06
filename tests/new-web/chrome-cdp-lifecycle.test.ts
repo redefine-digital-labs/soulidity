@@ -20,6 +20,44 @@ function browser(timeout = 50) {
 }
 afterEach(() => vi.useRealTimers())
 
+it('waits for one startup handshake beyond the command budget, then keeps command timeouts short', async () => {
+  vi.useFakeTimers()
+  const b = browser()
+  const ready = b.connection.ready(200)
+  expect(b.connection.ready(200)).toBe(ready)
+  await vi.advanceTimersByTimeAsync(150)
+  expect(b.commands.map(x => x.method)).toEqual(['Browser.getVersion'])
+  b.output.write(JSON.stringify({ id: b.commands[0].id, result: { product: 'Chrome/test' } }) + '\0')
+  await ready
+  const command = expect(b.connection.call('Target.createTarget')).rejects.toThrow('Chrome command timed out: Target.createTarget')
+  await vi.advanceTimersByTimeAsync(50)
+  await command
+  await b.connection.close()
+  expect(b.process.kill).toHaveBeenCalledOnce()
+})
+
+it('bounds a browser that never becomes ready without retrying startup or leaking the child', async () => {
+  vi.useFakeTimers()
+  const b = browser()
+  const ready = expect(b.connection.ready(200)).rejects.toThrow('Chrome command timed out: Browser.getVersion')
+  await vi.advanceTimersByTimeAsync(200)
+  await ready
+  await expect(b.connection.ready()).rejects.toThrow('Browser.getVersion')
+  await expect(b.connection.call('Target.createTarget')).rejects.toThrow('Browser.getVersion')
+  expect(b.commands.map(x => x.method)).toEqual(['Browser.getVersion'])
+  await b.connection.close()
+  expect(b.process.kill).toHaveBeenCalledOnce()
+})
+
+it('rejects startup immediately when the spawned browser exits', async () => {
+  const b = browser()
+  const ready = expect(b.connection.ready()).rejects.toThrow('Chrome exited')
+  b.process.exitCode = 1; b.process.emit('exit', 1, null)
+  await ready
+  await b.connection.close()
+  expect(b.process.kill).not.toHaveBeenCalled()
+})
+
 it('drains stderr with bounded diagnostics and preserves UTF-8 across CDP chunks', async () => {
   const b = browser()
   b.process.stderr.write('x'.repeat(8192) + 'stderr tail')
