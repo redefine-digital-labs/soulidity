@@ -73,3 +73,16 @@ it('evicts old cached media rather than rejecting large valid scenes or retainin
   await renderFixture(view, new AbortController().signal, fetcher)
   expect(fetcher).toHaveBeenCalledTimes(4) // first asset was evicted at 16 MiB
 }, 20_000) // Hash/base64 four 8 MiB assets under the full suite's worker contention.
+
+it('renders an exact Quilt asset through the shared hash gate and patch endpoint', async () => {
+  const bytes = new Uint8Array(37); bytes.set(Buffer.from(blobId, 'base64url')); bytes[32] = 1
+  const range = new DataView(bytes.buffer); range.setUint16(33, 1, true); range.setUint16(35, 4, true)
+  const patch = Buffer.from(bytes).toString('base64url'), view = fixture()
+  view.scene.layers[0].asset.blobId = patch; view.scene.selections[0].asset_blob_id = patch
+  const fetcher = vi.fn(async () => new Response(content))
+  await renderFixture(view, new AbortController().signal, fetcher)
+  expect(fetcher).toHaveBeenCalledWith(expect.stringContaining(`/v1/blobs/by-quilt-patch-id/${patch}`),
+    expect.objectContaining({ credentials: 'omit', redirect: 'error' }))
+  const corrupt = vi.fn(async () => new Response(new Uint8Array([9, 8, 7])))
+  await expect(renderFixture(view, new AbortController().signal, corrupt)).rejects.toThrow()
+})

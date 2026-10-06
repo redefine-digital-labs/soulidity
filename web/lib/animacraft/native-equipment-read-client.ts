@@ -49,7 +49,7 @@ export function assertNativeEquipmentReadTarget(value: unknown, soulId: string, 
       : v.ownedBaseItemId === undefined && slot.accessSubject === v.makerAccessId && slot.sourceEpoch === '0',
     'Invalid equipped Base entitlement evidence.')
   }
-  assertNativeSealReadMetadata(v)
+  assertNativeSealReadMetadata(v, 'asset')
   check(v.policy.maxPlaintextBytes <= MAX_LAYER_BYTES
     && hash(v.ciphertext.ciphertextBlobCommitment) && hash(v.ciphertext.certificationCommitment),
   'Invalid equipped layer ciphertext policy or commitments.')

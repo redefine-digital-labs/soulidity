@@ -40,6 +40,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Browser suites spawn additional Chrome processes. CPU-count workers can
+    // starve CDP even after startup; budget those children without relaxing tests.
+    maxWorkers: 2,
     setupFiles: ['./tests/setup-undici-rejection-filter.ts'],
     exclude: [
       '**/node_modules/**',

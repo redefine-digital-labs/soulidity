@@ -1,6 +1,8 @@
+import { nativeArtworkBlobId } from './native-artwork-bytes'
+import { nativeAssetStorageId, nativeAssetStorageUrl } from './native-asset-storage'
 import { EncryptedObject, SealClient, SessionKey, type SealCompatibleClient } from '@mysten/seal'
 import { fromBase58, fromBase64, toBase58, toBase64, toHex } from '@mysten/sui/utils'
-import { buildAnimacraftNativeCompleteApprovalV8, getBlobUrl } from '@soulidity/sdk'
+import { buildAnimacraftNativeCompleteApprovalV8 } from '@soulidity/sdk'
 import type { NativeCompleteReadTarget } from './native-complete-read-types'
 import { assertNativeSealEncryptionProfile } from './native-seal-profile'
 import { MAINNET_GENESIS_DIGEST } from './mainnet-chain'
@@ -57,7 +59,7 @@ export function assertNativeCompleteReadTarget(value: unknown, soulId: string, o
 
 /** Shared browser-only envelope policy; raw chain evidence and Seal's live
  * approval checks retain authority over the current read. */
-export function assertNativeSealReadMetadata(v: NativeSealReadTarget) {
+export function assertNativeSealReadMetadata(v: NativeSealReadTarget, location: 'blob' | 'asset' = 'blob') {
   check(id(v.release?.originalPackageId) && id(v.release?.callablePackageId)
     && typeof v.release?.callableDigest === 'string'
     && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v.release.callableDigest)
@@ -66,13 +68,12 @@ export function assertNativeSealReadMetadata(v: NativeSealReadTarget) {
   'Invalid protected artwork release digest.')
   const c = v.ciphertext; const p = v.policy
   assertNativeSealEncryptionProfile(p)
-  check(c && /^[A-Za-z0-9_-]{43}$/.test(c.blobId) && /^[0-9a-f]{64}$/.test(c.sha256)
+  check(c && (location === 'asset' ? nativeAssetStorageId(c.blobId) : nativeArtworkBlobId(c.blobId))
+    && /^[0-9a-f]{64}$/.test(c.sha256)
     && Array.isArray(c.sealId) && c.sealId.length === 32
     && c.sealId.every(b => Number.isInteger(b) && b >= 0 && b <= 255)
     && typeof c.aadBase64 === 'string' && c.aadBase64.length > 0 && c.aadBase64.length < 8192
     && toBase64(fromBase64(c.aadBase64)) === c.aadBase64, 'Invalid protected artwork identity.')
-  check(toBase64(fromBase64(c.blobId.replaceAll('-', '+').replaceAll('_', '/') + '='))
-    .replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '') === c.blobId, 'Invalid protected Blob ID.')
   check(p && Number.isSafeInteger(p.threshold) && p.threshold > 0 && p.threshold < 255
     && Number.isSafeInteger(p.maxPlaintextBytes) && p.maxPlaintextBytes > 0 && p.maxPlaintextBytes <= MAX_PLAINTEXT
     && Array.isArray(p.keyServers) && p.keyServers.length > 0 && p.keyServers.length < 255,
@@ -134,7 +135,7 @@ export async function assertNativeSealCiphertext(bytes: Uint8Array, v: NativeSea
 
 async function download(v: NativeSealReadTarget, signal: AbortSignal, fetcher: typeof fetch) {
   const deadline = AbortSignal.any([signal, AbortSignal.timeout(15000)])
-  const response = await completeReadStep(deadline, () => fetcher(getBlobUrl(v.ciphertext.blobId), {
+  const response = await completeReadStep(deadline, () => fetcher(nativeAssetStorageUrl(v.ciphertext.blobId), {
     signal: deadline, credentials: 'omit', redirect: 'error', cache: 'no-store',
   }))
   check(response.ok && response.body, 'Protected artwork storage is unavailable. Please retry.')

@@ -42,6 +42,7 @@ export * from './sui-network'
 export * from './tx-result'
 export * from './walrus'
 export * from './walrus-blob'
+export * from './walrus-asset-id'
 export * from './walrus-quote'
 
 // ── On-chain queries + event extractors ──────────────────────────────────
