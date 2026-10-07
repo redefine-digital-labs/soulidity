@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { SoulArtworkImage } from './soul-artwork-image'
-import { NativeCurrentAppearance } from './native-current-appearance'
+import { NativeSoulCover } from './native-current-appearance'
 import type { ChainSoulDetail } from '@/lib/soulidity/soul-detail-model'
 
 interface SoulCoverImageProps {
@@ -34,7 +34,7 @@ export function SoulCoverImage({
   return (
     <div className={containerClass} style={bg}>
       {!currentEquipment && fallback && <div className="absolute inset-0 flex items-center justify-center">{fallback}</div>}
-      {currentEquipment ? <NativeCurrentAppearance compact={compact} soulId={soul.onChainId} stateId={soul.stateOnChainId}
+      {currentEquipment ? <NativeSoulCover compact={compact} soulId={soul.onChainId} stateId={soul.stateOnChainId}
         owner={soul.currentOwnerAddress} ownershipEpoch={soul.currentOwnershipEpoch}
         className="absolute inset-0 h-full w-full" /> : imageUrl && (
         // eslint-disable-next-line @next/next/no-img-element
