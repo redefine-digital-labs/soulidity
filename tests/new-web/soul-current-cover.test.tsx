@@ -3,7 +3,7 @@ import React,{act} from 'react'
 import {createRoot} from 'react-dom/client'
 import {expect,it,vi} from 'vitest'
 import {SoulCoverImage} from '../../web/components/souls/soul-cover-image'
-vi.mock('../../web/components/souls/native-current-appearance',()=>({NativeCurrentAppearance:({soulId,stateId,owner,ownershipEpoch}:any)=>
+vi.mock('../../web/components/souls/native-current-appearance',()=>({NativeSoulCover:({soulId,stateId,owner,ownershipEpoch}:any)=>
   <div data-current={JSON.stringify({soulId,stateId,owner,ownershipEpoch})}>Current equipment</div>}))
 vi.mock('../../web/components/souls/soul-artwork-image',()=>({SoulArtworkImage:({src}:any)=><img src={src} alt="Historical cover"/>}))
 it.each(['animacraft','native'] as const)('uses the correct %s cover authority without hiding overlay children',async provenanceKind=>{
