@@ -1,0 +1,9 @@
+[package]
+name = "IndependentVisualCapture"
+edition = "2024"
+[dependencies]
+SoulidityApplication = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_application" }
+SoulidityStandard = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-standard/move/soulidity_standard" }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "2a0becb2fcc6989e492981104af67f62f2c9511a", override = true }
+[addresses]
+independent_capture = "0x0"

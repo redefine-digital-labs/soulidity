@@ -1,0 +1,80 @@
+import { Transaction } from '@mysten/sui/transactions'
+import { getRequiredSoulidityEnv } from '../env'
+
+/** Delist + relist in a single transaction to update the listing price. */
+export function buildUpdateListingPriceTx(params: {
+  currentKioskId: string
+  currentKioskCapOnChainId: string
+  stateObjectId: string
+  listingObjectId: string
+  newPriceAtomic: bigint
+  collectionObjectId?: string | null
+  animacraftProvenanceObjectId?: string | null
+  animacraftVersion?: number | null
+}) {
+  if (params.newPriceAtomic <= 0n) {
+    throw new Error('newPriceAtomic must be positive')
+  }
+  if (params.animacraftProvenanceObjectId != null || params.animacraftVersion != null) {
+    throw new Error('Animacraft price updates require the native V8 market builder; legacy provenance is unsupported')
+  }
+
+  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
+  const kioskRegistryId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
+  const tx = new Transaction()
+
+  // Step 1: Cancel current listing
+  tx.moveCall({
+    target: `${packageId}::market::cancel_soul_listing`,
+    arguments: [
+      tx.object(params.currentKioskId),
+      tx.object(params.currentKioskCapOnChainId),
+      tx.object(params.stateObjectId),
+      tx.object(params.listingObjectId),
+    ],
+  })
+
+  // Step 2: Repair stale market registry bindings before relisting.
+  tx.moveCall({
+    target: `${packageId}::market::ensure_personal_kiosk_registered_v2`,
+    arguments: [
+      tx.object(marketConfigId),
+      tx.object(kioskRegistryId),
+      tx.object(params.currentKioskCapOnChainId),
+    ],
+  })
+
+  // Step 3: Relist at new price and share the returned listing object.
+  const listing = params.collectionObjectId
+    ? tx.moveCall({
+        target: `${packageId}::market::list_soul_fixed_price_with_collection_v2`,
+        arguments: [
+          tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
+          tx.object(params.collectionObjectId),
+          tx.object(params.currentKioskId),
+          tx.object(params.currentKioskCapOnChainId),
+          tx.object(params.stateObjectId),
+          tx.pure.u64(params.newPriceAtomic),
+        ],
+      })
+    : tx.moveCall({
+        target: `${packageId}::market::list_soul_fixed_price_v2`,
+        arguments: [
+          tx.object(marketConfigId),
+          tx.object(kioskRegistryId),
+          tx.object(params.currentKioskId),
+          tx.object(params.currentKioskCapOnChainId),
+          tx.object(params.stateObjectId),
+          tx.pure.u64(params.newPriceAtomic),
+        ],
+      })
+
+  tx.moveCall({
+    target: `${packageId}::market::finalize_soul_listing`,
+    arguments: [listing],
+  })
+
+  return tx
+}

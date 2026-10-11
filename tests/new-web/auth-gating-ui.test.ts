@@ -1,0 +1,65 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+
+function readSource(relativePath: string) {
+  return readFileSync(resolve(process.cwd(), relativePath), 'utf8')
+}
+
+describe('web auth gating regression guards', () => {
+  it('keeps the My Souls anonymous state wired to a Sign In action', () => {
+    const source = readSource('web/app/my-souls/page.tsx')
+
+    expect(source).toContain('actionLabel="Sign In"')
+    expect(source).toContain('const login = useLogin()')
+    expect(source).toContain('onAction={login}')
+  })
+
+  it('keeps the Soul detail Buy CTA behind requireAuth interception', () => {
+    const source = readSource('web/app/souls/[id]/page.tsx')
+
+    expect(source).toContain('const { requireAuth } = useRequireAuth()')
+    expect(source).toContain('router.push(`/souls/${encodeURIComponent(soul.onChainId)}/buy`)')
+    expect(source).not.toContain('<Link href={`/souls/${encodeURIComponent(soulId)}/buy`}')
+  })
+
+  it('keeps the buy route gated for anonymous direct visits', () => {
+    const source = readSource('web/app/souls/[id]/buy/page.tsx')
+
+    expect(source).toContain('label="Sign in to purchase"')
+    expect(source).toContain('actionLabel="Sign In"')
+    expect(source).toContain('const login = useLogin()')
+    expect(source).toContain('onAction={login}')
+  })
+
+  it('keeps the wrap-link entry behind requireAuth interception', () => {
+    const source = readSource('web/app/wrap-link/page.tsx')
+
+    expect(source).toContain("router.push('/wrap-link/personal')")
+    expect(source).toContain('const { requireAuth } = useRequireAuth()')
+  })
+
+  it('keeps sell, create, import, and wrap flows behind AuthGate layouts', () => {
+    const files = [
+      ['web/app/souls/[id]/sell/_shell.tsx', 'Sign in to manage your Soul listing'],
+      ['web/app/create/_shell.tsx', 'Sign in to create a Soul'],
+      ['web/app/import/_shell.tsx', 'Sign in to import a Soul'],
+      ['web/app/wrap-link/personal/layout.tsx', 'Sign in to start Personal Join'],
+      ['web/app/wrap-link/collection/layout.tsx', 'Sign in to expand a collection'],
+    ]
+
+    for (const [file, label] of files) {
+      const source = readSource(file)
+
+      expect(source, file).toContain('<AuthGate')
+      expect(source, file).toContain(`label="${label}"`)
+    }
+  })
+
+  it('keeps the profile page behind an AuthGate prompt', () => {
+    const source = readSource('web/app/profile/page.tsx')
+
+    expect(source).toContain('label="Sign in to edit your profile"')
+    expect(source).toContain('<AuthGate')
+  })
+})

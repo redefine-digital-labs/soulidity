@@ -1,0 +1,788 @@
+generator root_client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model RawItem {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceType String    @map("source_type")
+  sourceName String    @map("source_name")
+  title      String
+  url        String    @unique
+  titleHash  String?   @map("title_hash")
+  content    String?
+  language   String    @default("en")
+  score      Float     @default(0)
+  status     String    @default("new")
+  rawData    String?   @map("raw_data")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  articles   Article[]
+
+  @@index([status])
+  @@index([score(sort: Desc)])
+  @@index([createdAt])
+  @@index([titleHash, status, createdAt])
+  @@index([sourceType, status, createdAt])
+  @@map("raw_items")
+}
+
+model CollectorState {
+  source       String    @id
+  lastPostedAt DateTime? @map("last_posted_at") @db.Timestamptz
+  lastTweetId  String?   @map("last_tweet_id")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("collector_states")
+}
+
+model Article {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rawItemId      String            @unique @map("raw_item_id") @db.Uuid
+  rawItem        RawItem           @relation(fields: [rawItemId], references: [id], onDelete: Cascade)
+  titleZh        String            @map("title_zh")
+  titleEn        String            @map("title_en")
+  summaryZh      String            @map("summary_zh")
+  summaryEn      String            @map("summary_en")
+  analysisZh     String?           @map("analysis_zh")
+  analysisEn     String?           @map("analysis_en")
+  tags           String?
+  status         String            @default("draft")
+  pipelineStatus String            @default("pending") @map("pipeline_status")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  publications   Publication[]
+  companies      ArticleCompany[]
+  processLogs    AgentProcessLog[]
+  posts          Post[]
+
+  @@index([status])
+  @@index([pipelineStatus])
+  @@map("articles")
+}
+
+model AgentRole {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String            @unique
+  label       String
+  description String?
+  sortOrder   Int               @default(0) @map("sort_order")
+  logs        AgentProcessLog[]
+
+  @@map("agent_roles")
+}
+
+model AgentProcessLog {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  articleId   String    @map("article_id") @db.Uuid
+  article     Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  roleId      String    @map("role_id") @db.Uuid
+  role        AgentRole @relation(fields: [roleId], references: [id])
+  status      String    @default("pending")
+  input       String?
+  output      String?
+  startedAt   DateTime? @map("started_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([articleId])
+  @@index([status])
+  @@map("agent_process_logs")
+}
+
+model Company {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  slug         String           @unique
+  description  String?
+  website      String?
+  logoUrl      String?          @map("logo_url")
+  category     String           @default("Other")
+  mentionCount Int              @default(0) @map("mention_count")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  articles     ArticleCompany[]
+
+  @@index([category])
+  @@index([mentionCount(sort: Desc)])
+  @@map("companies")
+}
+
+model ArticleCompany {
+  articleId String  @map("article_id") @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, companyId])
+  @@map("article_companies")
+}
+
+model Publication {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  articleId   String    @map("article_id") @db.Uuid
+  article     Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  channel     String
+  messageId   String?   @map("message_id")
+  publishedAt DateTime? @map("published_at") @db.Timestamptz
+
+  @@index([articleId])
+  @@index([publishedAt])
+  @@map("publications")
+}
+
+model Account {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletAddress String?  @unique @map("wallet_address")
+  tgId          String?  @unique @map("tg_id")
+  tgName        String?  @map("tg_name")
+  email         String?  @unique
+  avatar        String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  members               Member[]
+  desktopDeviceSessions DesktopDeviceSession[]
+  desktopProfile        DesktopProfile?
+  desktopPets           DesktopPet[]
+  desktopMintHandoffs   DesktopMintHandoff[]
+
+  @@map("accounts")
+}
+
+model Member {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String?  @map("account_id") @db.Uuid
+  account     Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tgId        String?  @unique @map("tg_id")
+  tgName      String?  @map("tg_name")
+  level       Int      @default(1)
+  avatar      String?
+  bio         String?
+  coverImage  String?  @map("cover_image")
+  exp         Int      @default(0)
+  kind        String   @default("human")
+  displayName String?  @map("display_name")
+  handle      String?  @unique @map("handle")
+  twitterUrl  String?  @map("twitter_url")
+  websiteUrl  String?  @map("website_url")
+  apiKey      String?  @unique @map("api_key")
+  apiKeyHash  String?  @unique @map("api_key_hash")
+  agentStatus String?  @default("active") @map("agent_status")
+  joinedAt    DateTime @default(now()) @map("joined_at") @db.Timestamptz
+
+  apiKeyRotationId               String?   @unique @map("api_key_rotation_id")
+  pendingApiKeyHash              String?   @map("pending_api_key_hash")
+  pendingApiKeyRotationId        String?   @unique @map("pending_api_key_rotation_id")
+  pendingApiKeyRotationExpiresAt DateTime? @map("pending_api_key_rotation_expires_at") @db.Timestamptz
+
+  posts                  Post[]
+  comments               Comment[]
+  postVotes              PostVote[]
+  achievements           MemberAchievement[]
+  walletBindings         WalletBinding[]
+  authoredSoulAssets     SoulAsset[]            @relation("SoulAssetCreator")
+  ownedSoulAssets        SoulAsset[]            @relation("SoulAssetOwner")
+  createdSoulCollections SoulCollectionAsset[]  @relation("SoulCollectionCreator")
+  heldSoulCollections    SoulCollectionAsset[]  @relation("SoulCollectionCurrentHolder")
+  issuedSoulGrants       SoulGrantRecord[]      @relation("SoulGrantIssuer")
+  receivedSoulGrants     SoulGrantRecord[]      @relation("SoulGrantGrantee")
+  preparedSoulPurchases  SoulPreparedPurchase[] @relation("SoulPreparedPurchaseAgentMember")
+  uploadBindings         SoulUploadBinding[]
+  following              Follow[]               @relation("follower")
+  followers              Follow[]               @relation("following")
+  desktopPet             DesktopPet?            @relation("DesktopPetAgentMember")
+
+  @@index([tgId])
+  @@index([accountId, kind])
+  @@map("members")
+}
+
+model Post {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId     String     @map("member_id") @db.Uuid
+  member       Member     @relation(fields: [memberId], references: [id])
+  title        String
+  content      String
+  tags         String[]   @default([])
+  likeCount    Int        @default(0) @map("like_count")
+  commentCount Int        @default(0) @map("comment_count")
+  status       String     @default("published")
+  type         String     @default("log")
+  channel      String     @default("general")
+  sourceUrl    String?    @map("source_url")
+  articleId    String?    @unique @map("article_id") @db.Uuid
+  article      Article?   @relation(fields: [articleId], references: [id])
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  comments     Comment[]
+  votes        PostVote[]
+
+  @@index([memberId])
+  @@index([createdAt])
+  @@index([type])
+  @@index([channel])
+  @@index([tags], type: Gin, map: "posts_tags_gin_idx")
+  @@map("posts")
+}
+
+model Comment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId     String   @map("post_id") @db.Uuid
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  memberId   String   @map("member_id") @db.Uuid
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  content    String
+  isAccepted Boolean  @default(false) @map("is_accepted")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([postId])
+  @@index([memberId])
+  @@index([memberId, isAccepted])
+  @@map("comments")
+}
+
+model PostVote {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  memberId  String   @map("member_id") @db.Uuid
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  direction Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([postId, memberId])
+  @@index([postId])
+  @@map("post_votes")
+}
+
+model Achievement {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String              @unique
+  nameZh      String              @map("name_zh")
+  description String?
+  icon        String              @default("🏆")
+  condition   String?
+  members     MemberAchievement[]
+
+  @@map("achievements")
+}
+
+model MemberAchievement {
+  memberId      String      @map("member_id") @db.Uuid
+  member        Member      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  achievementId String      @map("achievement_id") @db.Uuid
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  earnedAt      DateTime    @default(now()) @map("earned_at") @db.Timestamptz
+
+  @@id([memberId, achievementId])
+  @@map("member_achievements")
+}
+
+model Skill {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug        String   @unique
+  displayName String   @map("display_name")
+  summary     String
+  version     String   @default("1.0.0")
+  downloads   Int      @default(0)
+  stars       Int      @default(0)
+  versions    Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([downloads(sort: Desc)])
+  @@index([stars(sort: Desc)])
+  @@map("skills")
+}
+
+model WalletChallenge {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  address   String
+  domain    String?
+  nonce     String    @unique
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  purpose   String    @default("login")
+
+  @@index([address, expiresAt])
+  @@index([purpose, address, expiresAt])
+  @@map("wallet_challenges")
+}
+
+model WalletBinding {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId   String   @map("member_id") @db.Uuid
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  chain      String   @default("sui")
+  address    String
+  isPrimary  Boolean  @default(true) @map("is_primary")
+  verifiedAt DateTime @default(now()) @map("verified_at") @db.Timestamptz
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([chain, address])
+  @@unique([memberId, chain])
+  @@map("wallet_bindings")
+}
+
+// ============================================================
+// Soul Market Models
+// ============================================================
+
+model SoulAsset {
+  id                         String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId                  String                     @unique @map("on_chain_id")
+  stateOnChainId             String                     @unique @map("state_on_chain_id")
+  /// Mirrors `SoulState.content_id`. Single typed-content root that owns
+  /// every kind of slot (soul.md, memory, skills, sprite, audio, custom).
+  contentOnChainId           String?                    @unique @map("content_on_chain_id")
+  creatorMemberId            String?                    @map("creator_member_id") @db.Uuid
+  creatorMember              Member?                    @relation("SoulAssetCreator", fields: [creatorMemberId], references: [id], onDelete: SetNull)
+  creatorAddress             String                     @map("creator_address")
+  creatorRoyaltyBps          Int                        @default(0) @map("creator_royalty_bps")
+  currentOwnerMemberId       String?                    @map("current_owner_member_id") @db.Uuid
+  currentOwnerMember         Member?                    @relation("SoulAssetOwner", fields: [currentOwnerMemberId], references: [id], onDelete: SetNull)
+  currentOwnerAddress        String                     @map("current_owner_address")
+  currentKioskId             String                     @map("current_kiosk_id")
+  currentKioskCapOnChainId   String                     @map("current_kiosk_cap_on_chain_id")
+  /// Hand-managed partial unique index lives in
+  /// `prisma/migrations/20260329120000_hard_cut_soul_market_to_stablecoin_listing_objects/migration.sql`
+  /// and is tracked in `prisma/MANUAL_INDEXES.md`.
+  /// Keep the SQL index in place because Prisma cannot represent the `WHERE ... IS NOT NULL` predicate here.
+  listingObjectOnChainId     String?                    @map("listing_object_on_chain_id")
+  listedPriceAtomic          Decimal?                   @map("listed_price_atomic") @db.Decimal(20, 0)
+  listingStatus              String                     @default("held") @map("listing_status")
+  name                       String
+  description                String
+  imageUrl                   String                     @map("image_url")
+  /// Cache of `SoulContent.active_table[KIND_SPRITE]` for fast persona
+  /// rendering. Mirror is updated from `ActiveBindingUpdated` events.
+  activeSpriteName           String?                    @map("active_sprite_name")
+  activeSpriteVersionIndex   Int?                       @map("active_sprite_version_index")
+  activeSpriteDownloadPolicy String?                    @map("active_sprite_download_policy")
+  /// Cache of `SoulContent.active_table[KIND_AUDIO]`. Mirror only.
+  activeVoiceName            String?                    @map("active_voice_name")
+  activeVoiceVersionIndex    Int?                       @map("active_voice_version_index")
+  activeVoiceDownloadPolicy  String?                    @map("active_voice_download_policy")
+  /// Cached snapshots from `SoulState.config_ext` map. Updated by
+  /// `SoulStateConfigUpserted` / `SoulStateConfigDeleted` events.
+  spriteConfigJson           String?                    @map("sprite_config_json")
+  voiceConfigJson            String?                    @map("voice_config_json")
+  provenanceKind             String                     @default("native") @map("provenance_kind")
+  personaKind                String                     @default("characters") @map("persona_kind")
+  originRef                  String?                    @map("origin_ref")
+  collectionOnChainId        String?                    @map("collection_on_chain_id")
+  collection                 SoulCollectionAsset?       @relation("CollectionSouls", fields: [collectionOnChainId], references: [onChainId], onDelete: SetNull)
+  grantCapacity              Int                        @default(1) @map("grant_capacity")
+  activeGrantCount           Int                        @default(0) @map("active_grant_count")
+  /// Mirrors `SoulState.access_list_id` — the per-Soul `SoulPaidAccessList`
+  /// shared object created at mint time.
+  paidAccessListOnChainId    String?                    @unique @map("paid_access_list_on_chain_id")
+  grantRecords               SoulGrantRecord[]          @relation("SoulAssetGrantRecords")
+  contentVersions            SoulContentVersionRecord[] @relation("SoulAssetContentVersions")
+  paidAccessKindConfigs      SoulPaidAccessKindConfig[] @relation("SoulAssetPaidAccessKindConfigs")
+  paidAccessEntries          SoulPaidAccessEntry[]      @relation("SoulAssetPaidAccessEntries")
+  tags                       String[]
+  previewImages              String[]                   @map("preview_images")
+  readme                     String?
+  createdAt                  DateTime                   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                  DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([creatorMemberId, listingStatus])
+  @@index([creatorAddress])
+  @@index([currentOwnerMemberId, listingStatus])
+  @@index([currentOwnerAddress, listingStatus])
+  @@index([collectionOnChainId, listingStatus])
+  @@index([listingStatus, createdAt(sort: Desc)])
+  @@index([listingStatus, updatedAt(sort: Desc)], map: "soul_assets_listing_updated_idx")
+  @@index([listingStatus, listedPriceAtomic], map: "soul_assets_listing_price_idx")
+  @@index([listingStatus, activeGrantCount(sort: Desc)], map: "soul_assets_listing_grants_idx")
+  @@index([listingStatus, personaKind], map: "soul_assets_listing_persona_idx")
+  @@index([tags], type: Gin, map: "soul_assets_tags_gin_idx")
+  @@index([currentKioskId, currentKioskCapOnChainId])
+  @@index([createdAt(sort: Desc)])
+  @@map("soul_assets")
+}
+
+model SoulCollectionAsset {
+  id                     String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId              String      @unique @map("on_chain_id")
+  rightOnChainId         String      @unique @map("right_on_chain_id")
+  creatorMemberId        String?     @map("creator_member_id") @db.Uuid
+  creatorMember          Member?     @relation("SoulCollectionCreator", fields: [creatorMemberId], references: [id], onDelete: SetNull)
+  creatorAddress         String      @map("creator_address")
+  currentHolderMemberId  String?     @map("current_holder_member_id") @db.Uuid
+  currentHolderMember    Member?     @relation("SoulCollectionCurrentHolder", fields: [currentHolderMemberId], references: [id], onDelete: SetNull)
+  currentHolderAddress   String      @map("current_holder_address")
+  currentHolderKioskId   String      @map("current_holder_kiosk_id")
+  name                   String
+  description            String
+  imageUrl               String      @map("image_url")
+  extraRoyaltyBps        Int         @default(0) @map("extra_royalty_bps")
+  floorPriceAtomic       Decimal?    @map("floor_price_atomic") @db.Decimal(20, 0)
+  tradeable              Boolean     @default(true)
+  listingObjectOnChainId String?     @map("listing_object_on_chain_id")
+  listedPriceAtomic      Decimal?    @map("listed_price_atomic") @db.Decimal(20, 0)
+  listingStatus          String      @default("held") @map("listing_status")
+  // Mirrors SoulCollection.current_supply (monotonic; not decremented by burn).
+  soulCount              Int         @default(0) @map("soul_count")
+  // Mirrors SoulCollection.max_supply: null = unlimited, BigInt = on-chain cap.
+  maxSoulSupply          BigInt?     @map("max_soul_supply")
+  souls                  SoulAsset[] @relation("CollectionSouls")
+  createdAt              DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([creatorMemberId, listingStatus])
+  @@index([currentHolderMemberId, listingStatus])
+  @@index([currentHolderAddress, listingStatus])
+  @@index([listingStatus, createdAt(sort: Desc)])
+  @@map("soul_collection_assets")
+}
+
+model SoulGrantRecord {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  onChainId                String    @unique @map("on_chain_id")
+  soulOnChainId            String    @map("soul_on_chain_id")
+  soul                     SoulAsset @relation("SoulAssetGrantRecords", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  issuedByMemberId         String?   @map("issued_by_member_id") @db.Uuid
+  issuedByMember           Member?   @relation("SoulGrantIssuer", fields: [issuedByMemberId], references: [id], onDelete: SetNull)
+  issuedByAddress          String    @map("issued_by_address")
+  granteeMemberId          String?   @map("grantee_member_id") @db.Uuid
+  granteeMember            Member?   @relation("SoulGrantGrantee", fields: [granteeMemberId], references: [id], onDelete: SetNull)
+  granteeAddress           String    @map("grantee_address")
+  scopes                   String[]
+  status                   String    @default("active")
+  expiresAt                DateTime? @map("expires_at") @db.Timestamptz
+  endedAt                  DateTime? @map("ended_at") @db.Timestamptz
+  replacedByGrantOnChainId String?   @map("replaced_by_grant_on_chain_id")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([soulOnChainId, status])
+  @@index([granteeAddress, status])
+  @@index([issuedByAddress, status])
+  @@index([replacedByGrantOnChainId])
+  @@map("soul_grant_records")
+}
+
+/// Unified mirror for every `SoulContent` slot version (kind × name × versionIndex).
+/// Replaces the deleted SoulMemoryEntry / SoulSkillVersionRecord /
+/// SoulAssetVersionRecord triple. Each row is the projection of a single
+/// `ContentSlot` snapshot from `content.move`. Append/Delete/Purge events
+/// upsert the row; on-chain remains the source of truth.
+model SoulContentVersionRecord {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId    String    @map("soul_on_chain_id")
+  soul             SoulAsset @relation("SoulAssetContentVersions", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  contentOnChainId String    @map("content_on_chain_id")
+  /// Numeric kind id from `KindRegistry` (KIND_SOUL_DOC=0, KIND_MEMORY=1,
+  /// KIND_SKILL=2, KIND_SPRITE=3, KIND_AUDIO=4, custom ≥16).
+  kind             Int       @map("kind")
+  /// Human-readable kind label snapshotted at append time. Allows mirror
+  /// queries by name without joining `KindRegistry`. Updated when admin
+  /// renames a kind via reactivate flow (rare).
+  kindName         String    @map("kind_name")
+  name             String
+  versionIndex     Int       @map("version_index")
+  blobObjectId     String    @map("blob_object_id")
+  blobId           String?   @map("blob_id")
+  /// `slot.read_mode_mask` — append-time selected subset of the kind's
+  /// descriptor read modes (OWNER=1, GRANT=2, PAID=4, PUBLIC=8).
+  readModeMask     Int       @map("read_mode_mask")
+  /// `slot.op_mask` cached from descriptor at append time (APPEND=1,
+  /// DELETE=2, PURGE=4, ACTIVE_BIND=8).
+  opMask           Int       @map("op_mask")
+  /// `slot.grant_scope_mask` cached from descriptor.default_grant_scope_mask
+  /// at append time. Required to be a single grant scope bit (SEAL=1,
+  /// MEMORY=2, SKILLS=4, ASSETS=8) when the slot allows grant or paid reads.
+  grantScopeMask   Int       @map("grant_scope_mask")
+  isPublic         Boolean   @map("is_public")
+  /// Whether the slot's blob is Seal-encrypted. Always `true` today; pure
+  /// PUBLIC-only slots are rejected at append time so every legitimate
+  /// version goes through Seal. Surfaced for forward-compat with future
+  /// plaintext blob support.
+  sealEncrypted    Boolean   @default(true) @map("seal_encrypted")
+  /// Slot-level download policy (PUBLIC=0, OWNER_ONLY=1, ALLOWLIST=2).
+  downloadPolicy   Int       @map("download_policy")
+  /// Seal envelope sidecar JSON (ephemeral pubkey, encrypted DEK, nonce, etc.).
+  /// Required when `sealEncrypted=true`; nullable otherwise.
+  sealSidecar      Json?     @map("seal_sidecar")
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
+  purgedAt         DateTime? @map("purged_at") @db.Timestamptz
+  createdAtMs      BigInt    @map("created_at_ms")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([contentOnChainId, kind, name, versionIndex], map: "soul_content_version_unique")
+  @@index([soulOnChainId, kind, name, versionIndex(sort: Desc)])
+  @@index([soulOnChainId, kind, deletedAt])
+  @@index([contentOnChainId])
+  @@map("soul_content_version_records")
+}
+
+model SoulTxSync {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routeKey     String   @map("route_key")
+  txDigest     String   @map("tx_digest")
+  actorKey     String   @map("actor_key")
+  resourceKey  String   @map("resource_key")
+  statusCode   Int      @map("status_code")
+  responseBody Json     @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([routeKey, txDigest, actorKey, resourceKey])
+  @@index([resourceKey, createdAt(sort: Desc)])
+  @@map("soul_tx_syncs")
+}
+
+model SoulPreparedPurchase {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentMemberId        String    @map("agent_member_id") @db.Uuid
+  agentMember          Member    @relation("SoulPreparedPurchaseAgentMember", fields: [agentMemberId], references: [id], onDelete: Cascade)
+  soulOnChainId        String    @map("soul_on_chain_id")
+  listingObjectId      String    @map("listing_object_id")
+  sellerKioskId        String    @map("seller_kiosk_id")
+  agentAddress         String    @map("agent_address")
+  priceAtomic          Decimal   @map("price_atomic") @db.Decimal(20, 0)
+  platformFeeAtomic    Decimal   @default(0) @map("platform_fee_atomic") @db.Decimal(20, 0)
+  creatorRoyaltyAtomic Decimal   @default(0) @map("creator_royalty_atomic") @db.Decimal(20, 0)
+  totalAtomic          Decimal   @default(0) @map("total_atomic") @db.Decimal(20, 0)
+  txBytesBase64        String    @map("tx_bytes_base64")
+  txBytesHash          String    @map("tx_bytes_hash")
+  nativeOperation      Json?     @map("native_operation")
+  operationRevision    Int       @default(0) @map("operation_revision")
+  expiresAt            DateTime  @map("expires_at") @db.Timestamptz
+  executedAt           DateTime? @map("executed_at") @db.Timestamptz
+  executionTxDigest    String?   @map("execution_tx_digest")
+  resultStatusCode     Int?      @map("result_status_code")
+  resultBody           Json?     @map("result_body")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([agentMemberId, txBytesHash])
+  @@index([agentMemberId, expiresAt])
+  @@index([soulOnChainId, agentAddress, createdAt(sort: Desc)], map: "soul_prepared_purchases_native_buyer_history_idx")
+  @@index([soulOnChainId, createdAt(sort: Desc)])
+  @@index([executionTxDigest])
+  @@map("soul_prepared_purchases")
+}
+
+model SoulUploadBinding {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nonce       String    @unique
+  memberId    String    @map("member_id") @db.Uuid
+  member      Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  blobUrl     String    @unique @map("blob_url")
+  pathname    String
+  contentType String    @map("content_type")
+  kind        String
+  uploadType  String    @map("upload_type")
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([memberId, nonce])
+  @@index([expiresAt])
+  @@map("soul_upload_bindings")
+}
+
+// ============================================================
+// Social Models
+// ============================================================
+
+model Follow {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  follower  Member @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following Member @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+/// Per-kind paid-access configuration for a Soul. Mirrors
+/// `SoulPaidAccessList.kind_configs[kind]` from `paid_access.move`.
+/// Keyed by `(paidAccessListOnChainId, kind)`. Configured by the Soul
+/// owner via `configure_paid_access_kind`; updated via
+/// `update_paid_access_kind`; removed via `delete_paid_access_kind`.
+/// `ownershipEpochSnapshot` is captured at config time; purchases require
+/// it to equal the current `SoulState.ownership_epoch`, so configs auto-
+/// invalidate on Soul resale (the new owner must reconfigure).
+model SoulPaidAccessKindConfig {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId           String    @map("soul_on_chain_id")
+  soul                    SoulAsset @relation("SoulAssetPaidAccessKindConfigs", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  paidAccessListOnChainId String    @map("paid_access_list_on_chain_id")
+  kind                    Int       @map("kind")
+  /// Mirror of `KindPaidConfig.version` — bumps on every update so clients
+  /// can detect concurrent edits.
+  version                 Int       @default(1) @map("version")
+  priceAtomic             Decimal   @map("price_atomic") @db.Decimal(20, 0)
+  scopeMask               Int       @map("scope_mask")
+  /// `KindPaidConfig.duration_ms`. `null` means lifetime access.
+  durationMs              BigInt?   @map("duration_ms")
+  ownershipEpochSnapshot  Int       @map("ownership_epoch_snapshot")
+  deletedAt               DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([paidAccessListOnChainId, kind], map: "soul_paid_access_kind_config_unique")
+  @@index([soulOnChainId])
+  @@index([soulOnChainId, kind])
+  @@map("soul_paid_access_kind_configs")
+}
+
+/// Per-buyer per-kind paid-access entry. Mirrors a leaf of
+/// `SoulPaidAccessList.entries[buyer][kind]` (KindPaidEntry) from
+/// `paid_access.move`. Owner may revoke at any time (no on-chain refund);
+/// an entry is also considered invalid when its `ownershipEpochSnapshot`
+/// no longer matches the current Soul ownership epoch.
+model SoulPaidAccessEntry {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  soulOnChainId           String    @map("soul_on_chain_id")
+  soul                    SoulAsset @relation("SoulAssetPaidAccessEntries", fields: [soulOnChainId], references: [onChainId], onDelete: Cascade)
+  paidAccessListOnChainId String    @map("paid_access_list_on_chain_id")
+  buyerAddress            String    @map("buyer_address")
+  kind                    Int       @map("kind")
+  /// Mirror of `KindPaidEntry.version`.
+  version                 Int       @default(1) @map("version")
+  scopeMask               Int       @map("scope_mask")
+  pricePaidAtomic         Decimal   @map("price_paid_atomic") @db.Decimal(20, 0)
+  /// `KindPaidEntry.expires_at_ms`. `null` means lifetime.
+  expiresAtMs             BigInt?   @map("expires_at_ms")
+  ownershipEpochSnapshot  Int       @map("ownership_epoch_snapshot")
+  revokedAt               DateTime? @map("revoked_at") @db.Timestamptz
+  createdAtMs             BigInt    @map("created_at_ms")
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([buyerAddress, paidAccessListOnChainId, kind], map: "soul_paid_access_entry_unique")
+  @@index([soulOnChainId, buyerAddress])
+  @@index([paidAccessListOnChainId, kind])
+  @@index([buyerAddress, revokedAt])
+  @@map("soul_paid_access_entries")
+}
+
+// ============================================================
+// Desktop Companion Domain
+// ============================================================
+
+model StarterPersonaAsset {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug        String   @unique
+  title       String
+  description String?
+  coverImage  String   @map("cover_image")
+  thumbnail   String
+  version     String
+  checksum    String
+  files       Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([updatedAt(sort: Desc)])
+  @@map("starter_persona_assets")
+}
+
+model DesktopCatalogEntry {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceType  String   @map("source_type")
+  sourceRef   String   @map("source_ref")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isPublished Boolean  @default(true) @map("is_published")
+  isHidden    Boolean  @default(false) @map("is_hidden")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([sourceType, sourceRef])
+  @@index([isPublished, isHidden, sortOrder])
+  @@index([sourceType, sortOrder])
+  @@map("desktop_catalog_entries")
+}
+
+model DesktopDeviceSession {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId           String?   @map("account_id") @db.Uuid
+  account             Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  deviceCode          String    @unique @map("device_code")
+  userCode            String    @unique @map("user_code")
+  agentAddress        String?   @map("agent_address")
+  status              String    @default("pending")
+  pollIntervalSeconds Int       @default(5) @map("poll_interval_seconds")
+  expiresAt           DateTime  @map("expires_at") @db.Timestamptz
+  confirmedAt         DateTime? @map("confirmed_at") @db.Timestamptz
+  lastPolledAt        DateTime? @map("last_polled_at") @db.Timestamptz
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status, expiresAt])
+  @@index([accountId, updatedAt(sort: Desc)])
+  @@map("desktop_device_sessions")
+}
+
+model DesktopProfile {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String   @unique @map("account_id") @db.Uuid
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  preferences Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("desktop_profiles")
+}
+
+model DesktopPet {
+  id                         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId                  String    @map("account_id") @db.Uuid
+  account                    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  agentAddress               String    @map("agent_address")
+  agentMemberId              String    @unique @map("agent_member_id") @db.Uuid
+  agentMember                Member    @relation("DesktopPetAgentMember", fields: [agentMemberId], references: [id], onDelete: Restrict)
+  label                      String
+  desktopAccessTokenHash     String?   @unique(map: "desktop_pets_desktop_access_token_hash_key") @map("desktop_access_token_hash")
+  desktopAccessTokenIssuedAt DateTime? @map("desktop_access_token_issued_at") @db.Timestamptz
+  activeSourceType           String?   @map("active_source_type")
+  activeSourceRef            String?   @map("active_source_ref")
+  lastSyncedAt               DateTime? @map("last_synced_at") @db.Timestamptz
+  lastSeenAt                 DateTime? @map("last_seen_at") @db.Timestamptz
+  createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([accountId, agentAddress], map: "desktop_pets_account_agent_address_key")
+  @@index([accountId, updatedAt(sort: Desc)])
+  @@index([accountId, activeSourceType, activeSourceRef], map: "desktop_pets_account_active_source_idx")
+  @@index([agentAddress])
+  @@map("desktop_pets")
+}
+
+// One-shot handoff envelope for the desktop "Mint By Web" flow. Desktop POSTs
+// the local draft (text fields + cover image dataURL + skills.zip base64) to
+// `/api/desktop/mint-handoff` and receives a `token`. The desktop then opens
+// the web `/create?handoff=<token>` URL; web hydrates by calling
+// `/api/desktop/mint-handoff/[token]` (web session cookie auth, must belong to
+// the same `accountId` that issued the handoff). Rows are consumed once
+// (`consumedAt` set) and expire 5 minutes after creation. Stale rows can be
+// pruned by `DELETE FROM desktop_mint_handoffs WHERE expires_at < now()` —
+// payload is up to ~1MB (cover image + skills.zip) so cleanup matters.
+model DesktopMintHandoff {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token      String    @unique @map("token")
+  accountId  String    @map("account_id") @db.Uuid
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  payload    Json      @map("payload")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+
+  @@index([accountId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("desktop_mint_handoffs")
+}

@@ -1,0 +1,42 @@
+{
+  "testnet": {
+    "callablePackageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
+    "originalPackageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
+    "animacraftProvenancePackageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
+    "packageId": "0x0b79af1ffb805632236370bba9539aacbb8f917e4a26a2761bc189f193b95205",
+    "marketConfigId": "0x252255abd42007f0a2b3fad596c7b0705f19979436ed043fb24f2047050827fe",
+    "marketConfigV2PackageId": "",
+    "marketConfigV2Id": "",
+    "marketAdminCapV2Id": "",
+    "kioskRegistryId": "0xec8c87496f40c640411f8b4b0ee76d5b171de4fcf5aa49062ba7db4c1a15e30c",
+    "soulTransferPolicyId": "0x5e5711e21db5e445c03a59154bcb1fd889efc111cd42180f28c7a3adbe9ae92f",
+    "collectionTransferPolicyId": "0x97bf30a371ab12bd3184357cb69dd0ec8c1503ab730390166c4279173a8851db",
+    "paymentCoinType": "0x79d8bbac24e7bb040260c54fccd3b47eded90d67fb8d8d6bb42b3a5e62b85325::usdc::USDC",
+    "publishTxDigest": "HKenfarHCL6jnrqS2CosAkVNc7zBTTVXfpby5RB62i7r",
+    "upgradeCapId": "0xa7dee4f2413c40f4a3210e958651706d3fe6d61983911e5689a6c02226b6ff9b"
+  },
+  "mainnet": {
+    "callablePackageId": "0x5e3e75de3e1f661ffcad9bd0d53f3ea97e2e48f0765d2b2d9532256806409bb9",
+    "originalPackageId": "0x5e3e75de3e1f661ffcad9bd0d53f3ea97e2e48f0765d2b2d9532256806409bb9",
+    "packageId": "0x5e3e75de3e1f661ffcad9bd0d53f3ea97e2e48f0765d2b2d9532256806409bb9",
+    "marketConfigV2PackageId": "0x5e3e75de3e1f661ffcad9bd0d53f3ea97e2e48f0765d2b2d9532256806409bb9",
+    "upgradeCapId": "0x57bee7ad5422e4aee8c4bfa7ab8fc95d55d67cfc2d551751a79280526483ab25",
+    "marketConfigV2Id": "0x2171d5268a6af1ca7efbc53eaa5bc4a80ab94733f0fadd8da4486bc9bec50f3c",
+    "marketAdminCapV2Id": "0xb9000621d325ee895f7cc9e840fac3f849b02961a5538083f6bcb13629c9d90e",
+    "kioskRegistryId": "0xebf7ec52fd0201a0b3dac3e6ef6b05a2d11493e1a67170c7262b02aa71a34952",
+    "kindRegistryId": "0x1e28e87799374b8a24a6c5a9cffbb2a104fe76b5185f9aba224cf45d6059d9ad",
+    "kindAdminCapId": "0xe264753081fb9f0a33c47ec0276c66fb2f58f68b237a1680b1c43adb86ec2177",
+    "profileRegistryId": "0x8478b220092769c97fb2ecdc9c92a52d06b023ae1de49e0a229c6d42d75e27ce",
+    "socialRegistryId": "0x701354ad6e7633cc83c0c1fc797a007287f462c2c8a20f153933a365eaeacd22",
+    "communityRegistryId": "0x1472754174ea28f39c917a82f86a4717014782878a8d1f284bf9ccb659befc6c",
+    "communityVoteRegistryId": "0x0dffcd9e24334df26095e01455c644d81a887eece2950b237e7b03c312c77841",
+    "soulTransferPolicyId": "0x9966a75237e341ce6914c261e72a07ba811809f9583c56c0c9152483e0aa747a",
+    "soulPolicyCapId": "0x4254c271912d60135cc290f09fcdcad2a515978ee88f833000b000e3958c1041",
+    "soulDisplayId": "0x2b83b5cd75bb288c83bf657e5c50a6238f9a61e7b57a206a3294fd26233d8b2a",
+    "collectionTransferPolicyId": "0x2e06a55f7e9fdc027333c259b515604e73c748040e7361c177459a785a00191f",
+    "collectionPolicyCapId": "0xf04834e64f3c5f2a8d98af33f40f1e393fbaa64d0e2f9c83294d4a2599e33b95",
+    "collectionDisplayId": "0xaa674f7848f41b868fa3c987ea445fbbd8c692d5fa74486728de42170771b39d",
+    "paymentCoinType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+    "publishTxDigest": "HwE7FJzTEzB1QHucWXBnAjCdBHTQ6kNz6smqiqULM6SN"
+  }
+}

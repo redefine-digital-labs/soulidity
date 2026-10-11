@@ -1,0 +1,11 @@
+[package]
+name = "StandardInteropTests"
+edition = "2024"
+
+[dependencies]
+IndependentMaker = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/standard_examples/maker" }
+IndependentAbility = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/standard_examples/ability" }
+IndependentContainer = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/standard_examples/container" }
+
+[addresses]
+interop_tests = "0x0"

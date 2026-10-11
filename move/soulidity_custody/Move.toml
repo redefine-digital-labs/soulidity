@@ -1,0 +1,13 @@
+[package]
+name = "SoulidityCustody"
+edition = "2024"
+[dev-dependencies]
+ForeignSameNameSoul = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/foreign_soul" }
+PrivateSource = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/private_source" }
+[dependencies]
+SoulidityStandard = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-standard/move/soulidity_standard" }
+SoulidityOriginProtocol = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_origin_protocol" }
+SoulidityFoundation = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_foundation" }
+Sui = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/.deps/maker-ae467539/production/fixed-deps/https___github_com_MystenLabs_sui_git_2a0becb2fcc6989e492981104af67f62f2c9511a/crates/sui-framework/packages/sui-framework", override = true}
+[addresses]
+soulidity_custody = "0x0"

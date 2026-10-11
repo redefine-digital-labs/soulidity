@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "animacraft.render-core-artifact.v1",
+  "artifact": "maker-v8-render-core.js",
+  "source": {
+    "project": "Animacraft",
+    "file": "maker-v8-render-core.js"
+  },
+  "sha256": "9a6da57134a1f5c6008cf327af56b86c58834c8a380a2bf32785865d95c46b02",
+  "byteLength": 23367
+}

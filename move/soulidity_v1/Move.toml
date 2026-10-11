@@ -1,0 +1,32 @@
+[package]
+name = "soulidity_v1"
+edition = "2024"
+
+[dependencies]
+SoulidityNativeBinder = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_native_binder" }
+SoulidityMarket = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-market/move/soulidity_market" }
+SoulidityCollection = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/move/soulidity_collection" }
+SoulidityOriginProtocol = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_origin_protocol" }
+SoulidityTransport = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-content/move/soulidity_transport" }
+SoulidityMakerManufacturing = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/move/soulidity_maker_manufacturing" }
+SoulidityMakerPublication = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/move/soulidity_maker_publication" }
+SoulidityContentKinds = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-content/move/soulidity_content_kinds" }
+SoulidityMakerTerms = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/move/soulidity_maker_terms" }
+SoulidityMakerAdmission = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/move/soulidity_maker_admission" }
+SoulidityCustody = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_custody" }
+SoulidityNative = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_native" }
+SoulidityApplication = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_application" }
+SoulidityContent = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_content" }
+SoulidityModel = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-extensions/move/soulidity_model" }
+SoulidityStandard = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-standard/move/soulidity_standard" }
+SoulidityFoundation = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_foundation" }
+SoulidityVisual = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-extensions/move/soulidity_visual" }
+SoulidityCommunity = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-community/move/soulidity_community" }
+Sui = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/.deps/maker-ae467539/production/fixed-deps/https___github_com_MystenLabs_sui_git_2a0becb2fcc6989e492981104af67f62f2c9511a/crates/sui-framework/packages/sui-framework", override = true}
+Walrus = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/.deps/maker-ae467539/production/fixed-deps/https___github_com_MystenLabs_walrus_git_a19764ff77f501a79db88dc6d922a2c73848e989/mainnet-contracts/walrus" }
+
+[addresses]
+soulidity_v1 = "0x0"
+
+[dev-dependencies]
+AccountSourceHandler = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_v1/test-fixtures/account_source_handler" }

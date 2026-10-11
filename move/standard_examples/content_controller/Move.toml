@@ -1,0 +1,10 @@
+[package]
+name = "IndependentContentController"
+edition = "2024"
+
+[dependencies]
+SoulidityContent = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_content" }
+SoulidityStandard = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-standard/move/soulidity_standard" }
+
+[addresses]
+independent_content = "0x0"

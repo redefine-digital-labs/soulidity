@@ -1,0 +1,9 @@
+[package]
+name = "IndependentAbility"
+edition = "2024"
+
+[dependencies]
+SoulidityStandard = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-standard/move/soulidity_standard" }
+
+[addresses]
+independent_ability = "0x0"

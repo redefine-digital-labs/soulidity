@@ -1,0 +1,1 @@
+/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/ecosystem-devops/tools/repository-extraction/build_repository_packages.py

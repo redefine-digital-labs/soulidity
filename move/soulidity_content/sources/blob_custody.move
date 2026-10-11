@@ -1,0 +1,1 @@
+../../../../../../../Documents/Claude/Projects/soulidity-ecosystem/soul-content/move/soulidity_content/sources/blob_custody.move

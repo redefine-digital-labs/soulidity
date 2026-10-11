@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "outDir": "../../../../../apps/desktop/resources/skills",
+    "rootDir": ".",
+    "declaration": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "file/path-security.ts",
+    "file/scripts/*.ts",
+    "memory/memory-utils.ts",
+    "memory/scripts/*.ts"
+  ]
+}

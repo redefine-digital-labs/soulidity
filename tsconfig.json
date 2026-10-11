@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "resolveJsonModule": true,
+    "declaration": true,
+    "sourceMap": true,
+    "paths": {
+      "@db/*": ["./src/db/*"],
+      "@/*": ["./src/*", "./web/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@web/*": ["./web/*"]
+    }
+  },
+  "include": ["src/**/*", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist", "web"]
+}

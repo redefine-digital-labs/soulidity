@@ -1,0 +1,192 @@
+'use client'
+
+import { useEffect } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { FlowBar } from '@/components/nav/flow-bar'
+import { PageContainer } from '@/components/layout/page-container'
+import { useCreateSoul } from '@/components/providers/create-soul-provider'
+import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import { usePublish } from '@/lib/hooks/use-publish'
+import { Button } from '@/components/ui/button'
+
+const steps = [
+  { label: 'Basic Info' },
+  { label: 'Living Content' },
+  { label: 'Preview & Confirm' },
+  { label: 'Pay Gas' },
+  { label: 'On-chain' },
+]
+
+function truncateId(id: string) {
+  if (id.length <= 12) return id
+  return `${id.slice(0, 6)}…${id.slice(-4)}`
+}
+
+export default function CreateSuccessPage() {
+  const router = useRouter()
+  const ctx = useCreateSoul()
+  // Completion archival only re-proves history. It never requests a signature.
+  const completion = usePublish(async () => false)
+  const network = 'mainnet'
+  const networkLabel = 'Mainnet'
+
+  // Guard: redirect if no publish result (wait for sessionStorage hydration first)
+  useEffect(() => {
+    if (ctx.isHydrated && !ctx.publishResult) {
+      router.replace('/create')
+    }
+  }, [ctx.isHydrated, ctx.publishResult, router])
+
+  if (!ctx.publishResult) return null
+
+  const { txDigest, soulOnChainId, collectionOnChainId, listingObjectOnChainId, listedPriceAtomic } = ctx.publishResult
+  const collectionHref = collectionOnChainId ? `/collections/${encodeURIComponent(collectionOnChainId)}` : null
+  const isListed = ctx.publishResult.listingStatus === 'listed'
+  const isBound = !!collectionOnChainId
+  const outcomeLabel = isBound && isListed
+    ? 'Bound and listed'
+    : isListed
+      ? 'Listed on marketplace'
+      : isBound
+        ? 'Bound to collection'
+        : 'Live on Sui'
+
+  return (
+    <div className="relative z-10 border-t border-purple/20">
+      <FlowBar steps={steps} currentStep={5} />
+
+      <PageContainer size="sm" className="py-12 text-center">
+        {/* Success icon */}
+        <div
+          className="mx-auto mb-6 flex h-[72px] w-[72px] items-center justify-center rounded-full text-4xl"
+          style={{ background: 'var(--ui-soft-success)', border: '2px solid var(--success)' }}
+        >
+          🚀
+        </div>
+
+        <h1 className="text-3xl font-bold mb-2">✦ Your Soul is Awake</h1>
+        <p className="mx-auto mb-10 max-w-[380px] text-sm leading-relaxed text-muted">
+          {isBound && isListed
+            ? 'Your Soul is live on Sui, bound to the selected collection, and listed on the marketplace.'
+            : isListed
+              ? 'Your Soul is live on Sui and listed on the marketplace.'
+              : isBound
+                ? 'Your Soul is now live on Sui and bound to the selected collection.'
+                : 'Your Soul is now live on Sui. Its existence is permanent and immutable on-chain.'}
+        </p>
+
+        {/* Transaction details */}
+        <div className="mb-8 rounded-xl border border-border bg-card2 p-5 text-left">
+          <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+            <span className="text-muted">Soul Object ID</span>
+            <span className="font-mono text-xs text-tech-text">{truncateId(soulOnChainId)}</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+            <span className="text-muted">Tx Hash</span>
+            <span className="font-mono text-xs text-tech-text">{truncateId(txDigest)}</span>
+          </div>
+          {collectionOnChainId ? (
+            <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+              <span className="text-muted">Collection</span>
+              <span className="font-mono text-xs text-tech-text">{truncateId(collectionOnChainId)}</span>
+            </div>
+          ) : null}
+          {isListed && listingObjectOnChainId ? (
+            <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+              <span className="text-muted">Listing</span>
+              <span className="font-mono text-xs text-tech-text">{truncateId(listingObjectOnChainId)}</span>
+            </div>
+          ) : null}
+          {isListed && listedPriceAtomic ? (
+            <div className="flex items-center justify-between border-b border-border py-2.5 text-sm">
+              <span className="text-muted">Listed Price</span>
+              <span className="font-mono text-xs text-tech-text">{formatAtomicAmountForDisplay(listedPriceAtomic)}</span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between py-2.5 text-sm">
+            <span className="text-muted">Status</span>
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-success">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
+              {outcomeLabel} · {networkLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* Action cards */}
+        <div className="mb-6 grid grid-cols-2 gap-3 text-left">
+          {!isListed ? (
+            <Link
+              href={`/souls/${soulOnChainId}`}
+              className="group rounded-xl border-2 border-gold bg-card p-5 transition hover:bg-card2"
+            >
+              <span className="mb-2.5 block text-2xl">💰</span>
+              <span className="block text-sm font-bold">List for Sale Now</span>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                Set a price and list your Soul in the marketplace immediately. Buyers can discover and purchase it right away.
+              </p>
+              <span className="mt-3 block text-xs font-semibold text-tech-text">
+                Set Price → List →
+              </span>
+            </Link>
+          ) : (
+            <Link
+              href={`/souls/${soulOnChainId}`}
+              className="group rounded-xl border-2 border-gold bg-card p-5 transition hover:bg-card2"
+            >
+              <span className="mb-2.5 block text-2xl">💰</span>
+              <span className="block text-sm font-bold">Listed on marketplace</span>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                Buyers can discover this Soul from the marketplace. Open the Soul page to manage or delist it.
+              </p>
+              <span className="mt-3 block text-xs font-semibold text-tech-text">
+                Manage Listing →
+              </span>
+            </Link>
+          )}
+
+          <Link
+            href={collectionHref ?? '/my-souls'}
+            className="group rounded-xl border border-border bg-card p-5 transition hover:border-purple"
+          >
+            <span className="mb-2.5 block text-2xl">🔐</span>
+            <span className="block text-sm font-bold">{collectionHref ? 'Back to Collection' : 'Manage in My Souls'}</span>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted">
+              {collectionHref
+                ? 'Return to the collection detail page and confirm the new Soul appears under its supply count.'
+                : 'Go to your dashboard to authorize an AI agent, manage versions, or list for sale later.'}
+            </p>
+            <span className="mt-3 block text-xs font-semibold text-muted group-hover:text-action-label">
+              {collectionHref ? 'View Collection →' : 'Go to My Souls →'}
+            </span>
+          </Link>
+        </div>
+
+        {!isListed && (
+          <p className="mb-3 text-xs text-muted">
+            Unlisted Souls live in <Link href="/my-souls" className="font-semibold text-foreground underline underline-offset-4 hover:text-action-label">My Souls</Link> — you can list them any time.
+          </p>
+        )}
+
+        {/* Ghost link */}
+        <div className="mb-5 space-y-2">
+          <Button variant="outline" disabled={completion.loadingRecovery || completion.status === 'building' || !completion.suiWallet}
+            onClick={async () => {
+              if (await completion.startAnother(txDigest, ctx.publishResult!.authoringCompletionKey)) {
+                ctx.reset(); router.replace('/create')
+              }
+            }}>
+            {completion.status === 'building' ? 'Retaining completion proof…' : 'Create Another Soul'}
+          </Button>
+          {completion.error && <p role="alert" className="text-sm text-danger">{completion.error}</p>}
+        </div>
+        <Link
+          href="/market"
+          className="text-sm text-muted underline underline-offset-4 transition hover:text-action-label"
+        >
+          View in Market
+        </Link>
+      </PageContainer>
+    </div>
+  )
+}

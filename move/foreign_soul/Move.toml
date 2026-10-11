@@ -1,0 +1,9 @@
+[package]
+name = "ForeignSameNameSoul"
+edition = "2024"
+
+[dependencies]
+Sui = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/.deps/maker-ae467539/production/fixed-deps/https___github_com_MystenLabs_sui_git_2a0becb2fcc6989e492981104af67f62f2c9511a/crates/sui-framework/packages/sui-framework", override = true}
+
+[addresses]
+foreign_soul = "0x42"

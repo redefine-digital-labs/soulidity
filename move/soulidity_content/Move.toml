@@ -1,0 +1,14 @@
+[package]
+name = "SoulidityContent"
+edition = "2024"
+
+[dependencies]
+SoulidityTransport = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-content/move/soulidity_transport" }
+SoulidityContentKinds = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-content/move/soulidity_content_kinds" }
+SoulidityStandard = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-standard/move/soulidity_standard" }
+SoulidityFoundation = { local = "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/move/soulidity_foundation" }
+Sui = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/.deps/maker-ae467539/production/fixed-deps/https___github_com_MystenLabs_sui_git_2a0becb2fcc6989e492981104af67f62f2c9511a/crates/sui-framework/packages/sui-framework", override = true}
+Walrus = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/maker-protocol/.deps/maker-ae467539/production/fixed-deps/https___github_com_MystenLabs_walrus_git_a19764ff77f501a79db88dc6d922a2c73848e989/mainnet-contracts/walrus" }
+
+[addresses]
+soulidity_content = "0x0"

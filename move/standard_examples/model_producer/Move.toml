@@ -1,0 +1,10 @@
+[package]
+name = "IndependentModelProducer"
+edition = "2024"
+
+[dependencies]
+SoulidityModel = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-extensions/move/soulidity_model" }
+SoulidityStandard = { local = "/Users/naoer/Documents/Claude/Projects/soulidity-ecosystem/soul-standard/move/soulidity_standard" }
+
+[addresses]
+independent_model_producer = "0x0"
