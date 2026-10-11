@@ -1,0 +1,227 @@
+[
+  {
+    "body": "After a successor scaffold finalized, preparing the first Base transaction reloaded the archived predecessor and required it to have no successor. The successful scaffold had already linked that predecessor, so publication stopped with `MAKER_V8_SUCCESSOR_PREDECESSOR_DRIFT` despite all uploads and the creation transaction succeeding.\n\nApply the unconsumed-predecessor check only before a certified scaffold exists. Continuation still verifies the exact finalized scaffold capsule and fresh runtime authority. Existing resource checkpoints and the same publication attempt are preserved.\n\nValidation: added v1/v2 scaffold → Base preparation → persistent cold recovery and next-signature coverage, including pre-scaffold predecessor drift, missing/tampered capsules, and fresh authority drift rejection. The new v2 test fails on the production baseline and passes with the fix. Production build and source/dist scans pass. Full paired suite passes 4380/4380 with no failures or skips. Exact staged artifacts pass 9 byte/MIME checks with formal domains preserved. Exact candidate CI and original Chrome recovery are pending.\n",
+    "mergeCommit": {
+      "oid": "104f7124cbbb2937b33705ff71435e6565bbf5d8"
+    },
+    "number": 81,
+    "title": "fix(publication): resume successor after scaffold consumes predecessor",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/81"
+  },
+  {
+    "body": "Successor publication can succeed onchain and still stop with `root requires one exact finalized object change`. Its transaction creates the new Root/AdminCap and mutates their predecessors with the same Move types; the browser previously counted both as candidates for the new scaffold.\n\nSelect exactly one created object for each scaffold type, and read the predecessor Root by its exact ID and mutated effect. Keep historical object, raw effects, transaction and compiler certificate checks intact. Recovery uses the existing successful digest without repeating upload or scaffold payment.\n\nRegression coverage now crosses the public browser adapter and compiler certificate with both generations of Root/AdminCap, and rejects missing or duplicate new Roots. The original defect was reproduced before the fix; 104 related checks and the production build pass. Full paired JS 4379/4379, source/dist/upload checks and immutable deployment9 checks pass. Required PR run37322222713 and explicit paired run37322222270 succeeded; Move artifact33checks/194source/output hashes are verified. Mainnet evidence was read-only; no replacement transaction was sent.\n",
+    "mergeCommit": {
+      "oid": "fff376c8f4b296a867b69a9603dee184d1beb7b4"
+    },
+    "number": 80,
+    "title": "Fix successor publication recovery with old and new Root objects",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/80"
+  },
+  {
+    "body": "The publication dialog presented per-resource registration and certification as separate global steps, so each new resource moved the wizard backwards. After a signature it also displayed empty quote fields and a generic upload/broadcast button.\n\nUse three stable phases: prepare files, upload and certify resources, publish the Maker. Show the current resource and certified count, retain quotes only while reviewing an unsigned transaction, and distinguish registration, upload, certification and unknown-result recovery. Apply the same copy in all five locales and align secondary button styling with the dialog.\n\nTransaction construction, signing, broadcasting, persisted checkpoints and their permission gates are unchanged. Existing author drafts and the current upload attempt must remain intact.\n\nValidation: frozen browser/view/baseline checks 52/52 pass, including desktop/mobile Chromium; full paired JS 4379/4379 pass, zero failed/skipped; clean production build and source/dist scans pass. Independently staged deployment passes all 9 byte/config/MIME checks without changing formal domains. Exact paired workflow 37234062067 succeeded; its downloaded Move artifact passed 33 checks and source/output verification. Required PR workflow 37234051001 also succeeded; both Web and Move jobs have verified exact paired source checkout.\n",
+    "mergeCommit": {
+      "oid": "1c0bd1253bbe7dc211a29d86928f57d48474e676"
+    },
+    "number": 79,
+    "title": "Fix publication progress and signed resource recovery UI",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/79"
+  },
+  {
+    "body": "原作者打开链上版本的 Review 时，官方 SDK 解析出的合法地址余额 gas 使用空 payment 数组，却被前端判定为不安全交易；Player 使用相同错误限制。\n\n仅移除两处对 payment.length===0 的拒绝，保留数组类型、gas 引用、signer、gas owner、预算、价格、expiry、canonical BCS、kind/digest 和官方模拟检查。补充官方 gRPC resolver 的空 payment 正常路径、不安全字段负例和原字节恢复测试。未修改合约、配置或签名/广播权限。\n\n验证：Node 22.23.2 干净安装；相关生命周期/Player/恢复测试与生产构建通过；源码/制品扫描通过；正式 Root 未签名交易构建及官方模拟成功。补丁对正式 e2b944 基线应用检查及对候选反向检查均通过。精确配对 SO 4a0c1b0 已逐文件验证，全量复验结果见 REVIEW.md。\n\n发布后仍须在原 r41 草稿完成 Review→取消的真实操作复验，并确认草稿与 v1 ACTIVE 不变、零签名/广播/归档。此前不能关闭线上缺陷，亦不宣称完整 r41 发布或新 Soul 创建已完成。\n",
+    "mergeCommit": {
+      "oid": "67c5f382f5a0eb561ae9d2e788b244493e91d8bc"
+    },
+    "number": 78,
+    "title": "fix: accept address-balance gas in lifecycle and Player reviews",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/78"
+  },
+  {
+    "body": "## User-visible repair (M4 / S13-F02-S)\n\nRepair the existing published Player: unknown purchase eligibility is not a\ndenial, and an ACTIVE certified Maker exposes its existing public link through\nthe original copy/share controls. Preserve real quote, wallet confirmation,\nlocal-preview restrictions and stale-session isolation. No new contract,\nconfiguration, archive or financial action.\n\n## Evidence\n\n- Exact five-file candidate 06e9deab1fca22d1278b4d81f6c7cdb85b1fe340.\n- Related executor tests 630 pass; independent read-only review 630 pass.\n- Clean npm ci and production build pass.\n- Source scan 613 files, distribution scan 8 artifacts, upload scope 153 files;\n  unchanged configuration SHA-256 verified. Primary checkout/index preserved.\n- Full paired CI and deployed original-operation retest remain required.\n\nPaired Soulidity source: 4a0c1b0eadf045a1a4a6446f878d0f7849fcd1e2.\nRelated defect: #67 (not closed by this local increment).\nRollback: existing production deployment dpl_CBu2DUpuJHKopyPRQf8MUFqJN7RY.\n",
+    "mergeCommit": {
+      "oid": "e2b9442816e9468f455939b01cf713788ac1ea5d"
+    },
+    "number": 77,
+    "title": "Fix published Player eligibility state and public Maker sharing",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/77"
+  },
+  {
+    "body": "M4/S13/F02-R, continuing #67. Real author r41 republish showed old r6 certified-resource progress under NEW_VERSION_REQUIRED. Keep the existing version-history route, distinguish current unpublished edits, and hide predecessor progress, resume instructions and technical step/asset counts in this state. Normal completed receipts and signed recovery are unchanged. Three files only; root and independent related tests 435/435 pass. No archive, signature, contract, configuration or chain changes. Exact source/build/CI/release gates and deployed original-operation retest remain required; this PR does not close full publication acceptance.",
+    "mergeCommit": {
+      "oid": "4621d3bdfa7e4efa71631089a9410ee14f7d9c46"
+    },
+    "number": 76,
+    "title": "Separate successor publication review from predecessor progress",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/76"
+  },
+  {
+    "body": "## User-visible fix\nKeep completion failures visible without permanently disabling the same OC retry after receiver login recovers. Preserve existing validation, confirmation, single-flight and signed-journal recovery.\n\n## Scope and evidence\nOnly original-product-app.js and its regression test. Actual app-action RED before fix; related app/journey/view 367 tests pass; independent frozen review and final focused recovery checks pass. Covers close/reopen and repeated recovery with identical input and startNew=false.\n\n## Release boundary\nPaired Soulidity source: 4a0c1b0eadf045a1a4a6446f878d0f7849fcd1e2. Full exact CI/build/immutable gates and original real-site retry remain required. No wallet transactions or contract changes. Tracks #67; does not close full product acceptance.",
+    "mergeCommit": {
+      "oid": "c38c857eb018b7747d2a43c8f385cabba1989e2c"
+    },
+    "number": 75,
+    "title": "Fix same-OC retry after receiver preflight failure",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/75"
+  },
+  {
+    "body": "## User journey\nContinue issue #67: the published Maker renders, but Complete OC stays disabled because the UI reads a capability the production bridge never emits.\n\n## Bounded fix\nProject the real configured Native provider through the existing journey and bridge. Missing, disabled, or disposed dependencies fail closed. Remove the stale capability and fixtures. Preserve runtime/Native/Seal/wallet/Kiosk/receiver/storage preflight, confirmation and payment gates, and the PR73 republish/version workflow.\n\n## Evidence and remaining gates\nExecutor 505/505 and independent 341/341 affected tests pass, including the actual production factory and zero-side-effect capability query. Live read-only runtime/Native and two Seal server identity checks pass; no signatures or chain writes. Exact six-file candidate 3b28454582fa2c9295ab52ccf4641d19f427e607 pairs with Soulidity 82904f013c7f9ed9b692d2229bc53955417dc7a6. Full Web/Move release gates and actual deployed UI preflight remain required. This PR does not close the product bug or authorize payment.",
+    "mergeCommit": {
+      "oid": "07bf59ccefc6ac169f7591fbea94107245e5df6c"
+    },
+    "number": 74,
+    "title": "fix: restore configured Native completion capability in Player",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/74"
+  },
+  {
+    "body": "## User-visible defect\n\nPublishing again after editing a completed Maker returned the old COMPLETE\npublication instead of identifying the current work as unpublished. The original\nauthor has 7 Parts / 9 Items at saved revision 41, while chain version 1 contains\nthe earlier frozen revision 6 (1 Part / 1 Item).\n\n## Scoped repair\n\n- Preserve immutable completed records and signed unfinished publication recovery.\n- Compare current publication content, not just local checkpoint numbers.\n- Connect the existing chain lineage, explicit archive review/recovery, and\n  successor-draft operations in the existing Version history UI.\n- Copy current full document and assets; use stable successor identity to prevent\n  duplicate drafts across retries/tabs, without overwriting later edits.\n- Validate current source/assets before archive review and again before signing.\n- Clearly distinguish local snapshots from published chain versions, with existing\n  localization machinery.\n\nNo automatic archive, signature, broadcast, new Maker workaround, contract change,\ndeployment configuration change, or deferred native-completion changes.\n\n## Release boundary\n\nExact reviewed source is frozen independently of the dirty primary checkout.\nProduction promotion requires exact candidate CI/paired Move gates, source/upload\nverification and immutable artifact checks. Production UI acceptance follows\npromotion; a signed archive or a paid new publication requires applicable user\nauthority. This PR does not close the full product journey.\n\nRelated: #67\n",
+    "mergeCommit": {
+      "oid": "bd70440c66118b955a86a8dcca7377da381dc17c"
+    },
+    "number": 73,
+    "title": "Fix republishing current Maker content and explicit version recovery",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/73"
+  },
+  {
+    "body": "## User journey and reproduced regression\n\nRelated to #67. The preceding catalog fix restores production Plaza/search/detail.\nThe same published Maker still fails Start making because the exact controller\nschema omitted fields already emitted by the catalog, and retained an invalid\nequality between Manifest and public-document content commitments.\n\n## Bounded change\n\nAlign the controller's exact field sets with the existing certified catalog view.\nValidate metadata against the document and exact registry ID shapes. Independently\nderive Manifest and public-content hashes; retain unknown-field, identity,\nactivation, ownership, lineage and asset checks. Two files only; no contract,\nconfiguration, permission, wallet or publication changes.\n\n## Verification and release\n\n- Production catalog-to-controller regression fails against the previous controller.\n- Executor affected tests 241/241; independent review and tests 174/174 pass.\n- Real Mainnet/Walrus read-only controller load now READY, default recipe and\n  certified PNG readable, with signing/broadcast disabled. Frozen-source preflight\n  and exact source/build/CI/eight-package Move/artifact gates precede promotion.\n- After promotion: actual public Start making, rendering and reload/reopen.\n- Rollback: prior frontend deployment dpl_FtUKG4vHQiqiLM16D8XxvDvDvRh1.\n\nThis does not republish newer drafts or close the full product acceptance scope.\n",
+    "mergeCommit": {
+      "oid": "6bf60c3a11efdfdbe4c038814600c63b73e921d6"
+    },
+    "number": 72,
+    "title": "Fix exact public Player view and independent commitment validation",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/72"
+  },
+  {
+    "body": "## Scope\nRefs #67. The original Maker is already published, but public Plaza/Player/lineage incorrectly equate manifest SHA with a distinct domain-separated public content commitment.\n\nDerive the exact compiler-compatible public document commitment after Manifest SHA/schema/canonical/lineage validation. Preserve exact blob identity and independent content validation. Correct two false-equality test fixtures. No contracts, ABI, config, permissions, publication WAL or wallet change; no new chain transactions needed.\n\n## Evidence\n- Real Mainnet ACTIVE Root + canonical certified Walrus manifest + PNG: previous frontend's public read paths reproduced the false equality failure.\n- Candidate source with the same live data: Plaza, Player and lineage READY, no diagnostics; distinct manifest/content hashes each match their proper source.\n- Integrated byte-adapter negative coverage preserves rejection of changed/rehashed content, corrupt bytes, wrong hash domain, invalid schema, pointer and lineage drift.\n- Executor affected8suites239/239; independent review and complete runtime32/32 closure PASS.\n- Exact frozen build, full CI and paired Move evidence, immutable/public artifacts and real walletless browser checks remain release gates. Issue stays open until user-side acceptance.\n\n## Rollback\nPromote verified deployment dpl_9YwcQUavUiBSnyxLoTzFNd4778Mr. Do not undo/reset/re-sign the already successful original publication.\n",
+    "mergeCommit": {
+      "oid": "b0fa0206b60a31040435a67e9757baeecb17da2a"
+    },
+    "number": 71,
+    "title": "Verify public Maker content and Manifest hashes in their proper domains",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/71"
+  },
+  {
+    "body": "## Scope\nRefs #67. Preserve the original Maker publication and all successful checkpoints.\n\nFINALIZE's browser readback mistakenly required obsolete flat Root commitments. Reuse the existing exact nested Root projection for the four commitment comparisons. No contract, ABI, configuration, permissions, wallet or WAL changes.\n\n## Evidence\n- Reproduced the adapter FINALIZE failure before the one-line fix.\n- New regression: 35/35; affected executor suites: 357/357; independent review: 221/221, no findings.\n- Historical object BCS in the new adapter test is presence-only mocked; this does not claim Mainnet FINALIZE acceptance. The production transport's existing BCS/JSON consistency validation remains unchanged.\n- Frozen source/build, paired Move CI and immutable deployment gates must pass before promotion. Real original-browser final activation and discovery remain required after release; issue remains open.\n\n## Rollback\nPromote the previously verified Animacraft deployment dpl_GVxCjHHNiwtmSLfxXH13siUoP5MU. Frontend rollback cannot undo successful chain transactions.\n",
+    "mergeCommit": {
+      "oid": "e050039c0bbce4bca8f81069b2a201c033ccaef8"
+    },
+    "number": 70,
+    "title": "Fix FINALIZE nested Root commitment readback",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/70"
+  },
+  {
+    "body": "## Result / scope\n\nRefs #67. Repair the real original Maker publication readback after its successful Associated objects transaction. The actual `MarketTreasuryV8` raw field is `escrow: \"0\"`; the existing compiler DTO calls that balance `balanceAtomic`. The generic camel/snake projection previously looked for nonexistent `balance_atomic`.\n\nExactly one production source and two relevant tests change. Projection is restricted to the exact Treasury type and canonical u64 escrow; old shadow fields and malformed values reject. Compiler zero-state checks remain. No contracts, ABI, runtime permissions, configuration, editor UI or publication history change. No project rebuild or duplicate successful transaction is authorized.\n\n## Evidence\n\n- Pre-fix realistic raw-field test fails with the exact production error; same fixture passes after repair.\n- Relevant executor suites 98/98; compiler full 51/51, including real-shaped Companion browser projection through controller/store/cold COMPLETE and malformed/nonzero rejection.\n- Independent read-only review passed; final exact frozen-file comparison pending.\n- Actual finalized Mainnet Companion readback through the production transport and fixed historical objects passes, with existing BCS/JSON consistency validation, zero chain writes. This is readback evidence, not original-browser completion.\n- Exact frozen candidate `8bc27c9d6940ccaff5df63b90ba9b03aadcce286`, paired Soulidity `82904f013c7f9ed9b692d2229bc53955417dc7a6`; full CI/build/artifact gates and deployment still pending.\n\n## Real-site acceptance / recovery\n\nKeep #67 OPEN. After verified deployment, recover the same original Chrome saved publication; successful storage, Scaffold, Base append/seal and Companion must not be re-signed or repeated. Confirm completion plus refresh/reopen before closing the defect. The previous verified frontend C8Agz is the rollback target, with this known readback defect; frontend rollback cannot undo chain writes.\n",
+    "mergeCommit": {
+      "oid": "0b0d59aefad367813cec0c97719626a58aafdab6"
+    },
+    "number": 69,
+    "title": "Fix exact MarketTreasury escrow projection during publication recovery",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/69"
+  },
+  {
+    "body": "## Summary\n\nRefs #67. Keep that product bug open until original deployed recovery passes.\n\nRestore the next steps of the existing Maker publication journey: use each\nfinalized AdminCap output reference without changing historical signed inputs.\nRecover the already-saved unsigned stale-reference cursor using exact fixed-head\nproof. No contract/ABI/runtime permission/config/UI redesign or operation reset.\n\nScope: five linked source files, two relevant test files, and the user-requested\nbug/PR templates. Templates distinguish local tests, CI, deployment and real-site\nacceptance; they are reporting conventions, not new machine-enforced gates.\n\n## Evidence\n\n- Real production reproduction after #66: successful content append advances the\n  owned cap; the next build reuses the creation reference and fails.\n- Pre-fix real compiler regression fails; after repair, each Base/Companion/\n  Activation transaction uses the certified predecessor output.\n- Fixed Mainnet historical input/output proof passes read-only with no chain writes.\n- Complete real compiler/controller/store/cold-restore flow reaches COMPLETE.\n- The saved old checkpoint plus stale unsigned next cursor automatically recovers\n  through real `prepareReview`, preserving previous head and attempt records.\n- Forged-high/same-version wrong-digest references fail cold authorization and can\n  be repaired only to the fixed-head certified output. Signed/attempted cursors,\n  non-cap inputs, changed semantics and stale CAS are rejected.\n- Independent read-only review passed. Exact candidate archive/release gates\n  and deployed retest remain pending at PR creation.\n\n## Candidate / safety / recovery\n\nCandidate: af8781989d622046bf4bb9db5a9583bc616474f4\nTree: 4239b54eb33bd78df07a1924fb2ebdc8d14fbfc4\nPaired Soulidity: 82904f013c7f9ed9b692d2229bc53955417dc7a6\n\nThe candidate performs no chain write. Production recovery will reuse the original\nsaved operation and query successful transactions; no duplicate storage, Scaffold\nor content append. Frontend rollback target is the currently deployed #66 artifact;\nrollback cannot undo chain writes and that artifact has the known stale-reference\nbug. Preserve WAL and use exact-digest recovery. M1–M4 are not complete.\n",
+    "mergeCommit": {
+      "oid": "5d4d5bae72319966afe6efb0e16d770573f219b8"
+    },
+    "number": 68,
+    "title": "Recover Maker publication with certified owned-object reference progression",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/68"
+  },
+  {
+    "body": "Fix observed production MAKER_V8_PUBLICATION_TARGET_INVALID. Permit only exact Base Physical Option and typed vector constructor flows, and bind final trailing Walrus epoch to immutable context and certified BCS System proof. Preserve ABI, WAL schema, hash, topology and custody checks. Real compiler-to-store CAS/cold-recovery and complete nine-call FINALIZE regression; scoped security negatives and independent review passed. Full release gates required before promotion; actual same-WAL production recovery remains acceptance. No new chain writes or signatures.",
+    "mergeCommit": {
+      "oid": "c18ad440ad3146ffecbe3f64bf1191d1c3fd5cb0"
+    },
+    "number": 66,
+    "title": "Bind publication constructor persistence to exact compiler and Walrus proofs",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/66"
+  },
+  {
+    "body": "Repair the observed MAKER_V8_FIELDS_INVALID root exact-shape regression: project only type/reference/fields at the publication-private adapter boundary after full historical validation, retaining owner for Native custody. Add real adapter-to-compiler certificate coverage for Scaffold, Base, Companion and Activation plus owner/version/digest negatives. Exact candidate Node22 six suites 154/154 and build pass. No ABI, configuration, chain writes or duplicate paid operations. Full CI and exact deployment gates required before promotion.",
+    "mergeCommit": {
+      "oid": "e4d0076ee5d320ca854ba04c303764b5e4645216"
+    },
+    "number": 65,
+    "title": "Fix exact publication readback shape while preserving Native custody",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/65"
+  },
+  {
+    "body": "Fix the reproduced Maker activation failure without repeating certified storage transactions. Prove package origin from existing Move self-handle parsing instead of mandatory optional protobuf metadata, including native Soul completion and recovery. Normalize only exact schema-declared gRPC Balance, TypeName, and fresh zero legacy-reference projections against canonical BCS. Preserve digest, version, linkage, ownership and identity checks. Includes realistic fixtures and rejection tests. Real mainnet read-only activation, native integration and completion recovery pass; no chain writes. Full exact release gates required before promotion.",
+    "mergeCommit": {
+      "oid": "1bf24f056c7031257694abac5226e362df7aa169"
+    },
+    "number": 64,
+    "title": "Repair real gRPC package and authority readback",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/64"
+  },
+  {
+    "body": "S13-F02-E: Mainnet registration and certification both succeeded, but Creator continuation rejected the certified blob because the pinned SDK returns blob_id as decimal u256 while the durable blob ID is base64url. Normalize using the official SDK converter and keep exact ID, bytes, size and certification checks. Add real BCS-shaped fixtures, invalid/overflow identity cases and cold signed-checkpoint recovery without new signature, upload or broadcast. No ABI, wallet permission, fee or runtime gate changes. Exact Node22 build and six affected suites (51 tests) passed; independent read-only review passed. Full paired CI and immutable artifact checks are required before promotion. Existing paid storage must be resumed, never registered again.",
+    "mergeCommit": {
+      "oid": "e94aa1ef429470479aab3a8d62b476a28f1460ef"
+    },
+    "number": 63,
+    "title": "Fix certified Walrus blob readback with exact SDK identity",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/63"
+  },
+  {
+    "body": "S13-F02-C: fixes reproduced production Invalid transaction expiration in Walrus register/certify and Maker publication with bounded ValidDuring, full Mainnet genesis and CSPRNG nonce. Frozen review/sign/recovery bytes preserved. Adds BCS/address-balance/epoch/randomness coverage. No ABI, permission, wallet or art changes. Focused Node22 checks and independent review passed; complete release gates and Chrome retest required. No signatures or chain writes.",
+    "mergeCommit": {
+      "oid": "d7a24996fe212dd188e6b689e87ab87e6c149505"
+    },
+    "number": 62,
+    "title": "Fix Maker publication ValidDuring replay protection",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/62"
+  },
+  {
+    "body": "Repairs the observed mainnet preparation failure: relay tip 2579480 MIST exceeds the former 1000000 MIST cap. Uses a named finite 10000000 MIST (0.01 SUI) per-blob ceiling, preserving dynamic relay pricing and all wallet, persistence, WAL and execution gates. Adds real pinned-SDK regressions for the observed quote, exact boundary, rejection and linear pricing. No contracts, deployment tuple or Soulidity changes. Related local tests: 17 passed; full paired release gates pending. This cap is not the cumulative publication cost: gas and WAL storage remain additional and must be verified before signing.",
+    "mergeCommit": {
+      "oid": "e52d419e8f9ec17af6c1e1df73c3e28ed5c0ef22"
+    },
+    "number": 61,
+    "title": "Fix bounded Walrus relay fee for Maker publication",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/61"
+  },
+  {
+    "body": "## User-visible blocker\nProduction Creator reports Ready to publish but leaves Publish to Mainnet disabled.\nRestore the original entry and exact ordinary Maker publication review/recovery.\n\n## Scope\n- Original Creator toolbar, five-language review/status/cost and certified Root handoff.\n- Exact saved draft/revision/wallet/release binding; remove old unscoped Maker APIs.\n- Frozen real TransactionData and gas budget; sign one reviewed step without broadcast.\n- Explicit continuation of durable signed bytes; wallet-scoped cross-tab lock.\n- Preserve started snapshots after edits and unknown outcomes; definitive first rejection can re-review edits.\n- Existing Walrus database binding store, blocked-upgrade diagnostics and preserved signed records.\n- No runtime-permission, configuration, contract, renderer or Soulidity source changes.\n\n## Verification\nNode22.23.3: publication/bridge/Walrus/adapters/transport158, App/View298, bootstrap10 pass.\nIndependent read-only review clean after three P2 findings were fixed.\nActual public pre-fix UI reproduced; post-deployment wallet/chain acceptance remains pending.\nExact paired Soulidity input remains82904f013c7f9ed9b692d2229bc53955417dc7a6.\nNo wallet signature, broadcast or new chain deployment has occurred for this repair.\n",
+    "mergeCommit": {
+      "oid": "b827c3c6230b47a70be6689e2b0e7150eb30705b"
+    },
+    "number": 60,
+    "title": "Restore ordinary Maker mainnet publication from Creator",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/60"
+  },
+  {
+    "body": "Restores original source-pixel geometry, source-center rotation and no-upscale centered Style placement. Keeps source bytes, position locks, atomic saves and protected rendering guards. Includes focused geometry, upload and full undo/redo snapshot regressions. Paired Soulidity source: 5467fb403048d6f4d7007f320b2c4216f017446c. Shared renderer and real raster pixel comparisons verified; production browser retest remains a post-deployment gate.",
+    "mergeCommit": {
+      "oid": "b439c546fb03237c9c807540f75a650f34645052"
+    },
+    "number": 59,
+    "title": "Preserve native PNG geometry and original centered placement",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/59"
+  },
+  {
+    "body": "## Result\n\nPersist Creator Player Test export size/background intent through the existing local checkpoint, source/asset binding and CAS recovery. Keep original controls and one state authority.\n\n## Verification\n\n- Reproduced actual production Original-size reset after cold reopen; a bundle/store cold-recovery regression also failed before the fix.\n- Node22 focused six-file suite:208 passed. Independent read-only review clean; independent five-file rerun:172 passed.\n- Original application/view integration:296 passed.\n- Existing omitted local preferences keep Standard/current defaults. Explicit invalid values, unknown fields, hashes, source/asset mismatches and CAS conflicts remain rejected.\n- Tests cover independent/combined/equal-size options, history, personalization, pending/failed rendering, close/dispose, save failure/latest retry and stale PNG guards.\n\n## Boundary and recovery\n\nOnly eight related source/test paths. No chain, runtime permission, public deployment config, Soulidity or formal completion change. Exact parent ae2dc444356e51bd0400fd9ce5be254cdcb5af76. Production artifact verification and repeat of the failed actual UI operation remain required after normal gates; test passes are not a live acceptance claim.\n",
+    "mergeCommit": {
+      "oid": "592699af0eb8bd5cd0015b0898fbb45f2cbdef0e"
+    },
+    "number": 58,
+    "title": "Persist local Player export intent across cold reopen",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/58"
+  },
+  {
+    "body": "## Summary\n\nFix the remaining event-loop-count assumption in Player completion acceptance tests. The main-branch check exposed a late-A/new-B test asserting bridge entry before asynchronous hashing had completed.\n\nOnly `test/original-product-app.test.js` changes. Product code, permissions, dependencies, Move sources and static build inputs are unchanged.\n\n## Verification\n\n- A controlled delay around the real native SHA-256 reproduces the old `expected 1 / actual 0` failure.\n- Wait for actual event completion and bridge entry; retain the late-A/new-B, fail-closed and single-flight assertions.\n- Focused completion tests: 6/6 passed.\n- Full original app suite: 260/260 passed on Node 22, both implementation and sanitized staging.\n- Independent read-only review: no actionable findings.\n\nSO CI 37116966506 remains valid for its exact commit `3a1f223ef3f88fef529d08e44183697595d714ef` and original paired AC revision `e954338aa99f2aeb19e452080075b5e4b5bc2011`: this independent AC test file is not part of its executed/imported inputs. Do not describe that earlier run as having executed against the new AC revision.\n\nProduction aliases remain unchanged until required checks and release routing verification pass. No branch-protection bypass or wallet transaction is part of this change.\n",
+    "mergeCommit": {
+      "oid": "ae2dc444356e51bd0400fd9ce5be254cdcb5af76"
+    },
+    "number": 57,
+    "title": "Fix Player completion acceptance readiness",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/57"
+  },
+  {
+    "body": "## Summary\n\n- Ship the reviewed static Animacraft implementation paired with Soulidity commit `3c2f78b92b4a077f751ece60e830f1495d06cd26`.\n- Bind the public runtime to the certified fresh eight-package mainnet release, including finalized bootstrap and Market activation.\n- Use the public two-of-two Seal topology and remove retired backend/configuration paths while retaining the original product UI.\n- Harden deployment upload exclusions and preserve query-first transaction recovery.\n\n## Verification\n\n- Fresh release: all 13 writes finalized and read back; all eight packages rebuilt and verified against publication evidence.\n- Release ID: `8dd402857b952c8a3e71ccb8ea56a032316109d92165265608c269625b2b60a7`.\n- Final public export SHA256: `06071a3ca8a63ce454d24aa5ac35dfbdc50b2954b8c41c0c5cbaa63f895f918b`.\n- Node 22 production build, public runtime chain attestation, delivery source/artifact scans and sanitized Vercel upload manifest pass.\n- Earlier full paired CI/Move evidence covers unchanged contract and application inputs; release-runner corrections have targeted and full local coverage.\n\n## Rollout boundary\n\nProduction builds are staged with automatic domain assignment temporarily disabled. Promote the verified immutable production artifact only after configuration, routes and assets are checked, then restore normal auto-assignment. Frontend rollback does not undo chain writes. Real wallet-authorized protected decryption and end-user journey acceptance remain separate; the export keeps `protectedDecryptionReady: false`.\n",
+    "mergeCommit": {
+      "oid": "540e144b4b61cb44598e49d75ab2454746936f8d"
+    },
+    "number": 56,
+    "title": "Deploy certified fresh mainnet release and static frontend",
+    "url": "https://github.com/redefine-digital-labs/animacraft/pull/56"
+  }
+]

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "animacraft.expansion-pack-v8-browser-provider-observation.v1",
+  "observedAtUtc": "2026-08-12T12:27:57Z",
+  "productionOrigin": "https://animacraft.soulidity.ai",
+  "makerUrl": "https://animacraft.soulidity.ai/maker/0x1329648b7ead8bc16dc7e209416922b2af25c68884def660534d6be541379390#template",
+  "releaseId": "0x8c2af3a0c7eb4bfe88bf5ed9e7b56cb407edae12f672a3331a09e41d046e071b",
+  "observations": {
+    "productionHomeLoaded": true,
+    "productionTitle": "Animacraft",
+    "disconnectedWalletButtonText": "Connect wallet",
+    "availableControlledBrowsers": [
+      "Codex In-app Browser"
+    ],
+    "inAppBrowserDeepLinkInteraction": "timed-out",
+    "googleChromeRunning": true,
+    "chatgptControlExtensionInstalledInChrome": false,
+    "walletClaimSigned": false,
+    "transactionBroadcast": false,
+    "passCreatedByThisAcceptanceRun": false,
+    "renderVerified": false
+  },
+  "blocker": "The controlled browser must expose both the ChatGPT browser-control extension and an unlocked Sui Wallet Standard provider. The current Chrome profiles do not have the ChatGPT browser-control extension installed, and the in-app browser cannot provide the external Sui wallet needed for the real website claim.",
+  "resume": {
+    "browser": "Chrome or Edge",
+    "requiredControl": "ChatGPT browser-control extension",
+    "requiredWallet": "Unlocked Sui or Slush Wallet on Mainnet",
+    "firstAction": "Open the makerUrl, connect the wallet, and approve the FREE Unlock Pack transaction."
+  }
+}

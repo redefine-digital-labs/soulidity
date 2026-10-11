@@ -1,0 +1,905 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mockedRequireIdentity = vi.hoisted(() => vi.fn())
+const mockedRequireMutationIdentity = vi.hoisted(() => vi.fn())
+
+const mockedGetSoulStateObject = vi.hoisted(() => vi.fn())
+const mockedGetActiveGrantSlotForGrantee = vi.hoisted(() => vi.fn())
+
+const mockedPrisma = vi.hoisted(() => ({
+  desktopPet: {
+    findMany: vi.fn(),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  soulAsset: {
+    findMany: vi.fn(),
+  },
+  soulGrantRecord: {
+    groupBy: vi.fn(),
+    findMany: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  member: {
+    update: vi.fn(),
+  },
+  $transaction: vi.fn(),
+}))
+
+function resetMocks() {
+  vi.resetAllMocks()
+  mockedPrisma.$transaction.mockImplementation(
+    (fn: (tx: typeof mockedPrisma) => Promise<unknown>) => fn(mockedPrisma),
+  )
+  // Default: no active asset grants for any pet. Tests that care about a
+  // non-zero count override this with their own resolved value.
+  mockedPrisma.soulGrantRecord.groupBy.mockResolvedValue([])
+  mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([])
+  // Default: stale-row self-heal write is a no-op; tests that exercise
+  // it override per-call.
+  mockedPrisma.soulGrantRecord.updateMany.mockResolvedValue({ count: 0 })
+  // Default: caller owns no Souls, so the on-chain re-check inside
+  // `findActiveAssetGrantsForPet` is a no-op. Tests that exercise the
+  // on-chain branch override this with their own resolved value.
+  mockedPrisma.soulAsset.findMany.mockResolvedValue([])
+}
+
+vi.mock('@/lib/prisma', () => ({ prisma: mockedPrisma }))
+vi.mock('@web/lib/prisma', () => ({ prisma: mockedPrisma }))
+
+vi.mock('@/lib/auth/identity', () => ({
+  requireIdentity: mockedRequireIdentity,
+  requireMutationIdentity: mockedRequireMutationIdentity,
+}))
+vi.mock('@web/lib/auth/identity', () => ({
+  requireIdentity: mockedRequireIdentity,
+  requireMutationIdentity: mockedRequireMutationIdentity,
+}))
+
+// Stub the Sui RPC helpers used by the authoritative on-chain re-check so
+// tests never hit the network. Both default to "no grants on chain"; the
+// dedicated re-check tests override per-call.
+vi.mock('@soulidity/sdk', async () => {
+  const actual = await vi.importActual<typeof import('@soulidity/sdk')>('@soulidity/sdk')
+  return {
+    ...actual,
+    getSoulStateObject: mockedGetSoulStateObject,
+    getActiveGrantSlotForGrantee: mockedGetActiveGrantSlotForGrantee,
+    getRequiredSoulidityEnv: vi.fn(() => '0xdeadbeef'),
+  }
+})
+
+const ACCOUNT_ID = 'account-1'
+const OTHER_ACCOUNT_ID = 'account-2'
+const PET_ID = '11111111-1111-4111-8111-111111111111'
+const AGENT_MEMBER_ID = '22222222-2222-4222-8222-222222222222'
+const HUMAN_MEMBER_ID = '33333333-3333-4333-8333-333333333333'
+
+const HUMAN_IDENTITY = {
+  accountId: ACCOUNT_ID,
+  memberId: HUMAN_MEMBER_ID,
+  kind: 'human' as const,
+}
+
+const AGENT_IDENTITY = {
+  accountId: ACCOUNT_ID,
+  memberId: AGENT_MEMBER_ID,
+  kind: 'agent' as const,
+}
+
+function buildPetRow(overrides: Partial<{
+  id: string
+  label: string
+  agentAddress: string
+  lastSeenAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+  agentStatus: string | null
+  apiKeyHash: string | null
+}> = {}) {
+  return {
+    id: overrides.id ?? PET_ID,
+    label: overrides.label ?? 'Desktop pet',
+    agentAddress: overrides.agentAddress ?? '0xagent',
+    lastSeenAt: 'lastSeenAt' in overrides ? overrides.lastSeenAt! : new Date('2026-05-07T00:00:00Z'),
+    createdAt: overrides.createdAt ?? new Date('2026-05-01T00:00:00Z'),
+    updatedAt: overrides.updatedAt ?? new Date('2026-05-06T00:00:00Z'),
+    agentMember: {
+      agentStatus: 'agentStatus' in overrides ? overrides.agentStatus! : 'active',
+      apiKeyHash: 'apiKeyHash' in overrides ? overrides.apiKeyHash! : 'hash-abc',
+    },
+  }
+}
+
+function jsonRequest(method: string, body?: unknown) {
+  return new Request(`http://localhost/api/account/pets/${PET_ID}`, {
+    method,
+    headers: body ? { 'content-type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+}
+
+// ── GET /api/account/pets ────────────────────────────────────────────────
+
+describe('GET /api/account/pets', () => {
+  beforeEach(resetMocks)
+
+  it('returns this account\'s pets and never leaks the apiKeyHash', async () => {
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findMany.mockResolvedValue([
+      buildPetRow({ apiKeyHash: 'secret-hash', agentStatus: 'active' }),
+    ])
+
+    const { GET } = await import('../../web/app/api/account/pets/route')
+    const response = await GET()
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mockedPrisma.desktopPet.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId: ACCOUNT_ID },
+        orderBy: { updatedAt: 'desc' },
+      }),
+    )
+    expect(body.pets).toHaveLength(1)
+    const [pet] = body.pets
+    expect(pet.id).toBe(PET_ID)
+    expect(pet.label).toBe('Desktop pet')
+    expect(pet.agentStatus).toBe('active')
+    expect(pet.hasActiveApiKey).toBe(true)
+    expect(pet).not.toHaveProperty('apiKeyHash')
+    // The serialized payload itself must not contain the hash anywhere.
+    expect(JSON.stringify(body)).not.toContain('secret-hash')
+  })
+
+  it('returns hasActiveApiKey=false when the bound member was rotated externally', async () => {
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findMany.mockResolvedValue([
+      buildPetRow({ agentStatus: 'active', apiKeyHash: null }),
+    ])
+
+    const { GET } = await import('../../web/app/api/account/pets/route')
+    const response = await GET()
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.pets[0].hasActiveApiKey).toBe(false)
+  })
+
+  it('scopes findMany by accountId so other accounts\' pets are not returned', async () => {
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findMany.mockImplementation(async ({ where }: { where: { accountId: string } }) => {
+      // Simulate the DB filtering to only this account's rows.
+      if (where.accountId === ACCOUNT_ID) {
+        return [buildPetRow()]
+      }
+      return [buildPetRow({ id: 'pet-other' })]
+    })
+
+    const { GET } = await import('../../web/app/api/account/pets/route')
+    const response = await GET()
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.pets).toHaveLength(1)
+    expect(body.pets[0].id).toBe(PET_ID)
+    // Confirm the DB call carried our account, not an arbitrary one.
+    expect(mockedPrisma.desktopPet.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { accountId: ACCOUNT_ID } }),
+    )
+  })
+
+  it('returns 401 when no identity is resolved', async () => {
+    mockedRequireIdentity.mockResolvedValue({
+      error: Response.json({ error: 'Sign in' }, { status: 401 }),
+    })
+
+    const { GET } = await import('../../web/app/api/account/pets/route')
+    const response = await GET()
+
+    expect(response.status).toBe(401)
+    expect(mockedPrisma.desktopPet.findMany).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 for an agent identity (route is human-only)', async () => {
+    mockedRequireIdentity.mockResolvedValue({ identity: AGENT_IDENTITY })
+
+    const { GET } = await import('../../web/app/api/account/pets/route')
+    const response = await GET()
+    const body = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(body.error).toMatch(/human/i)
+    expect(mockedPrisma.desktopPet.findMany).not.toHaveBeenCalled()
+  })
+
+  it('scopes the activeAssetGrantCount aggregate to grants the caller can revoke (R-001)', async () => {
+    // Regression for R-001: counting *every* grant whose grantee matches the
+    // pet's agentAddress (regardless of which Soul issued it) lets account A
+    // see a non-zero count for grants issued by account B's Soul to A's pet
+    // address. The PetCard then shows a "Revoke sprite downloads"
+    // affordance whose modal (`/grantable-souls`) is empty because that
+    // route filters by `currentOwnerMemberId === identity.memberId`. The
+    // unlink blocker (`findActiveAssetGrantsForPet`) applies the same
+    // ownership predicate, so the card claims grants exist while unlink
+    // proceeds. The aggregate must use the same predicate.
+    mockedRequireIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findMany.mockResolvedValue([
+      buildPetRow({ agentAddress: '0xagent-1' }),
+    ])
+    mockedPrisma.soulGrantRecord.groupBy.mockResolvedValue([
+      { granteeAddress: '0xagent-1', _count: { _all: 2 } },
+    ])
+
+    const { GET } = await import('../../web/app/api/account/pets/route')
+    const response = await GET()
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.pets[0].activeAssetGrantCount).toBe(2)
+    expect(mockedPrisma.soulGrantRecord.groupBy).toHaveBeenCalledTimes(1)
+    const [groupByArgs] = mockedPrisma.soulGrantRecord.groupBy.mock.calls[0]
+    expect(groupByArgs).toMatchObject({
+      by: ['granteeAddress'],
+      where: expect.objectContaining({
+        granteeAddress: { in: ['0xagent-1'] },
+        status: 'active',
+        scopes: { has: 'assets' },
+        soul: { currentOwnerMemberId: HUMAN_MEMBER_ID },
+      }),
+    })
+  })
+})
+
+// ── PATCH /api/account/pets/[id] ─────────────────────────────────────────
+
+describe('PATCH /api/account/pets/[id]', () => {
+  beforeEach(resetMocks)
+
+  it('renames the pet and returns the canonical shape', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.update.mockResolvedValue(
+      buildPetRow({ label: 'Renamed pet' }),
+    )
+
+    const { PATCH } = await import('../../web/app/api/account/pets/[id]/route')
+    const request = jsonRequest('PATCH', { label: 'Renamed pet' })
+    const response = await PATCH(request as never, { params: Promise.resolve({ id: PET_ID }) })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.pet.label).toBe('Renamed pet')
+    expect(body.pet).not.toHaveProperty('apiKeyHash')
+
+    expect(mockedPrisma.desktopPet.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: PET_ID, accountId: ACCOUNT_ID },
+        data: { label: 'Renamed pet' },
+      }),
+    )
+  })
+
+  it('rejects empty / missing labels with 400', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+
+    const { PATCH } = await import('../../web/app/api/account/pets/[id]/route')
+
+    const emptyResponse = await PATCH(
+      jsonRequest('PATCH', { label: '   ' }) as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    expect(emptyResponse.status).toBe(400)
+
+    const missingResponse = await PATCH(
+      jsonRequest('PATCH', {}) as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    expect(missingResponse.status).toBe(400)
+
+    expect(mockedPrisma.desktopPet.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects oversized labels (>64 chars) with 400', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+
+    const { PATCH } = await import('../../web/app/api/account/pets/[id]/route')
+    const longLabel = 'x'.repeat(65)
+    const response = await PATCH(
+      jsonRequest('PATCH', { label: longLabel }) as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(400)
+    expect(mockedPrisma.desktopPet.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when the pet id does not exist (P2025)', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    const error = Object.assign(new Error('No record'), { code: 'P2025' })
+    mockedPrisma.desktopPet.update.mockRejectedValue(error)
+
+    const { PATCH } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await PATCH(
+      jsonRequest('PATCH', { label: 'New label' }) as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(404)
+  })
+
+  it('returns 404 when the pet belongs to a different account (P2025 because the where clause excludes it)', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    // The route always passes `accountId: identity.accountId` in the where,
+    // so a row owned by another account presents to Prisma as "not found".
+    const error = Object.assign(new Error('No record'), { code: 'P2025' })
+    mockedPrisma.desktopPet.update.mockImplementation(async ({ where }: { where: { id: string; accountId: string } }) => {
+      if (where.accountId !== ACCOUNT_ID) {
+        // Defensive — the route should never pass a foreign accountId.
+        throw new Error('cross-account update attempted')
+      }
+      throw error
+    })
+
+    const { PATCH } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await PATCH(
+      jsonRequest('PATCH', { label: 'New label' }) as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(404)
+    expect(mockedPrisma.desktopPet.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: PET_ID, accountId: ACCOUNT_ID },
+      }),
+    )
+  })
+
+  it('returns 401 when the session is missing', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({
+      error: Response.json({ error: 'Sign in' }, { status: 401 }),
+    })
+
+    const { PATCH } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await PATCH(
+      jsonRequest('PATCH', { label: 'Anything' }) as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(401)
+    expect(mockedPrisma.desktopPet.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 for an agent identity', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: AGENT_IDENTITY })
+
+    const { PATCH } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await PATCH(
+      jsonRequest('PATCH', { label: 'Anything' }) as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(403)
+    expect(mockedPrisma.desktopPet.update).not.toHaveBeenCalled()
+  })
+})
+
+// ── DELETE /api/account/pets/[id] ────────────────────────────────────────
+
+describe('DELETE /api/account/pets/[id]', () => {
+  beforeEach(resetMocks)
+
+  it('removes the pet, disables the agent member, and clears every key/rotation field', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.desktopPet.delete.mockResolvedValue({ id: PET_ID })
+    mockedPrisma.member.update.mockResolvedValue({ id: AGENT_MEMBER_ID })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({ ok: true })
+
+    expect(mockedPrisma.desktopPet.findUnique).toHaveBeenCalledWith({
+      where: { id: PET_ID },
+      select: { accountId: true, agentMemberId: true, agentAddress: true },
+    })
+    expect(mockedPrisma.desktopPet.delete).toHaveBeenCalledWith({
+      where: { id: PET_ID, accountId: ACCOUNT_ID },
+    })
+    expect(mockedPrisma.member.update).toHaveBeenCalledWith({
+      where: { id: AGENT_MEMBER_ID },
+      data: {
+        agentStatus: 'disabled',
+        apiKey: null,
+        apiKeyHash: null,
+        apiKeyRotationId: null,
+        pendingApiKeyHash: null,
+        pendingApiKeyRotationId: null,
+        pendingApiKeyRotationExpiresAt: null,
+      },
+    })
+  })
+
+  it('returns 404 when the pet does not exist', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue(null)
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(404)
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 with the active grant list when on-chain asset-scope grants would be orphaned', async () => {
+    // Reproduction for the unlink invariant: deleting the pet row while
+    // grants still authorise its agentAddress on-chain would strand
+    // sprite-download access. The route must surface the list so the user
+    // can revoke first via the wallet-signed flow.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValue([
+      {
+        onChainId: '0xgrant-1',
+        soulOnChainId: '0xsoul-1',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-1' },
+      },
+    ])
+    // Per-row chain validation must confirm the slot is still live for
+    // this grantee (R-001): the mirror row is trusted only when the
+    // chain agrees. Stale rows get self-healed; the route then
+    // proceeds with full delete (covered by the dedicated stale-row
+    // test below).
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-1',
+      granteeAddress: '0xagent',
+      scopeMask: 8, // SOUL_GRANT_SCOPE_ASSETS
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body.activeAssetGrants).toHaveLength(1)
+    expect(body.activeAssetGrants[0]).toMatchObject({
+      grantOnChainId: '0xgrant-1',
+      soulOnChainId: '0xsoul-1',
+    })
+    // Crucially: nothing was deleted, no member was disabled.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('proceeds with full teardown when a mirror row is stale on-chain (R-001 self-heal)', async () => {
+    // Regression for R-001: the new revoke-mirror flow marks rows
+    // revoked only after the wallet TX lands and `/api/account/pets/[id]/grant-mirror`
+    // reaches `endSoulGrantProjectionFromChain`. If that route is lost
+    // mid-flight, the mirror keeps a `status='active'` row even though
+    // `grant::revoke` already removed the slot. The unlink blocker
+    // must validate each mirror row against the chain — a missing
+    // slot means the row is stale, gets self-healed to `invalidated`,
+    // and unlink is no longer artificially blocked.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([
+      {
+        onChainId: '0xgrant-stale',
+        soulOnChainId: '0xsoul-1',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-1' },
+      },
+    ])
+    // Mirror validation: chain has zero active slots for this Soul, so
+    // the mirror row is stale.
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 1,
+    })
+    // Self-heal write (mark invalidated) + post-validation chain-only
+    // fallback that finds nothing.
+    mockedPrisma.soulGrantRecord.updateMany.mockResolvedValueOnce({ count: 1 })
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([])
+    mockedPrisma.desktopPet.delete.mockResolvedValue({ id: PET_ID })
+    mockedPrisma.member.update.mockResolvedValue({ id: AGENT_MEMBER_ID })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({ ok: true })
+    // Stale row got self-healed to `invalidated` so future calls
+    // converge without operator intervention.
+    expect(mockedPrisma.soulGrantRecord.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { onChainId: { in: ['0xgrant-stale'] } },
+        data: expect.objectContaining({ status: 'invalidated' }),
+      }),
+    )
+    expect(mockedPrisma.desktopPet.delete).toHaveBeenCalled()
+    expect(mockedPrisma.member.update).toHaveBeenCalled()
+  })
+
+  it('returns 409 when a mirror row is superseded on-chain (slot points to a different grant id) — R-001', async () => {
+    // The mirror row points at the OLD grant id, but the chain slot
+    // now references the NEW grant id (a re-issue happened from
+    // outside this UI and the mirror missed the supersede event).
+    // The route must surface the LIVE on-chain grant id so the user
+    // can revoke the right object.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([
+      {
+        onChainId: '0xgrant-old',
+        soulOnChainId: '0xsoul-1',
+        expiresAt: null,
+        soul: { stateOnChainId: '0xstate-1' },
+      },
+    ])
+    // Mirror validation: chain confirms a slot exists for the grantee
+    // but the slot's grant id is the new (different) one — old mirror
+    // row is stale.
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-new',
+      granteeAddress: '0xagent',
+      scopeMask: 8,
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
+    mockedPrisma.soulGrantRecord.updateMany.mockResolvedValueOnce({ count: 1 })
+    // Post-validation chain-only fallback: enumerate owned Souls and
+    // re-discover the live new grant via the chain path.
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-1', stateOnChainId: '0xstate-1' },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-new',
+      granteeAddress: '0xagent',
+      scopeMask: 8,
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body.activeAssetGrants).toHaveLength(1)
+    expect(body.activeAssetGrants[0]).toMatchObject({
+      grantOnChainId: '0xgrant-new',
+      soulOnChainId: '0xsoul-1',
+    })
+    // Stale mirror row got self-healed.
+    expect(mockedPrisma.soulGrantRecord.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { onChainId: { in: ['0xgrant-old'] } },
+        data: expect.objectContaining({ status: 'invalidated' }),
+      }),
+    )
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 with the on-chain grant list when the mirror is empty but the chain still has an active asset-scope grant', async () => {
+    // Regression for R-001: the pet authorize / unauthorize flow signs
+    // `grant::issue_to_grantee` first and only mirrors the result via
+    // `/api/account/pets/[id]/grant-mirror` afterward. If that mirror
+    // POST fails (or a grant is issued from outside this UI), the
+    // `SoulGrantRecord` table reports zero rows even though the chain
+    // still authorises the pet `agentAddress`. Reading the mirror alone
+    // would let the cookie DELETE orphan a live on-chain grant.
+    //
+    // The blocker therefore re-checks the chain whenever the mirror is
+    // empty. This test seeds an empty mirror but a present on-chain
+    // grant slot and asserts the route still returns 409 with the slot's
+    // grant id surfaced.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-onchain', stateOnChainId: '0xstate-onchain' },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockResolvedValueOnce({
+      grantId: '0xgrant-onchain',
+      granteeAddress: '0xagent',
+      scopeMask: 8, // SOUL_GRANT_SCOPE_ASSETS
+      scopes: ['assets'],
+      expiresAtMs: null,
+      ownershipEpochSnapshot: 1,
+    })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body.activeAssetGrants).toHaveLength(1)
+    expect(body.activeAssetGrants[0]).toMatchObject({
+      grantOnChainId: '0xgrant-onchain',
+      soulOnChainId: '0xsoul-onchain',
+      expiresAt: null,
+    })
+    // Critical: the on-chain re-check must keep teardown blocked even
+    // when the mirror was empty.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('proceeds with full teardown when both the mirror AND the on-chain re-check find no asset-scope grants', async () => {
+    // Sanity check that the new on-chain branch is actually a no-op when
+    // chain agrees with the empty mirror — no false-positive 409s.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-onchain', stateOnChainId: '0xstate-onchain' },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 1,
+    })
+    mockedPrisma.desktopPet.delete.mockResolvedValue({ id: PET_ID })
+    mockedPrisma.member.update.mockResolvedValue({ id: AGENT_MEMBER_ID })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({ ok: true })
+    // Slot lookup must NOT fire when activeGrantCount is 0 — that's the
+    // RPC saving we get from the on-chain shortcut.
+    expect(mockedGetActiveGrantSlotForGrantee).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopPet.delete).toHaveBeenCalled()
+    expect(mockedPrisma.member.update).toHaveBeenCalled()
+  })
+
+  it('returns 503 (fails closed) when the on-chain re-check is incomplete due to owner-soul overflow (R-001)', async () => {
+    // Regression for R-001: the original on-chain re-check capped the
+    // owned-Soul scan at MAX_ONCHAIN_RECHECK_SOULS=200 with no overflow
+    // signal. A caller holding more Souls than the cap could have an
+    // active grant on a Soul outside the (un-ordered) page, and the
+    // helper would silently return [] — letting DELETE proceed and
+    // orphan the live grant. The helper now refuses to scan further
+    // and signals incomplete; the route must fail closed with 503.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    // 201 owned Souls — one row past the cap. Slim select, no `name`.
+    const overflowingOwnedSouls = Array.from({ length: 201 }, (_, i) => ({
+      onChainId: `0xsoul-${i}`,
+      stateOnChainId: `0xstate-${i}`,
+    }))
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce(overflowingOwnedSouls)
+    // Have every state read return zero grants — even if the helper
+    // scans every cap'd Soul, it should still return incomplete=true
+    // because the overflow row was present.
+    mockedGetSoulStateObject.mockResolvedValue({
+      activeGrantCount: 0,
+      activeGrants: [],
+      activeGrantsTableId: null,
+      ownershipEpoch: 1,
+    })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body.retryable).toBe(true)
+    expect(body.reason).toBe('owner-soul-overflow')
+    // Critical: no delete, no member disable.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 (fails closed) when an on-chain SoulState read fails transiently (R-001)', async () => {
+    // Regression for R-001: per-Soul state read errors used to be
+    // logged and silently `continue`d, which fail-opens any single
+    // owned Soul whose RPC was failing right now. The helper now
+    // tracks the failure and signals incomplete; the route must fail
+    // closed with 503.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-1', stateOnChainId: '0xstate-1' },
+    ])
+    mockedGetSoulStateObject.mockRejectedValueOnce(new Error('RPC timeout'))
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body.retryable).toBe(true)
+    expect(body.reason).toBe('rpc-error')
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 (fails closed) when the on-chain grant-slot lookup fails transiently (R-001)', async () => {
+    // Regression for R-001: per-Soul grant-slot read errors used to
+    // be logged and silently `continue`d. The helper now tracks the
+    // failure (we know `activeGrantCount > 0` for the Soul, but
+    // can't determine whether the slot targets our grantee) and
+    // signals incomplete.
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+    mockedPrisma.soulGrantRecord.findMany.mockResolvedValueOnce([])
+    mockedPrisma.soulAsset.findMany.mockResolvedValueOnce([
+      { onChainId: '0xsoul-1', stateOnChainId: '0xstate-1' },
+    ])
+    mockedGetSoulStateObject.mockResolvedValueOnce({
+      activeGrantCount: 1,
+      activeGrants: [],
+      activeGrantsTableId: '0xtable',
+      ownershipEpoch: 1,
+    })
+    mockedGetActiveGrantSlotForGrantee.mockRejectedValueOnce(new Error('dynamic field RPC failed'))
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body.reason).toBe('rpc-error')
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when the pet belongs to a different account (cross-account isolation)', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: HUMAN_IDENTITY })
+    mockedPrisma.desktopPet.findUnique.mockResolvedValue({
+      accountId: OTHER_ACCOUNT_ID,
+      agentMemberId: AGENT_MEMBER_ID,
+      agentAddress: '0xagent',
+    })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(404)
+    // Crucially: nothing was deleted, no foreign member was disabled.
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 without a session', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({
+      error: Response.json({ error: 'Sign in' }, { status: 401 }),
+    })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(401)
+    expect(mockedPrisma.desktopPet.findUnique).not.toHaveBeenCalled()
+    expect(mockedPrisma.desktopPet.delete).not.toHaveBeenCalled()
+    expect(mockedPrisma.member.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 for an agent identity', async () => {
+    mockedRequireMutationIdentity.mockResolvedValue({ identity: AGENT_IDENTITY })
+
+    const { DELETE } = await import('../../web/app/api/account/pets/[id]/route')
+    const response = await DELETE(
+      jsonRequest('DELETE') as never,
+      { params: Promise.resolve({ id: PET_ID }) },
+    )
+
+    expect(response.status).toBe(403)
+    expect(mockedPrisma.desktopPet.findUnique).not.toHaveBeenCalled()
+  })
+})

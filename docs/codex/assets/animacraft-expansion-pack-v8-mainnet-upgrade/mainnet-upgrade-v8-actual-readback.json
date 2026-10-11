@@ -1,0 +1,184 @@
+{
+  "schemaVersion": "animacraft.expansion-pack-v8-upgrade-evidence.v1",
+  "phase": "animacraft-expansion-pack-v8-mainnet-upgrade",
+  "network": {
+    "name": "mainnet",
+    "rpc": "https://fullnode.mainnet.sui.io:443",
+    "chainIdentifierHex": "35834a8a",
+    "chainIdentifierBase58": "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+    "suiCliVersion": "1.76.1-homebrew"
+  },
+  "authorization": {
+    "approvedWriteCount": 1,
+    "signaturesCreated": 1,
+    "broadcastAttempts": 1,
+    "retries": 0,
+    "signatureArtifact": "docs/codex/assets/animacraft-expansion-pack-v8-mainnet-upgrade/mainnet-upgrade-v8-signature.json",
+    "signatureArtifactSha256": "3a8a95b75c482ad4ded7771bf0d8aa147cddbc29837b9e6b6f75e4ced294050f"
+  },
+  "source": {
+    "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-drop-legacy",
+    "branch": "codex/composable-wardrobe-v7",
+    "reviewedCommit": "3f0553382eba922936ab4dafd4affb8092ca1e9e",
+    "finalPackageCommit": "59cae42a8602f54a7b7902aee77971a1dff8a270",
+    "finalPackageTree": "794b18902c5d758889baf80431a3f99f59e4a8aa",
+    "cleanAtBuildAndSigning": true,
+    "pushed": false,
+    "pullRequestOpened": false
+  },
+  "packageDigest": {
+    "base58": "Mquf4qbGQ5nFAJhS8MyzGZZbK6bgAnxqUF4jQVdA7kw",
+    "hex": "0x0556ea9eaa771f0574388e0ba7fd747c33503aa4484cc859e26999a977626bb4",
+    "bytes": [5, 86, 234, 158, 170, 119, 31, 5, 116, 56, 142, 11, 167, 253, 116, 124, 51, 80, 58, 164, 72, 76, 200, 89, 226, 105, 153, 169, 119, 98, 107, 180]
+  },
+  "dryRun": {
+    "status": "success",
+    "transactionDigest": "Cs7rwQemkWW3EFSYGSKjTdyGEUPPBiRKcdzvXacy9khV",
+    "simulatedPackageId": "0xd5e1f04490823d230273d2e29e156f607f5d1bbb9b6c9ed75535b84701b21216",
+    "simulatedPackageObjectDigest": "ANrNAATWb8PRV9cbQZsQtnTyie45sie6xD2CCVXLJHRG",
+    "netGasMist": "778731740",
+    "note": "Simulation synthesizes address-balance gas, so its digest-derived package ID is not the actual broadcast package ID."
+  },
+  "transaction": {
+    "digest": "2ef2pUjBBuhGDTuzVHZwo3ZkqgkqzUc6A2mNnjZeLLTF",
+    "status": "success",
+    "epoch": "1217",
+    "checkpoint": "309641036",
+    "timestampMs": "1786494456691",
+    "timestampUtc": "2026-08-12T00:27:36.691Z",
+    "timestampAsiaShanghai": "2026-08-12T08:27:36.691+08:00",
+    "sender": "0xadea1910ac0e738dc020247bc5408b57b15f3701026a96098b716a35c3a6c52f",
+    "gasOwner": "0xadea1910ac0e738dc020247bc5408b57b15f3701026a96098b716a35c3a6c52f",
+    "gasPayment": [],
+    "gasPriceMist": "100",
+    "gasBudgetMist": "1500000000",
+    "commands": [
+      "0x2::package::authorize_upgrade",
+      "Upgrade",
+      "0x2::package::commit_upgrade"
+    ]
+  },
+  "effects": {
+    "computationCostMist": "863000",
+    "storageCostMist": "778498400",
+    "storageRebateMist": "1617660",
+    "nonRefundableStorageFeeMist": "16340",
+    "netGasMist": "777743740",
+    "moveEventCount": 0,
+    "systemAddressBalanceAccumulatorEvents": 1,
+    "v8BusinessObjectsCreated": 0,
+    "v8BusinessObjectsMutated": 0,
+    "v8BusinessObjectsDeleted": 0,
+    "sealWrites": 0,
+    "walrusWrites": 0
+  },
+  "package": {
+    "callablePackageId": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+    "typeOriginPackageIdForNewV8Types": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+    "version": 6,
+    "objectDigest": "8Br3y89HNVPUndvAVhyddc4rV8GTCFZ2Pde8aMnEpfm",
+    "owner": "Immutable",
+    "previousTransaction": "2ef2pUjBBuhGDTuzVHZwo3ZkqgkqzUc6A2mNnjZeLLTF",
+    "modules": [
+      "animacraft",
+      "commerce_v5",
+      "composition_v6",
+      "expansion_pack_complete_v8",
+      "expansion_pack_v8",
+      "seal_v5"
+    ],
+    "typeOriginCounts": {
+      "total": 144,
+      "animacraft": 40,
+      "commerce_v5": 40,
+      "composition_v6": 31,
+      "seal_v5": 7,
+      "expansion_pack_v8": 18,
+      "expansion_pack_complete_v8": 8
+    },
+    "allExpansionPackV8TypeOriginsMatch": true,
+    "allExpansionPackCompleteV8TypeOriginsMatch": true,
+    "makerReleaseEvidenceV5TypeOriginMatches": true
+  },
+  "upgradeCapability": {
+    "objectId": "0xe7d1269532bbfbf5e448cb5c58f07fc6720ed3d22e7853e9f13b7b6282746520",
+    "versionBefore": "955119809",
+    "digestBefore": "cTsChuWJG2jMnXJSET8irKZCBNKGXsvS4BjeFkftyoK",
+    "versionAfter": "955119810",
+    "digestAfter": "7TTHPiXmMNo19C2C6RBwRYnWduqoLa2hRTBCtfSRnALy",
+    "ownerAfter": "0xadea1910ac0e738dc020247bc5408b57b15f3701026a96098b716a35c3a6c52f",
+    "packageAfter": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+    "packageVersionAfter": 6,
+    "policy": 0
+  },
+  "signerBalanceAfter": {
+    "observedAtUtc": "2026-08-12T00:33:19Z",
+    "mist": "19995184569",
+    "sui": "19.995184569"
+  },
+  "gates": {
+    "productPrimaryCallablePackageId": "0x2221610b5513ef3f926433229b7f0b565e850d56020e344266737cdca078af3b",
+    "expansionPackV8ReleaseEnabled": false,
+    "canonicalSoulMintEnabled": false,
+    "completeToSoulidityEnabled": false,
+    "completeBridgeEnabledV8": false,
+    "physicalBridgeEnabledV8": false,
+    "companionProofAvailableV8": false,
+    "completeBridgeAssertionAborts": true,
+    "physicalBridgeAssertionAborts": true,
+    "physicalStyleV7ReleaseEnabled": false
+  },
+  "preexistingCoreChainState": {
+    "note": "This state predates the v8 upgrade and differs from the deliberately disabled product runtime configuration.",
+    "activationTransactionDigest": "AVYsGvyfgSVFQ8mrQWXCpNbNzwDcPc4BboegLsetSYXT",
+    "activationCheckpoint": "305867277",
+    "activatedAtMs": "1785663256910",
+    "activatedAtUtc": "2026-08-02T09:34:16.910Z",
+    "protocolFeeEnabled": true,
+    "commerceV5Enabled": true,
+    "commerceV5LogicalAuxiliaryBlobId": "2W6FuNVQhJXdWonFSEf1e-1MuecbA1Cd3H8a4_Yrkm4",
+    "commerceV5SoulBindingProofType": "0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d::animacraft_soul_binding_v5::AnimacraftSoulBindingProofV5",
+    "compositionV6Enabled": true,
+    "compositionV6ValidatorCapId": "0x5d791f7752f3c7ca9509089de5c2376367a4d5fa8a70fc40b456a276c7bcee75",
+    "compositionV6ValidatorEpoch": 1,
+    "compositionV6ValidatorPolicyCommitment": "0x26b7f87b8c4cb428288d1ac76cc1e9ba42de338dcaf1b21d305bafc133122f13",
+    "compositionV6SoulOwnerProofType": "0x60bf39455f90e2af94381f2434d2c013c4e38a12fd16873ac296a26660f92ecd::animacraft_soul_owner_proof_v6::AnimacraftSoulOwnerProofV6",
+    "soulidityMarketPrimaryGateEnabled": true,
+    "soulidityMarketSecondaryGateEnabled": true,
+    "changedByV8Upgrade": false
+  },
+  "readback": {
+    "packageAbiExact": true,
+    "typeOriginsExact": true,
+    "transactionExact": true,
+    "upgradeCapabilityExact": true,
+    "objectReadback": "No v8 business object exists because this transaction only upgraded the package.",
+    "eventReadback": "No Move event was emitted; only the system address-balance gas accumulator event was present.",
+    "sealReadback": "Seal ABI is present, but no v8 Seal object or committee write was performed and Seal runtime endpoints remain unconfigured.",
+    "walrusReadback": "Aggregator and upload relay health checks returned HTTP 200; no v8 Blob ID was created or written by the upgrade."
+  },
+  "preflight": {
+    "strictRequiredV8Command": "npm run preflight:v8-mainnet -- --json",
+    "strictRequiredV8Passed": true,
+    "fullLegacyObjectAuditPassed": false,
+    "fullLegacyObjectAuditNote": "The independent full network audit reports pre-existing v4/v5/v6 on-chain activation state that differs from the deliberately disabled product runtime record. This is not a v8 package or bridge-gate failure and must be reconciled before any later product activation."
+  },
+  "deterministicBaselines": {
+    "npmRunCheck": "passed",
+    "webTestsTotal": 1019,
+    "webTestsPassed": 1018,
+    "webTestsSkipped": 1,
+    "webTestsFailed": 0,
+    "viteBuild": "passed with existing non-blocking large-chunk warning",
+    "animacraftMoveTests": "116/116 passed",
+    "physicalV7MoveTests": "42/42 passed",
+    "moveBuilds": "both passed",
+    "gitDiffCheck": "passed"
+  },
+  "deliveryBoundary": {
+    "webProductionDeployed": false,
+    "vercelDeployed": false,
+    "productGateActivated": false,
+    "nextPhaseRequiredForWalletTesting": true
+  }
+}

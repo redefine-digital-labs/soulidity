@@ -1,0 +1,691 @@
+{
+  "batch_id": "20260902-aug9-10",
+  "complete": true,
+  "completed_at_utc": "2026-09-05T04:45:07Z",
+  "created_at_utc": "2026-09-05T04:41:29Z",
+  "expected_recovered_messages": 87,
+  "expected_source_bytes": 37982623910,
+  "expected_threads": 12,
+  "items": {
+    "019fe62f-deaa-7273-8779-95c588ce40a2": {
+      "archive_body_removed_at_utc": "2026-09-05T04:42:52Z",
+      "archive_relative_path": "objects/2026/08/09/rollout-2026-08-09T19-02-04-019fe62f-deaa-7273-8779-95c588ce40a2.jsonl.zst",
+      "archive_sha256": "dcdcb09f9609d475fb4a1777023f702513c0a75eea9da2b0a5b0ad4e53911618",
+      "archive_size": 2229722040,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "cb0c9832fd15f52fa7e69c74ea78298157a67098e77d89c2bc3a96d18c9dc8cb",
+          "decompressed_size": 3180587971,
+          "relative_path": "objects/2026/08/09/rollout-2026-08-09T19-02-04-019fe62f-deaa-7273-8779-95c588ce40a2.jsonl.zst",
+          "sha256": "dcdcb09f9609d475fb4a1777023f702513c0a75eea9da2b0a5b0ad4e53911618",
+          "size": 2229722040,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:42:45Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786298522146368937,
+          "mode": 420,
+          "mtime_ns": 1786298522146368937,
+          "relative_path": "2026/08/09/rollout-2026-08-09T19-02-04-019fe62f-deaa-7273-8779-95c588ce40a2.jsonl",
+          "sha256": "cb0c9832fd15f52fa7e69c74ea78298157a67098e77d89c2bc3a96d18c9dc8cb",
+          "size": 3180587971
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe62f-deaa-7273-8779-95c588ce40a2",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:42:52Z",
+      "manifest_sha256": "dcb6d42ef3ebba756ac2f77869d0016cfe6a52a133d2962b5665c01151ccea9a",
+      "manifest_sidecar_sha256": "e2c1f5844ee53c100fd447542c84cf66e0851c80e4aebd6b76d034c524bfa9a1",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786298522146368937,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/09/rollout-2026-08-09T19-02-04-019fe62f-deaa-7273-8779-95c588ce40a2.jsonl",
+      "source_sha256": "cb0c9832fd15f52fa7e69c74ea78298157a67098e77d89c2bc3a96d18c9dc8cb",
+      "source_size": 3180587971,
+      "status": "complete",
+      "thread_id": "019fe62f-deaa-7273-8779-95c588ce40a2",
+      "verified_at_utc": "2026-09-05T04:42:51Z"
+    },
+    "019fe632-9ec1-7512-bf87-8979b0f050f0": {
+      "archive_body_removed_at_utc": "2026-09-05T04:42:35Z",
+      "archive_relative_path": "objects/2026/08/09/rollout-2026-08-09T19-05-04-019fe632-9ec1-7512-bf87-8979b0f050f0.jsonl.zst",
+      "archive_sha256": "59d43b83da6c20bdb09dc0052adbd0d2c01ee6a7f51a5dcdad729e33bc96746d",
+      "archive_size": 2211841195,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "f0b5edb5389d9fb9d5404adc448ccd948f70b0e2932e12f3677efd2a47d3757b",
+          "decompressed_size": 3155218436,
+          "relative_path": "objects/2026/08/09/rollout-2026-08-09T19-05-04-019fe632-9ec1-7512-bf87-8979b0f050f0.jsonl.zst",
+          "sha256": "59d43b83da6c20bdb09dc0052adbd0d2c01ee6a7f51a5dcdad729e33bc96746d",
+          "size": 2211841195,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:42:28Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786290685063724528,
+          "mode": 420,
+          "mtime_ns": 1786290685063724528,
+          "relative_path": "2026/08/09/rollout-2026-08-09T19-05-04-019fe632-9ec1-7512-bf87-8979b0f050f0.jsonl",
+          "sha256": "f0b5edb5389d9fb9d5404adc448ccd948f70b0e2932e12f3677efd2a47d3757b",
+          "size": 3155218436
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe632-9ec1-7512-bf87-8979b0f050f0",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:42:35Z",
+      "manifest_sha256": "ba85da175161d0ccbed7f3562d916bf21ea4c8fb5737d56fc4d2b58d4c0c0f45",
+      "manifest_sidecar_sha256": "3e5f88498e227a3b1e4db851dc9c9a788c7b1b3092fa03cc66e746ec6637389d",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786290685063724528,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/09/rollout-2026-08-09T19-05-04-019fe632-9ec1-7512-bf87-8979b0f050f0.jsonl",
+      "source_sha256": "f0b5edb5389d9fb9d5404adc448ccd948f70b0e2932e12f3677efd2a47d3757b",
+      "source_size": 3155218436,
+      "status": "complete",
+      "thread_id": "019fe632-9ec1-7512-bf87-8979b0f050f0",
+      "verified_at_utc": "2026-09-05T04:42:34Z"
+    },
+    "019fe636-7279-7bf1-a901-cf25c8e70947": {
+      "archive_body_removed_at_utc": "2026-09-05T04:42:00Z",
+      "archive_relative_path": "objects/2026/08/09/rollout-2026-08-09T19-09-15-019fe636-7279-7bf1-a901-cf25c8e70947.jsonl.zst",
+      "archive_sha256": "8178cf4387ca262c11efe7c1ed10d74a8278f1eb89ea0b594600d6317d49f347",
+      "archive_size": 2193925194,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "a70b33cebd602e405e05101fa4a8b82995a39e59e930b9a75b65ad51ed0e3be8",
+          "decompressed_size": 3130343582,
+          "relative_path": "objects/2026/08/09/rollout-2026-08-09T19-09-15-019fe636-7279-7bf1-a901-cf25c8e70947.jsonl.zst",
+          "sha256": "8178cf4387ca262c11efe7c1ed10d74a8278f1eb89ea0b594600d6317d49f347",
+          "size": 2193925194,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:41:53Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786287841029291614,
+          "mode": 420,
+          "mtime_ns": 1786287841029291614,
+          "relative_path": "2026/08/09/rollout-2026-08-09T19-09-15-019fe636-7279-7bf1-a901-cf25c8e70947.jsonl",
+          "sha256": "a70b33cebd602e405e05101fa4a8b82995a39e59e930b9a75b65ad51ed0e3be8",
+          "size": 3130343582
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe636-7279-7bf1-a901-cf25c8e70947",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:42:00Z",
+      "manifest_sha256": "e09e59ec3e3494243a14a0d12ee0b7d3eb370128c499595cb82d93f0bacf6c45",
+      "manifest_sidecar_sha256": "73d0a0ccb215a35367cd798de1fae9306ebeed82978b7990234e7742cd0175d5",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786287841029291614,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/09/rollout-2026-08-09T19-09-15-019fe636-7279-7bf1-a901-cf25c8e70947.jsonl",
+      "source_sha256": "a70b33cebd602e405e05101fa4a8b82995a39e59e930b9a75b65ad51ed0e3be8",
+      "source_size": 3130343582,
+      "status": "complete",
+      "thread_id": "019fe636-7279-7bf1-a901-cf25c8e70947",
+      "verified_at_utc": "2026-09-05T04:42:00Z"
+    },
+    "019fe724-92db-7c00-ab47-9bf7606e4b6a": {
+      "archive_body_removed_at_utc": "2026-09-05T04:42:18Z",
+      "archive_relative_path": "objects/2026/08/09/rollout-2026-08-09T23-29-21-019fe724-92db-7c00-ab47-9bf7606e4b6a.jsonl.zst",
+      "archive_sha256": "b398ff954ba498b883b2338a5ea7a611437911de82ba222bc229ea6a61bb96db",
+      "archive_size": 2211604884,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "b783abd43e37b60c97ea717f1379ae4273599cb2b2aad9ba9a67c7230477a0d2",
+          "decompressed_size": 3154474408,
+          "relative_path": "objects/2026/08/09/rollout-2026-08-09T23-29-21-019fe724-92db-7c00-ab47-9bf7606e4b6a.jsonl.zst",
+          "sha256": "b398ff954ba498b883b2338a5ea7a611437911de82ba222bc229ea6a61bb96db",
+          "size": 2211604884,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:42:11Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786293399568873923,
+          "mode": 420,
+          "mtime_ns": 1786293399568873923,
+          "relative_path": "2026/08/09/rollout-2026-08-09T23-29-21-019fe724-92db-7c00-ab47-9bf7606e4b6a.jsonl",
+          "sha256": "b783abd43e37b60c97ea717f1379ae4273599cb2b2aad9ba9a67c7230477a0d2",
+          "size": 3154474408
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe724-92db-7c00-ab47-9bf7606e4b6a",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:42:18Z",
+      "manifest_sha256": "b9b52695fecb7785e59bb029a479818344b1694d18d975b8470b27d0905bf781",
+      "manifest_sidecar_sha256": "cd06d770a053a3d179e5c73a8e52ec9869356b33360f1fc26889460e7ba351ac",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786293399568873923,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/09/rollout-2026-08-09T23-29-21-019fe724-92db-7c00-ab47-9bf7606e4b6a.jsonl",
+      "source_sha256": "b783abd43e37b60c97ea717f1379ae4273599cb2b2aad9ba9a67c7230477a0d2",
+      "source_size": 3154474408,
+      "status": "complete",
+      "thread_id": "019fe724-92db-7c00-ab47-9bf7606e4b6a",
+      "verified_at_utc": "2026-09-05T04:42:17Z"
+    },
+    "019fe76e-b8ef-7e60-958b-dacadc46a931": {
+      "archive_body_removed_at_utc": "2026-09-05T04:43:09Z",
+      "archive_relative_path": "objects/2026/08/10/rollout-2026-08-10T00-50-21-019fe76e-b8ef-7e60-958b-dacadc46a931.jsonl.zst",
+      "archive_sha256": "5c9696baaa661557bf689b42577ebf553fdbf75e487d6ba61e330e8c71bc7086",
+      "archive_size": 2247202842,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "741ad6d5eaca7d4f70b9b363b37f4815db26f9b457e6351c7f8c527bfc6323de",
+          "decompressed_size": 3204281573,
+          "relative_path": "objects/2026/08/10/rollout-2026-08-10T00-50-21-019fe76e-b8ef-7e60-958b-dacadc46a931.jsonl.zst",
+          "sha256": "5c9696baaa661557bf689b42577ebf553fdbf75e487d6ba61e330e8c71bc7086",
+          "size": 2247202842,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:43:02Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786301004397372797,
+          "mode": 420,
+          "mtime_ns": 1786301004397372797,
+          "relative_path": "2026/08/10/rollout-2026-08-10T00-50-21-019fe76e-b8ef-7e60-958b-dacadc46a931.jsonl",
+          "sha256": "741ad6d5eaca7d4f70b9b363b37f4815db26f9b457e6351c7f8c527bfc6323de",
+          "size": 3204281573
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe76e-b8ef-7e60-958b-dacadc46a931",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:43:09Z",
+      "manifest_sha256": "06b0a5a8459be2dad7d40a850f608a6bd1e9ec6b9ca11e171f5fc809006e229f",
+      "manifest_sidecar_sha256": "e45f125c798b5304449efa140f2fc6df2b8ce9c183e3f5cb762a66e3892d6d51",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786301004397372797,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/10/rollout-2026-08-10T00-50-21-019fe76e-b8ef-7e60-958b-dacadc46a931.jsonl",
+      "source_sha256": "741ad6d5eaca7d4f70b9b363b37f4815db26f9b457e6351c7f8c527bfc6323de",
+      "source_size": 3204281573,
+      "status": "complete",
+      "thread_id": "019fe76e-b8ef-7e60-958b-dacadc46a931",
+      "verified_at_utc": "2026-09-05T04:43:08Z"
+    },
+    "019fe89b-a197-7b61-b047-7a58fdafe4c1": {
+      "archive_body_removed_at_utc": "2026-09-05T04:43:28Z",
+      "archive_relative_path": "objects/2026/08/10/rollout-2026-08-10T06-19-01-019fe89b-a197-7b61-b047-7a58fdafe4c1.jsonl.zst",
+      "archive_sha256": "871d615351d375ff86d9fe0ae85a2e539518f0981c37fa56056d7f445899d4ba",
+      "archive_size": 2284963224,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "395a3c977e05c1351c9f2750093be8120b6690349fb331c7bdffa4e0f4c1bdfd",
+          "decompressed_size": 3257573227,
+          "relative_path": "objects/2026/08/10/rollout-2026-08-10T06-19-01-019fe89b-a197-7b61-b047-7a58fdafe4c1.jsonl.zst",
+          "sha256": "871d615351d375ff86d9fe0ae85a2e539518f0981c37fa56056d7f445899d4ba",
+          "size": 2284963224,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:43:21Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786320990673624011,
+          "mode": 420,
+          "mtime_ns": 1786320990673624011,
+          "relative_path": "2026/08/10/rollout-2026-08-10T06-19-01-019fe89b-a197-7b61-b047-7a58fdafe4c1.jsonl",
+          "sha256": "395a3c977e05c1351c9f2750093be8120b6690349fb331c7bdffa4e0f4c1bdfd",
+          "size": 3257573227
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe89b-a197-7b61-b047-7a58fdafe4c1",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:43:28Z",
+      "manifest_sha256": "9fc43c8077202aea69ce16942e26fa747d7e7d1c0e843f6df517b9fcbb122fc3",
+      "manifest_sidecar_sha256": "eb925754d80ac55dfca24dc780643a13bea0619d9081e60b23be83be46914ab4",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786320990673624011,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/10/rollout-2026-08-10T06-19-01-019fe89b-a197-7b61-b047-7a58fdafe4c1.jsonl",
+      "source_sha256": "395a3c977e05c1351c9f2750093be8120b6690349fb331c7bdffa4e0f4c1bdfd",
+      "source_size": 3257573227,
+      "status": "complete",
+      "thread_id": "019fe89b-a197-7b61-b047-7a58fdafe4c1",
+      "verified_at_utc": "2026-09-05T04:43:28Z"
+    },
+    "019fe89d-da3e-7471-a311-fcf5f69aa1d4": {
+      "archive_body_removed_at_utc": "2026-09-05T04:43:53Z",
+      "archive_relative_path": "objects/2026/08/10/rollout-2026-08-10T06-21-26-019fe89d-da3e-7471-a311-fcf5f69aa1d4.jsonl.zst",
+      "archive_sha256": "0b3ff411ceff94f5f034166a17630b052da68666c6877c1ce41169036b2896c2",
+      "archive_size": 2296988590,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "ba946f81fa1fa5d7bbfabfaeb76d04b5434cf967b86e4357050b493b82b885e0",
+          "decompressed_size": 3274682854,
+          "relative_path": "objects/2026/08/10/rollout-2026-08-10T06-21-26-019fe89d-da3e-7471-a311-fcf5f69aa1d4.jsonl.zst",
+          "sha256": "0b3ff411ceff94f5f034166a17630b052da68666c6877c1ce41169036b2896c2",
+          "size": 2296988590,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:43:46Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786325201358265106,
+          "mode": 420,
+          "mtime_ns": 1786325201358265106,
+          "relative_path": "2026/08/10/rollout-2026-08-10T06-21-26-019fe89d-da3e-7471-a311-fcf5f69aa1d4.jsonl",
+          "sha256": "ba946f81fa1fa5d7bbfabfaeb76d04b5434cf967b86e4357050b493b82b885e0",
+          "size": 3274682854
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe89d-da3e-7471-a311-fcf5f69aa1d4",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:43:53Z",
+      "manifest_sha256": "fb5a43314579f766f4d2792dae7c2645fb55d984d4b4b460be3b4168219fdab4",
+      "manifest_sidecar_sha256": "f7f7c57a2e563a4af67e213c464fd28f86eee87c109439d757bc798b207cdd7e",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786325201358265106,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/10/rollout-2026-08-10T06-21-26-019fe89d-da3e-7471-a311-fcf5f69aa1d4.jsonl",
+      "source_sha256": "ba946f81fa1fa5d7bbfabfaeb76d04b5434cf967b86e4357050b493b82b885e0",
+      "source_size": 3274682854,
+      "status": "complete",
+      "thread_id": "019fe89d-da3e-7471-a311-fcf5f69aa1d4",
+      "verified_at_utc": "2026-09-05T04:43:52Z"
+    },
+    "019fe947-1680-7c32-bd37-7b97129e56d0": {
+      "archive_body_removed_at_utc": "2026-09-05T04:44:31Z",
+      "archive_relative_path": "objects/2026/08/10/rollout-2026-08-10T09-26-18-019fe947-1680-7c32-bd37-7b97129e56d0.jsonl.zst",
+      "archive_sha256": "570504269ecbaacf2163cb990a451579460422958e2cad805600e7a170622297",
+      "archive_size": 2324683327,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "1e747e596a6496ecd52688582c39502162861dc5c9a42b412dc8df0ac87860e8",
+          "decompressed_size": 3312649470,
+          "relative_path": "objects/2026/08/10/rollout-2026-08-10T09-26-18-019fe947-1680-7c32-bd37-7b97129e56d0.jsonl.zst",
+          "sha256": "570504269ecbaacf2163cb990a451579460422958e2cad805600e7a170622297",
+          "size": 2324683327,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:44:24Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786327842430525967,
+          "mode": 420,
+          "mtime_ns": 1786327842430525967,
+          "relative_path": "2026/08/10/rollout-2026-08-10T09-26-18-019fe947-1680-7c32-bd37-7b97129e56d0.jsonl",
+          "sha256": "1e747e596a6496ecd52688582c39502162861dc5c9a42b412dc8df0ac87860e8",
+          "size": 3312649470
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe947-1680-7c32-bd37-7b97129e56d0",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:44:31Z",
+      "manifest_sha256": "8549e4f2f59a3dae4cfe8c0006e435eca52dec51511542e2511ce11527c1bde5",
+      "manifest_sidecar_sha256": "a8269ee5bc65ed3d7257f0bf4cf37778e5406b7a9711d770a5e57223f6b03db4",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786327842430525967,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/10/rollout-2026-08-10T09-26-18-019fe947-1680-7c32-bd37-7b97129e56d0.jsonl",
+      "source_sha256": "1e747e596a6496ecd52688582c39502162861dc5c9a42b412dc8df0ac87860e8",
+      "source_size": 3312649470,
+      "status": "complete",
+      "thread_id": "019fe947-1680-7c32-bd37-7b97129e56d0",
+      "verified_at_utc": "2026-09-05T04:44:30Z"
+    },
+    "019fe967-6c88-7761-9d6e-dc7832a508b0": {
+      "archive_body_removed_at_utc": "2026-09-05T04:44:12Z",
+      "archive_relative_path": "objects/2026/08/10/rollout-2026-08-10T10-01-37-019fe967-6c88-7761-9d6e-dc7832a508b0.jsonl.zst",
+      "archive_sha256": "a28504a84eafddf1eecdb492aefed0c5c4841ce69114bb00f4ed09c9ffc40dd0",
+      "archive_size": 2320280313,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "1320434f66c9a8feba0fb42b55eb9558804c4c8f04c4b1df6b792314b7651c6b",
+          "decompressed_size": 3306284781,
+          "relative_path": "objects/2026/08/10/rollout-2026-08-10T10-01-37-019fe967-6c88-7761-9d6e-dc7832a508b0.jsonl.zst",
+          "sha256": "a28504a84eafddf1eecdb492aefed0c5c4841ce69114bb00f4ed09c9ffc40dd0",
+          "size": 2320280313,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:44:05Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786327763000012859,
+          "mode": 420,
+          "mtime_ns": 1786327763000012859,
+          "relative_path": "2026/08/10/rollout-2026-08-10T10-01-37-019fe967-6c88-7761-9d6e-dc7832a508b0.jsonl",
+          "sha256": "1320434f66c9a8feba0fb42b55eb9558804c4c8f04c4b1df6b792314b7651c6b",
+          "size": 3306284781
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fe967-6c88-7761-9d6e-dc7832a508b0",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:44:12Z",
+      "manifest_sha256": "02911c5ce62ec13378e851839997e3086b3a704bea912794f1dc58694273e098",
+      "manifest_sidecar_sha256": "d204cd071ac1c41386b715515a1a42e1e2c8493081082de32bb83d358397a148",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786327763000012859,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/10/rollout-2026-08-10T10-01-37-019fe967-6c88-7761-9d6e-dc7832a508b0.jsonl",
+      "source_sha256": "1320434f66c9a8feba0fb42b55eb9558804c4c8f04c4b1df6b792314b7651c6b",
+      "source_size": 3306284781,
+      "status": "complete",
+      "thread_id": "019fe967-6c88-7761-9d6e-dc7832a508b0",
+      "verified_at_utc": "2026-09-05T04:44:11Z"
+    },
+    "019fea58-d3f3-7880-9a20-6466419e4349": {
+      "archive_body_removed_at_utc": "2026-09-05T04:44:50Z",
+      "archive_relative_path": "objects/2026/08/10/rollout-2026-08-10T14-25-17-019fea58-d3f3-7880-9a20-6466419e4349.jsonl.zst",
+      "archive_sha256": "13da2bf8572e6c2a1a10f5c1bf407d08d1224595ca875140f975137799da6cdf",
+      "archive_size": 2327596976,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "e5bbd332752463a233d938718c3f41073763c0f124577abd3986aec3040125e2",
+          "decompressed_size": 3316761551,
+          "relative_path": "objects/2026/08/10/rollout-2026-08-10T14-25-17-019fea58-d3f3-7880-9a20-6466419e4349.jsonl.zst",
+          "sha256": "13da2bf8572e6c2a1a10f5c1bf407d08d1224595ca875140f975137799da6cdf",
+          "size": 2327596976,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:44:42Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786343177187260212,
+          "mode": 420,
+          "mtime_ns": 1786343177187260212,
+          "relative_path": "2026/08/10/rollout-2026-08-10T14-25-17-019fea58-d3f3-7880-9a20-6466419e4349.jsonl",
+          "sha256": "e5bbd332752463a233d938718c3f41073763c0f124577abd3986aec3040125e2",
+          "size": 3316761551
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019fea58-d3f3-7880-9a20-6466419e4349",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:44:50Z",
+      "manifest_sha256": "aea6b7b2c44026527c1662c3bd499a9e1833132032a28c70f6aaf76e665c2527",
+      "manifest_sidecar_sha256": "5ba489d859560741762011246e589795f27ca67fc75d26bc739b8a19cc8e9b40",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786343177187260212,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/10/rollout-2026-08-10T14-25-17-019fea58-d3f3-7880-9a20-6466419e4349.jsonl",
+      "source_sha256": "e5bbd332752463a233d938718c3f41073763c0f124577abd3986aec3040125e2",
+      "source_size": 3316761551,
+      "status": "complete",
+      "thread_id": "019fea58-d3f3-7880-9a20-6466419e4349",
+      "verified_at_utc": "2026-09-05T04:44:49Z"
+    },
+    "019feae5-0e89-75b3-be5b-de68165d3f46": {
+      "archive_body_removed_at_utc": "2026-09-05T04:45:07Z",
+      "archive_relative_path": "objects/2026/08/10/rollout-2026-08-10T16-58-27-019feae5-0e89-75b3-be5b-de68165d3f46.jsonl.zst",
+      "archive_sha256": "d47ece89f0131b42eb282f8dc4725229ac486c9c27d8467f8cecf0897475909d",
+      "archive_size": 2337835912,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "ae2ff09a6c2de76f783d9682d38f1b6a69a3e35d3777f4cfdab7bbe62e23297b",
+          "decompressed_size": 3331283076,
+          "relative_path": "objects/2026/08/10/rollout-2026-08-10T16-58-27-019feae5-0e89-75b3-be5b-de68165d3f46.jsonl.zst",
+          "sha256": "d47ece89f0131b42eb282f8dc4725229ac486c9c27d8467f8cecf0897475909d",
+          "size": 2337835912,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:45:00Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786355093350614465,
+          "mode": 420,
+          "mtime_ns": 1786355093350614465,
+          "relative_path": "2026/08/10/rollout-2026-08-10T16-58-27-019feae5-0e89-75b3-be5b-de68165d3f46.jsonl",
+          "sha256": "ae2ff09a6c2de76f783d9682d38f1b6a69a3e35d3777f4cfdab7bbe62e23297b",
+          "size": 3331283076
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019feae5-0e89-75b3-be5b-de68165d3f46",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:45:07Z",
+      "manifest_sha256": "b3f3802915b806533a95f0043b118b1e968d578ed1b9f41e6d6d9524dd859584",
+      "manifest_sidecar_sha256": "57b8cb086c94d1b0ce65ceef8cf23f1a04c7fadff9e24acde973227f9a8be293",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786355093350614465,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/10/rollout-2026-08-10T16-58-27-019feae5-0e89-75b3-be5b-de68165d3f46.jsonl",
+      "source_sha256": "ae2ff09a6c2de76f783d9682d38f1b6a69a3e35d3777f4cfdab7bbe62e23297b",
+      "source_size": 3331283076,
+      "status": "complete",
+      "thread_id": "019feae5-0e89-75b3-be5b-de68165d3f46",
+      "verified_at_utc": "2026-09-05T04:45:06Z"
+    },
+    "019feae8-8c73-7143-aee6-160f369c5e51": {
+      "archive_body_removed_at_utc": "2026-09-05T04:41:43Z",
+      "archive_relative_path": "objects/2026/08/10/rollout-2026-08-10T17-02-16-019feae8-8c73-7143-aee6-160f369c5e51.jsonl.zst",
+      "archive_sha256": "7a3376dea55ceaa5dc19b60fc28e3e2ec9cc05d2d22f13ad6c655dd7076a7f47",
+      "archive_size": 1643434883,
+      "manifest": {
+        "archive": {
+          "compression": "zstd",
+          "compression_level": 1,
+          "decompressed_sha256": "98a2bc6277b6ee15faed234cdf8c855829a81e8769980b13a5a6a89036ddf96f",
+          "decompressed_size": 2358482981,
+          "relative_path": "objects/2026/08/10/rollout-2026-08-10T17-02-16-019feae8-8c73-7143-aee6-160f369c5e51.jsonl.zst",
+          "sha256": "7a3376dea55ceaa5dc19b60fc28e3e2ec9cc05d2d22f13ad6c655dd7076a7f47",
+          "size": 1643434883,
+          "zstd_tested": true,
+          "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+        },
+        "codex_native_readable": false,
+        "created_at_utc": "2026-09-05T04:41:37Z",
+        "schema_version": 1,
+        "selection": {
+          "min_idle_seconds": 604800,
+          "signal": "explicit-completed-thread"
+        },
+        "source": {
+          "ctime_ns": 1786354992030190179,
+          "mode": 420,
+          "mtime_ns": 1786354992030190179,
+          "relative_path": "2026/08/10/rollout-2026-08-10T17-02-16-019feae8-8c73-7143-aee6-160f369c5e51.jsonl",
+          "sha256": "98a2bc6277b6ee15faed234cdf8c855829a81e8769980b13a5a6a89036ddf96f",
+          "size": 2358482981
+        },
+        "source_removal_requested": true,
+        "thread": {
+          "id": "019feae8-8c73-7143-aee6-160f369c5e51",
+          "parent_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+          "source": "subagent"
+        },
+        "tool": {
+          "name": "codex-session-archive",
+          "version": "1.1.0"
+        }
+      },
+      "manifest_removed_at_utc": "2026-09-05T04:41:43Z",
+      "manifest_sha256": "4460afa2a0ed5ae21595452be272b2dcde82e71f1452cf3c13c643920ecd9b5f",
+      "manifest_sidecar_sha256": "d3d2a40545d31701aab0706d02327f6b8638e001dc8fd9c867b18cee8653ee3e",
+      "manifest_sidecar_size": 80,
+      "manifest_size": 1133,
+      "source_mtime_ns": 1786354992030190179,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/10/rollout-2026-08-10T17-02-16-019feae8-8c73-7143-aee6-160f369c5e51.jsonl",
+      "source_sha256": "98a2bc6277b6ee15faed234cdf8c855829a81e8769980b13a5a6a89036ddf96f",
+      "source_size": 2358482981,
+      "status": "complete",
+      "thread_id": "019feae8-8c73-7143-aee6-160f369c5e51",
+      "verified_at_utc": "2026-09-05T04:41:42Z"
+    }
+  },
+  "observed_available_bytes_delta": 38098714624,
+  "operation": "verified permanent removal after durable conclusion recovery",
+  "schema_version": 1,
+  "selection_file": "docs/codex/recovered-subagent-summaries/selection-aug9-10-20260902.json",
+  "selection_sha256": "68ed54385a8b0aaf08cb1d36dd2abc24a91ec6b75e420e13ea59b77e6dcb8694",
+  "source_volume_available_after": 64346583040,
+  "source_volume_available_before": 26247868416,
+  "updated_at_utc": "2026-09-05T04:45:07Z"
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "soulidity.sprint-plan.v1",
+  "status": "Awaiting user start confirmation",
+  "cadence": "existing weekly iteration / biweekly combined review",
+  "dates": "unestimated",
+  "priorityOutcome": "R1 minimal Soul assembly and two real Maker visual validation",
+  "devRecords": [
+    "DOF-001",
+    "DOF-002",
+    "DOF-003"
+  ],
+  "preconditions": [
+    "Human explicitly confirms start",
+    "No production signatures or old-session mutation",
+    "Real Maker B fixture and rights matrix prepared before visual acceptance"
+  ],
+  "definitionOfReady": [
+    "Rights/fees/inputs/outputs/failure recovery/owner/environment/acceptance clear"
+  ],
+  "definitionOfDone": [
+    "Scope-specific implementation and meaningful checks evidenced",
+    "No false deployment or audit claim"
+  ],
+  "evidence": []
+}

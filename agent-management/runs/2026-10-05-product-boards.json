@@ -1,0 +1,559 @@
+{
+  "date": "2026-10-05",
+  "bug_records": [
+    {
+      "id": "BUG-001",
+      "record_id": "Rec0C6YFWJTFW",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6YFWJTFW"
+    },
+    {
+      "id": "BUG-002",
+      "record_id": "Rec0C6DE31DC7",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6DE31DC7"
+    },
+    {
+      "id": "BUG-003",
+      "record_id": "Rec0C6SSGKYF8",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6SSGKYF8"
+    },
+    {
+      "id": "BUG-004",
+      "record_id": "Rec0C6SSGT7PY",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6SSGT7PY"
+    },
+    {
+      "id": "BUG-005",
+      "record_id": "Rec0C6DE3D15M",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6DE3D15M"
+    },
+    {
+      "id": "BUG-006",
+      "record_id": "Rec0C6YFYRPCL",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6YFYRPCL"
+    },
+    {
+      "id": "BUG-007",
+      "record_id": "Rec0C6DE40N15",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6DE40N15"
+    },
+    {
+      "id": "BUG-008",
+      "record_id": "Rec0C7P6RPA3A",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C7P6RPA3A"
+    },
+    {
+      "id": "BUG-009",
+      "record_id": "Rec0C7P6RMAF2",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C7P6RMAF2"
+    },
+    {
+      "id": "BUG-010",
+      "record_id": "Rec0C6YFYTYAY",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6YFYTYAY"
+    },
+    {
+      "id": "BUG-011",
+      "record_id": "Rec0C6WPEM5BK",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6WPEM5BK"
+    },
+    {
+      "id": "BUG-012",
+      "record_id": "Rec0C6PGBL5RT",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6PGBL5RT"
+    }
+  ],
+  "development_records": [
+    {
+      "id": "DEV-001",
+      "record_id": "Rec0C6DECEP8F",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6DECEP8F"
+    },
+    {
+      "id": "DEV-002",
+      "record_id": "Rec0C6ULYUDLJ",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ"
+    },
+    {
+      "id": "DEV-003",
+      "record_id": "Rec0C6NJV83BM",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6NJV83BM"
+    },
+    {
+      "id": "DEV-004",
+      "record_id": "Rec0C6ULZ59J6",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULZ59J6"
+    },
+    {
+      "id": "DEV-005",
+      "record_id": "Rec0C6PGLAUP7",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6PGLAUP7"
+    },
+    {
+      "id": "DEV-006",
+      "record_id": "Rec0C6DED6M63",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6DED6M63"
+    },
+    {
+      "id": "DEV-007",
+      "record_id": "Rec0C6SSSPDML",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6SSSPDML"
+    },
+    {
+      "id": "DEV-008",
+      "record_id": "Rec0C7P71G6HW",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C7P71G6HW"
+    }
+  ],
+  "messages": [
+    {
+      "channel_id": "C0AJCKH65BQ",
+      "message_link": "https://sega-xya5661.slack.com/archives/C0AJCKH65BQ/p1791224984554669",
+      "message_context": {
+        "message_ts": "1791224984.554669",
+        "channel_id": "C0AJCKH65BQ"
+      }
+    },
+    {
+      "channel_id": "C0C6YEB44G4",
+      "message_link": "https://sega-xya5661.slack.com/archives/C0C6YEB44G4/p1791224985339799",
+      "message_context": {
+        "message_ts": "1791224985.339799",
+        "channel_id": "C0C6YEB44G4"
+      }
+    }
+  ],
+  "bug_rows": [
+    {
+      "id": "BUG-001",
+      "columns": {
+        "缺陷": "合法 gas payment=[] 导致发布审核被拒绝",
+        "Bug ID": "BUG-001",
+        "产品／模块": "Animacraft / 交易审核",
+        "状态": "已关闭",
+        "严重程度": "S1 阻断主流程",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "原作者Chrome／主网；PR78之前",
+        "复现步骤／实际结果": "Review／归档审核在签名前报TransactionData envelope错误，实际SDK生成的同一交易模拟可通过。",
+        "预期结果": "合法交易可审核；错误signer、gas owner、预算、expiry仍拒绝。",
+        "根因／修复方案": "前端错误要求gas coin列表非空；支持address balance支付的合法空列表，保留其余校验。",
+        "修复版本／PR": "PR78／main67c5f382；已部署",
+        "测试与证据": "https://github.com/redefine-digital-labs/animacraft/pull/78；原Chrome Review→取消实测通过；证据assets/address-gas-review-2026-10-04。",
+        "关闭验收": "同一原作者Review可用，取消后稿件／Root未改变，零签名广播。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "保持回归；完整发布仍由DEV-002验收。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-002",
+      "columns": {
+        "缺陷": "发布步骤高亮与资源上传状态互相矛盾",
+        "Bug ID": "BUG-002",
+        "产品／模块": "Animacraft / 发布进度UI",
+        "状态": "已关闭",
+        "严重程度": "S3 体验问题",
+        "优先级": "P2",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "原作者Chrome；旧四阶段界面",
+        "复现步骤／实际结果": "显示step3/4，但第二步仍in progress，报价未出且0/11certified，用户无法判断当前步骤。",
+        "预期结果": "主阶段、资源子状态、待签／恢复动作一致。",
+        "根因／修复方案": "统一为准备／存储／发布三阶段；已签恢复不显示空报价，文案随真实检查点更新。",
+        "修复版本／PR": "PR79／main1c0bd125；已部署",
+        "测试与证据": "https://github.com/redefine-digital-labs/animacraft/pull/79；原Chrome刷新→重开→同检查点继续，资源1/11→2/11时保持存储阶段。",
+        "关闭验收": "原窗口刷新和恢复显示准确；不把此UI修复等同批量上传。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "后续批量上传沿用同一准确进度语义。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-003",
+      "columns": {
+        "缺陷": "后继创建成功后把旧Root和新Root混算",
+        "Bug ID": "BUG-003",
+        "产品／模块": "Animacraft / 链上结果读回",
+        "状态": "待线上复验",
+        "严重程度": "S1 阻断主流程",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "原作者Chrome／主网后继发布",
+        "复现步骤／实际结果": "scaffold链上SUCCESS后报OBJECT_CHANGE_INVALID，无法继续；effects同时含旧mutated和新created同类型对象。",
+        "预期结果": "识别准确新Root／AdminCap，查询原交易恢复，不重新发行。",
+        "根因／修复方案": "按created effects识别新对象，旧predecessor单独校验。",
+        "修复版本／PR": "PR80／mainfff376c8；已部署",
+        "测试与证据": "https://github.com/redefine-digital-labs/animacraft/pull/80；本地旧mutated＋新created回归通过；线上继续暴露BUG-004。",
+        "关闭验收": "重新初始化后的后继旅程创建→读回→下一步成功；未知状态不重复签名。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "与BUG-004一起验后继完整恢复；不能仅凭PR关闭。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-004",
+      "columns": {
+        "缺陷": "后继已经创建，下一步仍要求前身未被使用",
+        "Bug ID": "BUG-004",
+        "产品／模块": "Animacraft / 发布恢复",
+        "状态": "待线上复验",
+        "严重程度": "S1 阻断主流程",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "PR80原作者Chrome／同一后继检查点",
+        "复现步骤／实际结果": "scaffold成功后Base准备报MAKER_V8_SUCCESSOR_PREDECESSOR_DRIFT。",
+        "预期结果": "已认证的新Root沿同一发布继续，签名前仍拦截真实前身漂移。",
+        "根因／修复方案": "前置校验没有区分scaffold前后；以已认证scaffold为阶段边界。",
+        "修复版本／PR": "PR81／main104f7124；当前生产",
+        "测试与证据": "https://github.com/redefine-digital-labs/animacraft/pull/81；本地v1/v2创建后继续与冷恢复通过，原后继链路未完成线上复验。",
+        "关闭验收": "同一后继创建→Base→冷恢复不误拒绝；未签前真实漂移仍拒绝。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "整体修好并初始化后补后继真实验收。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-005",
+      "columns": {
+        "缺陷": "每次签完都停住，反复要求手动Continue",
+        "Bug ID": "BUG-005",
+        "产品／模块": "Animacraft / 前端发布调度",
+        "状态": "待发布",
+        "严重程度": "S2 功能异常",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "当前生产Chrome；本地修复已验证",
+        "复现步骤／实际结果": "钱包签名保存后仍停在Signed／Continue；用户需要重复点击推进上传和读回。",
+        "预期结果": "已签交易自动继续至下一项需要用户签名的审核或明确异常。",
+        "根因／修复方案": "app只执行一次动作；增加有界续行，绑定原交易、页面代次、钱包和稿件。",
+        "修复版本／PR": "本地8fb038d5，已包含ac34b860；未推送部署",
+        "测试与证据": "publication-flow-integration-2026-10-05：完整4392／4392；切页面／钱包／稿件、稳定未知结果停止等回归通过。",
+        "关闭验收": "部署后实测签名→自动上传／读回，下一新签名停在审核；刷新不重复付费。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "与批量上传整体发布，不单独宣布流程完成。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-006",
+      "columns": {
+        "缺陷": "多文件上传按PNG逐个登记与认证，体验阻塞",
+        "Bug ID": "BUG-006",
+        "产品／模块": "Animacraft / Walrus上传",
+        "状态": "修复中",
+        "严重程度": "S1 阻断主流程",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "全新稿件7Parts／9PNG；当前生产",
+        "复现步骤／实际结果": "从空白上传发布仍逐文件要求登记和认证；曾跳到10/11是旧PNG复用，不是批量签名。",
+        "预期结果": "同一批素材一起上传；报价、进度、失败恢复都准确，AC/SO逐张读取不丢图。",
+        "根因／修复方案": "前端逐资源串行；付费relay授权不能简单拼多独立登记。接入官方Quilt资产组上传及两端patch读取。",
+        "修复版本／PR": "仅本地编码／解码可行性；尚未接入或部署",
+        "测试与证据": "官方SDK1.2.19＋主网只读1000shards：9原PNG全部SHA256读回相同，排序稳定；https://docs.wal.app/docs/http-api/quilt-http-apis",
+        "关闭验收": "全新素材批量登记→上传→认证→发布→AC/SO渲染；断网／刷新不重扣；不能靠旧缓存跳过。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "接入持久资产组与两端读取；Living Content合同证明保持正确。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-007",
+      "columns": {
+        "缺陷": "Sui发布被前端拆成过多小交易",
+        "Bug ID": "BUG-007",
+        "产品／模块": "Animacraft / 发布交易编译器",
+        "状态": "待发布",
+        "严重程度": "S2 功能异常",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "真实九PNG配置本地编译；合约源码核查",
+        "复现步骤／实际结果": "既有41Base行及多lane追加／封存／激活逐段签名；该作品Sui发布13笔。",
+        "预期结果": "容量允许的操作合成一笔，超限才分片，原子失败不显示虚假进度。",
+        "根因／修复方案": "多数边界是前端固定checkpoint；ACTIVATION_COMPLETE将四lane及最终激活合并。创建Root与激活仍有真实ABI边界。",
+        "修复版本／PR": "本地ac34b860；未推送部署",
+        "测试与证据": "完整4392、相关139通过；该作品Sui发布本地13→7笔，最后7→1；不含Walrus上传及Complete。",
+        "关闭验收": "真实候选预检＋钱包＋链读回ACTIVE，失败／未知恢复；大作品分片正确。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "继续上传端整合后准确发布和从零验收。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-008",
+      "columns": {
+        "缺陷": "引入批量激活会改变已持久化首笔交易",
+        "Bug ID": "BUG-008",
+        "产品／模块": "Animacraft / 升级／冷恢复",
+        "状态": "待发布",
+        "严重程度": "S1 阻断主流程",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "独立代码审查发现的候选回归；未上线",
+        "复现步骤／实际结果": "新builder默认合并，使已有首笔SEAL checkpoint重建为COMPLETE，字节不符而无法恢复。",
+        "预期结果": "已有READY／SIGNED／未知交易保持原拓扑与字节；新准备才选择合并。",
+        "根因／修复方案": "从durable current读取阶段重建，仍精确比较完整descriptor和TransactionKind。",
+        "修复版本／PR": "本地ac34b860内已修复；未上线",
+        "测试与证据": "独立review发现；新增durable first serial activation完整冷恢复通过；伪造checkpoint／省略lane写入被拒绝。",
+        "关闭验收": "原串行首笔的冷恢复、链成功但未认证恢复及新合并路径都通过；不放宽校验。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "随BUG-007发布并复验；不把候选回归写成已发生的线上事故。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-009",
+      "columns": {
+        "缺陷": "Player完成流程遇到持久存储许可拒绝",
+        "Bug ID": "BUG-009",
+        "产品／模块": "Animacraft / Player Complete",
+        "状态": "待分诊",
+        "严重程度": "S1 阻断主流程",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "历史IAB／OC2；正确Chrome完整新流程尚未复验",
+        "复现步骤／实际结果": "接收方登录后可重试，但持久浏览器存储许可拒绝仍阻断正式Complete。",
+        "预期结果": "指定Chrome可安全保存待签与恢复记录，然后完成并接收同一Soul。",
+        "根因／修复方案": "历史环境限制已观察；尚不能推断Chrome相同。先在新完整旅程复现，保留durable恢复要求。",
+        "修复版本／PR": "未确认当前Chrome修复版本",
+        "测试与证据": "S13-F02-Q记录：Ready to receive后存储许可拒绝；不能以IAB结果代替Chrome。",
+        "关闭验收": "正确Chrome新作品Complete→SO同SoulID→刷新，不重复铸造或扣额。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "先完成发布修复，再同一真实Chrome定点复验。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-010",
+      "columns": {
+        "缺陷": "原始PNG尺寸／中心定位和导出保真回归",
+        "Bug ID": "BUG-010",
+        "产品／模块": "Animacraft / Creator／渲染",
+        "状态": "已关闭",
+        "严重程度": "S2 功能异常",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1 / S13-F01-B",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "2026-10-03正式配对部署；2026-10-05新稿上传",
+        "复现步骤／实际结果": "原尺寸与定位处理回归，需验证保存重开和导出像素不漂移。",
+        "预期结果": "保留素材字节、确认坐标、原始尺寸和导出偏好。",
+        "根因／修复方案": "原生PNG几何与定位链路修复；复用原编辑和渲染。",
+        "修复版本／PR": "历史AC#59／SO#32配对修复；已正式实测",
+        "测试与证据": "SPRINT_13 S13-F01-B：完整RGBA独立比对、冷重开和ZIP相同；新7Parts/9PNG哈希、(112,112)坐标、Player通过。",
+        "关闭验收": "该桌面几何缺陷原操作已验；完整移动／全部Creator矩阵仍由DEV-001追踪。",
+        "关联开发项": "DEV-001",
+        "下一步／阻塞": "保持回归；新发现不同场景另建关联缺陷。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-011",
+      "columns": {
+        "缺陷": "公共目录把Manifest哈希当成内容承诺",
+        "Bug ID": "BUG-011",
+        "产品／模块": "Animacraft / Plaza／公共读取",
+        "状态": "已关闭",
+        "严重程度": "S1 阻断主流程",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "已发布ACTIVE Maker；PR71之前",
+        "复现步骤／实际结果": "链上发布成功，Plaza／Player／lineage仍报SHA/content mismatch。",
+        "预期结果": "正确验证不同域的manifest hash与semantic content，已发布作品可发现和打开。",
+        "根因／修复方案": "前端错误比较两种不同承诺；按各自来源独立推导与验证。",
+        "修复版本／PR": "PR71／mainb0fa0206；已部署",
+        "测试与证据": "https://github.com/redefine-digital-labs/animacraft/pull/71；原Plaza/search/detail正式实测通过；Player后续独立问题单独修复。",
+        "关闭验收": "同一已发布Root目录发现和详情正确；不代表Complete已验收。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "保持目录与manifest回归。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "BUG-012",
+      "columns": {
+        "缺陷": "完成预检失败后，即使登录修复也无法重试",
+        "Bug ID": "BUG-012",
+        "产品／模块": "Animacraft / Player预检恢复",
+        "状态": "已关闭",
+        "严重程度": "S1 阻断主流程",
+        "优先级": "P1",
+        "迭代／原验收卡": "M1/M3/M4 / S13-F02",
+        "负责人": "Codex / 当前交付执行者",
+        "发现环境": "原OC2；接收方SO登录已成功",
+        "复现步骤／实际结果": "旧失败被投射成永久completionIssue，关闭重开后Complete仍disabled。",
+        "预期结果": "同一OC可重试预检，保留原尝试和所有签名／权限门禁。",
+        "根因／修复方案": "app错误把操作错误当硬门禁；恢复同输入重试，不startNew。",
+        "修复版本／PR": "PR75／mainc38c857e；已部署",
+        "测试与证据": "https://github.com/redefine-digital-labs/animacraft/pull/75；实际第二次Continue无锁死，Ready to receive；随后独立BUG-009仍开放。",
+        "关闭验收": "原失败预检可再次执行且不新增Soul／费用；后续存储问题单列。",
+        "关联开发项": "DEV-002",
+        "下一步／阻塞": "保持回归；不以此关闭DEV-002。",
+        "最近核验": "2026-10-05"
+      }
+    }
+  ],
+  "development_rows": [
+    {
+      "id": "DEV-001",
+      "columns": {
+        "开发项": "Creator 保存、Library、ZIP 与 Player 全流程保真",
+        "Dev ID": "DEV-001",
+        "产品／模块": "Animacraft Creator",
+        "里程碑／Sprint": "M1 / S1–S2 / S13-F01",
+        "状态": "待验收",
+        "优先级": "P1",
+        "负责人": "Codex / 当前交付执行者",
+        "用户结果": "配置、素材、规则、颜色和 Outputs 保存重开、ZIP 往返及 Player 呈现一致。",
+        "验收标准": "同完整作品冷重开、ZIP 往返、原始 PNG 哈希与渲染保真；补存储失败、关闭／删除取消及实机分支。",
+        "现有实现／证据": "原生图像定位和 ZIP 桌面回归已有正式证据；完整能力矩阵仍开放。",
+        "依赖": "统一候选与保存恢复能力",
+        "关联Bug": "BUG-010；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+        "下一步": "保护已有证据，按能力矩阵补遗漏，不从零重做 Creator。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "DEV-002",
+      "columns": {
+        "开发项": "完整作品上传发布 → Complete → Soulidity 接收同一新 Soul",
+        "Dev ID": "DEV-002",
+        "产品／模块": "Animacraft + Soulidity",
+        "里程碑／Sprint": "M1–M3 / S3–S4/S7 / S13-F02",
+        "状态": "开发中",
+        "优先级": "P1",
+        "负责人": "Codex / 当前交付执行者",
+        "用户结果": "从新建和批量上传到正式发布、Player 完成及 Soulidity 接收，连续可用。",
+        "验收标准": "修复整合后初始化；正确 Chrome 从零上传→发布 ACTIVE→Complete→SO 同一 Soul ID→刷新；恢复同一尝试不重复支出／铸造。",
+        "现有实现／证据": "生产 AC main104f7124／SO4a0c1b0e。本地 ac34b860 自动继续＋原子激活通过4392项，未部署；9PNG Quilt 逐张原哈希还原仅可行性通过。",
+        "依赖": "资产组持久化、AC/SO patch 读取、准确候选发布与实链验证",
+        "关联Bug": "BUG-001–009、BUG-011–012；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+        "下一步": "先完成上传和两端读取集成，再发布、初始化与从零验收；不以当前稿件推进代替修复。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "DEV-003",
+      "columns": {
+        "开发项": "Packs、Composable 与 Commerce 的真实获取和使用",
+        "Dev ID": "DEV-003",
+        "产品／模块": "Animacraft Packs / Commerce",
+        "里程碑／Sprint": "M2 / S4–S7 / S13-F03",
+        "状态": "待排期",
+        "优先级": "P1",
+        "负责人": "Codex / 当前交付执行者",
+        "用户结果": "用户按真实免费／付费／包含资格获取内容、选择渲染并正式完成。",
+        "验收标准": "进入资格与完成费用／次数分开；四政策、限额、权利和分成一致；受保护内容真实解密，恢复不重买／重扣。",
+        "现有实现／证据": "已有创作者配置和本地／受控证据；正式完整旅程未验收。",
+        "依赖": "DEV-002 可用发布与 Complete，真实资格和 Seal/Walrus",
+        "关联Bug": "暂无独立已确认缺陷；发现后另建 BUG；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+        "下一步": "先最小组件获取和使用，再按 S13-F03 补政策与异常分支。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "DEV-004",
+      "columns": {
+        "开发项": "Soul 装备、私密 Loadouts 与当前 Showcase",
+        "Dev ID": "DEV-004",
+        "产品／模块": "Soulidity 装备 / Wardrobe",
+        "里程碑／Sprint": "M3 / S8–S9 / S13-F04",
+        "状态": "待排期",
+        "优先级": "P1",
+        "负责人": "Codex / 当前交付执行者",
+        "用户结果": "同一 Soul 可装备、替换、卸下并保存私密命名搭配、展示当前状态。",
+        "验收标准": "每 Part 一件；替换保留原件，卸下留空；Player 当次选择不冒充持久装备；跨会话／设备读回和私密性正确。",
+        "现有实现／证据": "既有实现保留；本地／受控证据不替代真实旅程。",
+        "依赖": "DEV-002 新 Soul；DEV-003 实际可用组件",
+        "关联Bug": "暂无独立已确认缺陷；发现后另建 BUG；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+        "下一步": "完成一件组件最小闭环，再补来源、拒绝与恢复分支。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "DEV-005",
+      "columns": {
+        "开发项": "Market 单件／选中资产批量交易与转手权限",
+        "Dev ID": "DEV-005",
+        "产品／模块": "Soulidity Market",
+        "里程碑／Sprint": "M3 / S10 / S13-F05",
+        "状态": "待排期",
+        "优先级": "P1",
+        "负责人": "Codex / 当前交付执行者",
+        "用户结果": "选中的资产可上架、购买、取消，转手后新旧持有人权限准确。",
+        "验收标准": "出售 Soul 原子卸装且装备留卖家；未选资产不动；装备独售平台费2.5%；托管原子性、未知结果查询和刷新恢复正确。",
+        "现有实现／证据": "既有 Market 实现和本地证据保留；正式交易矩阵待验。",
+        "依赖": "DEV-002/004 真实资产和装备；准确 Market 配置",
+        "关联Bug": "暂无独立已确认缺陷；发现后另建 BUG；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+        "下一步": "先单件后选中批量，逐项记录链读回与权限变化。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "DEV-006",
+      "columns": {
+        "开发项": "补齐必需产品能力矩阵",
+        "Dev ID": "DEV-006",
+        "产品／模块": "Animacraft + Soulidity",
+        "里程碑／Sprint": "M1–M3 / S13-F06",
+        "状态": "待排期",
+        "优先级": "P1",
+        "负责人": "Codex / 当前交付执行者",
+        "用户结果": "Physical、多 Outputs、生命周期、控制权、收益、账号和最低社区、主题语言都按原产品行为可用。",
+        "验收标准": "逐项匹配能力矩阵和原验收卡；保留原 UI；不扩展 News、贡献榜或 Soul 自治。",
+        "现有实现／证据": "既有功能按实际证据补齐，未完成项不因后排而关闭。",
+        "依赖": "DEV-002 主链路；按每项实际依赖执行",
+        "关联Bug": "暂无独立已确认缺陷；发现后另建 BUG；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+        "下一步": "前三轮后核对未闭合能力，不重复已充分验收项。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "DEV-007",
+      "columns": {
+        "开发项": "实机、钱包异常及跨设备恢复验收",
+        "Dev ID": "DEV-007",
+        "产品／模块": "AC/SO QA",
+        "里程碑／Sprint": "M4 / S13-F07",
+        "状态": "待排期",
+        "优先级": "P1",
+        "负责人": "Codex / 当前交付执行者",
+        "用户结果": "桌面、移动和钱包异常下有明确状态，并能安全恢复同一操作。",
+        "验收标准": "覆盖拒签、断网、刷新、未知交易、存储失败及跨设备恢复；不重复付费／铸造，不丢资产；P0/P1清零。",
+        "现有实现／证据": "本地自动测试已覆盖部分恢复；完整实机与钱包矩阵开放。",
+        "依赖": "跟随 DEV-002–006 的准确候选和真实旅程",
+        "关联Bug": "BUG-005、BUG-008、BUG-009；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+        "下一步": "异常验证随实际旅程进行，最终只补缺失矩阵。",
+        "最近核验": "2026-10-05"
+      }
+    },
+    {
+      "id": "DEV-008",
+      "columns": {
+        "开发项": "单一候选双站交付、初始化与运维恢复",
+        "Dev ID": "DEV-008",
+        "产品／模块": "AC/SO Release",
+        "里程碑／Sprint": "M4 / S11–S12 / S14",
+        "状态": "待排期",
+        "优先级": "P1",
+        "负责人": "Codex / 当前交付执行者",
+        "用户结果": "准确源码、配置和双站制品一致，可初始化并查询恢复、止写和回退前端。",
+        "验收标准": "候选绑定源码／制品／包对象；适用 G1–G5 通过；初始化后真实流程验收；记录前端回退不能撤销链交易。",
+        "现有实现／证据": "生产 PR81 已部署；ac34b860 仍本地。发布切片证据存在，M4 未完成。",
+        "依赖": "各当前用户旅程修复；准确配置与回退路径",
+        "关联Bug": "相关 BUG 发布及复验状态随候选关联；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+        "下一步": "支撑当前 DEV-002 集成发布，最终补 S14 运维交接；不重跑旧发布脚本。",
+        "最近核验": "2026-10-05"
+      }
+    }
+  ],
+  "bug_csv": "Record ID,缺陷,Bug ID,产品／模块,状态,严重程度,优先级,迭代／原验收卡,负责人,发现环境,复现步骤／实际结果,预期结果,根因／修复方案,修复版本／PR,测试与证据,关闭验收,关联开发项,下一步／阻塞,最近核验\nRec0C6PGBL5RT,完成预检失败后，即使登录修复也无法重试,BUG-012,Animacraft / Player预检恢复,已关闭,S1 阻断主流程,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,原OC2；接收方SO登录已成功,旧失败被投射成永久completionIssue，关闭重开后Complete仍disabled。,同一OC可重试预检，保留原尝试和所有签名／权限门禁。,app错误把操作错误当硬门禁；恢复同输入重试，不startNew。,PR75／mainc38c857e；已部署,https://github.com/redefine-digital-labs/animacraft/pull/75；实际第二次Continue无锁死，Ready to receive；随后独立BUG-009仍开放。,原失败预检可再次执行且不新增Soul／费用；后续存储问题单列。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,保持回归；不以此关闭DEV-002。,2026-10-05\nRec0C6WPEM5BK,公共目录把Manifest哈希当成内容承诺,BUG-011,Animacraft / Plaza／公共读取,已关闭,S1 阻断主流程,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,已发布ACTIVE Maker；PR71之前,链上发布成功，Plaza／Player／lineage仍报SHA/content mismatch。,正确验证不同域的manifest hash与semantic content，已发布作品可发现和打开。,前端错误比较两种不同承诺；按各自来源独立推导与验证。,PR71／mainb0fa0206；已部署,https://github.com/redefine-digital-labs/animacraft/pull/71；原Plaza/search/detail正式实测通过；Player后续独立问题单独修复。,同一已发布Root目录发现和详情正确；不代表Complete已验收。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,保持目录与manifest回归。,2026-10-05\nRec0C7P6RMAF2,Player完成流程遇到持久存储许可拒绝,BUG-009,Animacraft / Player Complete,待分诊,S1 阻断主流程,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,历史IAB／OC2；正确Chrome完整新流程尚未复验,接收方登录后可重试，但持久浏览器存储许可拒绝仍阻断正式Complete。,指定Chrome可安全保存待签与恢复记录，然后完成并接收同一Soul。,历史环境限制已观察；尚不能推断Chrome相同。先在新完整旅程复现，保留durable恢复要求。,未确认当前Chrome修复版本,S13-F02-Q记录：Ready to receive后存储许可拒绝；不能以IAB结果代替Chrome。,正确Chrome新作品Complete→SO同SoulID→刷新，不重复铸造或扣额。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,先完成发布修复，再同一真实Chrome定点复验。,2026-10-05\nRec0C6YFYTYAY,原始PNG尺寸／中心定位和导出保真回归,BUG-010,Animacraft / Creator／渲染,已关闭,S2 功能异常,P1,M1 / S13-F01-B,Codex / 当前交付执行者,2026-10-03正式配对部署；2026-10-05新稿上传,原尺寸与定位处理回归，需验证保存重开和导出像素不漂移。,保留素材字节、确认坐标、原始尺寸和导出偏好。,原生PNG几何与定位链路修复；复用原编辑和渲染。,历史AC#59／SO#32配对修复；已正式实测,\"SPRINT_13 S13-F01-B：完整RGBA独立比对、冷重开和ZIP相同；新7Parts/9PNG哈希、(112,112)坐标、Player通过。\",该桌面几何缺陷原操作已验；完整移动／全部Creator矩阵仍由DEV-001追踪。,DEV-001 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6DECEP8F,保持回归；新发现不同场景另建关联缺陷。,2026-10-05\nRec0C7P6RPA3A,引入批量激活会改变已持久化首笔交易,BUG-008,Animacraft / 升级／冷恢复,待发布,S1 阻断主流程,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,独立代码审查发现的候选回归；未上线,新builder默认合并，使已有首笔SEAL checkpoint重建为COMPLETE，字节不符而无法恢复。,已有READY／SIGNED／未知交易保持原拓扑与字节；新准备才选择合并。,从durable current读取阶段重建，仍精确比较完整descriptor和TransactionKind。,本地ac34b860内已修复；未上线,独立review发现；新增durable first serial activation完整冷恢复通过；伪造checkpoint／省略lane写入被拒绝。,原串行首笔的冷恢复、链成功但未认证恢复及新合并路径都通过；不放宽校验。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,随BUG-007发布并复验；不把候选回归写成已发生的线上事故。,2026-10-05\nRec0C6DE40N15,Sui发布被前端拆成过多小交易,BUG-007,Animacraft / 发布交易编译器,待发布,S2 功能异常,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,真实九PNG配置本地编译；合约源码核查,既有41Base行及多lane追加／封存／激活逐段签名；该作品Sui发布13笔。,容量允许的操作合成一笔，超限才分片，原子失败不显示虚假进度。,多数边界是前端固定checkpoint；ACTIVATION_COMPLETE将四lane及最终激活合并。创建Root与激活仍有真实ABI边界。,本地ac34b860；未推送部署,完整4392、相关139通过；该作品Sui发布本地13→7笔，最后7→1；不含Walrus上传及Complete。,真实候选预检＋钱包＋链读回ACTIVE，失败／未知恢复；大作品分片正确。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,继续上传端整合后准确发布和从零验收。,2026-10-05\nRec0C6YFYRPCL,多文件上传按PNG逐个登记与认证，体验阻塞,BUG-006,Animacraft / Walrus上传,修复中,S1 阻断主流程,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,全新稿件7Parts／9PNG；当前生产,从空白上传发布仍逐文件要求登记和认证；曾跳到10/11是旧PNG复用，不是批量签名。,同一批素材一起上传；报价、进度、失败恢复都准确，AC/SO逐张读取不丢图。,前端逐资源串行；付费relay授权不能简单拼多独立登记。接入官方Quilt资产组上传及两端patch读取。,仅本地编码／解码可行性；尚未接入或部署,官方SDK1.2.19＋主网只读1000shards：9原PNG全部SHA256读回相同，排序稳定；https://docs.wal.app/docs/http-api/quilt-http-apis,全新素材批量登记→上传→认证→发布→AC/SO渲染；断网／刷新不重扣；不能靠旧缓存跳过。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,接入持久资产组与两端读取；Living Content合同证明保持正确。,2026-10-05\nRec0C6DE3D15M,每次签完都停住，反复要求手动Continue,BUG-005,Animacraft / 前端发布调度,待发布,S2 功能异常,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,当前生产Chrome；本地修复已验证,钱包签名保存后仍停在Signed／Continue；用户需要重复点击推进上传和读回。,已签交易自动继续至下一项需要用户签名的审核或明确异常。,app只执行一次动作；增加有界续行，绑定原交易、页面代次、钱包和稿件。,本地8fb038d5，已包含ac34b860；未推送部署,publication-flow-integration-2026-10-05：完整4392／4392；切页面／钱包／稿件、稳定未知结果停止等回归通过。,部署后实测签名→自动上传／读回，下一新签名停在审核；刷新不重复付费。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,与批量上传整体发布，不单独宣布流程完成。,2026-10-05\nRec0C6SSGT7PY,后继已经创建，下一步仍要求前身未被使用,BUG-004,Animacraft / 发布恢复,待线上复验,S1 阻断主流程,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,PR80原作者Chrome／同一后继检查点,scaffold成功后Base准备报MAKER_V8_SUCCESSOR_PREDECESSOR_DRIFT。,已认证的新Root沿同一发布继续，签名前仍拦截真实前身漂移。,前置校验没有区分scaffold前后；以已认证scaffold为阶段边界。,PR81／main104f7124；当前生产,https://github.com/redefine-digital-labs/animacraft/pull/81；本地v1/v2创建后继续与冷恢复通过，原后继链路未完成线上复验。,同一后继创建→Base→冷恢复不误拒绝；未签前真实漂移仍拒绝。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,整体修好并初始化后补后继真实验收。,2026-10-05\nRec0C6SSGKYF8,后继创建成功后把旧Root和新Root混算,BUG-003,Animacraft / 链上结果读回,待线上复验,S1 阻断主流程,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,原作者Chrome／主网后继发布,scaffold链上SUCCESS后报OBJECT_CHANGE_INVALID，无法继续；effects同时含旧mutated和新created同类型对象。,识别准确新Root／AdminCap，查询原交易恢复，不重新发行。,按created effects识别新对象，旧predecessor单独校验。,PR80／mainfff376c8；已部署,https://github.com/redefine-digital-labs/animacraft/pull/80；本地旧mutated＋新created回归通过；线上继续暴露BUG-004。,重新初始化后的后继旅程创建→读回→下一步成功；未知状态不重复签名。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,与BUG-004一起验后继完整恢复；不能仅凭PR关闭。,2026-10-05\nRec0C6DE31DC7,发布步骤高亮与资源上传状态互相矛盾,BUG-002,Animacraft / 发布进度UI,已关闭,S3 体验问题,P2,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,原作者Chrome；旧四阶段界面,显示step3/4，但第二步仍in progress，报价未出且0/11certified，用户无法判断当前步骤。,主阶段、资源子状态、待签／恢复动作一致。,统一为准备／存储／发布三阶段；已签恢复不显示空报价，文案随真实检查点更新。,PR79／main1c0bd125；已部署,https://github.com/redefine-digital-labs/animacraft/pull/79；原Chrome刷新→重开→同检查点继续，资源1/11→2/11时保持存储阶段。,原窗口刷新和恢复显示准确；不把此UI修复等同批量上传。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,后续批量上传沿用同一准确进度语义。,2026-10-05\nRec0C6YFWJTFW,合法 gas payment=[] 导致发布审核被拒绝,BUG-001,Animacraft / 交易审核,已关闭,S1 阻断主流程,P1,M1/M3/M4 / S13-F02,Codex / 当前交付执行者,原作者Chrome／主网；PR78之前,Review／归档审核在签名前报TransactionData envelope错误，实际SDK生成的同一交易模拟可通过。,合法交易可审核；错误signer、gas owner、预算、expiry仍拒绝。,前端错误要求gas coin列表非空；支持address balance支付的合法空列表，保留其余校验。,PR78／main67c5f382；已部署,https://github.com/redefine-digital-labs/animacraft/pull/78；原Chrome Review→取消实测通过；证据assets/address-gas-review-2026-10-04。,同一原作者Review可用，取消后稿件／Root未改变，零签名广播。,DEV-002 https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ,保持回归；完整发布仍由DEV-002验收。,2026-10-05",
+  "development_csv": "Record ID,开发项,Dev ID,产品／模块,里程碑／Sprint,状态,优先级,负责人,用户结果,验收标准,现有实现／证据,依赖,关联Bug,下一步,最近核验\nRec0C7P71G6HW,单一候选双站交付、初始化与运维恢复,DEV-008,AC/SO Release,M4 / S11–S12 / S14,待排期,P1,Codex / 当前交付执行者,准确源码、配置和双站制品一致，可初始化并查询恢复、止写和回退前端。,候选绑定源码／制品／包对象；适用 G1–G5 通过；初始化后真实流程验收；记录前端回退不能撤销链交易。,生产 PR81 已部署；ac34b860 仍本地。发布切片证据存在，M4 未完成。,各当前用户旅程修复；准确配置与回退路径,相关 BUG 发布及复验状态随候选关联；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ,支撑当前 DEV-002 集成发布，最终补 S14 运维交接；不重跑旧发布脚本。,2026-10-05\nRec0C6SSSPDML,实机、钱包异常及跨设备恢复验收,DEV-007,AC/SO QA,M4 / S13-F07,待排期,P1,Codex / 当前交付执行者,桌面、移动和钱包异常下有明确状态，并能安全恢复同一操作。,覆盖拒签、断网、刷新、未知交易、存储失败及跨设备恢复；不重复付费／铸造，不丢资产；P0/P1清零。,本地自动测试已覆盖部分恢复；完整实机与钱包矩阵开放。,跟随 DEV-002–006 的准确候选和真实旅程,BUG-005、BUG-008、BUG-009；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ,异常验证随实际旅程进行，最终只补缺失矩阵。,2026-10-05\nRec0C6DED6M63,补齐必需产品能力矩阵,DEV-006,Animacraft + Soulidity,M1–M3 / S13-F06,待排期,P1,Codex / 当前交付执行者,Physical、多 Outputs、生命周期、控制权、收益、账号和最低社区、主题语言都按原产品行为可用。,逐项匹配能力矩阵和原验收卡；保留原 UI；不扩展 News、贡献榜或 Soul 自治。,既有功能按实际证据补齐，未完成项不因后排而关闭。,DEV-002 主链路；按每项实际依赖执行,暂无独立已确认缺陷；发现后另建 BUG；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ,前三轮后核对未闭合能力，不重复已充分验收项。,2026-10-05\nRec0C6PGLAUP7,Market 单件／选中资产批量交易与转手权限,DEV-005,Soulidity Market,M3 / S10 / S13-F05,待排期,P1,Codex / 当前交付执行者,选中的资产可上架、购买、取消，转手后新旧持有人权限准确。,出售 Soul 原子卸装且装备留卖家；未选资产不动；装备独售平台费2.5%；托管原子性、未知结果查询和刷新恢复正确。,既有 Market 实现和本地证据保留；正式交易矩阵待验。,DEV-002/004 真实资产和装备；准确 Market 配置,暂无独立已确认缺陷；发现后另建 BUG；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ,先单件后选中批量，逐项记录链读回与权限变化。,2026-10-05\nRec0C6ULZ59J6,Soul 装备、私密 Loadouts 与当前 Showcase,DEV-004,Soulidity 装备 / Wardrobe,M3 / S8–S9 / S13-F04,待排期,P1,Codex / 当前交付执行者,同一 Soul 可装备、替换、卸下并保存私密命名搭配、展示当前状态。,每 Part 一件；替换保留原件，卸下留空；Player 当次选择不冒充持久装备；跨会话／设备读回和私密性正确。,既有实现保留；本地／受控证据不替代真实旅程。,DEV-002 新 Soul；DEV-003 实际可用组件,暂无独立已确认缺陷；发现后另建 BUG；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ,完成一件组件最小闭环，再补来源、拒绝与恢复分支。,2026-10-05\nRec0C6NJV83BM,Packs、Composable 与 Commerce 的真实获取和使用,DEV-003,Animacraft Packs / Commerce,M2 / S4–S7 / S13-F03,待排期,P1,Codex / 当前交付执行者,用户按真实免费／付费／包含资格获取内容、选择渲染并正式完成。,进入资格与完成费用／次数分开；四政策、限额、权利和分成一致；受保护内容真实解密，恢复不重买／重扣。,已有创作者配置和本地／受控证据；正式完整旅程未验收。,DEV-002 可用发布与 Complete，真实资格和 Seal/Walrus,暂无独立已确认缺陷；发现后另建 BUG；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ,先最小组件获取和使用，再按 S13-F03 补政策与异常分支。,2026-10-05\nRec0C6ULYUDLJ,完整作品上传发布 → Complete → Soulidity 接收同一新 Soul,DEV-002,Animacraft + Soulidity,M1–M3 / S3–S4/S7 / S13-F02,开发中,P1,Codex / 当前交付执行者,从新建和批量上传到正式发布、Player 完成及 Soulidity 接收，连续可用。,修复整合后初始化；正确 Chrome 从零上传→发布 ACTIVE→Complete→SO 同一 Soul ID→刷新；恢复同一尝试不重复支出／铸造。,生产 AC main104f7124／SO4a0c1b0e。本地 ac34b860 自动继续＋原子激活通过4392项，未部署；9PNG Quilt 逐张原哈希还原仅可行性通过。,资产组持久化、AC/SO patch 读取、准确候选发布与实链验证,BUG-001–009、BUG-011–012；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ,先完成上传和两端读取集成，再发布、初始化与从零验收；不以当前稿件推进代替修复。,2026-10-05\nRec0C6DECEP8F,Creator 保存、Library、ZIP 与 Player 全流程保真,DEV-001,Animacraft Creator,M1 / S1–S2 / S13-F01,待验收,P1,Codex / 当前交付执行者,配置、素材、规则、颜色和 Outputs 保存重开、ZIP 往返及 Player 呈现一致。,同完整作品冷重开、ZIP 往返、原始 PNG 哈希与渲染保真；补存储失败、关闭／删除取消及实机分支。,原生图像定位和 ZIP 桌面回归已有正式证据；完整能力矩阵仍开放。,统一候选与保存恢复能力,BUG-010；https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ,保护已有证据，按能力矩阵补遗漏，不从零重做 Creator。,2026-10-05"
+}

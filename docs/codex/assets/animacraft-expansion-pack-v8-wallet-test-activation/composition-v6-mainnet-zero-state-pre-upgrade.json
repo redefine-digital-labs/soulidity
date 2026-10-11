@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "soulidity.animacraft.composition-v6-zero-state-pre-upgrade.v1",
+  "network": {
+    "name": "mainnet",
+    "chainIdentifier": "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+    "observedThroughCheckpoint": "309741978"
+  },
+  "purpose": "Authorize the fail-closed retirement of nineteen unused Composition v6 product-write entry points while preserving every published ABI and all recovery/read paths required by existing objects.",
+  "queryPolicy": {
+    "paginationExhaustive": true,
+    "hasNextPageAccepted": false,
+    "trustedRowsRequireExactTypeAndJson": true
+  },
+  "eventQueries": [
+    { "type": "MakerProfileCreatedV6", "count": 0, "hasNextPage": false },
+    { "type": "ItemProductPublishedV6", "count": 0, "hasNextPage": false },
+    { "type": "ItemAdmittedV6", "count": 0, "hasNextPage": false },
+    { "type": "EntitlementGrantedV6", "count": 0, "hasNextPage": false },
+    { "type": "OwnedItemLockChangedV6", "count": 0, "hasNextPage": false },
+    { "type": "LoadoutAuthorizedV6", "count": 0, "hasNextPage": false }
+  ],
+  "liveObjectQueries": [
+    { "type": "MakerProfileV6", "count": 0, "hasNextPage": false },
+    { "type": "ItemProductV6", "count": 0, "hasNextPage": false },
+    { "type": "ValidatorAttestationV6", "count": 0, "hasNextPage": false },
+    { "type": "OwnedItemV6", "count": 0, "hasNextPage": false },
+    { "package": "0xa43cc9b0fd274a485834a8ac70155c9973ed05183d45749c9516ea76f69e5d5d", "type": "GenesisAppearanceV6", "count": 0, "hasNextPage": false },
+    { "package": "0xa43cc9b0fd274a485834a8ac70155c9973ed05183d45749c9516ea76f69e5d5d", "type": "SoulAppearanceStateV6", "count": 0, "hasNextPage": false }
+  ],
+  "compositionRegistry": {
+    "objectId": "0x2ffed92027c499a3c3cf10af4d035dfeb7a02ea7155207664263176350e9e5ab",
+    "version": "955119807",
+    "digest": "4i95sY2LqdCHYt6LEzGWfbiXuocmwZSAX4Tn1BwUdHVH",
+    "tables": [
+      { "name": "profiles", "objectId": "0xb48ef123c67c4ae9ed80253cbf1325dbcbbef6cf78ee7d54fffc8bca9d852ea6", "contentSize": "0", "dynamicFieldCount": 0, "hasNextPage": false },
+      { "name": "wallet_entitlements", "objectId": "0x64751a8964896e5182e3539eed8b25f306dfd64f780e5dfae0f484e4f6d7eacc", "contentSize": "0", "dynamicFieldCount": 0, "hasNextPage": false },
+      { "name": "soul_entitlements", "objectId": "0x45ff56f50dd2189390009462bf2c82eae4187706330dd2682805311b55f87574", "contentSize": "0", "dynamicFieldCount": 0, "hasNextPage": false },
+      { "name": "owned_locks", "objectId": "0x56e0de39991c261b99634b7d932534050031609911cda498971d0286e3298cb8", "contentSize": "0", "dynamicFieldCount": 0, "hasNextPage": false },
+      { "name": "soul_owned_lock_counts", "objectId": "0x6080583dc44eea5aebc61466ab6208e03b3cb1cc88778844298e353f89660bf2", "contentSize": "0", "dynamicFieldCount": 0, "hasNextPage": false },
+      { "name": "used_nonces", "objectId": "0x1c024ecf8794c92617c0d99577fc461a441c30739a6955934660162e9e564c4", "contentSize": "0", "dynamicFieldCount": 0, "hasNextPage": false }
+    ]
+  },
+  "retirement": {
+    "abortCode": 1,
+    "abortName": "EProtocolDisabled",
+    "retiredEntryPoints": [
+      "create_maker_profile_v6",
+      "seal_maker_profile_v6",
+      "publish_official_item_product_v6",
+      "publish_external_item_product_v6",
+      "publish_validator_attestation_v6",
+      "admit_official_item_v6",
+      "admit_certified_item_v6",
+      "admit_open_item_v6",
+      "reactivate_item_admission_v6",
+      "claim_free_wallet_item_v6",
+      "claim_free_soul_item_v6",
+      "purchase_wallet_item_v6",
+      "purchase_soul_item_v6",
+      "transfer_owned_item_v6",
+      "lock_owned_item_to_soul_v6",
+      "authorize_loadout_v6",
+      "authorize_initial_loadout_v6",
+      "claim_free_owned_item_for_physical_v7",
+      "purchase_owned_item_for_physical_v7"
+    ],
+    "preservedRecoveryAndCompatibilityEntryPoints": [
+      "cancel_unsealed_maker_profile_v6",
+      "deactivate_item_admission_v6",
+      "unlock_owned_item_from_soul_v6",
+      "consume_owned_item_for_physical_v7",
+      "assert_secondary_market_loadout_v6",
+      "claim_physical_v7_initializer"
+    ],
+    "publicAbiFunctionsBeforeAndAfter": 127,
+    "publicStructsBeforeAndAfter": 31,
+    "storageLayoutChanged": false
+  },
+  "verification": {
+    "animacraftMoveTests": { "passed": 122, "failed": 0 },
+    "physicalV7MoveTests": { "passed": 42, "failed": 0 },
+    "strictBuildPassed": true,
+    "compositionModuleBytesBefore": 25021,
+    "compositionModuleBytesAfter": 17360,
+    "completeModuleBytesBefore": 4686,
+    "completeModuleBytesAfter": 1910,
+    "compositionSourceSha256": "1a437bcf1fc0245fdfe27fbb9cacd9afc1e0b6db266c1439da35e0ced13c7f44",
+    "completeSourceSha256": "af67e942d97f66990ad6fec13c3468a9448d8929953789321be2892d937282b5"
+  }
+}
+

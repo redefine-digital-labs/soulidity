@@ -1,0 +1,2121 @@
+{
+  "version": "1.1",
+  "stage": "Plan",
+  "runtime_status": "Not run",
+  "cases": [
+    {
+      "id": "CASE-01",
+      "title": "第三方编辑器往返",
+      "groups": [
+        "T01"
+      ],
+      "responsible_units": [
+        "AUTHORING",
+        "SDK"
+      ],
+      "entry_ids": [
+        "save_project",
+        "freeze_snapshot"
+      ],
+      "rule": "兼容制作格式、许可与确定性快照；替代编辑器继续编辑，不冒充 Maker 控制者",
+      "quantified_assertions": [
+        "固定同 revision 的语义摘要一致",
+        "未授权素材／权利改变 0",
+        "原工程丢失 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K02",
+        "K08"
+      ],
+      "applicability": "Required",
+      "review_scope": "AUTHORING,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-01"
+    },
+    {
+      "id": "CASE-02",
+      "title": "在途发布期间继续编辑",
+      "groups": [
+        "T01",
+        "T06"
+      ],
+      "responsible_units": [
+        "AUTHORING",
+        "MAKER",
+        "SDK"
+      ],
+      "entry_ids": [
+        "freeze_snapshot",
+        "prepare_version",
+        "append_version_content"
+      ],
+      "rule": "新编辑进入下一候选；已付在途意图保持原快照、版本、规则和随机密文",
+      "quantified_assertions": [
+        "在途输入改变 0",
+        "新 revision 不覆盖原 Draft",
+        "被迫重付 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K02",
+        "K03"
+      ],
+      "applicability": "Required",
+      "review_scope": "AUTHORING,MAKER,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-02"
+    },
+    {
+      "id": "CASE-03",
+      "title": "无平台登记读取 Maker",
+      "groups": [
+        "T02"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "SDK"
+      ],
+      "entry_ids": [
+        "create_maker",
+        "read_maker_version"
+      ],
+      "rule": "独立创建和公开读取不需要社区／平台 Config／团队许可",
+      "quantified_assertions": [
+        "平台必经批准 0",
+        "真实 ID／版本／规则可取回"
+      ],
+      "frozen_consumers": [
+        "COMMUNITY",
+        "CHANNEL",
+        "MARKET"
+      ],
+      "invariants": [
+        "K01",
+        "K13"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-03"
+    },
+    {
+      "id": "CASE-04",
+      "title": "换发布客户端接续原 Maker",
+      "groups": [
+        "T02",
+        "T06"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "SDK",
+        "CONTENT"
+      ],
+      "entry_ids": [
+        "prepare_version",
+        "append_version_content",
+        "finalize_version",
+        "abort_version"
+      ],
+      "rule": "接续原 Maker／Draft／意图与已认证资源；不能另建发行器掩盖恢复失败",
+      "quantified_assertions": [
+        "重复根创建 0",
+        "成功片段重放 0",
+        "重复业务付款 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K02",
+        "K03",
+        "K11"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,SDK,CONTENT",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-04"
+    },
+    {
+      "id": "CASE-05",
+      "title": "Maker 新版本与旧 Pack",
+      "groups": [
+        "T02"
+      ],
+      "responsible_units": [
+        "MAKER"
+      ],
+      "entry_ids": [
+        "read_maker_version",
+        "create_player",
+        "complete_soul"
+      ],
+      "rule": "新 Maker 版本不静默改变旧 Pack 的精确源、许可、供给维度与履约条款",
+      "quantified_assertions": [
+        "旧 Pack 承诺改变 0",
+        "旧合法路径结果保持",
+        "未使用新版本的消费者被迫发布 0"
+      ],
+      "frozen_consumers": [
+        "MARKET",
+        "CHANNEL"
+      ],
+      "invariants": [
+        "K02",
+        "K05",
+        "K09"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-05"
+    },
+    {
+      "id": "CASE-06",
+      "title": "Maker／Pack／Complete 政策与已购资格",
+      "groups": [
+        "T02",
+        "T09"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "POLICY"
+      ],
+      "entry_ids": [
+        "obtain_access",
+        "create_player",
+        "complete_soul"
+      ],
+      "rule": "分别核 Maker FREE/ONE_TIME_PAID、Pack FREE/ONE_TIME_PAID/INCLUDED_WITH_MAKER、四种 Complete 业务政策及 total cap；按准确版本核数字编码和独立 quote 向量，零值/边界/并发/过期/重复均验证；旧权益及计数不追溯改变。不同历史编码不混用",
+      "quantified_assertions": [
+        "四 Complete 政策语义与编码逐项一致",
+        "旧资格重复购买 0",
+        "历史计数重置 0",
+        "逐币种账差 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K03",
+        "K05",
+        "K12"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,POLICY",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-06"
+    },
+    {
+      "id": "CASE-07",
+      "title": "作者权益新版本与已发 Item",
+      "groups": [
+        "T02",
+        "T04"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "finalize_version",
+        "list_asset",
+        "settle_order"
+      ],
+      "rule": "既发 Item 的真实来源／权利版本不被父版本更新替代；影响转售政策的新义务只在适用路径适配",
+      "quantified_assertions": [
+        "原 Item 来源／权利改变 0",
+        "遗漏有效费用义务 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K06",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,EXTENSIONS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-07"
+    },
+    {
+      "id": "CASE-08",
+      "title": "Maker／Pack 控制、授权与收入交接",
+      "groups": [
+        "T02",
+        "T07"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "CHANNEL",
+        "POLICY"
+      ],
+      "entry_ids": [
+        "accept_channel_terms",
+        "revoke_channel_terms",
+        "withdraw_asset_income",
+        "prepare_version"
+      ],
+      "rule": "控制交接停止旧代次新增代理行为，新控制者重新同意；受控路径实际轮换，自由转移路径不使用依赖自动失效的脱离根 grant。产品账本收入按绑定产品的当前实际有效 Control 领取，作者固定收益按原条款，服务收入按本实例。固定原已签意图，分别核发布/发行/存量权益",
+      "quantified_assertions": [
+        "旧失效权限敏感写入 0（支持路径）",
+        "缓存创建地址提款 0",
+        "原规则收入损失 0",
+        "计数重置 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K05",
+        "K08",
+        "K12"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,CHANNEL,POLICY",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-08"
+    },
+    {
+      "id": "CASE-09",
+      "title": "实际 Pack 贡献与已有 Soul 增强",
+      "groups": [
+        "T02",
+        "T05"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "enhance_soul",
+        "equip_or_remove_item"
+      ],
+      "rule": "按实际贡献源增强同一 Soul；打开 Pack 或无实际贡献不收费；同一真实 Pack 多 Style 不重复算一次贡献/购买，资格费用与实际 Complete 费用分别对账。原出生、ID、已付意图保持",
+      "quantified_assertions": [
+        "新 Soul 根数 0",
+        "出生来源改变 0",
+        "无贡献 Pack 收费 0",
+        "同 Pack 重复计费 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K03",
+        "K05",
+        "K06",
+        "K07"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,EXTENSIONS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-09"
+    },
+    {
+      "id": "CASE-10",
+      "title": "未完整发布与中止",
+      "groups": [
+        "T02",
+        "T10"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "CONTENT"
+      ],
+      "entry_ids": [
+        "finalize_version",
+        "abort_version"
+      ],
+      "rule": "缺本次必要材料、错误摘要或未认证时不能 READY；中止只返回确实可返还资源",
+      "quantified_assertions": [
+        "未完整激活 0",
+        "未 READY 正式发行 0",
+        "虚构存储退款 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K02",
+        "K11",
+        "K12"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,CONTENT",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-10"
+    },
+    {
+      "id": "CASE-11",
+      "title": "替换节点或 relay",
+      "groups": [
+        "T06"
+      ],
+      "responsible_units": [
+        "CONTENT",
+        "SDK"
+      ],
+      "entry_ids": [
+        "store_content",
+        "extend_content",
+        "read_maker_version"
+      ],
+      "rule": "可换访问设施，仍证明原 Blob／Maker／版本和原交易；不把新 URL 当新的资源或密钥",
+      "quantified_assertions": [
+        "重复成功资源购买 0",
+        "因可替换 URL 变化的业务消费者被迫发布 0"
+      ],
+      "frozen_consumers": [
+        "MAKER",
+        "MARKET"
+      ],
+      "invariants": [
+        "K03",
+        "K09",
+        "K11"
+      ],
+      "applicability": "Required",
+      "review_scope": "CONTENT,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-11"
+    },
+    {
+      "id": "CASE-12",
+      "title": "部分上传和认证恢复",
+      "groups": [
+        "T06",
+        "T10"
+      ],
+      "responsible_units": [
+        "CONTENT",
+        "MAKER",
+        "SDK"
+      ],
+      "entry_ids": [
+        "store_content",
+        "append_version_content"
+      ],
+      "rule": "部分成功沿原意图恢复；上传、付款、认证和引用分别记账",
+      "quantified_assertions": [
+        "已成功片段重复购买 0",
+        "内容摘要改变 0",
+        "未认证片段误称 CERTIFIED 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K02",
+        "K03",
+        "K11"
+      ],
+      "applicability": "Required",
+      "review_scope": "CONTENT,MAKER,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-12"
+    },
+    {
+      "id": "CASE-13",
+      "title": "签名后执行未知",
+      "groups": [
+        "T06",
+        "T10"
+      ],
+      "responsible_units": [
+        "SDK"
+      ],
+      "entry_ids": [
+        "store_content",
+        "settle_order",
+        "complete_soul",
+        "execute_maintenance"
+      ],
+      "rule": "先查询原 digest 和权威状态，未证实未执行之前不新付、不再铸造",
+      "quantified_assertions": [
+        "未知时新业务付款 0",
+        "同意图第二业务结果 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K03",
+        "K10",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-13"
+    },
+    {
+      "id": "CASE-14",
+      "title": "成功执行但读回失败",
+      "groups": [
+        "T06",
+        "T10"
+      ],
+      "responsible_units": [
+        "SDK"
+      ],
+      "entry_ids": [
+        "finalize_version",
+        "settle_order",
+        "withdraw_vault"
+      ],
+      "rule": "保留 EXECUTED_SUCCESS；用原 effects／历史对象证明，当前归属的后续改变另核验",
+      "quantified_assertions": [
+        "成功误降 UNKNOWN 0",
+        "重付／重发 0",
+        "历史凭证丢失 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K03",
+        "K11",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-14"
+    },
+    {
+      "id": "CASE-15",
+      "title": "过期或确定不可执行后的新尝试",
+      "groups": [
+        "T10"
+      ],
+      "responsible_units": [
+        "SDK"
+      ],
+      "entry_ids": [
+        "complete_soul",
+        "settle_order",
+        "execute_maintenance"
+      ],
+      "rule": "过期签名不是从未执行证明；证实原字节不可执行且无成功结果后，按原恢复规则构造明确新尝试",
+      "quantified_assertions": [
+        "未验证的新尝试 0",
+        "合法新尝试不重复已有结果"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K03",
+        "K10",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-15"
+    },
+    {
+      "id": "CASE-16",
+      "title": "内容续期与到期",
+      "groups": [
+        "T06"
+      ],
+      "responsible_units": [
+        "CONTENT"
+      ],
+      "entry_ids": [
+        "extend_content",
+        "execute_maintenance"
+      ],
+      "rule": "按真实 Blob 权限、存储期限和预算续期；到期／认证失效准确暴露，不改变原作品／权利",
+      "quantified_assertions": [
+        "越预算执行 0",
+        "未续期误报可用 0",
+        "原作品摘要改变 0"
+      ],
+      "frozen_consumers": [
+        "MARKET",
+        "COMMUNITY"
+      ],
+      "invariants": [
+        "K08",
+        "K09",
+        "K11"
+      ],
+      "applicability": "Required",
+      "review_scope": "CONTENT",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-16"
+    },
+    {
+      "id": "CASE-17",
+      "title": "私密内容政策与密钥恢复",
+      "groups": [
+        "T06",
+        "T07"
+      ],
+      "responsible_units": [
+        "CONTENT"
+      ],
+      "entry_ids": [
+        "store_content",
+        "grant_operation",
+        "revoke_operation"
+      ],
+      "rule": "固定实际密钥服务器／政策／版本和恢复条件；撤销不能收回已保存明文，换 URL 不保证旧密钥可恢复",
+      "quantified_assertions": [
+        "越权解密成功 0（实际撤销范围内）",
+        "伪称恢复完成 0",
+        "read 到 spend 升权 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K11",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "CONTENT",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-17"
+    },
+    {
+      "id": "CASE-18",
+      "title": "公开内容不强制私密服务",
+      "groups": [
+        "T02",
+        "T06"
+      ],
+      "responsible_units": [
+        "CONTENT",
+        "SDK"
+      ],
+      "entry_ids": [
+        "store_content",
+        "read_maker_version"
+      ],
+      "rule": "公开资源路径不要求 Seal／KMS 账号或未选私密组件；必要存储证明仍成立",
+      "quantified_assertions": [
+        "未选 KMS 阻断 0",
+        "私密子包强制依赖 0"
+      ],
+      "frozen_consumers": [
+        "MARKET"
+      ],
+      "invariants": [
+        "K09",
+        "K11"
+      ],
+      "applicability": "Required",
+      "review_scope": "CONTENT,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-18"
+    },
+    {
+      "id": "CASE-19",
+      "title": "首要验收 新被动扩展与固定旧市场",
+      "groups": [
+        "T04",
+        "T05"
+      ],
+      "responsible_units": [
+        "EXTENSIONS",
+        "MARKET",
+        "INTEGRATION"
+      ],
+      "entry_ids": [
+        "install_extension",
+        "list_asset",
+        "cancel_order",
+        "settle_order"
+      ],
+      "rule": "在已固定旧市场之后才发布独立的被动外观／经历扩展；没有新增资金、授权／私密交接、供给、转移／托管、必要内容或退出义务。对无扩展、已有支持扩展、新独立被动扩展三种原 Soul 分别测试挂牌／取消和挂牌／成交；在适用嵌套／持有路径重复验证。无需旧市场知道新 namespace；冻结配置参数／清单，不冻结正常变化的订单状态；原资产指该冻结新目标 fixture，不要求历史生产市场接受新类型。冻结后修改市场属于失败，保留失败并使用新 baseline ID 重新验收",
+      "quantified_assertions": [
+        "对照资产组合至少 3",
+        "市场源码哈希变化 0",
+        "市场依赖锁变化 0",
+        "市场配置哈希变化 0",
+        "市场部署制品变化 0",
+        "市场被迫发布次数 0",
+        "原根／子对象 ID 损失 0"
+      ],
+      "frozen_consumers": [
+        "MARKET"
+      ],
+      "invariants": [
+        "K01",
+        "K09",
+        "K14",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "EXTENSIONS,MARKET,INTEGRATION",
+      "execution_status": "Not run",
+      "evidence": [],
+      "baseline_kind": "frozen_target_acceptance",
+      "precondition": "B0: coherent new-target runnable minimal market then freeze four identities before independent extension publication; freeze failure retained",
+      "namespace": "ECO.case.CASE-19"
+    },
+    {
+      "id": "CASE-20",
+      "title": "独立扩展自身 schema 升级",
+      "groups": [
+        "T05"
+      ],
+      "responsible_units": [
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "update_extension",
+        "remove_extension"
+      ],
+      "rule": "只影响使用该扩展读写契约的消费者；旧 schema 支持或明确迁移。被动字段不要求别的扩展一起升级",
+      "quantified_assertions": [
+        "未用该能力的消费者被迫发布 0",
+        "未声明旧 schema 支持 0"
+      ],
+      "frozen_consumers": [
+        "MARKET",
+        "COMMUNITY"
+      ],
+      "invariants": [
+        "K09",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "EXTENSIONS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-20"
+    },
+    {
+      "id": "CASE-21",
+      "title": "应用共享 schema 使旧写者不兼容",
+      "groups": [
+        "T04",
+        "T07"
+      ],
+      "responsible_units": [
+        "EXTENSIONS",
+        "MARKET"
+      ],
+      "entry_ids": [
+        "update_extension",
+        "settle_order"
+      ],
+      "rule": "同一必需状态域升级使旧市场 writer 被守卫拒绝时，应适配或拒绝；不能删除守卫来伪称兼容，也不能归入被动扩展",
+      "quantified_assertions": [
+        "错 schema 写入 0",
+        "旧写者不兼容误判为通过 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K14",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "EXTENSIONS,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-21"
+    },
+    {
+      "id": "CASE-22",
+      "title": "三权利装卸、替换、跨 Maker 与直接接收",
+      "groups": [
+        "T05"
+      ],
+      "responsible_units": [
+        "EXTENSIONS",
+        "MAKER"
+      ],
+      "entry_ids": [
+        "equip_or_remove_item",
+        "enhance_soul"
+      ],
+      "rule": "Reference 清引用，Bound 原 Soul 留记录可重装，Free detach 返回原 ID；replace 原子保留每 Part 一固定 Style。跨 Maker 校验许可/Adapter 交集，Receiving 若支持需真实父路径接收/拒绝/恢复，不当作已装库存",
+      "quantified_assertions": [
+        "复制 Item 0",
+        "Free 原 ID 改变 0",
+        "Bound 非法退出 0",
+        "非法接纳成功 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K06",
+        "K07",
+        "K08"
+      ],
+      "applicability": "Required",
+      "review_scope": "EXTENSIONS,MAKER",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-22"
+    },
+    {
+      "id": "CASE-23",
+      "title": "Bound 隐藏或卸载",
+      "groups": [
+        "T05",
+        "T07"
+      ],
+      "responsible_units": [
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "remove_extension",
+        "equip_or_remove_item"
+      ],
+      "rule": "隐藏与显示配置不等于释放权利；Bound 留原 Soul，必要来源／绑定键不得删除",
+      "quantified_assertions": [
+        "Bound 外流 0",
+        "删除必要源／余额／绑定记录 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K06",
+        "K07",
+        "K12"
+      ],
+      "applicability": "Required",
+      "review_scope": "EXTENSIONS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-23"
+    },
+    {
+      "id": "CASE-24",
+      "title": "Reference 读取不是资产占有",
+      "groups": [
+        "T05",
+        "T07"
+      ],
+      "responsible_units": [
+        "EXTENSIONS",
+        "CLIENTS"
+      ],
+      "entry_ids": [
+        "read_soul",
+        "use_application",
+        "equip_or_remove_item"
+      ],
+      "rule": "引用允许按许可读取；不能据此伪造 Item、库存、转售和提款能力",
+      "quantified_assertions": [
+        "Reference 返回可售 Item 0",
+        "读取变支出 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K06",
+        "K08"
+      ],
+      "applicability": "Required",
+      "review_scope": "EXTENSIONS,CLIENTS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-24"
+    },
+    {
+      "id": "CASE-25",
+      "title": "完整视觉、Loadout 与三客户端",
+      "groups": [
+        "T05"
+      ],
+      "responsible_units": [
+        "EXTENSIONS",
+        "CLIENTS"
+      ],
+      "entry_ids": [
+        "manage_forms_history_nesting",
+        "update_extension"
+      ],
+      "rule": "执行 F04 视觉子契约：Scene/Part/Representation/Adapter/Layout/Outputs/renderer/hash、定点数与舍入、许可交集和 CAS；2 个真实 Maker（1024 方形A及不同画布B）跨 Animacraft/Soulidity/参考客户端，给 golden/实际差异/容差依据；多片遮挡/padding/颜色/Empty/窄屏/HiDPI/缺失资源/旧 renderer。Loadout 冷恢复重验许可和原对象，读/显/写/交易/安全退出分别判断",
+      "quantified_assertions": [
+        "真实 Maker 至少 2",
+        "客户端类别至少 3",
+        "JS/Move 数值向量不一致 0",
+        "越许可编辑 0",
+        "原 genesis 改变 0",
+        "配方复制资产 0"
+      ],
+      "frozen_consumers": [
+        "MARKET",
+        "COMMUNITY"
+      ],
+      "invariants": [
+        "K01",
+        "K07",
+        "K09"
+      ],
+      "applicability": "Required",
+      "review_scope": "EXTENSIONS,CLIENTS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-25"
+    },
+    {
+      "id": "CASE-26",
+      "title": "嵌套与容器持有路径",
+      "groups": [
+        "T05",
+        "T07"
+      ],
+      "responsible_units": [
+        "STANDARD",
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "manage_forms_history_nesting",
+        "grant_operation",
+        "withdraw_vault",
+        "list_asset"
+      ],
+      "rule": "真实路径校验、防循环及每层原权利／余额成立；地址 owner 不是完整持有证明",
+      "quantified_assertions": [
+        "嵌套循环 0",
+        "错误路径支出／转移 0",
+        "未知容器伪称支持 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K06",
+        "K08",
+        "K12",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "STANDARD,EXTENSIONS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-26"
+    },
+    {
+      "id": "CASE-27",
+      "title": "Vault 币种与外部发行权限",
+      "groups": [
+        "T05",
+        "T07"
+      ],
+      "responsible_units": [
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "withdraw_vault",
+        "update_extension"
+      ],
+      "rule": "新增 CoinType 由实际 Vault/消费者适配；原余额/领取/交接保留。登记实际 TreasuryCap/Supply/DenyCapV2/全局暂停或证据N/A；币种冻结对付款/找零/退款/收入/余额/出口的限制实际验证",
+      "quantified_assertions": [
+        "原币种余额丢失 0",
+        "内容授权提款 0",
+        "漏记外部币种权力 0",
+        "未使用该能力的市场被迫发布 0"
+      ],
+      "frozen_consumers": [
+        "COMMUNITY"
+      ],
+      "invariants": [
+        "K04",
+        "K08",
+        "K09",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "EXTENSIONS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-27"
+    },
+    {
+      "id": "CASE-28",
+      "title": "授权域生命周期、A→B→A 与自由转移",
+      "groups": [
+        "T07"
+      ],
+      "responsible_units": [
+        "STANDARD",
+        "EXTENSIONS",
+        "CONTENT"
+      ],
+      "entry_ids": [
+        "grant_operation",
+        "revoke_operation",
+        "withdraw_vault",
+        "list_asset"
+      ],
+      "rule": "按 D27 域策略检验旧 grant、Control/渠道/私密/扩展及真实容器。受控交接验证轮换与新同意；自由 public_transfer 不发依赖全转移自动失效的脱离根可重用权限，需当前持有人参与或限定当次意图。原成交资格按原条款，不从地址回归推断永久撤销",
+      "quantified_assertions": [
+        "声明支持路径失效 grant 写入 0",
+        "未验证自动撤销承诺 0",
+        "已成交资格无依据删除 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K12",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "STANDARD,EXTENSIONS,CONTENT",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-28"
+    },
+    {
+      "id": "CASE-29",
+      "title": "不选渠道的独立市场",
+      "groups": [
+        "T04",
+        "T08"
+      ],
+      "responsible_units": [
+        "MARKET"
+      ],
+      "entry_ids": [
+        "list_asset",
+        "quote_order",
+        "settle_order",
+        "cancel_order"
+      ],
+      "rule": "合法卖方直接使用 Market，仍执行资产本身有效政策；无未选渠道义务",
+      "quantified_assertions": [
+        "未选渠道费用 0",
+        "必经渠道许可 0",
+        "资产政策遗漏 0"
+      ],
+      "frozen_consumers": [
+        "CHANNEL"
+      ],
+      "invariants": [
+        "K04",
+        "K09",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "proof_contract_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md#4-跨模块证明的权威闭环d28",
+      "namespace": "ECO.case.CASE-29"
+    },
+    {
+      "id": "CASE-30",
+      "title": "不选市场的合法渠道分销",
+      "groups": [
+        "T04",
+        "T08"
+      ],
+      "responsible_units": [
+        "CHANNEL",
+        "MAKER"
+      ],
+      "entry_ids": [
+        "offer_channel_terms",
+        "accept_channel_terms",
+        "obtain_access",
+        "complete_soul"
+      ],
+      "rule": "渠道可与真实生产者直接组合；没有 Market 时完成合法授权发行，唯一资格／供给照常验证",
+      "quantified_assertions": [
+        "必经 Market 次数 0",
+        "漏渠道义务 0",
+        "新建重复总计数 0"
+      ],
+      "frozen_consumers": [
+        "MARKET"
+      ],
+      "invariants": [
+        "K04",
+        "K05",
+        "K09",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "CHANNEL,MAKER",
+      "execution_status": "Not run",
+      "evidence": [],
+      "proof_contract_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md#4-跨模块证明的权威闭环d28",
+      "namespace": "ECO.case.CASE-30"
+    },
+    {
+      "id": "CASE-31",
+      "title": "渠道加市场的原子组合",
+      "groups": [
+        "T04",
+        "T08"
+      ],
+      "responsible_units": [
+        "CHANNEL",
+        "MARKET",
+        "MAKER"
+      ],
+      "entry_ids": [
+        "accept_channel_terms",
+        "list_asset",
+        "settle_order"
+      ],
+      "rule": "显式 PTB 组合所选模块；真实证明绑定本订单、资产／版本、主体、金额、受益人与时效；跳步和重放失败",
+      "quantified_assertions": [
+        "漏付／错误分配成功 0",
+        "跨订单重放成功 0",
+        "部分交付 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K04",
+        "K08",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "CHANNEL,MARKET,MAKER",
+      "execution_status": "Not run",
+      "evidence": [],
+      "proof_contract_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md#4-跨模块证明的权威闭环d28",
+      "namespace": "ECO.case.CASE-31"
+    },
+    {
+      "id": "CASE-32",
+      "title": "渠道撤销六类存量",
+      "groups": [
+        "T04",
+        "T08"
+      ],
+      "responsible_units": [
+        "CHANNEL",
+        "MARKET",
+        "MAKER"
+      ],
+      "entry_ids": [
+        "revoke_channel_terms",
+        "cancel_order",
+        "settle_order"
+      ],
+      "rule": "未接受、仅接受、报价挂牌、有效预留、已履约、执行未知分别处理；停新业务不抹已得权益；ENDED 不复活",
+      "quantified_assertions": [
+        "撤销后新代理消耗 0",
+        "改写有效存量条款 0",
+        "ENDED 原 ID 复活 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K03",
+        "K05",
+        "K12",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "CHANNEL,MARKET,MAKER",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-32"
+    },
+    {
+      "id": "CASE-33",
+      "title": "真实预留到期和取消",
+      "groups": [
+        "T08",
+        "T09"
+      ],
+      "responsible_units": [
+        "CHANNEL",
+        "MAKER",
+        "MARKET"
+      ],
+      "entry_ids": [
+        "quote_order",
+        "cancel_order",
+        "revoke_channel_terms"
+      ],
+      "rule": "若现有实现支持预留，原权威范围与到期／取消规则唯一；仅报价不凭空占总供给。最终发行仍原子",
+      "quantified_assertions": [
+        "重复释放额度 0",
+        "预留与已发行双计数 0",
+        "未来义务漏验 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K04",
+        "K05",
+        "K10",
+        "K12"
+      ],
+      "applicability": "Conditional: only if actual reservation exists",
+      "review_scope": "CHANNEL,MAKER,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-33"
+    },
+    {
+      "id": "CASE-34",
+      "title": "未知结果与额度释放",
+      "groups": [
+        "T09",
+        "T10"
+      ],
+      "responsible_units": [
+        "CHANNEL",
+        "MAKER",
+        "SDK"
+      ],
+      "entry_ids": [
+        "abort_version",
+        "revoke_channel_terms",
+        "cancel_order",
+        "complete_soul"
+      ],
+      "rule": "原 digest 未确定时不擅自释放已消耗额度或重建订单；以原执行及权威状态决定合法恢复",
+      "quantified_assertions": [
+        "未知时双释放／再占额度 0",
+        "同意图第二发行 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K03",
+        "K05",
+        "K10"
+      ],
+      "applicability": "Required",
+      "review_scope": "CHANNEL,MAKER,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "proof_contract_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md#4-跨模块证明的权威闭环d28",
+      "namespace": "ECO.case.CASE-34"
+    },
+    {
+      "id": "CASE-35",
+      "title": "更换市场或渠道服务实例",
+      "groups": [
+        "T04",
+        "T07"
+      ],
+      "responsible_units": [
+        "CHANNEL",
+        "MARKET"
+      ],
+      "entry_ids": [
+        "accept_channel_terms",
+        "list_asset",
+        "withdraw_service_income"
+      ],
+      "rule": "客户端可继续操作原实例；新实例不继承旧订单、grant、余额、quota、Cap，迁移要显式证明及用户有效选择",
+      "quantified_assertions": [
+        "跨实例重放 0",
+        "隐式余额／权限继承 0",
+        "原实例合法出口丢失 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K04",
+        "K08",
+        "K12",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "CHANNEL,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-35"
+    },
+    {
+      "id": "CASE-36",
+      "title": "ABI 未变但费率或舍入改变",
+      "groups": [
+        "T04",
+        "T07"
+      ],
+      "responsible_units": [
+        "POLICY",
+        "MAKER",
+        "MARKET"
+      ],
+      "entry_ids": [
+        "quote_order",
+        "settle_order",
+        "withdraw_asset_income"
+      ],
+      "rule": "识别行为与钱的依赖，验证真实受影响消费者；签名一样不等于兼容。不需要变化的消费者保持固定制品",
+      "quantified_assertions": [
+        "漏判经济行为变化 0",
+        "逐币种对账差 0",
+        "无关消费者被迫发布 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K04",
+        "K09",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "POLICY,MAKER,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-36"
+    },
+    {
+      "id": "CASE-37",
+      "title": "Collection 与 Right 关系",
+      "groups": [
+        "T02",
+        "T04"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "POLICY"
+      ],
+      "entry_ids": [
+        "read_maker_version",
+        "quote_order",
+        "settle_order",
+        "withdraw_asset_income"
+      ],
+      "rule": "成员／原资格／Right 与当前控制者的权益分开核验；展示 floor 元数据不是可执行最低价或费用政策",
+      "quantified_assertions": [
+        "旧成员权利改写 0",
+        "元数据伪造强制价格成功 0",
+        "错误收入权利人提款 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K04",
+        "K08",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,POLICY",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-37"
+    },
+    {
+      "id": "CASE-38",
+      "title": "Physical 数字发行、凭证与消费",
+      "groups": [
+        "T02",
+        "T10"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "CLIENTS"
+      ],
+      "entry_ids": [
+        "obtain_access",
+        "complete_soul",
+        "use_application"
+      ],
+      "rule": "按 J32 配置发布→FREE/PAID/PROOF(voucher)发行→供给→交易→consume/终态清理；错主体/凭证/重放/少付/超供给/已消费与清理分别验证。真实实物履约只在实际存在该义务时附证据，不用名称推断",
+      "quantified_assertions": [
+        "错凭证发行 0",
+        "超供给 0",
+        "同 voucher 重放成功 0",
+        "consume 重复成功 0",
+        "无依据删除用户资产 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K03",
+        "K05",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,CLIENTS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-38"
+    },
+    {
+      "id": "CASE-39",
+      "title": "应用只选最小能力",
+      "groups": [
+        "T05"
+      ],
+      "responsible_units": [
+        "CLIENTS",
+        "SDK"
+      ],
+      "entry_ids": [
+        "read_soul",
+        "use_application"
+      ],
+      "rule": "新游戏只声明所需身份／视觉等能力，不拉入全部社区、市场、其他游戏或控制权",
+      "quantified_assertions": [
+        "未选业务必需依赖 0",
+        "应用默认根控制 0",
+        "其他应用被迫发布 0"
+      ],
+      "frozen_consumers": [
+        "COMMUNITY",
+        "MARKET"
+      ],
+      "invariants": [
+        "K08",
+        "K09",
+        "K13"
+      ],
+      "applicability": "Required",
+      "review_scope": "CLIENTS,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-39"
+    },
+    {
+      "id": "CASE-40",
+      "title": "应用写技能记忆或经历",
+      "groups": [
+        "T05",
+        "T07"
+      ],
+      "responsible_units": [
+        "CLIENTS",
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "use_application",
+        "grant_operation",
+        "update_extension"
+      ],
+      "rule": "只有选用扩展认可的真实结果来源和范围写权可更新；任意客户端提交／签名不自证经历有效",
+      "quantified_assertions": [
+        "伪造结果写入 0",
+        "跨扩展／资金升权 0",
+        "结果重放成功 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K10",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "CLIENTS,EXTENSIONS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-40"
+    },
+    {
+      "id": "CASE-41",
+      "title": "引擎和一个游戏升级",
+      "groups": [
+        "T05"
+      ],
+      "responsible_units": [
+        "CLIENTS"
+      ],
+      "entry_ids": [
+        "use_application",
+        "read_soul"
+      ],
+      "rule": "旧存档／应用状态明确兼容或迁移；未用该契约的游戏及资产不跟随升级，Soul 不重铸",
+      "quantified_assertions": [
+        "原 Soul 重铸 0",
+        "无关游戏被迫发布 0",
+        "旧状态静默损失 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K09",
+        "K12",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "CLIENTS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-41"
+    },
+    {
+      "id": "CASE-42",
+      "title": "本地模拟与链上有效结果",
+      "groups": [
+        "T05",
+        "T07"
+      ],
+      "responsible_units": [
+        "CLIENTS",
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "use_application",
+        "update_extension"
+      ],
+      "rule": "可本地体验但区分本地计算与链上被接受状态；定量验证证明来源与实际授权",
+      "quantified_assertions": [
+        "本地模拟误称链上确认 0",
+        "无证明敏感更新 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K14",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "CLIENTS,EXTENSIONS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-42"
+    },
+    {
+      "id": "CASE-43",
+      "title": "原基础社区行为与分页独立演进",
+      "groups": [
+        "T05"
+      ],
+      "responsible_units": [
+        "COMMUNITY",
+        "SDK"
+      ],
+      "entry_ids": [
+        "maintain_profile_or_post"
+      ],
+      "rule": "承接简介/帖评/关注/投票/采纳答案/私密书签/作者关系/分页，原钱包账号书签不是 Soul Vault；各入口映射原函数与恢复，变更仅影响真实社区消费者",
+      "quantified_assertions": [
+        "原已有行为漏映射 0",
+        "原作者关系丢失 0",
+        "分页重复或遗漏按原契约验证",
+        "无关市场/渠道强制发布 0"
+      ],
+      "frozen_consumers": [
+        "MARKET",
+        "CHANNEL",
+        "MAKER"
+      ],
+      "invariants": [
+        "K09",
+        "K12",
+        "K13"
+      ],
+      "applicability": "Required",
+      "review_scope": "COMMUNITY,SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-43"
+    },
+    {
+      "id": "CASE-44",
+      "title": "社区及 Collection 管理与资产权利",
+      "groups": [
+        "T05",
+        "T07"
+      ],
+      "responsible_units": [
+        "COMMUNITY",
+        "MAKER",
+        "MARKET",
+        "POLICY"
+      ],
+      "entry_ids": [
+        "maintain_profile_or_post",
+        "read_soul"
+      ],
+      "rule": "社区管理不改资产；Collection 创建/成员准入/supply/tradeable/Right/当前收入及逐组件原费用舍入逐项承接，floor 不强制最低价；空市场终态清理保留原开放权限，不删除资产或历史事件",
+      "quantified_assertions": [
+        "社区管理员资产敏感写入 0",
+        "跨实例越权 0",
+        "Collection 供给/账差 0",
+        "清理误删资产 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K12"
+      ],
+      "applicability": "Required",
+      "review_scope": "COMMUNITY",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-44"
+    },
+    {
+      "id": "CASE-45",
+      "title": "包升级与旧入口",
+      "groups": [
+        "T07",
+        "T10"
+      ],
+      "responsible_units": [
+        "POLICY",
+        "LEGACY",
+        "INTEGRATION"
+      ],
+      "entry_ids": [
+        "upgrade_package",
+        "configure_service"
+      ],
+      "rule": "验证基线／当前、候选／当前、候选／候选三组合；旧包仍存在，版本守卫与迁移真实有效。错误制品与不兼容组合拒绝",
+      "quantified_assertions": [
+        "最低兼容组合 3",
+        "错误哈希被认可 0",
+        "旧入口绕过敏感守卫 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K12",
+        "K14",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "POLICY,LEGACY,INTEGRATION",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-45"
+    },
+    {
+      "id": "CASE-46",
+      "title": "SDK 单子包发布",
+      "groups": [
+        "T05"
+      ],
+      "responsible_units": [
+        "SDK"
+      ],
+      "entry_ids": [
+        "read_soul",
+        "list_asset",
+        "read_maker_version"
+      ],
+      "rule": "消费者锁定所用子包；一个扩展适配发布不触发所有 SDK 消费者安装／锁／部署变化",
+      "quantified_assertions": [
+        "未选子包强制导入 0",
+        "无关消费者被迫发布 0"
+      ],
+      "frozen_consumers": [
+        "MARKET",
+        "COMMUNITY"
+      ],
+      "invariants": [
+        "K09",
+        "K13",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "SDK",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-46"
+    },
+    {
+      "id": "CASE-47",
+      "title": "共用工作流发布新版本",
+      "groups": [
+        "T06"
+      ],
+      "responsible_units": [
+        "DEVOPS"
+      ],
+      "entry_ids": [],
+      "rule": "固定版本工作流由仓库显式采用；工具发布不隐式改所有仓库制品，密钥与执行授权不集中",
+      "quantified_assertions": [
+        "隐式依赖漂移 0",
+        "共用工具取得生产总权限 0",
+        "未采用消费者被迫发布 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K09",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "DEVOPS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-47"
+    },
+    {
+      "id": "CASE-48",
+      "title": "各仓 CI 通过但组合失败",
+      "groups": [
+        "T04",
+        "T07"
+      ],
+      "responsible_units": [
+        "INTEGRATION"
+      ],
+      "entry_ids": [
+        "settle_order",
+        "complete_soul"
+      ],
+      "rule": "组合验证使用精确候选与实际跨模块证明；失败阻断受影响组合，不能用各仓测试数认定组合通过",
+      "quantified_assertions": [
+        "组合失败误报 PASS 0",
+        "未声明依赖 0",
+        "无关组合强制发布 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K09",
+        "K13",
+        "K14",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "INTEGRATION",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-48"
+    },
+    {
+      "id": "CASE-49",
+      "title": "源码拆仓与旧对象迁移",
+      "groups": [
+        "T06",
+        "T07"
+      ],
+      "responsible_units": [
+        "STANDARD",
+        "MAKER",
+        "LEGACY"
+      ],
+      "entry_ids": [
+        "upgrade_package",
+        "read_soul",
+        "complete_soul"
+      ],
+      "rule": "仓库移动不意味着类型来源改变；确需不兼容迁移时保留真实身份／权益／历史与半完成恢复，禁止重铸掩盖",
+      "quantified_assertions": [
+        "无授权原类型／ID 替换 0",
+        "双发行权威 0",
+        "半完成资产出口丢失 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K03",
+        "K12",
+        "K13"
+      ],
+      "applicability": "Required",
+      "review_scope": "STANDARD,MAKER,LEGACY",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-49"
+    },
+    {
+      "id": "CASE-50",
+      "title": "实例暂停恢复与 Maker／Pack 生命周期",
+      "groups": [
+        "T04",
+        "T07"
+      ],
+      "responsible_units": [
+        "MARKET",
+        "CHANNEL",
+        "COMMUNITY",
+        "MAKER",
+        "POLICY"
+      ],
+      "entry_ids": [
+        "pause_service",
+        "cancel_order",
+        "withdraw_service_income",
+        "withdraw_asset_income"
+      ],
+      "rule": "逐域验证暂停原因集合/暂停者/恢复者/CAS，未消除原因不能恢复，ENDED 不复活；Maker/Pack ACTIVE/暂停新发行/恢复/归档/新版本由产品 Control 判断，服务开关不能代替。旧权益/Bound/合法Free取出/撤单/收入出口按原条件验证",
+      "quantified_assertions": [
+        "跨实例暂停影响 0",
+        "错误权限恢复 0",
+        "ENDED 原ID复活 0",
+        "无依据封死原合法出口 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K09",
+        "K12"
+      ],
+      "applicability": "Required",
+      "review_scope": "MARKET,CHANNEL,COMMUNITY",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-50"
+    },
+    {
+      "id": "CASE-51",
+      "title": "Agent 并行写与独占资源",
+      "groups": [
+        "T06"
+      ],
+      "responsible_units": [
+        "DEVOPS",
+        "INTEGRATION"
+      ],
+      "entry_ids": [],
+      "rule": "2 个实现槽各自隔离工作树／范围，1 只读验证槽与协调槽；共享 schema／Config／root 写及钱包／浏览器／部署资源明确排他",
+      "quantified_assertions": [
+        "同语义单元并发写者 >1 的次数 0",
+        "未声明排他资源冲突 0",
+        "原全局 WIP 擅增 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K13",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "DEVOPS,INTEGRATION",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-51"
+    },
+    {
+      "id": "CASE-52",
+      "title": "全部治理路径、Cap 交接、遗失失陷",
+      "groups": [
+        "T07"
+      ],
+      "responsible_units": [
+        "POLICY",
+        "CHANNEL",
+        "MARKET",
+        "CONTENT",
+        "EXTENSIONS"
+      ],
+      "entry_ids": [
+        "configure_service",
+        "pause_service",
+        "upgrade_package",
+        "withdraw_service_income"
+      ],
+      "rule": "配置/资金/暂停/恢复/升级及间接路径分别登记；Cap真实绑定/旧主体失权/新主体/包装/多签/延迟核实。遗失仅用已部署恢复或钱包恢复，无恢复就据实不可用；失陷核暂停轮换和出口，无平台后门",
+      "quantified_assertions": [
+        "漏记有效控制路径 0",
+        "错 Cap 成功 0",
+        "绕过治理恢复 0",
+        "虚构恢复机制 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K04",
+        "K08",
+        "K12",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "POLICY,CHANNEL,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-52"
+    },
+    {
+      "id": "CASE-53",
+      "title": "带存量义务的租赁功能",
+      "groups": [
+        "T04",
+        "T07"
+      ],
+      "responsible_units": [
+        "EXTENSIONS",
+        "MARKET"
+      ],
+      "entry_ids": [
+        "list_asset",
+        "settle_order",
+        "remove_extension"
+      ],
+      "rule": "仅在实际实施租赁时适用；租约使用权、期限、收益及转移条件必须适配；存量按原条款履约或合法退出",
+      "quantified_assertions": [
+        "存量义务遗漏 0",
+        "未用租赁的消费者被迫发布 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K09",
+        "K12",
+        "K15"
+      ],
+      "applicability": "Conditional: no new rental roadmap commitment",
+      "review_scope": "EXTENSIONS,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-53"
+    },
+    {
+      "id": "CASE-54",
+      "title": "抵押或锁定的真实转移条件",
+      "groups": [
+        "T04",
+        "T07"
+      ],
+      "responsible_units": [
+        "EXTENSIONS",
+        "MARKET"
+      ],
+      "entry_ids": [
+        "list_asset",
+        "settle_order",
+        "withdraw_vault"
+      ],
+      "rule": "仅在实际实施时适用；必须证明受约束资产和实际转移路径。自由转移 Soul 挂个字段不能声称全路径被锁",
+      "quantified_assertions": [
+        "无真实锁定误报 0",
+        "已承诺限制被绕过 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K12",
+        "K14",
+        "K15"
+      ],
+      "applicability": "Conditional: no new collateral roadmap commitment",
+      "review_scope": "EXTENSIONS,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-54"
+    },
+    {
+      "id": "CASE-55",
+      "title": "市场支付币种与外部暂停",
+      "groups": [
+        "T04"
+      ],
+      "responsible_units": [
+        "MARKET",
+        "CHANNEL",
+        "MAKER"
+      ],
+      "entry_ids": [
+        "offer_channel_terms",
+        "quote_order",
+        "settle_order",
+        "withdraw_service_income"
+      ],
+      "rule": "精确 CoinType/编码/精度/舍入/quote/分配及 TreasuryCap/Supply/如适用DenyCapV2与全局暂停；原订单条款、冻结付款/找零/退款/收入与出口实际核验，外部发行者控制不归本项目",
+      "quantified_assertions": [
+        "逐币种账差 0",
+        "假 ticker 身份通过 0",
+        "外部币种控制漏记 0",
+        "Standard 被迫发布 0"
+      ],
+      "frozen_consumers": [
+        "STANDARD"
+      ],
+      "invariants": [
+        "K04",
+        "K09",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "MARKET,CHANNEL,MAKER",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-55"
+    },
+    {
+      "id": "CASE-56",
+      "title": "相似 namespace 或伪造来源",
+      "groups": [
+        "T07"
+      ],
+      "responsible_units": [
+        "STANDARD",
+        "EXTENSIONS",
+        "MAKER"
+      ],
+      "entry_ids": [
+        "install_extension",
+        "read_soul",
+        "complete_soul"
+      ],
+      "rule": "验证真实类型来源／证据与对象绑定；同名 schema、namespace、元数据或标准外观不意味着等价生产者和权限",
+      "quantified_assertions": [
+        "伪造来源／能力被认可 0",
+        "错误生产者越权发行 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K08",
+        "K14"
+      ],
+      "applicability": "Required",
+      "review_scope": "STANDARD,EXTENSIONS,MAKER",
+      "execution_status": "Not run",
+      "evidence": [],
+      "proof_contract_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md#4-跨模块证明的权威闭环d28",
+      "namespace": "ECO.case.CASE-56"
+    },
+    {
+      "id": "CASE-57",
+      "title": "平台关闭后的干净环境接替",
+      "groups": [
+        "T01",
+        "T02",
+        "T03",
+        "T04",
+        "T05",
+        "T06"
+      ],
+      "responsible_units": [
+        "SDK",
+        "INTEGRATION",
+        "CLIENTS"
+      ],
+      "entry_ids": [
+        "save_project",
+        "store_content",
+        "finalize_version",
+        "complete_soul",
+        "list_asset",
+        "cancel_order",
+        "settle_order",
+        "maintain_profile_or_post",
+        "use_application"
+      ],
+      "rule": "阻断平台专属 API／账号／签名和缓存，用公开清单、备份、原实例／资产／意图接替；真实 Sui/Walrus/必要密钥设施继续提供或可验证替代",
+      "quantified_assertions": [
+        "核心合法路径平台专属必经点 0",
+        "原资产重铸 0",
+        "成功资源重付 0",
+        "不可接替条件隐瞒 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K03",
+        "K11",
+        "K12",
+        "K16"
+      ],
+      "applicability": "Required",
+      "review_scope": "SDK,INTEGRATION,CLIENTS",
+      "execution_status": "Not run",
+      "evidence": [],
+      "proof_contract_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md#4-跨模块证明的权威闭环d28",
+      "namespace": "ECO.case.CASE-57"
+    },
+    {
+      "id": "CASE-58",
+      "title": "未知 schema 与未知必需效果",
+      "groups": [
+        "T05",
+        "T07"
+      ],
+      "responsible_units": [
+        "STANDARD",
+        "SDK",
+        "MARKET"
+      ],
+      "entry_ids": [
+        "read_soul",
+        "update_extension",
+        "settle_order"
+      ],
+      "rule": "展示未知字段可降级；已证明被动能力不阻断基础操作。仅对已绑定真实类型／对象／效果契约、具有不可跳过完成条件的声明支持受控路径，验证未知资金／授权／转移效果被拒绝或适配；不能推导任意旧市场、自由 public_transfer 或未声明第三方会自动拦截，目录不是保证",
+      "quantified_assertions": [
+        "声明支持受控路径内未知必需效果被跳过 0",
+        "已证明无义务的未知显示字段阻断 0",
+        "未验证全路径拦截承诺 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K08",
+        "K09",
+        "K14",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "STANDARD,SDK,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-58"
+    },
+    {
+      "id": "CASE-59",
+      "title": "共享计数与 Config 的竞争",
+      "groups": [
+        "T09"
+      ],
+      "responsible_units": [
+        "MAKER",
+        "POLICY",
+        "CHANNEL"
+      ],
+      "entry_ids": [
+        "obtain_access",
+        "complete_soul",
+        "configure_service"
+      ],
+      "rule": "多个渠道及直接入口竞争最后 N 份总额度；根据原维度做唯一计数和 CAS；拆仓不复制 Config／counter",
+      "quantified_assertions": [
+        "N+1 个有效竞争尝试成功数 ≤N",
+        "历史计数重置 0",
+        "无关字段编辑覆盖 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K05",
+        "K10",
+        "K13"
+      ],
+      "applicability": "Required",
+      "review_scope": "MAKER,POLICY,CHANNEL",
+      "execution_status": "Not run",
+      "evidence": [],
+      "namespace": "ECO.case.CASE-59"
+    },
+    {
+      "id": "CASE-60",
+      "title": "非 Maker 生产者、owned-only 构造及容器",
+      "groups": [
+        "T03",
+        "T04"
+      ],
+      "responsible_units": [
+        "NATIVE",
+        "STANDARD",
+        "MARKET"
+      ],
+      "entry_ids": [
+        "complete_soul",
+        "read_soul",
+        "list_asset",
+        "settle_order"
+      ],
+      "rule": "第三方公开合法创建，无平台签名；所有目标构造/解包/返回/交付路径证明 owned-only fresh Root，无 rawfreshSoul 或可变 UID 泄漏，实际 share/public_share/party 及间接绕过反例。分别验证 Native 来源/初始权利/实际policy实例/Kiosk与第三方支持矩阵",
+      "quantified_assertions": [
+        "共享/party根创建成功 0（目标公开构造）",
+        "伪装 Maker 0",
+        "错policy/容器认可 0",
+        "原出生改变 0"
+      ],
+      "frozen_consumers": [],
+      "invariants": [
+        "K01",
+        "K08",
+        "K12",
+        "K14",
+        "K15"
+      ],
+      "applicability": "Required",
+      "review_scope": "NATIVE,STANDARD,MARKET",
+      "execution_status": "Not run",
+      "evidence": [],
+      "decision_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+      "namespace": "ECO.case.CASE-60"
+    }
+  ],
+  "coverage_limit": "60 semantic case families do not replace original157 records or current all-function review queue"
+}

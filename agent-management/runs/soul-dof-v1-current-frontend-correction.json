@@ -1,0 +1,463 @@
+{
+  "date": "2026-10-07",
+  "scope": "Current deployed frontend only; preserve page structure, controls, tool dialogs and operation paths; minimal contract/rights/equip/tuning/sale-manifest details.",
+  "startConfirmationRequired": true,
+  "productionCodeStarted": false,
+  "deploymentStarted": false,
+  "historicalPrototypeStatus": "Superseded; not construction or acceptance authority",
+  "activeUIUXAuthority": "docs/soul-dof-v1-preparation/02_UIUX_CN.md",
+  "reviewCanvas": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+  "slackVerification": {
+    "boards": [
+      {
+        "id": "F0C7JBQ5JF6",
+        "rows": 14
+      },
+      {
+        "id": "F0C7JCB5AQ4",
+        "rows": 37
+      },
+      {
+        "id": "F0C7JJ79NS0",
+        "rows": 8
+      },
+      {
+        "id": "F0C6ZG8FKC7",
+        "rows": 15
+      },
+      {
+        "id": "F0C7JJ7BAMA",
+        "rows": 8
+      },
+      {
+        "id": "F0C79JME6LD",
+        "rows": 23
+      },
+      {
+        "id": "F0C8991KJQ0",
+        "rows": 11
+      },
+      {
+        "id": "F0C7GRQQFEV",
+        "rows": 11
+      },
+      {
+        "id": "F0C6ZRFR6VD",
+        "rows": 30
+      }
+    ],
+    "changedRows": 34,
+    "failures": [],
+    "journeyAllNotRun": true,
+    "totalRows": 157
+  },
+  "changedRecords": [
+    [
+      "F0C6ZRFR6VD",
+      "Rec0C7D9H5B6J",
+      {
+        "交付项": "现网站真实前端施工基线",
+        "当前证据": "正式AC/SO＋准确源码；AC广场/详情/Creator十工具/Player、SO市场只读观察；其余受限流程明确标S源码核对。另做HTML/Penpot退出依据。",
+        "退出条件": "保留原页面结构、工具弹层/返回与操作路径；每项仅标新合约/三权利/装卸/微调/出售清单差异，按原J验收"
+      }
+    ],
+    [
+      "F0C6ZRFR6VD",
+      "Rec0C791PEF2P",
+      {
+        "交付项": "历史原型工具记录（Penpot）",
+        "准备状态": "Not applicable",
+        "当前证据": "历史37画板及工具收据留存；仅回答过去使用工具，不是当前UI基线。当前以网站真实前端为准。",
+        "退出条件": "不继续旧云迁移；不将Penpot验证列为本次开工门禁"
+      }
+    ],
+    [
+      "F0C6ZRFR6VD",
+      "Rec0C7JUJ7P8U",
+      {
+        "交付项": "现有页面最小UI差异标注",
+        "文件／模板": "docs/soul-dof-v1-preparation/02_UIUX_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "当前证据": "U01–U30映射现有页面/弹层、原控件、接入差异和五类必要细节；历史44画板候选Superseded，退出施工依据。",
+        "退出条件": "每项有现页/源码/接口/最小差异/原J映射；不新增导航、页面或交易向导"
+      }
+    ],
+    [
+      "F0C6ZRFR6VD",
+      "Rec0C89KC2G8G",
+      {
+        "交付项": "现前端原操作到新合约／SDK映射",
+        "文件／模板": "docs/soul-dof-v1-preparation/02_UIUX_CN.md；output/soul-dof-v1-preparation/current-frontend/；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "当前证据": "30现有入口/区块逐项对应新读取/交易目标、三权利与原J；标L实站/S源码，37旅程Not run。HTML交互及截图Superseded。",
+        "退出条件": "在现有前端完成同路径回归；不以模拟图替代实站或新合约测试"
+      }
+    ],
+    [
+      "F0C6ZRFR6VD",
+      "Rec0C79UY0FHB",
+      {
+        "当前证据": "失败/取消/未知/Adapter/revision/quote在原控件与恢复入口提示，保留草稿选择；不另造独立交互",
+        "退出条件": "原页面按同attempt查询/恢复，失败不丢装配不盲重复扣款；J35新候选实际执行"
+      }
+    ],
+    [
+      "F0C7JBQ5JF6",
+      "Rec0C78FYL0KD",
+      {
+        "阶段证据／退出条件": "Plan：九表157项及准备文件保留；施工纠正为现网站逐页U01–U30映射，历史HTML/Penpot增量/ZIP退出依据。新协议生产实现/37旅程/部署未开始。",
+        "下一步": "等待用户明确开始重构；R1在现有组件与画布内接新标准Soul，完成三权利及两真实Maker验证"
+      }
+    ],
+    [
+      "F0C7JBQ5JF6",
+      "Rec0C7JDD4C84",
+      {
+        "施工范围": "以现网站画布/原预览/Creator Inspector为依据；新Scene/Representation/Adapter、layout/recipe与Creator约束；玩家仅原预览旁必要微调，不重建编辑器",
+        "验收条件": "两真实Maker视觉及固定Style/颜色/布局准确；原页面/弹层/操作路径保留；新独立原型不得作为预期图",
+        "下一步": "等待明确开工；按02_UIUX_CN.md U04/U06/U07/U15/U20核对后在原组件实现"
+      }
+    ],
+    [
+      "F0C7JBQ5JF6",
+      "Rec0C6ZBED95M",
+      {
+        "施工范围": "现有AC原Creator十工具弹层/Player与SO详情Wardrobe/Grants/市场/交易页接新合约、SDK、对象读取与交易；按U01–U30只补五类细节",
+        "验收条件": "保留页面结构/原组件/导航/关闭返回/主操作；新包/manifest/revision一致；不得沿HTML/Penpot新交互施工",
+        "阶段证据／退出条件": "Plan：准确AC65b/SO0cfb源码＋实站只读证据；U01–U30 L/S分别标记；无生产实现/新交易验收",
+        "下一步": "等待明确开工；逐项按原页面→原控件→新SDK→最小差异→原J实施"
+      }
+    ],
+    [
+      "F0C7JBQ5JF6",
+      "Rec0C7CPT3546",
+      {
+        "验收条件": "37步按既有Creator→Player→Soul→市场原路径执行；页面/工具弹层/返回/移动端均对照现站，不以另做HTML/Penpot验收；当前均Not run",
+        "下一步": "等待明确开工；沿02_UIUX_CN.md U01–U30及既有J顺序补真实候选/费用/对象/失败恢复证据"
+      }
+    ],
+    [
+      "F0C7JJ7BAMA",
+      "Rec0C8996SVUY",
+      {
+        "状态": "Review",
+        "实际完成／证据": "准备纠正可审阅：九表157项、12规格/流程、9模板；30现有入口/区块映射及实站只读记录。历史HTML/Penpot增量/v1v2ZIP退出依据。生产代码/37旅程/部署未开始。",
+        "验收／退出条件": "施工以现网站真实前端为准，保留结构/组件/工具弹层/路径，仅五类细节；用户审阅并明确开工后才进入Code",
+        "范围／约束": "只完善准备；R1–R7未开始。新独立交互原型不适用，不需云原型门禁；原CURRENT/Owner/钱包会话保留"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C78QA4LMR",
+      {
+        "最小UI／数据改动": "Parts&Items/Composable Items/Commerce&Rights现有面板小补权利选择与说明；Player Review/Wardrobe/市场按mode显示动作与清单；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "2026-10-07用户最新确认三模式；旧源码只作UI/行为参照，三态新数据契约待实施；现站逐页核对见02_UIUX_CN.md U04/U10/U11/U17/U19/U25，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U04/U10/U11/U17/U19/U25和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7GS0E0G1",
+      {
+        "最小UI／数据改动": "保留原入口并准确区分状态/下一步；成功先查询，不另铸/重复扣款；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "原AGILE_DELIVERY_PLAN；原BUG005/BUG006记录，只作历史来源；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U13/U14/U17/U26/U30，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U13/U14/U17/U26/U30和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7EP6KXDY",
+      {
+        "最小UI／数据改动": "主要UI不改；新BCS/类型来源/准确读取/操作构造器/renderer适配；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "packages/soulidity-sdk；packages/animacraft-render-core；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U30，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U30和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7JJHD05A",
+      {
+        "最小UI／数据改动": "保留已确认页面；新资产发现和合法内容可见性联动；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "原AGILE_DELIVERY_PLAN；PRODUCT_DELIVERY_MILESTONES；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U29，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U29和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7EP6AH5G",
+      {
+        "最小UI／数据改动": "原发行/领取流程保留；新ABI联动，未完成不能从范围删去；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "原AGILE_DELIVERY_PLAN；PRODUCT_DELIVERY_MILESTONES；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U30，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U30和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C79JX204D",
+      {
+        "最小UI／数据改动": "复用市场选择和交易UI；小补出售范围/清单/费用/资格确认；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "原AGILE_DELIVERY_PLAN；新Soul DOF规范；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U24–U28，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U24–U28和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C78M2H9AP",
+      {
+        "最小UI／数据改动": "现有Loadout入口保留；新recipe/revision无旧stateObjectId依赖；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "web/components/souls/native-wardrobe.tsx；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U21，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U21和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C79JWN84D",
+      {
+        "最小UI／数据改动": "沿Wardrobe与画布，小补三类权利标识/可用动作/Bound恢复/微调与复位；不新增通用待激活资产仓；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "web/components/souls/native-wardrobe.tsx；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U19/U20，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U19/U20和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7JJH251S",
+      {
+        "最小UI／数据改动": "现有详情和切换保留；未知版本/无权限明确提示；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "web/components/souls/native-wardrobe.tsx；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U18，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U18和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C78M27YG3",
+      {
+        "最小UI／数据改动": "Complete按钮及原流程保留；显示准确quote/结果/下一步；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "原AGILE_DELIVERY_PLAN；新Soul DOF规范；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U17，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U17和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C79JWPYE9",
+      {
+        "最小UI／数据改动": "现有Plaza和Player面板保留；资格/库存/报价状态准确；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "2026-10-07实际Plaza只读；原AGILE_DELIVERY_PLAN；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U01/U02/U15/U16，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U01/U02/U15/U16和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C899AGDS4",
+      {
+        "最小UI／数据改动": "保留发布者入口；控制资产≠使用Pass≠已生成Soul；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "原AGILE_DELIVERY_PLAN；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U03/U09/U28，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U03/U09/U28和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C899A8BS4",
+      {
+        "最小UI／数据改动": "主操作不变；新格式导出入和schema版本明确；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "原AGILE_DELIVERY_PLAN；PRODUCT_DELIVERY_MILESTONES；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U03/U14，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U03/U14和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C6ZGHJQ23",
+      {
+        "最小UI／数据改动": "原页面/状态保留；新ABI/manifest/visual/许可检查；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U13，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U13和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C8999SX88",
+      {
+        "最小UI／数据改动": "原标签保留；报价/许可范围及买家资格准确展示；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U11，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U11和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7CUV7Z8W",
+      {
+        "最小UI／数据改动": "原标签保留；Core基础格式与私密授权scope明确；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U12/U22/U23，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U12/U22/U23和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C6ZGGTQH5",
+      {
+        "最小UI／数据改动": "原标签小补三态权利选择/说明；玩家看到权利；钱包只列Free，Soul显示当前组件与自身Bound恢复入口；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U10/U16/U28，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U10/U16/U28和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C8999NQSU",
+      {
+        "最小UI／数据改动": "原Pack标签/获取入口保留；准确产品定义/资格/quote；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；原AGILE_DELIVERY_PLAN；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U09/U16，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U09/U16和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7EP4SZFC",
+      {
+        "最小UI／数据改动": "保留Rules体验；链上所需约束与render规则分开且可信验证；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U08，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U08和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7JJFMNRJ",
+      {
+        "最小UI／数据改动": "沿原色彩控件；准确色彩/override边界及版本；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；maker-v8-render-core.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U07，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U07和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C7GRY5BH7",
+      {
+        "最小UI／数据改动": "沿原图层UI；声明replace/overlay与多片接口，不任意改z；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；maker-v8-render-core.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U06，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U06和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C8999CA00",
+      {
+        "最小UI／数据改动": "现有编辑器保留；仅补准确slot/representation/adapter策略入口；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；maker-v8-creator-style.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U04，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U04和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C79JME6LD",
+      "Rec0C6ZGB61K9",
+      {
+        "最小UI／数据改动": "保留表单和入口；新定义/控制对象及版本读回；在现网站原页面/组件/弹层内完成，不另造导航或交易向导。",
+        "源代码／行为证据": "maker-workspace-v8-view.js；AC本地参照65b4218 / SO基线0cfb60a；历史计划不是部署证明；现站逐页核对见02_UIUX_CN.md U05，L实站/S源码分开；HTML/Penpot增量退出依据。",
+        "验收依据": "保留现站页面结构/原操作及关闭返回；按02_UIUX_CN.md U05和原J实际验收，37旅程Not run；不得用新模拟图替代真实前端。"
+      }
+    ],
+    [
+      "F0C7JJ79NS0",
+      "Rec0C6ZGB70J3",
+      {
+        "实施／产物": "核对当前正式AC/SO及准确源码，U01–U30映射原页面/工具弹层/控件→新接口→五类最小差异→原J；保留九表、权利/安全/资金/交付流程。",
+        "退出条件／门禁": "九表157项、准备规格、现站30入口/区块映射与DoR可查；保留页面结构和路径。独立HTML/Penpot及旧ZIP退出施工依据；用户明确开工前不进入Code。",
+        "证据／未执行": "当前Plan/R0；AC十Creator工具与Player、SO市场只读观察，其余S源码核对；新完整生产ABI/两真实Maker/三权利反绕过/37旅程/支付/部署尚未执行。",
+        "下一步": "等待用户审阅并明确开工；随后在原页面/组件接新Soul/SDK，按原J验证，不继续新交互原型。"
+      }
+    ]
+  ],
+  "currentSiteEvidence": [
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-commerce-rights.txt",
+      "bytes": 10036,
+      "sha256": "ca4c6a979ca8acef2a99aa680cb08b4b575b118a7d32b2b77f61de4458fd3614"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-composable-items.txt",
+      "bytes": 7829,
+      "sha256": "3ceacbdbec0ef5a334b5d884b8a056fe09f431b5bb94657a7726e413553f1162"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-creator.jpg",
+      "bytes": 207715,
+      "sha256": "796bd97dc73da58ea69180b460a69367f609a8beacbe221598c599f78b3692a9"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-expansion-packs.txt",
+      "bytes": 6318,
+      "sha256": "d7e2df88634143c038993c74c1cb2d00e11d565653fbc193dd4f215d637caa6d"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-layer-tracks.txt",
+      "bytes": 6868,
+      "sha256": "70809a4bca185e8dd594efcd1ab8f72d4a756cd6212e1ef6863d762f5fe47232"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-maker-info.txt",
+      "bytes": 7380,
+      "sha256": "3c3f2f036c9b3dba51c3d27215c2a6b38403b59ed678e3167d5160f4d7bff6e8"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-parts-items.txt",
+      "bytes": 5737,
+      "sha256": "18689fcf2186532b152dd98a0b66dd92c39b7b142f76d2a93312539c8d1df64a"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-player.jpg",
+      "bytes": 119286,
+      "sha256": "946d4f8cacf0f7a0ee63ae484d73088c5f087418f06bd2357c26e5d2208ceae2"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-player.txt",
+      "bytes": 2334,
+      "sha256": "afdcb529c4908568be52eef2b7672ee731cafdce053dde52ca99186a1b93c84d"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-preflight-.txt",
+      "bytes": 6163,
+      "sha256": "a2c0d405df06128c271c6f1f03aca2c3f4964dadae0528e7b8cd38e0a06111f9"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-return-from-player-to-creator.txt",
+      "bytes": 5737,
+      "sha256": "18689fcf2186532b152dd98a0b66dd92c39b7b142f76d2a93312539c8d1df64a"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-rules.txt",
+      "bytes": 7819,
+      "sha256": "11d51b8b24fdb489817c9eec5c45e639d87357fda25ae452e4c219b78bd54c7f"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-smart-color.txt",
+      "bytes": 6148,
+      "sha256": "6f69bcdca15b8a32f3db0de73f859cf006ff8acb295b15fd0b77484063d9f784"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/ac-soul-configuration.txt",
+      "bytes": 8546,
+      "sha256": "36aa2795be9635a4db0f6bd21a82ba07bf68f39fdbd0502db3a6504b396d96dd"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/so-components.txt",
+      "bytes": 2781,
+      "sha256": "bf74ffe8fa9acbe5bf1bd9bf880638baaa50902dd13674ced7c3f64040f5cfd2"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/so-detail-observation.txt",
+      "bytes": 7062,
+      "sha256": "5e56caf9d5c2a46739ec2d382a32e4586d4886600411485300fab8ea2aa267b2"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/so-market.jpg",
+      "bytes": 87333,
+      "sha256": "2cb34eddb406c7a718704778fa8292a3b76e41d5afc5fe10eee7345cd866b17b"
+    },
+    {
+      "path": "output/soul-dof-v1-preparation/current-frontend/so-market.txt",
+      "bytes": 2652,
+      "sha256": "bd5f5d4b495efa069f6a4528b688e6c63c5be7fdadc3124840a35e6b651ba004"
+    }
+  ],
+  "limitations": [
+    "SO current-owner detail and transaction actions not live verified in independent session; exact baseline source mapping only",
+    "AC Player test observed Complete disabled; effective paid Complete not executed",
+    "No new protocol tests, audit, signatures or deployment performed"
+  ],
+  "originalCurrentSHA256": "2c9cf369d720f5d9319613acf020c2d236c79f3dcbf90057cddc148c39430512"
+}

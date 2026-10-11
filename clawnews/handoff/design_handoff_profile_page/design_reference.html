@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Soulidity · Design Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0D0A1E; --card:#1A1040; --card2:#261558; --border:#2E1B6E;
+    --purple:#A855F7; --purpled:#7C3AED; --gold:#F59E0B; --goldl:#FCD34D;
+    --teal:#14B8A6; --white:#F8F5FF; --muted:#9B8EC4;
+    --success:#10B981; --danger:#EF4444; --warn:#F59E0B;
+  }
+  html,body{background:var(--bg);color:var(--white);font-family:Inter,'DM Sans',sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  body{overflow-x:hidden;min-height:100vh;position:relative}
+  /* background orbs to match proto */
+  body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(120px);opacity:.35;pointer-events:none;z-index:0}
+  body::before{top:-200px;right:-150px;width:520px;height:520px;background:#A855F7}
+  body::after{bottom:-200px;left:-150px;width:520px;height:520px;background:#F59E0B;opacity:.2}
+  .orb-t{position:fixed;top:40%;left:-200px;width:480px;height:480px;border-radius:50%;background:#14B8A6;filter:blur(140px);opacity:.2;z-index:0;pointer-events:none}
+  main{position:relative;z-index:1}
+
+  /* NAV */
+  nav{display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:56px;border-bottom:1px solid var(--border);background:rgba(13,10,30,.82);backdrop-filter:blur(14px);position:sticky;top:0;z-index:100}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:-.3px}
+  .nav-right{display:flex;gap:20px;align-items:center;font-size:13px;color:var(--muted)}
+  .nav-right a{color:var(--muted);text-decoration:none;cursor:pointer}
+  .nav-right a:hover{color:var(--white)}
+  .nav-pill{display:inline-flex;gap:6px;align-items:center;padding:5px 10px;border-radius:20px;border:1px solid var(--border);font-size:11px;font-weight:600;color:var(--muted)}
+  .live-dot{width:6px;height:6px;border-radius:50%;background:var(--success);animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  /* LAYOUT */
+  .page{max-width:1180px;margin:0 auto;padding:0 32px}
+  section{padding:88px 0;position:relative}
+  section + section{border-top:1px solid var(--border)}
+
+  /* TYPE */
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);margin-bottom:14px}
+  h1{font-size:clamp(44px,6.4vw,84px);font-weight:800;letter-spacing:-.035em;line-height:1.02}
+  h2{font-size:clamp(28px,3.4vw,44px);font-weight:800;letter-spacing:-.028em;line-height:1.08}
+  h3{font-size:18px;font-weight:700;letter-spacing:-.01em}
+  h4{font-size:14px;font-weight:700;letter-spacing:-.005em}
+  .muted{color:var(--muted)}
+  .mono{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.02em}
+  .gradtext{background:linear-gradient(92deg,var(--purple),var(--teal));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* KIT */
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px}
+  .card-p{border-color:var(--purple)}
+  .card-g{border-color:var(--gold)}
+  .card-t{border-color:var(--teal)}
+  .tag{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:10.5px;font-weight:600;border:1px solid;letter-spacing:.02em}
+  .tag-purple{color:var(--purple);border-color:var(--purple);background:rgba(168,85,247,.1)}
+  .tag-gold{color:var(--gold);border-color:var(--gold);background:rgba(245,158,11,.1)}
+  .tag-teal{color:var(--teal);border-color:var(--teal);background:rgba(20,184,166,.1)}
+  .tag-muted{color:var(--muted);border-color:var(--border);background:transparent}
+  .tag-success{color:var(--success);border-color:var(--success);background:rgba(16,185,129,.1)}
+  .tag-danger{color:var(--danger);border-color:var(--danger);background:rgba(239,68,68,.1)}
+
+  .kicker-row{display:flex;align-items:baseline;gap:18px;margin-bottom:10px}
+  .chapter{font-size:11px;font-weight:700;color:var(--purple);letter-spacing:.2em;text-transform:uppercase}
+
+  /* HERO */
+  .hero{padding:120px 0 88px}
+  .hero-meta{display:flex;gap:22px;flex-wrap:wrap;margin-top:40px;color:var(--muted);font-size:12.5px}
+  .hero-meta span strong{color:var(--white);font-weight:600}
+  .hero-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:56px}
+  .kpi{border:1px solid var(--border);background:rgba(26,16,64,.55);backdrop-filter:blur(8px);border-radius:14px;padding:18px}
+  .kpi .v{font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1}
+  .kpi .l{font-size:11.5px;color:var(--muted);margin-top:6px;letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+  .kpi.p .v{color:var(--purple)}
+  .kpi.g .v{color:var(--gold)}
+  .kpi.t .v{color:var(--teal)}
+  .kpi.d .v{color:var(--danger)}
+
+  /* BRAND EXPLORATION GRID */
+  .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+
+  .mark-tile{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:.2s}
+  .mark-tile:hover{border-color:var(--purple);transform:translateY(-2px)}
+  .mark-stage{height:220px;display:flex;align-items:center;justify-content:center;position:relative;background:radial-gradient(circle at 40% 30%,rgba(168,85,247,.14),transparent 60%),radial-gradient(circle at 70% 80%,rgba(20,184,166,.1),transparent 60%);border-bottom:1px solid var(--border)}
+  .mark-stage svg{display:block}
+  .mark-stage.alt{background:#0D0A1E}
+  .mark-stage.light{background:#F8F5FF}
+  .mark-meta{padding:16px 18px}
+  .mark-meta h4{margin-bottom:4px}
+  .mark-meta p{font-size:12px;color:var(--muted);line-height:1.55}
+  .mark-meta .attrs{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+
+  .pick{position:absolute;top:12px;right:12px;padding:4px 9px;border-radius:20px;font-size:10.5px;font-weight:700;background:var(--purple);color:#fff;letter-spacing:.04em}
+  .notpick{position:absolute;top:12px;right:12px;padding:4px 9px;border-radius:20px;font-size:10.5px;font-weight:600;background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--border)}
+
+  /* WORDMARK SHOWCASE */
+  .wordmark-stage{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:56px 40px;display:flex;flex-direction:column;gap:44px;align-items:center;justify-content:center}
+  .wordmark-stage.dense{flex-direction:row;flex-wrap:wrap;gap:50px;padding:44px 40px}
+  .lockup{display:flex;align-items:center;gap:14px}
+  .lockup .glyph{display:flex;align-items:center;justify-content:center}
+  .lockup .word{font-weight:800;letter-spacing:-.04em;font-size:46px;line-height:1}
+  .lockup.sm .word{font-size:26px}
+  .lockup.xs .word{font-size:18px}
+  .lockup .word .soul{color:var(--white)}
+  .lockup .word .idity{color:var(--purple)}
+  .soul-word-teal .idity{color:var(--teal)}
+
+  .sys-row{display:grid;grid-template-columns:180px 1fr;gap:24px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border)}
+  .sys-row:last-child{border-bottom:0}
+  .sys-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;padding-top:4px}
+
+  /* SWATCHES */
+  .swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+  .sw{border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .sw-color{height:76px}
+  .sw-meta{padding:10px 12px;font-size:11px;line-height:1.5}
+  .sw-meta .n{font-weight:700;font-size:12px}
+  .sw-meta .h{font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:10.5px}
+
+  /* REVIEW */
+  .findings{display:flex;flex-direction:column;gap:12px}
+  .finding{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 22px;display:grid;grid-template-columns:64px 1fr 140px;gap:18px;align-items:start;transition:.15s}
+  .finding:hover{border-color:var(--purple)}
+  .sev{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:10px;font-size:12px;font-weight:800;letter-spacing:.04em}
+  .sev-crit{background:rgba(239,68,68,.14);color:var(--danger);border:1px solid var(--danger)}
+  .sev-high{background:rgba(245,158,11,.14);color:var(--gold);border:1px solid var(--gold)}
+  .sev-med{background:rgba(168,85,247,.14);color:var(--purple);border:1px solid var(--purple)}
+  .sev-low{background:rgba(20,184,166,.14);color:var(--teal);border:1px solid var(--teal)}
+  .sev-nit{background:rgba(155,142,196,.1);color:var(--muted);border:1px solid var(--border)}
+  .finding .body h4{margin-bottom:6px;font-size:15px}
+  .finding .body .where{font-size:11.5px;color:var(--muted);margin-bottom:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.02em}
+  .finding .body p{font-size:13px;color:var(--muted);line-height:1.6}
+  .finding .body p strong{color:var(--white);font-weight:600}
+  .finding .body .fix{margin-top:10px;padding:10px 12px;background:var(--card2);border-left:2px solid var(--teal);border-radius:4px;font-size:12.5px;color:var(--white)}
+  .finding .body .fix span{color:var(--teal);font-weight:700;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:3px}
+  .finding .tags{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+
+  /* MODULE HEADER */
+  .mod-head{display:flex;align-items:baseline;gap:18px;margin:48px 0 18px}
+  .mod-num{font-family:'JetBrains Mono',monospace;color:var(--gold);font-size:13px;font-weight:600;letter-spacing:.04em}
+  .mod-title{font-size:22px;font-weight:700;letter-spacing:-.015em}
+  .mod-sub{color:var(--muted);font-size:13px;margin-left:auto;font-family:'JetBrains Mono',monospace}
+
+  /* RECOMMENDATION ROAD */
+  .road{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .lane{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px}
+  .lane-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+  .lane-h .w{font-weight:700;letter-spacing:-.01em;font-size:15px}
+  .lane-h .d{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+  .lane ul{list-style:none;display:flex;flex-direction:column;gap:11px}
+  .lane li{display:grid;grid-template-columns:20px 1fr;gap:10px;font-size:13px;color:var(--muted);line-height:1.5}
+  .lane li .b{width:6px;height:6px;border-radius:50%;margin-top:8px}
+  .lane.now .b{background:var(--danger)}
+  .lane.next .b{background:var(--gold)}
+  .lane.later .b{background:var(--teal)}
+  .lane li strong{color:var(--white);font-weight:600;display:block}
+
+  /* APPLICATION MOCK */
+  .mockrow{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .mock{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .mock-top{height:32px;background:var(--card2);display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--border)}
+  .mock-top .dot{width:8px;height:8px;border-radius:50%;background:var(--border)}
+  .mock-top .url{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);margin-left:12px}
+  .mock-body{padding:24px;min-height:220px;display:flex;align-items:center;justify-content:center}
+  .app-nav{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,10,30,.6);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
+
+  .favset{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .fav-tile{background:#fff;border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center}
+  .fav-tile.dark{background:#0D0A1E;border:1px solid var(--border)}
+  .fav-lbl{font-size:11px;color:var(--muted);margin-top:6px;text-align:center;font-family:'JetBrains Mono',monospace}
+
+  /* FOOTNOTE */
+  footer{border-top:1px solid var(--border);padding:48px 0 80px;color:var(--muted);font-size:12px}
+  footer .page{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
+  footer .mono{font-size:11px}
+
+  .divider{height:1px;background:var(--border);margin:36px 0}
+
+  .mini-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:18px}
+  .mini-legend div{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted)}
+  .mini-legend .d{width:8px;height:8px;border-radius:2px}
+
+  /* FIXES GALLERY */
+  .fx{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .fx-h{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+  .fx-h.before{color:var(--danger)}
+  .fx-h.after{color:var(--success)}
+  .fx-body{padding:20px}
+
+  /* BUTTONS */
+  .btn{border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;padding:8px 18px;display:inline-flex;align-items:center;gap:6px;transition:.15s}
+  .btn-primary{background:var(--purple);color:var(--white)}
+  .btn-primary:hover{background:var(--purpled)}
+  .btn-outline{background:transparent;color:var(--white);border:1px solid var(--border)}
+  .btn-outline:hover{border-color:var(--purple);color:var(--purple)}
+
+  /* TYPE SCALE DEMO */
+  .type-specimen{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .type-specimen > div{padding:22px 24px;border-bottom:1px solid var(--border)}
+  .type-specimen > div:nth-last-child(-n+2){border-bottom:0}
+  .type-specimen .key{background:var(--card2);font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);display:flex;align-items:center}
+  .type-specimen .val{background:var(--card)}
+
+  /* RESPONSIVE */
+  @media (max-width:900px){
+    .grid-4,.grid-3,.road,.hero-summary,.mockrow{grid-template-columns:1fr 1fr}
+    .finding{grid-template-columns:52px 1fr}
+    .finding .tags{grid-column:2;flex-direction:row;align-items:flex-start}
+    .grid-2{grid-template-columns:1fr}
+  }
+  @media (max-width:600px){
+    .grid-4,.grid-3,.hero-summary,.road{grid-template-columns:1fr}
+    .page{padding:0 20px}
+    section{padding:56px 0}
+  }
+</style>
+</head>
+<body>
+<main>
+<!-- ============ 02c · PROFILE PAGE DEEP DIVE ============ -->
+<section id="profile-fix">
+  <div class="page">
+    <div class="kicker-row">
+      <span class="chapter">02c · Profile page · deep dive</span>
+      <span class="mono muted">community/u/[spaceId] · observed in build</span>
+    </div>
+    <h2>The profile page, fixed.</h2>
+    <p class="muted" style="max-width:720px;margin-top:14px;font-size:15px">
+      Walking through the live <code class="mono">SpaceProfilePage</code> component against the screenshot: the Trainer view has a
+      <strong>180px empty banner</strong>, an avatar floating in negative space (<code class="mono">-mt-9</code> over a shorter-than-expected hero), and <strong>six zero-value stats</strong> for a brand-new account. First impression is "broken," not "new."
+    </p>
+
+    <div class="findings" style="margin-top:36px">
+
+      <div class="finding">
+        <div class="sev sev-crit">PR1</div>
+        <div class="body">
+          <h4>Avatar clips above the banner — banner height vs <code class="mono">-mt-9</code> are mismatched</h4>
+          <div class="where">page.tsx:168–173 · hero 120/180px + avatar 72px offset -36px</div>
+          <p>Hero is <code class="mono">h-[120px] sm:h-[180px]</code> but the avatar uses <code class="mono">-mt-9</code> (-36px) with a <strong>3px border in <code class="mono">--bg</code></strong>. On the screenshot, the avatar sits <em>outside</em> the hero entirely — the 72px circle is floating in the dark page surface with the banner ending cleanly above it.</p>
+          <div class="fix"><span>Fix</span>Use a wrapper with <code class="mono">relative</code> and absolute-position the avatar overlapping the banner: <code class="mono">translateY(-50%)</code> at the banner's bottom-left. Drop <code class="mono">-mt-9</code>. Replace the <code class="mono">flex items-end justify-between</code> row with a two-column layout: avatar stays pinned, Share/Follow sit on a separate right-aligned row.</div>
+        </div>
+        <div class="tags"><span class="tag tag-danger">Critical</span><span class="tag tag-muted">Layout</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-crit">PR2</div>
+        <div class="body">
+          <h4>Six zero-value stats are the entire identity of a new Trainer</h4>
+          <div class="where">page.tsx:193–240 · stats row</div>
+          <p><strong>0 Souls Created · 0 EXP · 0 Posts · 0 Followers · 0 Following · 0 Achievements</strong>. Every stat is zero — the page reads as "empty profile" instead of "new member." A first-time Trainer's public page will scare off any collector clicking through.</p>
+          <div class="fix"><span>Fix</span>Empty-profile variant: if <code class="mono">souls.length === 0 && posts.length === 0 && exp === 0</code>, collapse stats into a single "<strong>New Trainer · joined {date}</strong>" pill and show a next-step prompt (owner view: "<em>Mint your first Soul →</em>"; visitor view: "<em>This trainer is just getting started.</em>"). Reveal the six-stat row only once any value is non-zero.</div>
+        </div>
+        <div class="tags"><span class="tag tag-danger">Critical</span><span class="tag tag-muted">First-run</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-high">PR3</div>
+        <div class="body">
+          <h4>"human" tag is redundant — the page already says "Trainer · curator"</h4>
+          <div class="where">page.tsx:183 · kind tag</div>
+          <p>The hero already labels the page <code class="mono">Trainer · curator</code>. Next to the name we then render <code class="mono">&lt;Tag&gt;{profile.kind}&lt;/Tag&gt;</code> which prints <strong>human</strong>. For a user whose PRD describes them as "Trainer" or "Collector," showing the raw DB enum value breaks character. And "human" next to "Level 1" reads like an RPG stat block.</p>
+          <div class="fix"><span>Fix</span>Map <code class="mono">kind</code> to the UI noun: <code class="mono">trainer → Trainer</code>, <code class="mono">agent → Soul</code>. Drop the tag next to the name (hero caption already carries it). Keep <strong>Level 1</strong> only on Soul spaces, not Trainer spaces — a human getting XP for logging in is a game mechanic that doesn't fit a "premium ownership infrastructure" positioning.</div>
+        </div>
+        <div class="tags"><span class="tag tag-gold">High</span><span class="tag tag-muted">Copy · IA</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-high">PR4</div>
+        <div class="body">
+          <h4>Member ID <code class="mono">063f9df5-60d3-4cec-a9dd-bb74afa5dd5b</code> is raw UUID</h4>
+          <div class="where">page.tsx:186–189</div>
+          <p>Public profile shows the internal database UUID beneath the display name. Long, ugly, non-shareable, and leaks infrastructure detail. The wallet address is hidden (null for this account), so the user has no human-readable handle.</p>
+          <div class="fix"><span>Fix</span>(1) Generate a handle on signup (<code class="mono">@ithinco-7f</code>) and show it instead of the UUID. (2) Only show UUID in the <em>About</em> tab under "Member ID," never in the hero. (3) If no wallet is linked yet, surface a "Link wallet →" affordance instead of leaving the line blank.</div>
+        </div>
+        <div class="tags"><span class="tag tag-gold">High</span><span class="tag tag-muted">Identity</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-high">PR5</div>
+        <div class="body">
+          <h4>Hero banner is 180px of empty gradient — no content, no use</h4>
+          <div class="where">page.tsx:158–164 · buildHeroStyle() for trainer kind</div>
+          <p>Trainer hero uses a muted radial gradient pattern — it's a <strong>decorative waste of the best real estate</strong>. No edit affordance (owner), no breadcrumb, no context. The <code class="mono">Trainer · curator</code> caption is 10.5px mono in the bottom-right and lost in the dark.</p>
+          <div class="fix"><span>Fix</span>Put something there. Owner view: inline <strong>banner edit</strong> (hover → "Change cover"), quick-action strip (Mint Soul · Import · Settings). Visitor view: <strong>context crumb</strong> ("Community ↗ Trainers ↗ ithinco"), and lift "Trainer · Level 1 · joined Apr 2026" to 13px semibold, left-aligned.</div>
+        </div>
+        <div class="tags"><span class="tag tag-gold">High</span><span class="tag tag-muted">Hero</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-med">PR6</div>
+        <div class="body">
+          <h4>Share button is isolated and misplaced</h4>
+          <div class="where">page.tsx:177–181 · flex items-end justify-between</div>
+          <p>Because the avatar is on the left of the row and Share/Follow are on the right, on an empty profile <strong>Share is the only action visible</strong> and it sits alone in the middle of a long empty line. It also outranks "Follow" visually (ownership view hides Follow), even though Share is a weaker action.</p>
+          <div class="fix"><span>Fix</span>Move Share into the account dropdown (kebab menu next to name) when viewing your own profile. Visitor view: primary = Follow, secondary = Share, both pill-styled on the same baseline as the name.</div>
+        </div>
+        <div class="tags"><span class="tag tag-purple">Medium</span><span class="tag tag-muted">Actions</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-med">PR7</div>
+        <div class="body">
+          <h4>Empty state: "🫥 No Souls published yet" uses a face emoji for a business object</h4>
+          <div class="where">page.tsx:282 · Souls tab empty</div>
+          <p>The same empty state renders whether you're viewing your own profile or someone else's. An owner sees "🫥 No Souls published yet" — which reads passive/melancholic — when the right CTA is "Mint your first Soul." And the face emoji reinforces the earlier "feels broken" impression.</p>
+          <div class="fix"><span>Fix</span>Two variants: <strong>Owner</strong> → illustration using the brand Seal mark + CTA button "Mint a Soul" + secondary "Import existing." <strong>Visitor</strong> → muted sentence "No Souls yet. {displayName} is just getting started." No face emojis.</div>
+        </div>
+        <div class="tags"><span class="tag tag-purple">Medium</span><span class="tag tag-muted">Empty state</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-med">PR8</div>
+        <div class="body">
+          <h4>Tab active indicator is a 2px purple underline — visually thin at 13px text</h4>
+          <div class="where">page.tsx:245–259 · Souls / Posts / About tab strip</div>
+          <p>Active "Souls" tab vs inactive "Posts" / "About" have identical weight, identical color (muted vs foreground is subtle on dark). At a glance the tabs look like disabled tabs because the purple underline is buried behind the global border-bottom line.</p>
+          <div class="fix"><span>Fix</span>Active tab: <strong>white text</strong> + <strong>3px purple underline sitting on top of the border line</strong> (use <code class="mono">border-b-[3px]</code> on active, <code class="mono">-mb-[3px]</code>, and an explicit <code class="mono">z-10</code>). Inactive: <code class="mono">text-muted</code>, no underline.</div>
+        </div>
+        <div class="tags"><span class="tag tag-purple">Medium</span><span class="tag tag-muted">Tabs</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-low">PR9</div>
+        <div class="body">
+          <h4>No breadcrumb — deep-linked profile pages drop users into nowhere</h4>
+          <div class="where">page.tsx · route <code class="mono">/community/u/[spaceId]</code></div>
+          <p>If a user opens a profile from a DM or external share, they have no way back to <em>Community</em> other than the global nav. The URL structure is nested (<code class="mono">community/u/…</code>) but there's no crumb.</p>
+          <div class="fix"><span>Fix</span><code class="mono">← Community</code> link above the hero, 12px muted, hover → foreground.</div>
+        </div>
+        <div class="tags"><span class="tag tag-teal">Polish</span><span class="tag tag-muted">Nav</span></div>
+      </div>
+
+      <div class="finding">
+        <div class="sev sev-low">PR10</div>
+        <div class="body">
+          <h4>Owner of the profile sees visitor-view chrome</h4>
+          <div class="where">page.tsx · whole component</div>
+          <p>The only branch for "this is me" is hiding the Follow button. No Edit Profile, no Manage, no "Your public page — here's how others see it" affordance. New users don't realize the Profile settings exist (they live at <code class="mono">/profile</code>, separate route).</p>
+          <div class="fix"><span>Fix</span>When <code class="mono">profile.id === user?.id</code>: ribbon at the top "<em>This is your public page. Edit →</em>" linking to <code class="mono">/profile</code>. Replace Follow with "Edit profile." Banner becomes editable on hover.</div>
+        </div>
+        <div class="tags"><span class="tag tag-teal">Polish</span><span class="tag tag-muted">Owner view</span></div>
+      </div>
+
+    </div>
+
+    <!-- Proposed layout mock -->
+    <div style="margin-top:48px">
+      <h3 style="margin-bottom:18px">Proposed layout · new Trainer, empty state</h3>
+      <div class="card" style="padding:0;overflow:hidden;border-color:#3B2388">
+        <!-- banner -->
+        <div style="height:160px;position:relative;background:radial-gradient(circle at 22% 30%,rgba(168,85,247,.35),transparent 55%),radial-gradient(circle at 82% 70%,rgba(20,184,166,.22),transparent 60%),linear-gradient(135deg,#1A1040,#0D0A1E)">
+          <div style="position:absolute;top:14px;left:20px;font-size:12px;color:var(--muted)">
+            <a style="color:var(--muted)">← Community</a>
+          </div>
+          <div style="position:absolute;top:14px;right:20px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;color:rgba(248,245,255,.5)">
+            Trainer · joined Apr 2026
+          </div>
+          <!-- owner ribbon -->
+          <div style="position:absolute;bottom:14px;right:20px">
+            <button class="btn btn-outline" style="padding:6px 14px;font-size:12px">✎ Edit profile</button>
+          </div>
+        </div>
+        <!-- header block -->
+        <div style="padding:0 28px;display:flex;gap:18px;align-items:flex-end;margin-top:-36px;position:relative;z-index:2">
+          <div style="width:84px;height:84px;border-radius:50%;background:conic-gradient(from 210deg at 45% 40%,#A855F7,#7C3AED,#14B8A6,#A855F7);display:flex;align-items:center;justify-content:center;border:3px solid var(--bg);font-weight:800;font-size:28px;letter-spacing:-.02em">I</div>
+          <div style="padding-bottom:6px;flex:1">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <h3 style="font-size:22px">ithinco</h3>
+              <span class="tag tag-muted">@ithinco-7f</span>
+            </div>
+            <div class="mono" style="color:var(--muted);font-size:11px;margin-top:4px">Wallet not linked · <a style="color:var(--purple)">Link wallet →</a></div>
+          </div>
+        </div>
+        <!-- body -->
+        <div style="padding:18px 28px 28px">
+          <p class="muted" style="font-size:13.5px;max-width:560px">No bio yet. <a style="color:var(--purple)">Add one →</a></p>
+
+          <!-- condensed stats (new user) -->
+          <div style="display:inline-flex;align-items:center;gap:14px;margin-top:18px;padding:10px 14px;border:1px solid #3B2388;border-radius:100px;font-size:12px">
+            <span style="color:var(--muted)">New Trainer</span>
+            <span style="width:4px;height:4px;background:var(--border);border-radius:50%"></span>
+            <span>Level 1</span>
+            <span style="width:4px;height:4px;background:var(--border);border-radius:50%"></span>
+            <span class="mono" style="color:var(--muted)">0 Souls · 0 Posts</span>
+          </div>
+
+          <!-- tabs -->
+          <div style="display:flex;gap:4px;margin-top:24px;border-bottom:1px solid #3B2388;position:relative">
+            <button style="padding:10px 16px;font-size:13.5px;font-weight:700;color:var(--white);border:none;background:transparent;border-bottom:3px solid var(--purple);margin-bottom:-1.5px;cursor:pointer">Souls</button>
+            <button style="padding:10px 16px;font-size:13.5px;font-weight:600;color:var(--muted);border:none;background:transparent;cursor:pointer">Posts</button>
+            <button style="padding:10px 16px;font-size:13.5px;font-weight:600;color:var(--muted);border:none;background:transparent;cursor:pointer">About</button>
+          </div>
+
+          <!-- owner empty state -->
+          <div style="margin-top:32px;padding:48px 24px;border:1px dashed #3B2388;border-radius:14px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px">
+            <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
+              <defs><linearGradient id="pes" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A855F7"/><stop offset="1" stop-color="#14B8A6"/></linearGradient></defs>
+              <path d="M16 3 C 9 3, 4 8, 4 15 C 4 21, 8 25, 13 26 L 13 29 L 19 29 L 19 26 C 24 25, 28 21, 28 15 C 28 8, 23 3, 16 3 Z" fill="url(#pes)" opacity=".15"/>
+              <path d="M16 6 C 10.5 6, 7 10, 7 15 C 7 19, 9.5 22, 13 23" stroke="url(#pes)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              <path d="M16 6 C 21.5 6, 25 10, 25 15 C 25 19, 22.5 22, 19 23" stroke="url(#pes)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              <circle cx="16" cy="15" r="3" fill="#F59E0B"/>
+              <path d="M13 25 L 13 28 L 19 28 L 19 25" stroke="url(#pes)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+            </svg>
+            <div>
+              <div style="font-weight:700;font-size:15px;margin-bottom:6px">Your first Soul starts here</div>
+              <p class="muted" style="font-size:13px;max-width:360px">Mint a new digital entity, or import one you've built elsewhere. Once you do, it'll live on this page.</p>
+            </div>
+            <div style="display:flex;gap:10px">
+              <button class="btn btn-primary">+ Mint a Soul</button>
+              <button class="btn btn-outline">Import existing</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+</main>
+</body>
+</html>

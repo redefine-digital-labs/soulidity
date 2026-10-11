@@ -1,0 +1,25 @@
+{
+  "name": "@soulidity/backend",
+  "version": "0.0.4",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@soulidity/shared": "workspace:*",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5",
+    "read-excel-file": "9.0.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.0.0",
+    "typescript": "6.0.3",
+    "write-excel-file": "4.0.2"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "task_id": "PLAN-008",
+  "record_id": "Rec0C6AH2EAUB",
+  "owner": "SOL-F001 / NOVA",
+  "accountable": "Naoer / Foundation",
+  "executed_by": "Codex, current user-authorized chat",
+  "date": "2026-10-08",
+  "stage": "Plan",
+  "subscope": "Labs prelaunch English X maintenance; initial Operate post and Monitor setup",
+  "parent_status": "Backlog retained; no original acceptance closed",
+  "handbook": {
+    "version": "1.0",
+    "updated": "2026-10-06",
+    "sections": [
+      "1–4",
+      "5",
+      "9",
+      "10–12"
+    ],
+    "contract_finance_specialty": "N/A: no funds, signatures, contract or migration changes"
+  },
+  "authorization": [
+    "User requested ongoing X maintenance around Soulidity Labs products",
+    "User confirmed account https://x.com/MaximusSega and English language",
+    "User explicitly requested a new Slack table and channel; no additional publishing platform."
+  ],
+  "actions": [
+    {
+      "action": "single user-initiated post via native X editor",
+      "result": "published-and-read-back",
+      "url": "https://x.com/MaximusSega/status/2108192679108731115",
+      "evidence": "Chrome profile showed matching full text, @MaximusSega and post count 45 -> 46"
+    },
+    {
+      "action": "daily same-chat heartbeat",
+      "id": "soulidity-labs-x",
+      "result": "created ACTIVE; tool view verification saved separately; first run unverified"
+    },
+    {
+      "action": "provider discovery",
+      "result": "Metricool available, suggested, not installed/connected"
+    }
+  ],
+  "artifacts": [
+    "docs/operations/x/README.md",
+    "docs/operations/x/content-queue.json",
+    "docs/operations/x/state.json",
+    "docs/operations/x/review.html"
+  ],
+  "validation": [
+    "6 ASCII English drafts each <=280 characters",
+    "All references exist and source SHA256 still matches",
+    "Public copy excludes wallet IDs/internal paths, speculative dates and adoption statistics"
+  ],
+  "remaining": [
+    "First scheduled Slack-maintenance run",
+    "Clean authorized demo material",
+    "Actual weekly review and metrics",
+    "Manual X publication and receipts for future slots",
+    "Original PLAN-008 budget/recruitment/support acceptance remains open"
+  ],
+  "cost": "Unknown; no paid service purchased",
+  "review": "Executor source checks; no independent audit or external adoption claimed",
+  "next_action": "Maintain Slack original rows, prepare actual demo material and publish next English post from native X interface when its slot arrives.",
+  "planning_system": {
+    "workspace_id": "T08LQTJFZRS",
+    "channel_id": "C0C7U80CYE5",
+    "channel_name": "soulidity-labs-launch",
+    "channel_url": "https://sega-xya5661.slack.com/archives/C0C7U80CYE5",
+    "list_id": "F0C7QARMQJ2",
+    "list_name": "Soulidity Labs｜运营与发行",
+    "list_url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C7QARMQJ2"
+  },
+  "provider_decision": "Earlier suggestion superseded by user Slack-only planning; no provider installed, connected or purchased.",
+  "primary_task_system": "New user-authorized operations List F0C7QARMQJ2; original PLAN-008 preserved as related task."
+}

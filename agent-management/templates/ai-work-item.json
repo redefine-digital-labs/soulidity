@@ -1,0 +1,49 @@
+{
+  "template_version": "1.0",
+  "record_id": null,
+  "milestone": null,
+  "user_outcome": null,
+  "original_operation": null,
+  "existing_behavior_or_new_capability": null,
+  "owner": null,
+  "reviewer": null,
+  "stage": null,
+  "status": null,
+  "baseline": {
+    "workspace": null,
+    "source_revision": null,
+    "environment": null,
+    "authoritative_spec": null
+  },
+  "scope": {
+    "write_paths": [],
+    "non_goals": [],
+    "dependencies": [],
+    "interface_contract": null
+  },
+  "acceptance": {
+    "normal": [],
+    "failure": [],
+    "recovery": [],
+    "not_applicable_with_reason": []
+  },
+  "execution": {
+    "authorization_reference": null,
+    "budget": null,
+    "stop_and_escalate_conditions": [],
+    "exclusive_resources": [],
+    "integration_owner": null
+  },
+  "evidence": {
+    "candidate_identity": null,
+    "checks": [],
+    "remaining_work": [],
+    "next_owner_action": null,
+    "operations_owner": null
+  },
+  "observations": {
+    "cost": null,
+    "review_minutes": null,
+    "user_feedback": null
+  }
+}

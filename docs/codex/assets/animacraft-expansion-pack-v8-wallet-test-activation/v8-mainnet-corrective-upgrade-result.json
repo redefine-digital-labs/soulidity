@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "soulidity.animacraft.v8-mainnet-upgrade-result.v2",
+  "executedAt": "2026-08-12T07:16:51.555Z",
+  "network": {
+    "name": "mainnet",
+    "chainIdentifier": "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+    "rpc": "https://fullnode.mainnet.sui.io:443"
+  },
+  "source": {
+    "commit": "3c2ffeeb86be6df2cd1f278454a72f5d02c796ea",
+    "tree": "0872c4142ee5e811594efbadba032b7b21e5b57c"
+  },
+  "lockSha256": "b445bcd8da2d5028588e29142237f32884c1c06f0658112cf0a29b5533ee2184",
+  "transactionDigest": "GFJYxZ6hc83ma5itvJ5CN2ZAtTAqjizrgi9o2jKuTwZt",
+  "transactionBytesSha256": "b699bb9c6e30ecda9d693e9535c0f3131fc5c02233a6b32a39e553c2536b403e",
+  "signatureRecorded": false,
+  "signatureVerifiedLocally": true,
+  "status": {
+    "success": true,
+    "error": null
+  },
+  "checkpoint": "309752508",
+  "timestampMs": "1786519008669",
+  "gasUsed": {
+    "computationCost": "871000",
+    "storageCost": "760471200",
+    "storageRebate": "1617660",
+    "nonRefundableStorageFee": "16340"
+  },
+  "events": [],
+  "changedObjects": [
+    {
+      "objectId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "inputState": "DoesNotExist",
+      "outputState": "PackageWrite",
+      "idOperation": "Created"
+    },
+    {
+      "objectId": "0x4f605aa34c38a7529b1d098cb16f406426c392e776c236be6c7afd9c4980d8a5",
+      "inputState": "DoesNotExist",
+      "outputState": "AccumulatorWriteV1",
+      "idOperation": "None"
+    },
+    {
+      "objectId": "0xe7d1269532bbfbf5e448cb5c58f07fc6720ed3d22e7853e9f13b7b6282746520",
+      "inputState": "Exists",
+      "outputState": "ObjectWrite",
+      "idOperation": "None"
+    }
+  ],
+  "expectedNewPackageId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+  "packageUpgradeDigestHex": "b4952103aedc5d78cdd4846d3e8348c42e0f93c481e173f81f3634cb5c6f0269",
+  "packageObject": {
+    "objectId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+    "version": "7",
+    "digest": "Es8JVXhmM394qCiNwUF1wMCEQ5KgewNRY7tdzefPNEBC"
+  },
+  "upgradeCapPost": {
+    "objectId": "0xe7d1269532bbfbf5e448cb5c58f07fc6720ed3d22e7853e9f13b7b6282746520",
+    "objectVersion": "955119811",
+    "objectDigest": "6r8i1U2FcLq7xvvCna5xmKmHjLDtaKo8pmnB6wxkKEoP",
+    "packageVersion": "7",
+    "package": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+    "policy": 0
+  },
+  "packageDigestBase58": "D9vH1VMhqckfGKP6kxbCzZsFuQa4gGhrdhNntAxCfaqe"
+}

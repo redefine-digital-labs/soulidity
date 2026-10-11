@@ -1,0 +1,244 @@
+{
+  "created_at_utc": "2026-08-11T08:55:35Z",
+  "schema_version": 1,
+  "source_root": "/Users/naoer/.codex/sessions",
+  "threads": [
+    {
+      "agent_path": "/root/animacraft_v7_publish_handoff",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 5,
+      "source_mtime_ns": 1785678907303376424,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T19-45-42-019fc24b-4db6-7323-932d-cc28ef173b5a.jsonl",
+      "source_size": 2811878840,
+      "summary_file": "animacraft_v7_publish_handoff-019fc24b.md",
+      "terminal_signal": "turn_aborted",
+      "thread_id": "019fc24b-4db6-7323-932d-cc28ef173b5a"
+    },
+    {
+      "agent_path": "/root/soulidity_v7_wardrobe",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 7,
+      "source_mtime_ns": 1785678907303457882,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T18-20-08-019fc1fc-f63a-7a50-9654-741735631d87.jsonl",
+      "source_size": 2766793167,
+      "summary_file": "soulidity_v7_wardrobe-019fc1fc.md",
+      "terminal_signal": "turn_aborted",
+      "thread_id": "019fc1fc-f63a-7a50-9654-741735631d87"
+    },
+    {
+      "agent_path": "/root/animacraft_v7_move",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 3,
+      "source_mtime_ns": 1785678907297292598,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T18-18-57-019fc1fb-dfbc-7613-af37-8b19afef267e.jsonl",
+      "source_size": 2718845316,
+      "summary_file": "animacraft_v7_move-019fc1fb.md",
+      "terminal_signal": "turn_aborted",
+      "thread_id": "019fc1fb-dfbc-7613-af37-8b19afef267e"
+    },
+    {
+      "agent_path": "/root/v7_security_audit",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 4,
+      "source_mtime_ns": 1785671095412997236,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T19-06-40-019fc227-8e1f-7fa2-8e12-7e2a5a905aa0.jsonl",
+      "source_size": 2716670560,
+      "summary_file": "v7_security_audit-019fc227.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc227-8e1f-7fa2-8e12-7e2a5a905aa0"
+    },
+    {
+      "agent_path": "/root/animacraft_v7_product",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785668751475365660,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T18-19-30-019fc1fc-61c2-7072-9abe-72c7d33184ef.jsonl",
+      "source_size": 2670015911,
+      "summary_file": "animacraft_v7_product-019fc1fc.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc1fc-61c2-7072-9abe-72c7d33184ef"
+    },
+    {
+      "agent_path": "/root/composable_v6_audit",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785665042062686801,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T17-43-42-019fc1db-9ad8-7c40-bdc0-3b7c66fc8361.jsonl",
+      "source_size": 2622022131,
+      "summary_file": "composable_v6_audit-019fc1db.md",
+      "terminal_signal": "turn_aborted",
+      "thread_id": "019fc1db-9ad8-7c40-bdc0-3b7c66fc8361"
+    },
+    {
+      "agent_path": "/root/sui_composable_model",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785664958943856129,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T17-45-01-019fc1dc-d017-77d0-88ff-dfca20369186.jsonl",
+      "source_size": 2621907502,
+      "summary_file": "sui_composable_model-019fc1dc.md",
+      "terminal_signal": "turn_aborted",
+      "thread_id": "019fc1dc-d017-77d0-88ff-dfca20369186"
+    },
+    {
+      "agent_path": "/root/v6_final_audit",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785656594319453377,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T13-34-42-019fc0f7-a4b3-7970-9c54-38980fe575a0.jsonl",
+      "source_size": 2577211901,
+      "summary_file": "v6_final_audit-019fc0f7.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc0f7-a4b3-7970-9c54-38980fe575a0"
+    },
+    {
+      "agent_path": "/root/seal_activation",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785663611990853769,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T16-23-42-019fc192-5d14-7291-be17-00953c98fef9.jsonl",
+      "source_size": 2551957728,
+      "summary_file": "seal_activation-019fc192.md",
+      "terminal_signal": "turn_aborted",
+      "thread_id": "019fc192-5d14-7291-be17-00953c98fef9"
+    },
+    {
+      "agent_path": "/root/animacraft_activation",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785663611958802590,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T16-22-41-019fc191-6ecb-72c1-975f-06fcabaea733.jsonl",
+      "source_size": 2551892287,
+      "summary_file": "animacraft_activation-019fc191.md",
+      "terminal_signal": "turn_aborted",
+      "thread_id": "019fc191-6ecb-72c1-975f-06fcabaea733"
+    },
+    {
+      "agent_path": "/root/soulidity_activation",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785663611958352300,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T16-23-09-019fc191-db35-7e82-9b43-5144866005fe.jsonl",
+      "source_size": 2528228375,
+      "summary_file": "soulidity_activation-019fc191.md",
+      "terminal_signal": "turn_aborted",
+      "thread_id": "019fc191-db35-7e82-9b43-5144866005fe"
+    },
+    {
+      "agent_path": "/root/v6_sdk_web",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785653671515398384,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T13-21-12-019fc0eb-473d-7582-9502-5ef1912e707a.jsonl",
+      "source_size": 2505246526,
+      "summary_file": "v6_sdk_web-019fc0eb.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc0eb-473d-7582-9502-5ef1912e707a"
+    },
+    {
+      "agent_path": "/root/v6_integrate",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785653303610827011,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T12-05-08-019fc0a5-a248-7001-bb5a-2348bc1d3a2a.jsonl",
+      "source_size": 2459715174,
+      "summary_file": "v6_integrate-019fc0a5.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc0a5-a248-7001-bb5a-2348bc1d3a2a"
+    },
+    {
+      "agent_path": "/root/v6_chain_plan",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785645407744316279,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T12-05-35-019fc0a6-0e10-7f50-89ef-9e84106c9202.jsonl",
+      "source_size": 2410895669,
+      "summary_file": "v6_chain_plan-019fc0a6.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc0a6-0e10-7f50-89ef-9e84106c9202"
+    },
+    {
+      "agent_path": "/root/parser_recovery",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785643027326420259,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T11-42-48-019fc091-2eea-7f80-af60-c208d853d6eb.jsonl",
+      "source_size": 2386978146,
+      "summary_file": "parser_recovery-019fc091.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc091-2eea-7f80-af60-c208d853d6eb"
+    },
+    {
+      "agent_path": "/root/tx_reconcile",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785642541832749718,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T11-42-19-019fc090-be94-77e1-a6ec-6c33c889a812.jsonl",
+      "source_size": 2386599752,
+      "summary_file": "tx_reconcile-019fc090.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc090-be94-77e1-a6ec-6c33c889a812"
+    },
+    {
+      "agent_path": "/root/manifest_audit",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785642526975429190,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T11-43-08-019fc091-7fcc-7033-b2f3-31a7862ee7b9.jsonl",
+      "source_size": 2386584508,
+      "summary_file": "manifest_audit-019fc091.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc091-7fcc-7033-b2f3-31a7862ee7b9"
+    },
+    {
+      "agent_path": "/root/v5_publish_guard",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785636182591557911,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T09-54-09-019fc02d-b9aa-7853-93e2-22251aeed561.jsonl",
+      "source_size": 2347721756,
+      "summary_file": "v5_publish_guard-019fc02d.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc02d-b9aa-7853-93e2-22251aeed561"
+    },
+    {
+      "agent_path": "/root/v5_vm_verify_failure",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785641048490525436,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T10-05-30-019fc038-1afa-7b90-9416-1b82d2cc11aa.jsonl",
+      "source_size": 2340496926,
+      "summary_file": "v5_vm_verify_failure-019fc038.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fc038-1afa-7b90-9416-1b82d2cc11aa"
+    },
+    {
+      "agent_path": "/root/grpc_final_review",
+      "parent_thread_id": "019f5069-93af-7eb1-9308-6f7b7ddcaab0",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785633405521302400,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T08-49-37-019fbff2-a145-78a3-baa7-9766bf5b7dbd.jsonl",
+      "source_size": 2330944152,
+      "summary_file": "grpc_final_review-019fbff2.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fbff2-a145-78a3-baa7-9766bf5b7dbd"
+    },
+    {
+      "agent_path": "/root/soulidity_release_safety/fresh_seal_route_guard",
+      "parent_thread_id": "019fbcdf-2237-7f12-bd89-4d6b1cdc227b",
+      "recovered_messages": 8,
+      "source_mtime_ns": 1785610413643392462,
+      "source_path": "/Users/naoer/.codex/sessions/2026/08/02/rollout-2026-08-02T02-02-21-019fbe7d-c759-7691-8b98-98d3c6204c14.jsonl",
+      "source_size": 2263683467,
+      "summary_file": "soulidity_release_safety--fresh_seal_route_guard-019fbe7d.md",
+      "terminal_signal": "unknown",
+      "thread_id": "019fbe7d-c759-7691-8b98-98d3c6204c14"
+    }
+  ],
+  "tool": {
+    "name": "codex-session-salvage",
+    "version": "1.0.0"
+  },
+  "total_source_bytes": 52956289794,
+  "total_threads": 21
+}

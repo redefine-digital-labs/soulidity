@@ -1,0 +1,1914 @@
+{
+  "workspace": {
+    "id": "T08LQTJFZRS",
+    "name": "Sega"
+  },
+  "milestones": {
+    "id": "F0C6EQU2U5U",
+    "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U"
+  },
+  "delivery": {
+    "id": "F0C6BEMB58V",
+    "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V"
+  },
+  "created_at": "2026-10-03",
+  "task_system": "Slack Lists",
+  "github_role": "Code and verification evidence",
+  "automation": "No unattended recurring runner configured",
+  "channel": {
+    "id": "C0AJCKH65BQ",
+    "name": "crypto-openclaw-soulidity",
+    "posted": true
+  },
+  "canvas": {
+    "id": "F0C6JN5BAC9",
+    "url": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C6JN5BAC9"
+  },
+  "milestone_records": [
+    {
+      "id": "ECO-0",
+      "record_id": "Rec0C6GK37B9Q",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C6GK37B9Q"
+    },
+    {
+      "id": "ECO-1",
+      "record_id": "Rec0C61CHAXGF",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C61CHAXGF"
+    },
+    {
+      "id": "ECO-2",
+      "record_id": "Rec0C6EQVMUQ6",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C6EQVMUQ6"
+    },
+    {
+      "id": "ECO-3",
+      "record_id": "Rec0C6GK3EE5Q",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C6GK3EE5Q"
+    },
+    {
+      "id": "ECO-4",
+      "record_id": "Rec0C6AGYV8N7",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C6AGYV8N7"
+    },
+    {
+      "id": "ECO-5",
+      "record_id": "Rec0C6JMUP5EV",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C6JMUP5EV"
+    },
+    {
+      "id": "ECO-6",
+      "record_id": "Rec0C61CHFQS3",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C61CHFQS3"
+    },
+    {
+      "id": "AC-SO-M1",
+      "record_id": "Rec0C6BFA1UJZ",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C6BFA1UJZ"
+    },
+    {
+      "id": "AC-SO-M2",
+      "record_id": "Rec0C6AHLDASF",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C6AHLDASF"
+    },
+    {
+      "id": "AC-SO-M3",
+      "record_id": "Rec0C6ERH63QE",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C6ERH63QE"
+    },
+    {
+      "id": "AC-SO-M4",
+      "record_id": "Rec0C7B5MD1J4",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6EQU2U5U?record_id=Rec0C7B5MD1J4"
+    }
+  ],
+  "task_records": [
+    {
+      "id": "PLAN-001",
+      "record_id": "Rec0C61CLJJKH",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C61CLJJKH"
+    },
+    {
+      "id": "PLAN-002",
+      "record_id": "Rec0C6EQZ0WKG",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6EQZ0WKG"
+    },
+    {
+      "id": "PLAN-003",
+      "record_id": "Rec0C6LE68ZMJ",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6LE68ZMJ"
+    },
+    {
+      "id": "PLAN-004",
+      "record_id": "Rec0C61CLNLF9",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C61CLNLF9"
+    },
+    {
+      "id": "PLAN-005",
+      "record_id": "Rec0C6JMY2M97",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6JMY2M97"
+    },
+    {
+      "id": "PLAN-006A",
+      "record_id": "Rec0C6AH2BETD",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6AH2BETD"
+    },
+    {
+      "id": "PLAN-006B",
+      "record_id": "Rec0C6LEA9Q5S",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6LEA9Q5S"
+    },
+    {
+      "id": "PLAN-007",
+      "record_id": "Rec0C7B53AP6C",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C7B53AP6C"
+    },
+    {
+      "id": "PLAN-008",
+      "record_id": "Rec0C6AH2EAUB",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6AH2EAUB"
+    },
+    {
+      "id": "TRACK-009",
+      "record_id": "Rec0C6AH2F6CT",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6AH2F6CT"
+    },
+    {
+      "id": "TRACK-010",
+      "record_id": "Rec0C7B53DT1N",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C7B53DT1N"
+    },
+    {
+      "id": "PROD-011",
+      "record_id": "Rec0C6GK733EE",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6GK733EE"
+    },
+    {
+      "id": "PROD-012",
+      "record_id": "Rec0C6JMY9YE5",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6JMY9YE5"
+    },
+    {
+      "id": "PROD-013",
+      "record_id": "Rec0C6LEAEWAY",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6LEAEWAY"
+    },
+    {
+      "id": "PROD-014",
+      "record_id": "Rec0C6EQZD07Q",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6EQZD07Q"
+    },
+    {
+      "id": "PROD-015",
+      "record_id": "Rec0C6LEAHCS0",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6LEAHCS0"
+    },
+    {
+      "id": "PILOT-016",
+      "record_id": "Rec0C6BF1CKV3",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6BF1CKV3"
+    },
+    {
+      "id": "QA-017",
+      "record_id": "Rec0C6GKR7AMQ",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6GKR7AMQ"
+    },
+    {
+      "id": "OPS-018",
+      "record_id": "Rec0C6ERHG5RC",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C6ERHG5RC"
+    },
+    {
+      "id": "OPS-019",
+      "record_id": "Rec0C7B5MN36C",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6BEMB58V?record_id=Rec0C7B5MN36C"
+    }
+  ],
+  "status": "bootstrap-verified",
+  "scope": "ecosystem management; existing AC/SO product roadmap retained",
+  "source_authority": {
+    "chat_id": "01a02161-12b8-7b83-9d6e-2da4e7027107",
+    "title": "Unified Maker v8 Market execution",
+    "animacraft": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-mainnet-release",
+    "soulidity": "/Users/naoer/.codex/worktrees/f722/soulidity"
+  },
+  "review": "SENTINEL final correction review PASS; ECO-0 and product delivery remain open",
+  "product_development": {
+    "id": "F0C6DCP5VFH",
+    "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH",
+    "channel_id": "C0AJCKH65BQ",
+    "records": [
+      {
+        "id": "DEV-001",
+        "record_id": "Rec0C6DECEP8F",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6DECEP8F"
+      },
+      {
+        "id": "DEV-002",
+        "record_id": "Rec0C6ULYUDLJ",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULYUDLJ"
+      },
+      {
+        "id": "DEV-003",
+        "record_id": "Rec0C6NJV83BM",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6NJV83BM"
+      },
+      {
+        "id": "DEV-004",
+        "record_id": "Rec0C6ULZ59J6",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6ULZ59J6"
+      },
+      {
+        "id": "DEV-005",
+        "record_id": "Rec0C6PGLAUP7",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6PGLAUP7"
+      },
+      {
+        "id": "DEV-006",
+        "record_id": "Rec0C6DED6M63",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6DED6M63"
+      },
+      {
+        "id": "DEV-007",
+        "record_id": "Rec0C6SSSPDML",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C6SSSPDML"
+      },
+      {
+        "id": "DEV-008",
+        "record_id": "Rec0C7P71G6HW",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6DCP5VFH?record_id=Rec0C7P71G6HW"
+      }
+    ],
+    "progress_message": {
+      "channel_id": "C0AJCKH65BQ",
+      "message_link": "https://sega-xya5661.slack.com/archives/C0AJCKH65BQ/p1791224984554669",
+      "message_context": {
+        "message_ts": "1791224984.554669",
+        "channel_id": "C0AJCKH65BQ"
+      }
+    }
+  },
+  "product_bugs": {
+    "id": "F0C6UK635UJ",
+    "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ",
+    "channel_id": "C0C6YEB44G4",
+    "records": [
+      {
+        "id": "BUG-001",
+        "record_id": "Rec0C6YFWJTFW",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6YFWJTFW"
+      },
+      {
+        "id": "BUG-002",
+        "record_id": "Rec0C6DE31DC7",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6DE31DC7"
+      },
+      {
+        "id": "BUG-003",
+        "record_id": "Rec0C6SSGKYF8",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6SSGKYF8"
+      },
+      {
+        "id": "BUG-004",
+        "record_id": "Rec0C6SSGT7PY",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6SSGT7PY"
+      },
+      {
+        "id": "BUG-005",
+        "record_id": "Rec0C6DE3D15M",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6DE3D15M"
+      },
+      {
+        "id": "BUG-006",
+        "record_id": "Rec0C6YFYRPCL",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6YFYRPCL"
+      },
+      {
+        "id": "BUG-007",
+        "record_id": "Rec0C6DE40N15",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6DE40N15"
+      },
+      {
+        "id": "BUG-008",
+        "record_id": "Rec0C7P6RPA3A",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C7P6RPA3A"
+      },
+      {
+        "id": "BUG-009",
+        "record_id": "Rec0C7P6RMAF2",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C7P6RMAF2"
+      },
+      {
+        "id": "BUG-010",
+        "record_id": "Rec0C6YFYTYAY",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6YFYTYAY"
+      },
+      {
+        "id": "BUG-011",
+        "record_id": "Rec0C6WPEM5BK",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6WPEM5BK"
+      },
+      {
+        "id": "BUG-012",
+        "record_id": "Rec0C6PGBL5RT",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6PGBL5RT"
+      },
+      {
+        "id": "BUG-013",
+        "record_id": "Rec0C6W27PZGA",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6W27PZGA"
+      },
+      {
+        "id": "BUG-014",
+        "record_id": "Rec0C6U8178S2",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6U8178S2"
+      },
+      {
+        "id": "BUG-015",
+        "record_id": "Rec0C6ZSXDQJY",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6ZSXDQJY"
+      },
+      {
+        "id": "BUG-016",
+        "record_id": "Rec0C6Q04P7EF",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Q04P7EF"
+      },
+      {
+        "id": "BUG-017",
+        "record_id": "Rec0C6U81J5V4",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6U81J5V4"
+      },
+      {
+        "id": "BUG-018",
+        "record_id": "Rec0C6W21HRFC",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6W21HRFC"
+      },
+      {
+        "id": "BUG-019",
+        "record_id": "Rec0C6U81TB0W",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6U81TB0W"
+      },
+      {
+        "id": "BUG-020",
+        "record_id": "Rec0C6Y4Z2RS5",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Y4Z2RS5"
+      },
+      {
+        "id": "BUG-021",
+        "record_id": "Rec0C6Y4Z9FUZ",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Y4Z9FUZ"
+      },
+      {
+        "id": "BUG-022",
+        "record_id": "Rec0C6U825WT0",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6U825WT0"
+      },
+      {
+        "id": "BUG-023",
+        "record_id": "Rec0C6ER2QNLF",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6ER2QNLF"
+      },
+      {
+        "id": "BUG-024",
+        "record_id": "Rec0C6U8249HU",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6U8249HU"
+      },
+      {
+        "id": "BUG-025",
+        "record_id": "Rec0C6W29BUSW",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6W29BUSW"
+      },
+      {
+        "id": "BUG-026",
+        "record_id": "Rec0C6Q064VH9",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Q064VH9"
+      },
+      {
+        "id": "BUG-027",
+        "record_id": "Rec0C6U82MBHC",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6U82MBHC"
+      },
+      {
+        "id": "BUG-028",
+        "record_id": "Rec0C6Q0629JP",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Q0629JP"
+      },
+      {
+        "id": "BUG-029",
+        "record_id": "Rec0C6QTB145T",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6QTB145T"
+      },
+      {
+        "id": "BUG-030",
+        "record_id": "Rec0C6Q0679GT",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Q0679GT"
+      },
+      {
+        "id": "BUG-031",
+        "record_id": "Rec0C6Y50B5TK",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Y50B5TK"
+      },
+      {
+        "id": "BUG-032",
+        "record_id": "Rec0C6Y50P80H",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Y50P80H"
+      },
+      {
+        "id": "BUG-033",
+        "record_id": "Rec0C6Q06LF35",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Q06LF35"
+      },
+      {
+        "id": "BUG-034",
+        "record_id": "Rec0C6Q06NATD",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Q06NATD"
+      },
+      {
+        "id": "BUG-035",
+        "record_id": "Rec0C6U840CUW",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6U840CUW"
+      },
+      {
+        "id": "BUG-036",
+        "record_id": "Rec0C6QTBFE77",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6QTBFE77"
+      },
+      {
+        "id": "BUG-037",
+        "record_id": "Rec0C6ER4G27R",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6ER4G27R"
+      },
+      {
+        "id": "BUG-038",
+        "record_id": "Rec0C6ZT018AG",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6ZT018AG"
+      },
+      {
+        "id": "BUG-039",
+        "record_id": "Rec0C6Y515QL9",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6Y515QL9"
+      },
+      {
+        "id": "BUG-040",
+        "record_id": "Rec0C6QRXT03D",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6UK635UJ?record_id=Rec0C6QRXT03D"
+      }
+    ],
+    "progress_message": {
+      "channel_id": "C0C6YEB44G4",
+      "message_link": "https://sega-xya5661.slack.com/archives/C0C6YEB44G4/p1791224985339799",
+      "message_context": {
+        "message_ts": "1791224985.339799",
+        "channel_id": "C0C6YEB44G4"
+      }
+    },
+    "mode": "active-repair-after-user-review",
+    "review_snapshot": "agent-management/runs/2026-10-05-bug-review.json"
+  },
+  "product_tracking_updated_at": "2026-10-05",
+  "delivery_method": {
+    "name": "Agile + DevOps eight-stage loop",
+    "confirmed_at": "2026-10-05",
+    "stages": [
+      "Plan",
+      "Code",
+      "Build",
+      "Test",
+      "Release",
+      "Deploy",
+      "Operate",
+      "Monitor"
+    ],
+    "canonical": "agent-management/OPERATING_MODEL.md#8",
+    "list_stage_column": "devops_阶段",
+    "list_evidence_column": "阶段证据／退出条件",
+    "schema_verified_lists": [
+      "F0C6DCP5VFH",
+      "F0C6UK635UJ",
+      "F0C6BEMB58V"
+    ],
+    "receipt": "agent-management/runs/2026-10-05-agile-devops-sync.json",
+    "historical_stage_backfill": "unverified until owner inspects evidence",
+    "automation": "not enabled by process synchronization"
+  },
+  "soul_dof_rebuild": {
+    "id": "F0C7JBQ5JF6",
+    "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C7JBQ5JF6",
+    "name": "AC × SO｜Soul DOF v1 敏捷研发",
+    "authorized_at": "2026-10-07",
+    "authorization": "用户明确启动完整合约重构、新部署、新Slack研发表；保留现有UI/UX，只做必要细节调整。",
+    "task_thread_id": "01a10d59-7e9e-79d2-a4cd-bd135acb91ae",
+    "source_worktree": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity",
+    "soulidity_base_commit": "0cfb60a29b2b378dd9fbf31970b324b2ef2e301e",
+    "animacraft_reference_commit": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+    "records": [
+      {
+        "id": "DOF-001",
+        "record_id": "Rec0C78FYL0KD"
+      },
+      {
+        "id": "DOF-002",
+        "record_id": "Rec0C7JDD4C84"
+      },
+      {
+        "id": "DOF-003",
+        "record_id": "Rec0C6ZBED95M"
+      },
+      {
+        "id": "DOF-004",
+        "record_id": "Rec0C7GLW8TT3"
+      },
+      {
+        "id": "DOF-005",
+        "record_id": "Rec0C7GLVULGH"
+      },
+      {
+        "id": "DOF-006",
+        "record_id": "Rec0C7GLVS34Z"
+      },
+      {
+        "id": "DOF-007",
+        "record_id": "Rec0C7JDDF3PW"
+      },
+      {
+        "id": "DOF-008",
+        "record_id": "Rec0C7CPSRU8N"
+      },
+      {
+        "id": "DOF-009",
+        "record_id": "Rec0C89410Q0G"
+      },
+      {
+        "id": "DOF-010",
+        "record_id": "Rec0C7CPT5Z1C"
+      },
+      {
+        "id": "DOF-011",
+        "record_id": "Rec0C7CPT3546"
+      },
+      {
+        "id": "DOF-012",
+        "record_id": "Rec0C7JDE2TQU"
+      },
+      {
+        "id": "DOF-013",
+        "record_id": "Rec0C7GLWSA0H"
+      },
+      {
+        "id": "DOF-014",
+        "record_id": "Rec0C7JDECR1A"
+      }
+    ],
+    "stages": [
+      "Plan",
+      "Code",
+      "Build",
+      "Test",
+      "Release",
+      "Deploy",
+      "Operate",
+      "Monitor"
+    ],
+    "note": "本表为用户最新明确授权的重构工作；原研发／Bug表及原CURRENT继续保留，不发送频道进度消息。",
+    "journey_list": {
+      "id": "F0C7JCB5AQ4",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C7JCB5AQ4",
+      "name": "AC × SO｜Soul DOF v1 用户旅程测试",
+      "records": [
+        {
+          "id": "J01",
+          "record_id": "Rec0C7GNZ0R7T"
+        },
+        {
+          "id": "J02",
+          "record_id": "Rec0C7CRVQAJJ"
+        },
+        {
+          "id": "J03",
+          "record_id": "Rec0C7EL5GY3U"
+        },
+        {
+          "id": "J04",
+          "record_id": "Rec0C896AL4GY"
+        },
+        {
+          "id": "J05",
+          "record_id": "Rec0C6ZDHUYTH"
+        },
+        {
+          "id": "J06",
+          "record_id": "Rec0C896AH0GG"
+        },
+        {
+          "id": "J07",
+          "record_id": "Rec0C7EL5TF2N"
+        },
+        {
+          "id": "J08",
+          "record_id": "Rec0C79FX5GVB"
+        },
+        {
+          "id": "J09",
+          "record_id": "Rec0C896B5ZBJ"
+        },
+        {
+          "id": "J10",
+          "record_id": "Rec0C7CRWG354"
+        },
+        {
+          "id": "J11",
+          "record_id": "Rec0C7JFHLPHA"
+        },
+        {
+          "id": "J12",
+          "record_id": "Rec0C7EL6J66N"
+        },
+        {
+          "id": "J13",
+          "record_id": "Rec0C7JFHSCCU"
+        },
+        {
+          "id": "J14",
+          "record_id": "Rec0C7EL69WPL"
+        },
+        {
+          "id": "J15",
+          "record_id": "Rec0C896BR2BA"
+        },
+        {
+          "id": "J16",
+          "record_id": "Rec0C78J3QYHZ"
+        },
+        {
+          "id": "J17",
+          "record_id": "Rec0C7EL71KQS"
+        },
+        {
+          "id": "J18",
+          "record_id": "Rec0C7JFJDFNG"
+        },
+        {
+          "id": "J19",
+          "record_id": "Rec0C7EL7322W"
+        },
+        {
+          "id": "J20",
+          "record_id": "Rec0C7CSJUX7G"
+        },
+        {
+          "id": "J21",
+          "record_id": "Rec0C7ELV9H50"
+        },
+        {
+          "id": "J22",
+          "record_id": "Rec0C6ZE7DQ5D"
+        },
+        {
+          "id": "J23",
+          "record_id": "Rec0C7CSKFS9L"
+        },
+        {
+          "id": "J24",
+          "record_id": "Rec0C7CSKJU06"
+        },
+        {
+          "id": "J25",
+          "record_id": "Rec0C7JG6NNN8"
+        },
+        {
+          "id": "J26",
+          "record_id": "Rec0C89709ZGQ"
+        },
+        {
+          "id": "J27",
+          "record_id": "Rec0C79GLN30D"
+        },
+        {
+          "id": "J28",
+          "record_id": "Rec0C6ZE7FU4X"
+        },
+        {
+          "id": "J29",
+          "record_id": "Rec0C7JG7131A"
+        },
+        {
+          "id": "J30",
+          "record_id": "Rec0C7GPPE3PB"
+        },
+        {
+          "id": "J31",
+          "record_id": "Rec0C7CSLG45U"
+        },
+        {
+          "id": "J32",
+          "record_id": "Rec0C7GPGP6LR"
+        },
+        {
+          "id": "J33",
+          "record_id": "Rec0C7CSLN90W"
+        },
+        {
+          "id": "J34",
+          "record_id": "Rec0C8971KAQY"
+        },
+        {
+          "id": "J35",
+          "record_id": "Rec0C7ELW3Y2E"
+        },
+        {
+          "id": "J36",
+          "record_id": "Rec0C6ZE8PD7H"
+        },
+        {
+          "id": "J37",
+          "record_id": "Rec0C7GPQJSN5"
+        }
+      ]
+    },
+    "current_priority": "全部合约重构完成；Code进行中，含Maker与Expansion Pack",
+    "preparation_status": "准备已完成；用户2026-10-07明确授权全部合约开工",
+    "preparation_manifest": "agent-management/runs/soul-dof-v1-preparation.json",
+    "canvas": {
+      "id": "F0C7GSJ47BK",
+      "url": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK",
+      "verification": {
+        "status": "PASS",
+        "checks": {
+          "rights": true,
+          "rows127": true,
+          "journeys37": true,
+          "noStaleActiveInventory": true,
+          "rootBodyOwnership": true,
+          "baseTransferBoundary": true,
+          "sourceEvidenceNotProduction": true
+        }
+      }
+    },
+    "rules": {
+      "styleFixed": true,
+      "onePerPart": true,
+      "noInactiveFreeInventory": true,
+      "attachAtomic": true,
+      "detachFreeSameIDToWallet": true,
+      "saleClearsGrantAtomic": true,
+      "completeIssuance": "REFERENCE:content reference; SOUL_BOUND:root-bound record; TRANSFERABLE:unique real key+store Item; creator selects per published Item/Style",
+      "uiux": "Current websites as authority; preserve structure and paths; minimal necessary details only"
+    },
+    "supporting_lists": {
+      "devops": {
+        "id": "F0C7JJ79NS0",
+        "name": "AC × SO｜Soul DOF v1 DevOps交付运行",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C7JJ79NS0",
+        "records": [
+          {
+            "id": "D01",
+            "record_id": "Rec0C6ZGB70J3"
+          },
+          {
+            "id": "D02",
+            "record_id": "Rec0C6ZGBA8BZ"
+          },
+          {
+            "id": "D03",
+            "record_id": "Rec0C7JJAEAA0"
+          },
+          {
+            "id": "D04",
+            "record_id": "Rec0C7ENZHVM0"
+          },
+          {
+            "id": "D05",
+            "record_id": "Rec0C78LW3REF"
+          },
+          {
+            "id": "D06",
+            "record_id": "Rec0C8994J6GY"
+          },
+          {
+            "id": "D07",
+            "record_id": "Rec0C79JL5ZAR"
+          },
+          {
+            "id": "D08",
+            "record_id": "Rec0C7JJB5A4U"
+          }
+        ]
+      },
+      "contracts": {
+        "id": "F0C6ZG8FKC7",
+        "name": "AC × SO｜Soul DOF v1 合约生产与安全",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6ZG8FKC7",
+        "records": [
+          {
+            "id": "C01",
+            "record_id": "Rec0C6ZGC4XD5"
+          },
+          {
+            "id": "C02",
+            "record_id": "Rec0C899590FJ"
+          },
+          {
+            "id": "C03",
+            "record_id": "Rec0C7JJBBMV2"
+          },
+          {
+            "id": "C04",
+            "record_id": "Rec0C78LX5YFM"
+          },
+          {
+            "id": "C05",
+            "record_id": "Rec0C7GRU98QZ"
+          },
+          {
+            "id": "C06",
+            "record_id": "Rec0C78LXD22X"
+          },
+          {
+            "id": "C07",
+            "record_id": "Rec0C8995LKJ4"
+          },
+          {
+            "id": "C08",
+            "record_id": "Rec0C89965CN4"
+          },
+          {
+            "id": "C09",
+            "record_id": "Rec0C7CURDE5C"
+          },
+          {
+            "id": "C10",
+            "record_id": "Rec0C899660SC"
+          },
+          {
+            "id": "C11",
+            "record_id": "Rec0C7JJCF5A8"
+          },
+          {
+            "id": "C12",
+            "record_id": "Rec0C79JS8BRB"
+          },
+          {
+            "id": "C13",
+            "record_id": "Rec0C7JJCKJH2"
+          },
+          {
+            "id": "C14",
+            "record_id": "Rec0C6ZGE3Q6T"
+          },
+          {
+            "id": "C15",
+            "record_id": "Rec0C7JMQGVKN"
+          }
+        ]
+      },
+      "milestones": {
+        "id": "F0C7JJ7BAMA",
+        "name": "AC × SO｜Soul DOF v1 重构里程碑",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C7JJ7BAMA",
+        "records": [
+          {
+            "id": "R0",
+            "record_id": "Rec0C8996SVUY"
+          },
+          {
+            "id": "R1",
+            "record_id": "Rec0C6ZGE5D7Z"
+          },
+          {
+            "id": "R2",
+            "record_id": "Rec0C79JSQWUD"
+          },
+          {
+            "id": "R3",
+            "record_id": "Rec0C79JT130V"
+          },
+          {
+            "id": "R4",
+            "record_id": "Rec0C7JJDCRQU"
+          },
+          {
+            "id": "R5",
+            "record_id": "Rec0C8997DPU0"
+          },
+          {
+            "id": "R6",
+            "record_id": "Rec0C6ZGEPGGP"
+          },
+          {
+            "id": "R7",
+            "record_id": "Rec0C7EP2DX0S"
+          }
+        ]
+      },
+      "mapping": {
+        "id": "F0C79JME6LD",
+        "name": "AC × SO｜Soul DOF v1 功能与接口覆盖",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C79JME6LD",
+        "records": [
+          {
+            "id": "F01",
+            "record_id": "Rec0C8999CA00"
+          },
+          {
+            "id": "F02",
+            "record_id": "Rec0C6ZGB61K9"
+          },
+          {
+            "id": "F03",
+            "record_id": "Rec0C7GRY5BH7"
+          },
+          {
+            "id": "F04",
+            "record_id": "Rec0C7JJFMNRJ"
+          },
+          {
+            "id": "F05",
+            "record_id": "Rec0C7EP4SZFC"
+          },
+          {
+            "id": "F06",
+            "record_id": "Rec0C8999NQSU"
+          },
+          {
+            "id": "F07",
+            "record_id": "Rec0C6ZGGTQH5"
+          },
+          {
+            "id": "F08",
+            "record_id": "Rec0C8999SX88"
+          },
+          {
+            "id": "F09",
+            "record_id": "Rec0C7CUV7Z8W"
+          },
+          {
+            "id": "F10",
+            "record_id": "Rec0C6ZGHJQ23"
+          },
+          {
+            "id": "F11",
+            "record_id": "Rec0C899A8BS4"
+          },
+          {
+            "id": "F12",
+            "record_id": "Rec0C899AGDS4"
+          },
+          {
+            "id": "F13",
+            "record_id": "Rec0C79JWPYE9"
+          },
+          {
+            "id": "F14",
+            "record_id": "Rec0C78M27YG3"
+          },
+          {
+            "id": "F15",
+            "record_id": "Rec0C7JJH251S"
+          },
+          {
+            "id": "F16",
+            "record_id": "Rec0C79JWN84D"
+          },
+          {
+            "id": "F17",
+            "record_id": "Rec0C78M2H9AP"
+          },
+          {
+            "id": "F18",
+            "record_id": "Rec0C79JX204D"
+          },
+          {
+            "id": "F19",
+            "record_id": "Rec0C7EP6AH5G"
+          },
+          {
+            "id": "F20",
+            "record_id": "Rec0C7JJHD05A"
+          },
+          {
+            "id": "F21",
+            "record_id": "Rec0C7EP6KXDY"
+          },
+          {
+            "id": "F22",
+            "record_id": "Rec0C7GS0E0G1"
+          },
+          {
+            "id": "F23",
+            "record_id": "Rec0C78QA4LMR"
+          }
+        ]
+      },
+      "decisions": {
+        "id": "F0C8991KJQ0",
+        "name": "AC × SO｜Soul DOF v1 架构决策与风险",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C8991KJQ0",
+        "records": [
+          {
+            "id": "A01",
+            "record_id": "Rec0C78M3GZ27"
+          },
+          {
+            "id": "A02",
+            "record_id": "Rec0C7GS0AMH7"
+          },
+          {
+            "id": "A03",
+            "record_id": "Rec0C7GS0U0JV"
+          },
+          {
+            "id": "A04",
+            "record_id": "Rec0C79JY519B"
+          },
+          {
+            "id": "A05",
+            "record_id": "Rec0C78M44VJ7"
+          },
+          {
+            "id": "A06",
+            "record_id": "Rec0C899CBRG8"
+          },
+          {
+            "id": "A07",
+            "record_id": "Rec0C6ZGKS3N3"
+          },
+          {
+            "id": "A08",
+            "record_id": "Rec0C78M48HQB"
+          },
+          {
+            "id": "A09",
+            "record_id": "Rec0C7EP81THQ"
+          },
+          {
+            "id": "A10",
+            "record_id": "Rec0C7GS1HRQ9"
+          },
+          {
+            "id": "A11",
+            "record_id": "Rec0C79N4DZT7"
+          }
+        ]
+      },
+      "economics": {
+        "id": "F0C7GRQQFEV",
+        "name": "AC × SO｜Soul DOF v1 经济规则与资金对账",
+        "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C7GRQQFEV",
+        "records": [
+          {
+            "id": "E01",
+            "record_id": "Rec0C79JYU99B"
+          },
+          {
+            "id": "E02",
+            "record_id": "Rec0C6ZGL5CDD"
+          },
+          {
+            "id": "E03",
+            "record_id": "Rec0C79JZ7NG5"
+          },
+          {
+            "id": "E04",
+            "record_id": "Rec0C7GS1TRAM"
+          },
+          {
+            "id": "E05",
+            "record_id": "Rec0C6ZGFBB0X"
+          },
+          {
+            "id": "E06",
+            "record_id": "Rec0C78M5C6E7"
+          },
+          {
+            "id": "E07",
+            "record_id": "Rec0C78M5CMLK"
+          },
+          {
+            "id": "E08",
+            "record_id": "Rec0C79JZT7AR"
+          },
+          {
+            "id": "E09",
+            "record_id": "Rec0C7GS2H5GR"
+          },
+          {
+            "id": "E10",
+            "record_id": "Rec0C7JJL91D2"
+          },
+          {
+            "id": "E11",
+            "record_id": "Rec0C7JMQLPU4"
+          }
+        ]
+      }
+    },
+    "preparation_handoff": "docs/codex/handoffs/2026-10-07-current-frontend-preparation-correction.md",
+    "review_canvas": {
+      "id": "F0C89LN2YAU",
+      "url": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    "artifact_list": {
+      "id": "F0C6ZRFR6VD",
+      "url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C6ZRFR6VD",
+      "count": 30,
+      "records": [
+        {
+          "id": "P01",
+          "record_id": "Rec0C7JUHDK1A",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUHDK1A\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUHDK1A\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P02",
+          "record_id": "Rec0C6ZSJHU5V",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C6ZSJHU5V\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C6ZSJHU5V\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P03",
+          "record_id": "Rec0C7F3PER3L",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7F3PER3L\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7F3PER3L\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P04",
+          "record_id": "Rec0C7D9H5B6J",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7D9H5B6J\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7D9H5B6J\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P05",
+          "record_id": "Rec0C791PEF2P",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C791PEF2P\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C791PEF2P\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P06",
+          "record_id": "Rec0C7JUJ7P8U",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUJ7P8U\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUJ7P8U\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P07",
+          "record_id": "Rec0C89KC2G8G",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C89KC2G8G\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C89KC2G8G\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P08",
+          "record_id": "Rec0C79UY0FHB",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UY0FHB\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UY0FHB\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P09",
+          "record_id": "Rec0C6ZSKKRPH",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C6ZSKKRPH\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C6ZSKKRPH\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P10",
+          "record_id": "Rec0C79UY99NZ",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UY99NZ\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UY99NZ\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P11",
+          "record_id": "Rec0C7F3Q8GPL",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7F3Q8GPL\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7F3Q8GPL\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P12",
+          "record_id": "Rec0C7JUJS6UU",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUJS6UU\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUJS6UU\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P13",
+          "record_id": "Rec0C7JUDQ0QL",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUDQ0QL\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUDQ0QL\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P14",
+          "record_id": "Rec0C7D9JG2SJ",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7D9JG2SJ\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7D9JG2SJ\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P15",
+          "record_id": "Rec0C7D9J8SAJ",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7D9J8SAJ\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7D9J8SAJ\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P16",
+          "record_id": "Rec0C791R0WF5",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C791R0WF5\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C791R0WF5\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P17",
+          "record_id": "Rec0C79UZJR53",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UZJR53\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UZJR53\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P18",
+          "record_id": "Rec0C79UZ9KRB",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UZ9KRB\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UZ9KRB\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P19",
+          "record_id": "Rec0C79UZS55K",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UZS55K\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UZS55K\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P20",
+          "record_id": "Rec0C79UZATEH",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UZATEH\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UZATEH\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P21",
+          "record_id": "Rec0C7D9K16MU",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7D9K16MU\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7D9K16MU\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P22",
+          "record_id": "Rec0C89KE15C0",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C89KE15C0\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C89KE15C0\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P23",
+          "record_id": "Rec0C7H6J61LH",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7H6J61LH\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7H6J61LH\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P24",
+          "record_id": "Rec0C791RU18B",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C791RU18B\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C791RU18B\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P25",
+          "record_id": "Rec0C89KEF6PJ",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C89KEF6PJ\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C89KEF6PJ\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P26",
+          "record_id": "Rec0C7F3RUMDY",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7F3RUMDY\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7F3RUMDY\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P27",
+          "record_id": "Rec0C89KEAA7J",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C89KEAA7J\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C89KEAA7J\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P28",
+          "record_id": "Rec0C7JULP3D2",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JULP3D2\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JULP3D2\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P29",
+          "record_id": "Rec0C7F3SEQKC",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7F3SEQKC\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7F3SEQKC\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        },
+        {
+          "id": "P30",
+          "record_id": "Rec0C7JUHGW04",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUHGW04\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUHGW04\\n\"}"
+              }
+            ],
+            "isError": false
+          }
+        }
+      ]
+    },
+    "preconstruction_package": {
+      "bundle": {
+        "id": "F0C700A4J6B",
+        "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C700A4J6B/soul-dof-v1-preconstruction-review-v2.zip",
+        "path": "/Users/naoer/Documents/Claude/Projects/soulidity/output/soul-dof-v1-preparation/soul-dof-v1-preconstruction-review-v2.zip",
+        "bytes": 7470495,
+        "previousFileId": "F0C7A0N9753",
+        "status": "Historical v2; Superseded for construction by 2026-10-07 current-frontend correction"
+      },
+      "screenshots": [
+        {
+          "path": "/Users/naoer/Documents/Claude/Projects/soulidity/output/soul-dof-v1-preparation/uiux/creator.jpg",
+          "filename": "soul-dof-v1-creator.jpg",
+          "size": 128990,
+          "id": "F0C89LT4CTS",
+          "complete": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"File upload completed successfully!\\n\\nFile ID: F0C89LT4CTS\\nTitle: soul-dof-v1-creator.jpg\\nLink: https:\\/\\/sega-xya5661.slack.com\\/files\\/U08LQTJJGP6\\/F0C89LT4CTS\\/soul-dof-v1-creator.jpg\\n\"}"
+              }
+            ],
+            "isError": false
+          },
+          "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C89LT4CTS/soul-dof-v1-creator.jpg",
+          "status": "Historical simulated interaction; not acceptance authority"
+        },
+        {
+          "path": "/Users/naoer/Documents/Claude/Projects/soulidity/output/soul-dof-v1-preparation/uiux/wardrobe.jpg",
+          "filename": "soul-dof-v1-wardrobe.jpg",
+          "size": 131321,
+          "id": "F0C7H8216CR",
+          "complete": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"File upload completed successfully!\\n\\nFile ID: F0C7H8216CR\\nTitle: soul-dof-v1-wardrobe.jpg\\nLink: https:\\/\\/sega-xya5661.slack.com\\/files\\/U08LQTJJGP6\\/F0C7H8216CR\\/soul-dof-v1-wardrobe.jpg\\n\"}"
+              }
+            ],
+            "isError": false
+          },
+          "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C7H8216CR/soul-dof-v1-wardrobe.jpg",
+          "status": "Historical simulated interaction; not acceptance authority"
+        },
+        {
+          "path": "/Users/naoer/Documents/Claude/Projects/soulidity/output/soul-dof-v1-preparation/uiux/market.jpg",
+          "filename": "soul-dof-v1-market.jpg",
+          "size": 133196,
+          "id": "F0C7DAZT7LN",
+          "complete": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"result\":\"File upload completed successfully!\\n\\nFile ID: F0C7DAZT7LN\\nTitle: soul-dof-v1-market.jpg\\nLink: https:\\/\\/sega-xya5661.slack.com\\/files\\/U08LQTJJGP6\\/F0C7DAZT7LN\\/soul-dof-v1-market.jpg\\n\"}"
+              }
+            ],
+            "isError": false
+          },
+          "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C7DAZT7LN/soul-dof-v1-market.jpg",
+          "status": "Historical simulated interaction; not acceptance authority"
+        }
+      ]
+    },
+    "start_confirmation_required": false,
+    "production_code_started": true,
+    "current_frontend_correction": {
+      "date": "2026-10-07",
+      "scope": "Current deployed frontend only; preserve page structure, controls, tool dialogs and operation paths; minimal contract/rights/equip/tuning/sale-manifest details.",
+      "startConfirmationRequired": false,
+      "productionCodeStarted": true,
+      "deploymentStarted": false,
+      "historicalPrototypeStatus": "Superseded; not construction or acceptance authority",
+      "activeUIUXAuthority": "docs/soul-dof-v1-preparation/02_UIUX_CN.md",
+      "reviewCanvas": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+      "handoff": "docs/codex/handoffs/2026-10-07-current-frontend-preparation-correction.md",
+      "authorizationUpdate": "用户随后明确：搞吧先把合约写完／整体合约重构完／对应maker／所有合约；新目标active。此前暂停条件仅作历史。"
+    },
+    "active_preparation_entry": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+    "implementation": {
+      "goal_status": "active",
+      "goal_created_at": "2026-10-08T13:43:54+00:00",
+      "date": "2026-10-08",
+      "branch": "codex/soul-dof-v1-contracts",
+      "package": "Standard Soul + Model4 + Content + Application7 + native Core13",
+      "spec": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/docs/CONTRACT_REBUILD_SPEC_CN.md",
+      "scope": "All Soulidity and Animacraft contract responsibilities including Maker and Expansion Pack",
+      "excluded": "SDK/frontend integration, live 37-step journeys, deployment/signatures/spend, external audit",
+      "stage": "Code",
+      "build": "Eight production packages and independent visual prototype each rebuilt twice;1057 module copies including repeated dependencies and9 resolved locks identical. Actual default local eight-package publication accepted; Core101765/102400 bytes,635 headroom.",
+      "tests": "Default776/775PASS/1 exact original500 cumulative TIMEOUT;768 prior names/outcomes retained;8newPASS. Independent visual3VM and actual free mint/install/staleCAS/original-ID-exit PTBs accepted.237 external compiler cases56positive181negative current per-file diagnostics verified; not237 deployments. Current native local46 ledger transactions32success14expected MoveAbort, exact unsigned BCS; actual roles0-5/native15/releaseDOF/Maker constructor;500Fragment metadata ingress/cancel; disabled exits and1000MIST treasury gas-adjusted conservation. Full certified publication/Player/Complete still pending.",
+      "review": "Handbookv1.0 §§1-4/6/7/8.3-8.4/9/12 executor review in native-current IMPLEMENTATION_CN.md. Current actual Admin/Publisher/UpgradeCap/typedDOF and explicit failures checked; failed object content/owner compared through actual historical versions; treasury Coin/wallet gas reconciled. Not independent audit/full release.",
+      "slack_record": "Rec0C78FYL0KD",
+      "evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/native-current-ptb-2026-10-08/evidence.json",
+      "coverage": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/docs/CONTRACT_REBUILD_COVERAGE.json",
+      "full_contracts_complete": false,
+      "slack_readback": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/native-current-ptb-2026-10-08/slack-readback.json",
+      "coverage_summary": {
+        "partial": 30,
+        "pending": 0
+      },
+      "next": "Continue same actual current eight packages/Config13/Product/Control/WalrusSystem: configure isolated real storage committee and certified Blob paths, Creator publication→Player→Complete and paid business/funds;500full publication/finish; independent container/cross-owner/privacy,oldentry/upgrades/recovery/security/all30 duties/forms/history. Never replay accepted46 transactions.",
+      "grant_replacement_direction": {
+        "date": "2026-10-08",
+        "stage": "Plan",
+        "status": "官方发布已确认；接口、覆盖与迁移待核验",
+        "user_direction": "后续将 Soul Grant 板块替换为 Sui Agent Pass，保留四类权限与原用户操作。",
+        "spec": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/docs/CONTRACT_REBUILD_SPEC_CN.md#后续-grant-替换方向sui-agent-pass2026-10-08",
+        "official_announcement": "https://x.com/SuiNetwork/status/2108149753553015088",
+        "user_supplied_source": "https://x.com/lakshay/status/2108071874597208368",
+        "acceptance": "核验官方包/网络/API和策略扩展；映射27项原Grant函数及Seal/Memory/Skills/Assets；验证撤销、到期、控制者/generation、转回不复活、Seal/PTB、旧入口停用及既有对象迁移。",
+        "review": {
+          "handbook": "1.0 / 2026-10-06",
+          "sections": [
+            "1–4",
+            "8",
+            "9",
+            "12"
+          ],
+          "template": "agent-management/templates/product-engineering-review.md",
+          "conclusion": "待核验；仅发布与职责对照，无实现/部署/安全验收"
+        },
+        "execution_boundary": "未来替换意图；当前合约、生产入口、Owner、CURRENT、整体阶段及next保持；本次未执行交易或发送外部消息。"
+      },
+      "grant_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/authorization-2026-10-07/grant-function-map.json",
+      "loadout_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/loadout-2026-10-07/loadout-function-map.json",
+      "physical_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-2026-10-07/physical-function-map.json",
+      "collection_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/collection-2026-10-07/collection-function-map.json",
+      "economic_parity": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/config-entitlement-2026-10-07/economic-parity.json",
+      "soul_market_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/royalties-2026-10-07/soul-market-function-map.json",
+      "ac_market_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/config-entitlement-2026-10-07/ac-market-function-map.json",
+      "goal_name": "完成以标准 Soul 为核心的全部合约重构",
+      "treasury_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/config-entitlement-2026-10-07/treasury-function-map.json",
+      "abi_delta": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/metadata-ingress-2026-10-08/abi-changes.json",
+      "settlement_paths": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/income-routing-2026-10-07/settlement-paths.json",
+      "config_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/config-entitlement-2026-10-07/config-function-map.json",
+      "goal_tracking_note": "2026-10-08 user explicitly requested a new Soul-centered goal; get_goal was null, then create_goal succeeded. Full contract scope active; no budget, no completion.",
+      "source_abi_inventory": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/visual-capture-boundary-2026-10-08/source-abi-index.json",
+      "object_ability_inventory": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/visual-capture-boundary-2026-10-08/object-ability-index.json",
+      "pack_authoring_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/pack-publication-2026-10-08/pack-authoring-function-map.json",
+      "pack_soul_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/pack-soul-2026-10-08/IMPLEMENTATION_CN.md",
+      "pack_rights_physical_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/pack-rights-physical-2026-10-08/IMPLEMENTATION_CN.md",
+      "capacity_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/capacity-2026-10-08/IMPLEMENTATION_CN.md",
+      "enhancement_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/enhancement-2026-10-08/IMPLEMENTATION_CN.md",
+      "native_binding_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/native-binding-2026-10-08/IMPLEMENTATION_CN.md",
+      "certified_publication_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-publication-2026-10-08/IMPLEMENTATION_CN.md",
+      "release_gate_passed": false,
+      "certified_runtime_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-runtime-2026-10-08/IMPLEMENTATION_CN.md",
+      "metadata_ingress_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/metadata-ingress-2026-10-08/IMPLEMENTATION_CN.md",
+      "publication_budget_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/visual-capture-boundary-2026-10-08/IMPLEMENTATION_CN.md",
+      "publication_budget_guard": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/scripts/verify_contract_publication_budget.py",
+      "visual_package_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/visual-package-2026-10-08/IMPLEMENTATION_CN.md",
+      "community_package_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/community-package-2026-10-08/IMPLEMENTATION_CN.md",
+      "installation_permit_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/package-roles-2026-10-08/IMPLEMENTATION_CN.md",
+      "package_roles_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/package-roles-2026-10-08/IMPLEMENTATION_CN.md",
+      "architecture_review": {
+        "spec": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/docs/SOUL_ARCHITECTURE_REVIEW_CN.md",
+        "current": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/docs/codex/CURRENT.md",
+        "handoff": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/docs/codex/handoffs/2026-10-08-soul-architecture-review.md",
+        "goal": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/soul-architecture-review-2026-10-08/goal.json",
+        "source_modules": 36,
+        "local_reference_edges": 149,
+        "proposal_implemented": false,
+        "full_source_regressions_passed": false
+      },
+      "historical_inventory_note": "Existing detailed implementation/maps/ABI/test inventories retain their candidate-specific historical scope; they are not validation of the Foundation migration or newly proposed Soul standard.",
+      "standard_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/docs/SOUL_STANDARD_KERNEL_CN.md",
+      "capacity_optimization_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/standard-business-2026-10-08/heap-evidence.json",
+      "model_source_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/model-source-2026-10-08/evidence.json",
+      "component_issuance_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/component-issuance-2026-10-08/evidence.json",
+      "content_boundary_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/content-boundary-2026-10-08/evidence.json",
+      "output_boundary_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/output-boundary-2026-10-08/evidence.json",
+      "character_boundary_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/character-boundary-2026-10-08/IMPLEMENTATION_CN.md",
+      "visual_capture_boundary_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/visual-capture-boundary-2026-10-08/IMPLEMENTATION_CN.md",
+      "current_local_publications": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/visual-capture-boundary-2026-10-08/current-eight-publications.json",
+      "native_current_ptb_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/native-current-ptb-2026-10-08/IMPLEMENTATION_CN.md",
+      "native_current_local_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/native-current-ptb-2026-10-08/bootstrap-evidence.json",
+      "native_current_local_recovery": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/native-current-ptb-2026-10-08/recovery-evidence.json",
+      "certified_native_ptb_implementation": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-native-ptb-2026-10-08/IMPLEMENTATION_CN.md",
+      "certified_native_local_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-native-ptb-2026-10-08/native-journey-evidence.json",
+      "certified_paid_pack_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-native-ptb-2026-10-08/pack-journey-evidence.json",
+      "certified_initial_pack_complete_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-native-ptb-2026-10-08/pack-complete-evidence.json",
+      "certified_native_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-native-ptb-2026-10-08/evidence.json",
+      "scoped_public_market_ptb_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/scoped-public-ptb-2026-10-09/evidence.json",
+      "scoped_public_market_ptb_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/scoped-public-ptb-2026-10-09/IMPLEMENTATION_CN.md",
+      "scoped_render_plan_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/scoped-public-ptb-2026-10-09/render-plan-equivalence.json",
+      "scoped_item_rights_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/scoped-public-ptb-2026-10-09/scoped-rights-evidence.json",
+      "whole_market_and_native_grant_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/scoped-public-ptb-2026-10-09/market-whole-evidence.json",
+      "container_commerce_ptb_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/container-commerce-ptb-2026-10-09/evidence.json",
+      "container_commerce_ptb_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/container-commerce-ptb-2026-10-09/IMPLEMENTATION_CN.md",
+      "independent_owned_container_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/container-commerce-ptb-2026-10-09/owned-container-evidence.json",
+      "native_vault_private_approval_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/container-commerce-ptb-2026-10-09/vault-private-evidence.json",
+      "item_control_market_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/container-commerce-ptb-2026-10-09/asset-markets-evidence.json",
+      "market_paused_exit_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/container-commerce-ptb-2026-10-09/market-cancel-recovery-evidence.json",
+      "certified500_paging_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-capacity-ptb-2026-10-09/evidence.json",
+      "certified500_paging_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-capacity-ptb-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_paged_core_publication": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-capacity-ptb-2026-10-09/paged-core-publication.json",
+      "current_paged_candidate_packages": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-capacity-ptb-2026-10-09/paged/published.json",
+      "certified500_player_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-capacity-ptb-2026-10-09/paged/player500-evidence.json",
+      "certified500_paged_recovery_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/certified-capacity-ptb-2026-10-09/paged/recovery/evidence.json",
+      "current_paged_paid_whole_market_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-paid-ptb-2026-10-09/combined-evidence.json",
+      "current_paged_paid_whole_market_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-paid-ptb-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_paged_paid_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-paid-ptb-2026-10-09/pack-complete-evidence.json",
+      "current_paged_whole_market_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-paid-ptb-2026-10-09/market/market-whole-evidence.json",
+      "current_paged_scoped_physical_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-scoped-ptb-2026-10-09/combined-evidence.json",
+      "current_paged_scoped_physical_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-scoped-ptb-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_paged_scoped_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-scoped-ptb-2026-10-09/scoped-rights-evidence.json",
+      "current_paged_physical_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-scoped-ptb-2026-10-09/physical/evidence.json",
+      "current_paged_pack_physical_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-pack-physical-ptb-2026-10-09/combined-evidence.json",
+      "current_paged_pack_physical_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-pack-physical-ptb-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_paged_pack_physical_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-pack-physical-ptb-2026-10-09/evidence.json",
+      "current_physical_function_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/paged-pack-physical-ptb-2026-10-09/physical-function-map.json",
+      "current_physical_provenance_candidate": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-provenance-2026-10-09/candidate-evidence.json",
+      "current_physical_provenance_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-provenance-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_physical_provenance_source": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-provenance-2026-10-09/source-freeze-r3.json",
+      "current_physical_provenance_vm": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-provenance-2026-10-09/vm-evidence-r2.json",
+      "current_physical_provenance_ptb_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-provenance-ptb-2026-10-09/verification-evidence.json",
+      "current_physical_provenance_ptb_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-provenance-ptb-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_physical_provenance_ptb_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-provenance-ptb-2026-10-09/material-exit-evidence.json",
+      "current_physical_provenance_ptb_map": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-provenance-ptb-2026-10-09/physical-function-map.json",
+      "current_capacity_complete_ptb_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/capacity-complete-ptb-2026-10-09/verification-evidence.json",
+      "current_capacity_complete_ptb_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/capacity-complete-ptb-2026-10-09/REVIEW_CN.md",
+      "current_capacity_complete_ptb_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/capacity-complete-ptb-2026-10-09/complete500-evidence.json",
+      "current_capacity_cost_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/capacity-complete-ptb-2026-10-09/capacity-cost-evidence.json",
+      "current_compact_bindings_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-bindings-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_compact_bindings_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-bindings-2026-10-09/REVIEW_CN.md",
+      "current_compact_bindings_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-bindings-2026-10-09/verification-evidence.json",
+      "current_compact_bindings_cost": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-bindings-2026-10-09/capacity-cost-evidence.json",
+      "current_external242_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/release-cost-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_external242_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/release-cost-2026-10-09/REVIEW_CN.md",
+      "current_external242_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/release-cost-2026-10-09/verification-evidence.json",
+      "current_external242_probe_repair": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/release-cost-2026-10-09/probe-repair-decision.json",
+      "current_compact_business_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-business-ptb-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_compact_business_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-business-ptb-2026-10-09/REVIEW_CN.md",
+      "current_compact_business_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-business-ptb-2026-10-09/verification-evidence.json",
+      "current_compact_business_loadout": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-business-ptb-2026-10-09/loadout-evidence.json",
+      "current_default500_cost_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/default500-cost-2026-10-09/verification-evidence.json",
+      "current_default500_cost_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/default500-cost-2026-10-09/REVIEW_CN.md",
+      "current_compact_scoped_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-scoped-ptb-2026-10-09/verification-evidence.json",
+      "current_compact_scoped_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-scoped-ptb-2026-10-09/REVIEW_CN.md",
+      "current_compact_scoped_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-scoped-ptb-2026-10-09/scoped-rights-evidence.json",
+      "current_compact_physical_state": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/compact-physical-ptb-2026-10-09/material-exit-evidence.json",
+      "current_physical_metadata_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-metadata-interface-2026-10-09/verification-evidence.json",
+      "current_physical_metadata_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-metadata-interface-2026-10-09/REVIEW_CN.md",
+      "current_physical_metadata_state": "2026-10-09; goalACTIVE/30partial/Code/Releasefalse;129inputs/newAppCore71682/102230 margin170;52PTB38success14MoveAbort292Public6Blob;retained74/wallet exgas-74 conserved;8foreignPASS;default789/788PASS/original500TIMEOUT;all duties/upgrades/recovery/privacy/OC growth/forms/nesting pending",
+      "current_physical_genesis_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-genesis-proof-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_physical_genesis_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/physical-genesis-proof-2026-10-09/REVIEW_CN.md",
+      "current_physical_genesis_state": {
+        "goal_status": "active",
+        "stage": "Code",
+        "full_contracts_complete": false,
+        "source_inputs": 129,
+        "production_packages": 10,
+        "core_bytes": 102285,
+        "core_margin": 115,
+        "default_total": 791,
+        "default_passed": 790,
+        "original_500_timeout": true,
+        "physical_passed": 74,
+        "foreign_verified": 9,
+        "foreign_available": 252,
+        "foreign_full_suite_verified": false,
+        "runtime_unique": 57,
+        "runtime_success": 43,
+        "runtime_business_abort": 14,
+        "public_calls": 293,
+        "birth_observations": 5,
+        "retained": 74,
+        "conservation": 0,
+        "physical_counts": {
+          "implemented": 43,
+          "restructured": 91,
+          "partial": 3,
+          "pending": 34
+        },
+        "release_gate_passed": false,
+        "production": false
+      },
+      "current_publication_copy_cost_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/publication-copy-cost-2026-10-09/verification-evidence.json",
+      "current_publication_copy_cost_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/publication-copy-cost-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_publication_copy_cost_state": {
+        "goal_status": "active",
+        "stage": "Code",
+        "full_contracts_complete": false,
+        "release_gate_passed": false,
+        "production": false,
+        "new_local_publication_verified": false,
+        "new_runtime_ptb_verified": false,
+        "default_vm": {
+          "total": 810,
+          "passed": 809,
+          "failed": 1,
+          "failures": [
+            "soulidity_v1::release_tests::five_hundred_real_assets_publish_in_chunks_with_constant_finish_custody"
+          ],
+          "gate_passed": false,
+          "command": "sui move test --path move/soulidity_v1; default budget, no filter or overrides"
+        },
+        "foreign": {
+          "verified": 8,
+          "positive": 3,
+          "negative": 5,
+          "available": 258,
+          "full_suite_verified": false
+        },
+        "offline_build": {
+          "two_outputs_exact": true,
+          "production_modules": 13,
+          "source_inputs_frozen": 95,
+          "current_production_sources_match_snapshot": true,
+          "catalog_publish_bcs_calls": 1,
+          "catalog_publish_full_version_copy": false,
+          "testing_helper_absent": true,
+          "core_conservative_preflight_bytes": 101824,
+          "core_conservative_preflight_margin": 576,
+          "actual_new_package_size_verified": false
+        }
+      },
+      "current_native_publication_index_evidence": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/native-publication-index-2026-10-09/IMPLEMENTATION_CN.md",
+      "current_native_publication_index_review": "/Users/naoer/.codex/worktrees/soul-dof-v1-rebuild/soulidity/output/contract-rebuild/native-publication-index-2026-10-09/verification-evidence.json",
+      "current_native_publication_index_state": {
+        "full_goal": "ACTIVE",
+        "stage": "Code/Build/Test isolated local increment",
+        "release": false,
+        "vm": "819/819/default/original500 unchangedPASS",
+        "foreign": "266/266",
+        "fresh_packages": 5,
+        "core_actual_bytes": 101061,
+        "core_margin": 1339,
+        "local_transactions": 60,
+        "success": 46,
+        "expected_business_aborts": 14,
+        "remaining": "all30partial; Physical34pending3partial; strict privacy/OCgrowthformsnesting/upgrade/recovery; full Pack/whole Soul/500network current PTB"
+      }
+    }
+  },
+  "labs_operations": {
+    "workspace_id": "T08LQTJFZRS",
+    "channel_id": "C0C7U80CYE5",
+    "channel_name": "soulidity-labs-launch",
+    "channel_url": "https://sega-xya5661.slack.com/archives/C0C7U80CYE5",
+    "list_id": "F0C7QARMQJ2",
+    "list_name": "Soulidity Labs｜运营与发行",
+    "list_url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C7QARMQJ2",
+    "authorized_at": "2026-10-08",
+    "scope": "User-requested Labs operations and launch planning; first X maintenance",
+    "account": "@MaximusSega",
+    "public_language": "en",
+    "automation": {
+      "id": "soulidity-labs-x",
+      "name": "Soulidity Labs · Slack运营规划",
+      "status": "ACTIVE",
+      "time": "18:00",
+      "timezone": "Europe/Moscow",
+      "first_run_verified": true,
+      "first_run_verified_at": "2026-10-08T18:00:43.228289+03:00"
+    },
+    "records": [
+      {
+        "id": "X-20261008-01",
+        "record_id": "Rec0C7L39BE9H"
+      },
+      {
+        "id": "X-20261008-02",
+        "record_id": "Rec0C7W0T2WKW"
+      },
+      {
+        "id": "X-20261008-03",
+        "record_id": "Rec0C7QB03CRL"
+      },
+      {
+        "id": "X-20261008-04",
+        "record_id": "Rec0C7U8BMU0Z"
+      },
+      {
+        "id": "X-20261008-05",
+        "record_id": "Rec0C8LM5HJLQ"
+      },
+      {
+        "id": "X-20261008-06",
+        "record_id": "Rec0C7QATTMQW"
+      },
+      {
+        "id": "X-20261008-07",
+        "record_id": "Rec0C7QB13BJA"
+      },
+      {
+        "id": "X-DEMO-01",
+        "record_id": "Rec0C7W0U5BV2"
+      },
+      {
+        "id": "X-PROGRESS-01",
+        "record_id": "Rec0C7U8CJ0BT"
+      },
+      {
+        "id": "OPS-X-001",
+        "record_id": "Rec0C7QB1HETG"
+      },
+      {
+        "id": "OPS-X-002",
+        "record_id": "Rec0C7L3BVAJF"
+      },
+      {
+        "id": "LAUNCH-001",
+        "record_id": "Rec0C7U8D73MX"
+      }
+    ],
+    "receipt": "agent-management/runs/2026-10-08-x-slack-bootstrap.json"
+  }
+}

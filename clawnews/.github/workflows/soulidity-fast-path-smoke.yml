@@ -1,0 +1,142 @@
+name: Soulidity fast-path smoke
+
+# PR gates run on every push affecting the fast-path surface. The
+# `workflow_dispatch` job runs the live testnet smoke matrix and is
+# what the runbook treats as the gate before mainnet stage 7b.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+      - 'move/soulidity/**'
+      - 'web/lib/soulidity/tx/**'
+      - 'web/lib/upload/**'
+      - 'web/lib/hooks/use-publish.ts'
+      - 'web/lib/hooks/use-collection-publish.ts'
+      - 'web/lib/soulidity/events.ts'
+      - 'web/app/api/souls/publish/**'
+      - 'web/app/api/souls/[id]/list/**'
+      - 'web/app/api/collections/[id]/list/**'
+      - 'web/app/api/collections/[id]/add-soul/**'
+      - 'tests/new-web/walrus-batch-helper-split.test.ts'
+      - 'scripts/smoke-soulidity.ts'
+      - 'scripts/phase2-testnet-smoke.ts'
+      - '.github/workflows/soulidity-fast-path-smoke.yml'
+  workflow_dispatch:
+    inputs:
+      run_testnet_smoke:
+        description: 'Run live testnet smoke matrix (requires .env.soulidity-smoke secrets)'
+        required: false
+        default: 'false'
+
+jobs:
+  pr-gates:
+    name: PR gates (typecheck + unit + Move build/test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      # `npm ci` is strict-validating, but knip's transitive
+      # `@oxc-parser/binding-wasm32-wasi` declares `@emnapi/core/runtime`
+      # 1.10.0 as `peer: true, optional: true` inBundle deps that don't
+      # round-trip cleanly between darwin (where the lock is generated)
+      # and linux (where CI runs). `npm install` reads the same lock but
+      # tolerates that gap.
+      - name: Install root deps
+        run: npm install --no-audit --no-fund
+      - name: Install web deps
+        run: npm --prefix web install --no-audit --no-fund
+      # `tests/web/no-privy-residue.test.ts` shells out to ripgrep, which is
+      # not in ubuntu-latest by default.
+      - name: Install ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -yqq ripgrep
+      # `tests/desktop/*.test.ts` resolves modules from
+      # `desktop/packages/backend/package.json` via `createRequire`, so the
+      # desktop pnpm subworkspace must be installed before root vitest runs.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Install desktop deps
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Run TS unit + integration tests
+        run: npm test
+      - name: Run web typecheck
+        run: npm --prefix web run typecheck || npx tsc --noEmit -p web/tsconfig.json
+      - name: Lint web
+        run: npm --prefix web run lint
+      - name: Install suiup
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/Mystenlabs/suiup/main/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install Sui CLI
+        run: suiup install sui@testnet -y
+      - name: Sui Move build
+        run: sui move build --path move/soulidity
+      - name: Sui Move test
+        run: sui move test --path move/soulidity
+
+  testnet-smoke:
+    name: Testnet smoke matrix (live)
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_testnet_smoke == 'true'
+    runs-on: ubuntu-latest
+    needs: pr-gates
+    env:
+      NEXT_PUBLIC_SUI_NETWORK: testnet
+      SOULIDITY_WEB_URL: ${{ secrets.SOULIDITY_TESTNET_WEB_URL }}
+      SMOKE_PUBLISHER_KEY: ${{ secrets.SMOKE_PUBLISHER_KEY_TESTNET }}
+      SMOKE_BUYER_KEY: ${{ secrets.SMOKE_BUYER_KEY_TESTNET }}
+      SMOKE_AGENT_KEY: ${{ secrets.SMOKE_AGENT_KEY_TESTNET }}
+      SOULIDITY_SMOKE_SCENARIO_JSON: ${{ secrets.SOULIDITY_SMOKE_SCENARIO_JSON_TESTNET }}
+      # Per-signer auth — scripts/smoke-soulidity.ts picks Authorization /
+      # Cookie headers off step.signer, so a single global cookie cannot
+      # service publisher / buyer / agent rows. Each first-party mirror
+      # route enforces that the signed-in wallet identity matches the
+      # on-chain transaction sender (assertTransactionSender in
+      # web/lib/soulidity/server.ts). Legacy SMOKE_AUTHORIZATION / SMOKE_COOKIE
+      # are intentionally not exported — the harness no longer reads them
+      # and tests/new-web/collection-fast-path-regressions.test.ts pins this.
+      SMOKE_PUBLISHER_AUTHORIZATION: ${{ secrets.SOULIDITY_SMOKE_PUBLISHER_AUTHORIZATION_TESTNET }}
+      SMOKE_PUBLISHER_COOKIE: ${{ secrets.SOULIDITY_SMOKE_PUBLISHER_COOKIE_TESTNET }}
+      SMOKE_BUYER_AUTHORIZATION: ${{ secrets.SOULIDITY_SMOKE_BUYER_AUTHORIZATION_TESTNET }}
+      SMOKE_BUYER_COOKIE: ${{ secrets.SOULIDITY_SMOKE_BUYER_COOKIE_TESTNET }}
+      SMOKE_AGENT_AUTHORIZATION: ${{ secrets.SOULIDITY_SMOKE_AGENT_AUTHORIZATION_TESTNET }}
+      SMOKE_AGENT_COOKIE: ${{ secrets.SOULIDITY_SMOKE_AGENT_COOKIE_TESTNET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      # `npm ci` is strict-validating, but knip's transitive
+      # `@oxc-parser/binding-wasm32-wasi` declares `@emnapi/core/runtime`
+      # 1.10.0 as `peer: true, optional: true` inBundle deps that don't
+      # round-trip cleanly between darwin (where the lock is generated)
+      # and linux (where CI runs). `npm install` reads the same lock but
+      # tolerates that gap.
+      - name: Install root deps
+        run: npm install --no-audit --no-fund
+      - name: Install web deps
+        run: npm --prefix web install --no-audit --no-fund
+      - name: Install suiup
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/Mystenlabs/suiup/main/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install Sui CLI
+        run: suiup install sui@testnet -y
+      - name: Run smoke matrix
+        run: npm run smoke:soulidity
+      - name: Upload bench artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulidity-fast-path-bench-${{ github.run_id }}
+          path: docs/benchmarks/
+          retention-days: 30

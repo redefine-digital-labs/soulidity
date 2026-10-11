@@ -1,0 +1,8 @@
+Control,Network,Package,ObjectOrCapId,ActualOwner,EntryPoints,Scope,Multisig,Timelock,UpgradePolicy,Pause,ExitRecovery,ReadbackDigest,Status
+Maker/Pack Control,,,,,,Published product ownership; issued Soul rights immutable by product sale,Not decided,Not decided,Not decided,Not decided,To verify,,Not run
+Issuer capability,,,,,,Authorized fixed-Style issuance and supply,Not decided,Not decided,Not decided,Not decided,To verify,,Not run
+Fee/Treasury capability,,,,,,Exact CoinType/feeSnapshot and receipts,Not decided,Not decided,Not decided,Not decided,To verify,,Not run
+UpgradeCap,,,,,,All direct/indirect upgrade authority paths,Not decided,Not decided,Not decided,Not decided,To verify,,Not run
+Emergency control,,,,,,Operations supported by actual pause and permitted exit,Not decided,Not decided,Not decided,Not decided,To verify,,Not run
+Content/Seal policy,,,,,,Owner/container/grant scope and Walrus expiry,Not decided,Not decided,Not decided,Not decided,To verify,,Not run
+Frontend release,,,,,,Paired AC/SO artifact and config,Not decided,Not decided,Not decided,Not decided,To verify,,Not run

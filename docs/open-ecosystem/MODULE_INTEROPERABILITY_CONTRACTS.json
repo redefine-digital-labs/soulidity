@@ -1,0 +1,2391 @@
+{
+  "version": "1.1",
+  "date": "2026-10-10",
+  "stage": "Plan",
+  "scope": "Standardization and implementation input, not a runtime registry or second task board",
+  "implementation_status": "Not run",
+  "source_evidence": "../../output/open-ecosystem-plan-audit-2026-10-10/maintenance-source-snapshot.json",
+  "targets": {
+    "new_modules": 10,
+    "retained_responsibility_groups": 5,
+    "interface_families": 16,
+    "semantic_capability_units": 30,
+    "decisions": 32,
+    "invariants": 16,
+    "semantic_entries": 38,
+    "detailed_cases": 60,
+    "existing_scenario_groups": 10,
+    "retained_maintenance_units": 15,
+    "original_scope_records": 157
+  },
+  "modules": [
+    {
+      "id": "STANDARD",
+      "repository": "soul-standard",
+      "nature": "稳定资产标准",
+      "purpose": "Soul 身份、来源、根和能力描述；无平台登记",
+      "authoritative_state": "根类型及自己的最小状态；不拥有业务总供给／订单／服务费",
+      "semantic_units": [
+        "标准内核"
+      ],
+      "provided_interfaces": [
+        "F01",
+        "F02",
+        "F03",
+        "F16"
+      ],
+      "selected_dependencies": [],
+      "prohibited_dependencies": [
+        "MAKER",
+        "CHANNEL",
+        "MARKET",
+        "COMMUNITY",
+        "POLICY"
+      ],
+      "maintenance_mapping": "CIPHER 统筹，原实现 Owner",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "本包实际升级；用户资产控制不归标准维护者",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [
+        "read_soul",
+        "install_extension",
+        "upgrade_package"
+      ],
+      "acceptance_case_ids": [
+        "CASE-26",
+        "CASE-28",
+        "CASE-49",
+        "CASE-56",
+        "CASE-58",
+        "CASE-60"
+      ]
+    },
+    {
+      "id": "CONTENT",
+      "repository": "soul-content",
+      "nature": "可选内容与访问协议",
+      "purpose": "内容引用、托管续期、访问与恢复",
+      "authoritative_state": "内容／Blob 生命周期、访问政策及域内授权",
+      "semantic_units": [
+        "引用与托管",
+        "访问授权",
+        "内容恢复"
+      ],
+      "provided_interfaces": [
+        "F07",
+        "F08",
+        "F16"
+      ],
+      "selected_dependencies": [
+        {
+          "provider": "STANDARD",
+          "interfaces": [
+            "F01",
+            "F03"
+          ],
+          "condition": "仅选用 Soul 内容／授权适配；通用内容不强制依赖 Soul"
+        }
+      ],
+      "prohibited_dependencies": [],
+      "maintenance_mapping": "LUQI；CIPHER 复核权限",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "实际托管／策略／包权限；无资产支出权",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [
+        "store_content",
+        "extend_content",
+        "grant_operation",
+        "revoke_operation",
+        "upgrade_package",
+        "execute_maintenance"
+      ],
+      "acceptance_case_ids": [
+        "CASE-04",
+        "CASE-10",
+        "CASE-11",
+        "CASE-12",
+        "CASE-16",
+        "CASE-17",
+        "CASE-18",
+        "CASE-28",
+        "CASE-52"
+      ]
+    },
+    {
+      "id": "MAKER",
+      "repository": "maker-protocol",
+      "nature": "独立资产与生产者协议",
+      "purpose": "Maker 根、版本、许可、资格、发行及原经济规则",
+      "authoritative_state": "自身根／版本／Draft／供给、权益与资产收入；每维度唯一",
+      "semantic_units": [
+        "Maker 根",
+        "版本发布",
+        "发行适配",
+        "资产经济",
+        "Collection 与 Physical 关系"
+      ],
+      "provided_interfaces": [
+        "F05",
+        "F06",
+        "F11",
+        "F16",
+        "F08"
+      ],
+      "selected_dependencies": [
+        {
+          "provider": "CONTENT",
+          "interfaces": [
+            "F07"
+          ],
+          "condition": "发布本次必要内容证明"
+        },
+        {
+          "provider": "STANDARD",
+          "interfaces": [
+            "F01",
+            "F03"
+          ],
+          "condition": "仅 Soul 发行／增强适配；Maker 核心不依赖 Soul"
+        }
+      ],
+      "prohibited_dependencies": [
+        "mandatory Soul in Maker core"
+      ],
+      "maintenance_mapping": "CIPHER 统筹，原实现 Owner",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "自身真实 Control、发布、收入、规则与包权限分别核验",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [
+        "create_maker",
+        "prepare_version",
+        "append_version_content",
+        "finalize_version",
+        "abort_version",
+        "read_maker_version",
+        "obtain_access",
+        "create_player",
+        "complete_soul",
+        "enhance_soul",
+        "withdraw_asset_income",
+        "grant_operation",
+        "revoke_operation",
+        "pause_service",
+        "upgrade_package",
+        "execute_maintenance"
+      ],
+      "acceptance_case_ids": [
+        "CASE-02",
+        "CASE-03",
+        "CASE-04",
+        "CASE-05",
+        "CASE-06",
+        "CASE-07",
+        "CASE-08",
+        "CASE-09",
+        "CASE-10",
+        "CASE-12",
+        "CASE-22",
+        "CASE-30",
+        "CASE-31",
+        "CASE-32",
+        "CASE-33",
+        "CASE-34",
+        "CASE-36",
+        "CASE-37",
+        "CASE-38",
+        "CASE-44",
+        "CASE-49",
+        "CASE-50",
+        "CASE-55",
+        "CASE-56",
+        "CASE-59"
+      ]
+    },
+    {
+      "id": "CHANNEL",
+      "repository": "soul-channel",
+      "nature": "可选授权与分销服务",
+      "purpose": "接受具体服务条款并执行授权行为",
+      "authoritative_state": "本实例协议／代次／渠道额度／收入；不复制资产总供给",
+      "semantic_units": [
+        "渠道协议",
+        "发行与市场组合适配"
+      ],
+      "provided_interfaces": [
+        "F09",
+        "F16",
+        "F11"
+      ],
+      "selected_dependencies": [
+        {
+          "provider": "MAKER",
+          "interfaces": [
+            "F05",
+            "F06",
+            "F11"
+          ],
+          "condition": "仅 Maker 渠道适配；协议核心不绑定唯一生产者"
+        },
+        {
+          "provider": "STANDARD",
+          "interfaces": [
+            "F01"
+          ],
+          "condition": "仅选定资产身份适配"
+        }
+      ],
+      "prohibited_dependencies": [
+        "mandatory MARKET"
+      ],
+      "maintenance_mapping": "CIPHER 统筹，原实现 Owner",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "本实例配置、资金、必要暂停与实际包升级；无总资产权",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [
+        "offer_channel_terms",
+        "accept_channel_terms",
+        "revoke_channel_terms",
+        "withdraw_service_income",
+        "configure_service",
+        "pause_service",
+        "upgrade_package",
+        "execute_maintenance"
+      ],
+      "acceptance_case_ids": [
+        "CASE-08",
+        "CASE-30",
+        "CASE-31",
+        "CASE-32",
+        "CASE-33",
+        "CASE-34",
+        "CASE-35",
+        "CASE-50",
+        "CASE-52",
+        "CASE-55",
+        "CASE-59"
+      ]
+    },
+    {
+      "id": "MARKET",
+      "repository": "soul-market",
+      "nature": "可选订单与结算服务",
+      "purpose": "订单、有效交付关系、结算、取消及服务收入",
+      "authoritative_state": "本实例订单／托管关系／报价／终态／收入",
+      "semantic_units": [
+        "订单内核",
+        "结算组合桥"
+      ],
+      "provided_interfaces": [
+        "F10",
+        "F16",
+        "F11"
+      ],
+      "selected_dependencies": [
+        {
+          "provider": "STANDARD",
+          "interfaces": [
+            "F01",
+            "F03"
+          ],
+          "condition": "基础 Soul 的实际合法转移接口"
+        },
+        {
+          "provider": "CHANNEL",
+          "interfaces": [
+            "F09"
+          ],
+          "condition": "仅选用渠道的组合桥；Market 内核不依赖 Channel"
+        },
+        {
+          "provider": "MAKER",
+          "interfaces": [
+            "F11"
+          ],
+          "condition": "仅有该资产规则的适配；内核不固定依赖 Maker"
+        }
+      ],
+      "prohibited_dependencies": [
+        "mandatory CHANNEL or application/Vault in order core"
+      ],
+      "maintenance_mapping": "CIPHER 统筹，原实现 Owner",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "本实例配置、收入、暂停与包升级；无渠道管理／卖方其他资产权",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [
+        "list_asset",
+        "quote_order",
+        "settle_order",
+        "cancel_order",
+        "withdraw_service_income",
+        "configure_service",
+        "pause_service",
+        "upgrade_package",
+        "execute_maintenance"
+      ],
+      "acceptance_case_ids": [
+        "CASE-19",
+        "CASE-21",
+        "CASE-29",
+        "CASE-31",
+        "CASE-32",
+        "CASE-33",
+        "CASE-35",
+        "CASE-36",
+        "CASE-44",
+        "CASE-50",
+        "CASE-52",
+        "CASE-53",
+        "CASE-54",
+        "CASE-55",
+        "CASE-58",
+        "CASE-60"
+      ]
+    },
+    {
+      "id": "EXTENSIONS",
+      "repository": "soul-extensions",
+      "nature": "按能力选择的独立扩展",
+      "purpose": "组件／视觉、形态经历嵌套、应用状态和 Vault",
+      "authoritative_state": "各命名空间／实际对象／来源、余额与历史；无万能扩展写权",
+      "semantic_units": [
+        "Model 组件",
+        "Visual 视觉",
+        "形态经历嵌套",
+        "应用配置",
+        "Vault"
+      ],
+      "provided_interfaces": [
+        "F04",
+        "F16",
+        "F08"
+      ],
+      "selected_dependencies": [
+        {
+          "provider": "STANDARD",
+          "interfaces": [
+            "F01",
+            "F02",
+            "F03"
+          ],
+          "condition": "合法根路径及安装描述"
+        },
+        {
+          "provider": "CONTENT",
+          "interfaces": [
+            "F07",
+            "F08"
+          ],
+          "condition": "仅选用受保护内容／授权的扩展"
+        },
+        {
+          "provider": "MAKER",
+          "interfaces": [
+            "F06",
+            "F11"
+          ],
+          "condition": "仅实际组件来源／权利适配；扩展不冒充发行器"
+        }
+      ],
+      "prohibited_dependencies": [],
+      "maintenance_mapping": "CIPHER 与原 Owner；FLUX 接入",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "每域操作／授权、真实支出证明和实际包升级；不共用万能 Cap",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [
+        "enhance_soul",
+        "install_extension",
+        "update_extension",
+        "remove_extension",
+        "equip_or_remove_item",
+        "grant_operation",
+        "revoke_operation",
+        "withdraw_vault",
+        "use_application",
+        "manage_forms_history_nesting",
+        "upgrade_package",
+        "execute_maintenance"
+      ],
+      "acceptance_case_ids": [
+        "CASE-07",
+        "CASE-09",
+        "CASE-19",
+        "CASE-20",
+        "CASE-21",
+        "CASE-22",
+        "CASE-23",
+        "CASE-24",
+        "CASE-25",
+        "CASE-26",
+        "CASE-27",
+        "CASE-28",
+        "CASE-40",
+        "CASE-42",
+        "CASE-52",
+        "CASE-53",
+        "CASE-54",
+        "CASE-56"
+      ]
+    },
+    {
+      "id": "COMMUNITY",
+      "repository": "soul-community",
+      "nature": "独立基础社区",
+      "purpose": "简介、帖子评论、关系与分页",
+      "authoritative_state": "本实例作者内容／关系／管理状态",
+      "semantic_units": [
+        "基础社交"
+      ],
+      "provided_interfaces": [
+        "F13",
+        "F16"
+      ],
+      "selected_dependencies": [
+        {
+          "provider": "CONTENT",
+          "interfaces": [
+            "F07"
+          ],
+          "condition": "所用正文资源；不要求其他业务登记"
+        }
+      ],
+      "prohibited_dependencies": [],
+      "maintenance_mapping": "原 Owner；CIPHER/LUQI/SABLE",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "作者写入／本社区管理／实际包升级；无资产许可权",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [
+        "maintain_profile_or_post",
+        "configure_service",
+        "pause_service",
+        "upgrade_package"
+      ],
+      "acceptance_case_ids": [
+        "CASE-43",
+        "CASE-44",
+        "CASE-50"
+      ]
+    },
+    {
+      "id": "SDK",
+      "repository": "soul-sdk",
+      "nature": "无权威状态的客户端工具",
+      "purpose": "按需读取、构造交易、错误处理与恢复",
+      "authoritative_state": "没有业务账本、密钥或独立供给；恢复记录是证据索引",
+      "semantic_units": [
+        "标准读取",
+        "根操作",
+        "Maker 发布",
+        "发行",
+        "内容",
+        "社区",
+        "市场",
+        "渠道",
+        "扩展适配"
+      ],
+      "provided_interfaces": [
+        "F14"
+      ],
+      "selected_dependencies": [
+        {
+          "provider": "STANDARD",
+          "interfaces": [
+            "F01",
+            "F02",
+            "F03"
+          ],
+          "condition": "标准子包"
+        },
+        {
+          "provider": "CONTENT",
+          "interfaces": [
+            "F07",
+            "F08"
+          ],
+          "condition": "内容子包"
+        },
+        {
+          "provider": "MAKER",
+          "interfaces": [
+            "F05",
+            "F06",
+            "F11"
+          ],
+          "condition": "Maker／发行子包"
+        },
+        {
+          "provider": "CHANNEL",
+          "interfaces": [
+            "F09"
+          ],
+          "condition": "渠道子包"
+        },
+        {
+          "provider": "MARKET",
+          "interfaces": [
+            "F10"
+          ],
+          "condition": "市场子包"
+        },
+        {
+          "provider": "EXTENSIONS",
+          "interfaces": [
+            "F04"
+          ],
+          "condition": "选用扩展子包"
+        },
+        {
+          "provider": "COMMUNITY",
+          "interfaces": [
+            "F13"
+          ],
+          "condition": "社区子包"
+        }
+      ],
+      "prohibited_dependencies": [
+        "all-business monolithic mandatory bundle"
+      ],
+      "maintenance_mapping": "LUQI；CIPHER 复核接口",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "源码与工具发布；无钱包／生产／链上总权限",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [],
+      "acceptance_case_ids": [
+        "CASE-01",
+        "CASE-02",
+        "CASE-03",
+        "CASE-04",
+        "CASE-11",
+        "CASE-12",
+        "CASE-13",
+        "CASE-14",
+        "CASE-15",
+        "CASE-18",
+        "CASE-34",
+        "CASE-39",
+        "CASE-43",
+        "CASE-46",
+        "CASE-57",
+        "CASE-58"
+      ]
+    },
+    {
+      "id": "DEVOPS",
+      "repository": "ecosystem-devops",
+      "nature": "共用工程工具",
+      "purpose": "固定版本构建、工作流、制品与运行工具",
+      "authoritative_state": "仅工程制品与运行证据；不是业务运行必经点",
+      "semantic_units": [
+        "共用交付工具"
+      ],
+      "provided_interfaces": [],
+      "selected_dependencies": [],
+      "prohibited_dependencies": [
+        "runtime business path"
+      ],
+      "maintenance_mapping": "HARBOR",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "工具源码与版本发布；生产与签名归实际服务责任人",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [],
+      "acceptance_case_ids": [
+        "CASE-47",
+        "CASE-51"
+      ]
+    },
+    {
+      "id": "INTEGRATION",
+      "repository": "ecosystem-integration",
+      "nature": "组合验证与外部接入证据",
+      "purpose": "准确组合、消费者选择、互操作与接替报告",
+      "authoritative_state": "只记录验证；没有业务合约或生态审批权",
+      "semantic_units": [
+        "组合验收"
+      ],
+      "provided_interfaces": [
+        "F15"
+      ],
+      "selected_dependencies": [],
+      "prohibited_dependencies": [],
+      "maintenance_mapping": "FLUX；IRIS 管用户结果",
+      "review_mapping": "实际独立验收者；SENTINEL 复核质量，资金／权限须具备相应资格",
+      "authority": "验证写入；无统一生产密钥／资产支配权",
+      "source_authority_rule": "唯一目标可写源；新目标可采用新类型，冻结验收目标内保持ID；源码切换与链上issuer/writer切换分别验证",
+      "release_rule": "独立变化只发布自身受影响单元；消费者仅因所用契约改变而适配／发布",
+      "implementation_status": "Not run",
+      "owned_semantic_entries": [],
+      "acceptance_case_ids": [
+        "CASE-19",
+        "CASE-45",
+        "CASE-48",
+        "CASE-51",
+        "CASE-57"
+      ]
+    }
+  ],
+  "retained_responsibilities": [
+    {
+      "id": "AUTHORING",
+      "location": "现有 Animacraft 与其他兼容编辑器",
+      "nature": "离链制作工具",
+      "authority": "工程、编辑 revision、固定快照；不成为链上发行／控制权威",
+      "boundary": "公开格式与快照导出；制作、存储、发布、发行分开",
+      "owned_semantic_entries": [
+        "save_project",
+        "freeze_snapshot"
+      ],
+      "acceptance_case_ids": [
+        "CASE-01",
+        "CASE-02"
+      ]
+    },
+    {
+      "id": "NATIVE",
+      "location": "现有 Soulidity 的独立 Native 职责",
+      "nature": "独立非 Maker 生产者与原生应用",
+      "authority": "实际出生／原生状态、源政策、初始内容及 Kiosk／TransferPolicy 路径",
+      "boundary": "调用 Standard；不塞入最小标准、不伪装 Maker；独立维护／升级责任",
+      "owned_semantic_entries": [
+        "complete_soul",
+        "upgrade_package"
+      ],
+      "acceptance_case_ids": [
+        "CASE-60"
+      ]
+    },
+    {
+      "id": "POLICY",
+      "location": "现有 Soulidity 的 Foundation／原政策职责",
+      "nature": "原业务权利、经济与有效控制路径",
+      "authority": "原账本／规则／source authority／package roles；沿用原 Owner",
+      "boundary": "不建立生态总 Config；服务实例的新配置与收入归本服务。拆语义保留原权利与唯一状态，迁移须证据",
+      "owned_semantic_entries": [
+        "withdraw_asset_income",
+        "configure_service",
+        "pause_service",
+        "upgrade_package",
+        "execute_maintenance"
+      ],
+      "acceptance_case_ids": [
+        "CASE-06",
+        "CASE-08",
+        "CASE-36",
+        "CASE-37",
+        "CASE-45",
+        "CASE-52",
+        "CASE-59"
+      ]
+    },
+    {
+      "id": "LEGACY",
+      "location": "原包与历史对象的既有谱系",
+      "nature": "历史资产/资源/会话保护与只读谱系",
+      "authority": "真实旧类型／包／对象／入口及仍生效的权限",
+      "boundary": "保留实际旧出口；新目标不要求旧ABI兼容，不强制迁移，不建立fallback发行器",
+      "owned_semantic_entries": [
+        "upgrade_package"
+      ],
+      "acceptance_case_ids": [
+        "CASE-45",
+        "CASE-49"
+      ]
+    },
+    {
+      "id": "CLIENTS",
+      "location": "Soulidity／SoulDesk、InfiniteFlowEngine、四个既有游戏、文档与第三方应用",
+      "nature": "独立组合客户端与运行工具",
+      "authority": "本应用状态与结果证明；链上结果依实际授权入口",
+      "boundary": "按声明选用能力；引擎和各游戏可独立版本。无需平台账号／统一引擎或市场",
+      "owned_semantic_entries": [
+        "use_application"
+      ],
+      "acceptance_case_ids": [
+        "CASE-24",
+        "CASE-25",
+        "CASE-38",
+        "CASE-39",
+        "CASE-40",
+        "CASE-41",
+        "CASE-42",
+        "CASE-57"
+      ]
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "F01",
+      "name": "身份与来源",
+      "steward": "STANDARD",
+      "required_semantics": "真实网络、类型来源、原对象 ID、根路径、不可伪造生产者及出生来源；元数据不能自证",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F01"
+    },
+    {
+      "id": "F02",
+      "name": "能力与效果描述",
+      "steward": "STANDARD",
+      "required_semantics": "namespace、实际类型／对象、schema 与行为摘要；读取、写入、携带、交接分别声明；目录不是授权",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F02"
+    },
+    {
+      "id": "F03",
+      "name": "根与持有路径",
+      "steward": "STANDARD",
+      "required_semantics": "对象／容器／嵌套路径、主体、预期 revision；不泄露可变 UID；转移限制由实际路径证明",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F03"
+    },
+    {
+      "id": "F04",
+      "name": "扩展操作",
+      "steward": "EXTENSIONS",
+      "required_semantics": "准确扩展、动作、根路径、授权代次、期限、限额和预期 revision；仅修改自己的范围",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F04",
+      "subcontracts": [
+        "component attach/detach/replace and rights",
+        "visual Scene/Representation/Adapter/Layout/Outputs and fixed-point",
+        "forms/history/nesting",
+        "scoped application writes",
+        "Vault spend"
+      ],
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md#7-视觉装配搭配和跨客户端d31"
+    },
+    {
+      "id": "F05",
+      "name": "Maker 版本发布",
+      "steward": "MAKER",
+      "required_semantics": "Maker、原 Draft／意图、固定快照、源版本、规则及必要内容承诺；READY 不能由局部成功推断",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F05"
+    },
+    {
+      "id": "F06",
+      "name": "资格供给与发行",
+      "steward": "MAKER",
+      "required_semantics": "真实贡献源、准确 Pack／版本、资格、供给维度与计数；Native 或其他生产者维护自己的实际发行权威",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F06"
+    },
+    {
+      "id": "F07",
+      "name": "内容引用与生命周期",
+      "steward": "CONTENT",
+      "required_semantics": "真实字节摘要、Blob／托管身份、认证、用途、期限与续期权限；不将地址替换当资源恢复",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F07"
+    },
+    {
+      "id": "F08",
+      "name": "访问与操作授权",
+      "steward": "CONTENT",
+      "required_semantics": "主体、对象／内容／扩展、动作、网络、实例、版本、代次与期限；域内实现负责验证，read 不等于 spend",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F08"
+    },
+    {
+      "id": "F09",
+      "name": "渠道协议",
+      "steward": "CHANNEL",
+      "required_semantics": "协议 ID、条款摘要、资产／版本、主体、动作、币种、金额、受益人、额度和时效；结果不可跨订单或实例重放",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F09"
+    },
+    {
+      "id": "F10",
+      "name": "订单与原子结算",
+      "steward": "MARKET",
+      "required_semantics": "订单、原资产、双方、报价承诺、币种／分配、policy 实例／代次、适配版本、终态与真实交付证明",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F10"
+    },
+    {
+      "id": "F11",
+      "name": "收入与资产政策",
+      "steward": "MAKER",
+      "required_semantics": "原权益及有效规则版本、账本、币种、精度／舍入、真实权利人与领取路径；服务账本由各实例单独维护",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F11"
+    },
+    {
+      "id": "F12",
+      "name": "应用结果与证明",
+      "steward": "CLIENTS",
+      "required_semantics": "实际应用／规则版本、输入及 Soul 能力、结果来源、允许写入范围与防重放；本地模拟不自证链上有效经历",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F12"
+    },
+    {
+      "id": "F13",
+      "name": "基础社区",
+      "steward": "COMMUNITY",
+      "required_semantics": "原作者、实例、父子关系、内容引用、revision 和分页游标；展示／管理不改变资产权利",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F13"
+    },
+    {
+      "id": "F14",
+      "name": "意图与恢复",
+      "steward": "SDK",
+      "required_semantics": "原意图、固定输入、交易字节／摘要、原结果与检查点、已付资源和下一合法步骤；域内权威状态不能被本地记录代替",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F14"
+    },
+    {
+      "id": "F15",
+      "name": "版本组合与交付证据",
+      "steward": "INTEGRATION",
+      "required_semantics": "源码／提交及差异、依赖锁、制品哈希、工具、网络、包／类型／对象、配置、消费者声明、验证及恢复；不使用浮动 latest",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F15"
+    },
+    {
+      "id": "F16",
+      "name": "服务治理与包生命周期",
+      "steward": "POLICY",
+      "required_semantics": "实际实例／包、动作、真实 Cap／策略／全部有效控制路径、预期状态、规则版本、退出、旧入口及迁移；各域实现自己的权限，不建立生态总治理合约",
+      "abi_status": "Semantic contract; exact ABI not frozen",
+      "namespace": "ECO.interface.F16"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D01",
+      "status": "USER_CONFIRMED",
+      "topic": "开放资产",
+      "rule": "Maker 和 Soul 独立，第三方直接通过公开 Sui 入口合法操作；无平台登记、团队签名或业务后台门控",
+      "namespace": "ECO.decision.D01"
+    },
+    {
+      "id": "D02",
+      "status": "USER_CONFIRMED",
+      "topic": "渠道市场分仓",
+      "rule": "Channel 与 Market 分开仓库与责任；按需组合，不互为强制入口",
+      "namespace": "ECO.decision.D02"
+    },
+    {
+      "id": "D03",
+      "status": "USER_CONFIRMED",
+      "topic": "制作与链上分发",
+      "rule": "Animacraft 编辑／固定快照、存储、Maker 版本发布、渠道接受、最终发行分别成立；中间状态可接续",
+      "namespace": "ECO.decision.D03"
+    },
+    {
+      "id": "D04",
+      "status": "USER_CONFIRMED",
+      "topic": "首要验收",
+      "rule": "新增被动外观／经历扩展后固定旧市场源码、依赖、配置、制品；原 Soul 挂牌、取消、成交，市场被迫发布 0",
+      "namespace": "ECO.decision.D04"
+    },
+    {
+      "id": "D05",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "标准最小核心",
+      "rule": "固定根类型与身份／来源／能力描述／安全持有接口；业务规则、应用 schema、服务 Config 不进入最小核心",
+      "namespace": "ECO.decision.D05"
+    },
+    {
+      "id": "D06",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "扩展性质",
+      "rule": "每能力分别声明 read/write/carry/handover，以及资金、授权、转移、供给、内容及退出效果；只读目录不作为授权证明",
+      "namespace": "ECO.decision.D06"
+    },
+    {
+      "id": "D07",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "市场分层",
+      "rule": "订单内核+按需组合桥；资产适配由资产规则维护者负责。内核不导入每个应用／Vault／Channel",
+      "namespace": "ECO.decision.D07"
+    },
+    {
+      "id": "D08",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "Native 与 Foundation",
+      "rule": "Native与资产政策保留独立原责任及行为/唯一权威；新目标可重建包和类型，不强制保留历史ABI/ID",
+      "namespace": "ECO.decision.D08"
+    },
+    {
+      "id": "D09",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "唯一权威",
+      "rule": "每维度唯一计数与账本，每目标语义单元唯一可写维护源；历史入口保留真实退出，不设新发行 fallback",
+      "namespace": "ECO.decision.D09"
+    },
+    {
+      "id": "D10",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "SDK",
+      "rule": "9 类按需子包能力；标准／市场使用者不强制拉入未选社区、内容、Vault、游戏和其他扩展",
+      "namespace": "ECO.decision.D10"
+    },
+    {
+      "id": "D11",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "渠道性质",
+      "rule": "默认非独家、限对象／版本／动作／期限／额度；合法未选路径无该渠道费，原资产许可与经济义务保留",
+      "namespace": "ECO.decision.D11"
+    },
+    {
+      "id": "D12",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "撤销与存量",
+      "rule": "撤销停止新行为；未产生实际承诺的报价不算已付义务，已有效预留／履约／未知结果分别按原绑定条款处理",
+      "namespace": "ECO.decision.D12"
+    },
+    {
+      "id": "D13",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "原子与恢复",
+      "rule": "业务钱／资格／供给／交付原子；跨存储和多步发布复用原意图与已付资源，不声称全旅程一笔交易",
+      "namespace": "ECO.decision.D13"
+    },
+    {
+      "id": "D14",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "转移与授权",
+      "rule": "执行D27生命周期；不承诺自由public_transfer自动触发钩子。受控轮换与自由拥有路径分开，通用资产支出代理后置",
+      "namespace": "ECO.decision.D14"
+    },
+    {
+      "id": "D15",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "服务接替",
+      "rule": "换客户端可操作原实例；换服务实例不能继承原订单／授权／账本／额度／Cap，需有明示迁移或独立新选择",
+      "namespace": "ECO.decision.D15"
+    },
+    {
+      "id": "D16",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "发布传播",
+      "rule": "按所用契约选择验证闭包；验证传播不等于发布传播。仅不兼容的真实消费者适配或迁移",
+      "namespace": "ECO.decision.D16"
+    },
+    {
+      "id": "D17",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "版本组合",
+      "rule": "固定基线／当前、候选／当前、候选／候选三种组合；涉及反向依赖再增加反向组合；不兼容及错哈希反例必须拒绝",
+      "namespace": "ECO.decision.D17"
+    },
+    {
+      "id": "D18",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "权限",
+      "rule": "源码、版本发布、生产部署、链上控制分开；配置、资金、暂停、升级分别评估，不机械发万能管理员或固定几把 Cap",
+      "namespace": "ECO.decision.D18"
+    },
+    {
+      "id": "D19",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "自动执行",
+      "rule": "条件在入口验证，执行者只能在预算／时间／受益人等限制内提交；Sui 不会因存有规则自动发起交易",
+      "namespace": "ECO.decision.D19"
+    },
+    {
+      "id": "D20",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "并行容量",
+      "rule": "先采用最多 2 个隔离实现槽+1 个只读验证槽+1 个协调槽；保留原全局旅程／基础设施 WIP，不自动增加 10 条工作流",
+      "namespace": "ECO.decision.D20"
+    },
+    {
+      "id": "D21",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "工程协作",
+      "rule": "10 频道、3 类共用表单、11 视图、原记录与八阶段；不建 30 张孤立表或新的 Owner 体系",
+      "namespace": "ECO.decision.D21"
+    },
+    {
+      "id": "D22",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "基础设施",
+      "rule": "Sui 权威状态、Walrus 字节、可接替客户端；必要认证／续期／私密密钥设施按实际条件验证",
+      "namespace": "ECO.decision.D22"
+    },
+    {
+      "id": "D23",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "条件功能",
+      "rule": "租赁、抵押等仅为兼容性边界案例；若真实实施，义务必须适配，不因此新增产品承诺",
+      "namespace": "ECO.decision.D23"
+    },
+    {
+      "id": "D24",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "进入重构",
+      "rule": "本说明完成后作为原重构 Plan 输入；当前不改合约／部署／钱包／外部对象，实施另由后续用户指令启动",
+      "namespace": "ECO.decision.D24"
+    },
+    {
+      "id": "D25",
+      "namespace": "ECO.decision.D25",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "基线与B0",
+      "rule": "历史留存、新目标重构、冻结新目标验收三基线分开；B0先准备市场再冻结，CASE-19不要求旧生产市场支持新类型",
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md"
+    },
+    {
+      "id": "D26",
+      "namespace": "ECO.decision.D26",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "根拥有配置",
+      "rule": "owned-only公开构造，完成Soul key+store自由转移；所有freshroot出口和合法容器用实际ABI/字节码证明",
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md"
+    },
+    {
+      "id": "D27",
+      "namespace": "ECO.decision.D27",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "授权和收入生命周期",
+      "rule": "受控路径交接轮换，新控制者重新同意；自由转移不用依赖自动撤销的脱离根可重用权限；收入按真实Control及原条款",
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md"
+    },
+    {
+      "id": "D28",
+      "namespace": "ECO.decision.D28",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "证明权威闭环",
+      "rule": "真实生产者/渠道/市场/应用定义和验证各域证明，临时义务最终消费，持久历史收据不授予重放权；四条合法路径",
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md"
+    },
+    {
+      "id": "D29",
+      "namespace": "ECO.decision.D29",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "治理恢复与币种",
+      "rule": "暂停/恢复/产品生命周期/Cap交接/遗失失陷逐域核验；无平台后门；实际CoinType发行/冻结权及退出限制登记",
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md"
+    },
+    {
+      "id": "D30",
+      "namespace": "ECO.decision.D30",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "全范围承接",
+      "rule": "157原记录带record_id承接；15保留维护单元；原30职责及全部生产声明队列继续，不用高层计数代替",
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md"
+    },
+    {
+      "id": "D31",
+      "namespace": "ECO.decision.D31",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "视觉和客户端",
+      "rule": "F04固定视觉/装配/Loadout子契约；2真实Maker跨3类客户端，JS/Move数值和真实渲染核验",
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md"
+    },
+    {
+      "id": "D32",
+      "namespace": "ECO.decision.D32",
+      "status": "SELECTED_DESIGN_DEFAULT",
+      "topic": "产品分支编码",
+      "rule": "Maker/Pack/四Complete政策cap、实际Pack贡献、数字Physical、Collection和原社交行为保留；按准确协议版本映射编码",
+      "detail_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "K01",
+      "name": "身份与来源",
+      "assertion": "在绑定基线的同一目标内原ID、来源和权利不被替换；历史资产留存不强制新目标旧ABI兼容；明确授权迁移另证"
+    },
+    {
+      "id": "K02",
+      "name": "固定快照与版本",
+      "assertion": "同一在途意图的快照、真实源版本、材料、规则、随机密文及摘要改变次数 0；新编辑进入下一候选"
+    },
+    {
+      "id": "K03",
+      "name": "恢复不重复业务",
+      "assertion": "沿用原意图／digest／成功资源；非用户明确新业务尝试的重复付款、存储购买、铸造和收入记账 0；gas 单独记账"
+    },
+    {
+      "id": "K04",
+      "name": "钱与交付守恒",
+      "assertion": "逐币种输入=分配+账本增加+退还／找零；业务付款、权益、供给与交付在同一成功 PTB 一致，部分成功 0"
+    },
+    {
+      "id": "K05",
+      "name": "唯一供给与资格",
+      "assertion": "每个原维度仅 1 份权威计数；只按真实成功消耗增加，总量／用户次数不超原上限；版本／渠道／控制切换不重置"
+    },
+    {
+      "id": "K06",
+      "name": "三类权利",
+      "assertion": "Reference 不产可返 Item；Bound 不离原 Soul；Free 返回并转移原 ID；隐藏、配置或元数据不改变权利"
+    },
+    {
+      "id": "K07",
+      "name": "装配与来源",
+      "assertion": "每 Part 的固定 Style 唯一，真实 Free 对象与已装关系一一对应；无凭空库存／未激活 Free；原 genesis 不被外观替换"
+    },
+    {
+      "id": "K08",
+      "name": "最小权限",
+      "assertion": "错误主体／根路径／实例／类型／namespace／动作／代次、过期及撤销的未授权敏感写入 0；内容读取不能提款"
+    },
+    {
+      "id": "K09",
+      "name": "无无关强制发布",
+      "assertion": "不改变消费者所用类型／接口／行为／义务的变化，消费者源码、依赖锁、配置、制品不变；被迫发布 0"
+    },
+    {
+      "id": "K10",
+      "name": "并发与重复",
+      "assertion": "冲突 CAS 不得同时成功；旧状态覆盖 0、同意图第二份业务结果 0；并发实际计数不得超限"
+    },
+    {
+      "id": "K11",
+      "name": "实际内容条件",
+      "assertion": "只要求本操作必要内容，认证／期限／访问按真实设施核验；未选资源阻断 0；已有历史不可由读回故障抹去"
+    },
+    {
+      "id": "K12",
+      "name": "合法退出",
+      "assertion": "不能删除原来源、余额、Bound、已得权益与履约义务；暂停／撤销／迁移保留适用出口或明确原限制"
+    },
+    {
+      "id": "K13",
+      "name": "唯一维护与权威",
+      "assertion": "每个目标语义单元维护入口 1；未声明依赖、双边可写目标源码、第二发行权威 0"
+    },
+    {
+      "id": "K14",
+      "name": "兼容真相",
+      "assertion": "源码版本、ABI、schema、行为、类型来源、对象 revision、policy 实例／代次分开；未知必需效果及错哈希组合不能被认可"
+    },
+    {
+      "id": "K15",
+      "name": "不可跳过的联动",
+      "assertion": "声明支持的实际受控入口内，已选且实际消耗的授权／费用／额度／交付义务不能跳过、伪造、复制或跨订单重放；目录和普通持久收据不是完成证明，不推导任意自由转移自动拦截"
+    },
+    {
+      "id": "K16",
+      "name": "证据与作用域",
+      "assertion": "方案、源码、已验证、已部署分别记录；每条结果绑定准确候选／环境／证据，不运行的案例通过数 0"
+    }
+  ],
+  "entries": [
+    {
+      "id": "save_project",
+      "owners": [
+        "AUTHORING"
+      ],
+      "interface_families": [
+        "F14"
+      ],
+      "authority_binding": "本地工程和编辑 revision",
+      "cases": [
+        "CASE-01",
+        "CASE-57"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.save_project"
+    },
+    {
+      "id": "freeze_snapshot",
+      "owners": [
+        "AUTHORING"
+      ],
+      "interface_families": [
+        "F05"
+      ],
+      "authority_binding": "确定性固定快照",
+      "cases": [
+        "CASE-01",
+        "CASE-02"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.freeze_snapshot"
+    },
+    {
+      "id": "store_content",
+      "owners": [
+        "CONTENT"
+      ],
+      "interface_families": [
+        "F07"
+      ],
+      "authority_binding": "实际 Blob／字节／意图",
+      "cases": [
+        "CASE-11",
+        "CASE-12",
+        "CASE-13",
+        "CASE-17",
+        "CASE-18",
+        "CASE-57"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.store_content"
+    },
+    {
+      "id": "create_maker",
+      "owners": [
+        "MAKER"
+      ],
+      "interface_families": [
+        "F05"
+      ],
+      "authority_binding": "Maker 根与控制",
+      "cases": [
+        "CASE-03"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.create_maker"
+    },
+    {
+      "id": "prepare_version",
+      "owners": [
+        "MAKER"
+      ],
+      "interface_families": [
+        "F05"
+      ],
+      "authority_binding": "原 Maker／Draft／快照",
+      "cases": [
+        "CASE-02",
+        "CASE-04",
+        "CASE-08"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.prepare_version"
+    },
+    {
+      "id": "append_version_content",
+      "owners": [
+        "MAKER"
+      ],
+      "interface_families": [
+        "F05"
+      ],
+      "authority_binding": "原 Draft 的 CAS 检查点",
+      "cases": [
+        "CASE-02",
+        "CASE-04",
+        "CASE-12"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.append_version_content"
+    },
+    {
+      "id": "finalize_version",
+      "owners": [
+        "MAKER"
+      ],
+      "interface_families": [
+        "F05"
+      ],
+      "authority_binding": "准确固定版本的 READY",
+      "cases": [
+        "CASE-04",
+        "CASE-07",
+        "CASE-10",
+        "CASE-14",
+        "CASE-57"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.finalize_version"
+    },
+    {
+      "id": "abort_version",
+      "owners": [
+        "MAKER"
+      ],
+      "interface_families": [
+        "F05",
+        "F14"
+      ],
+      "authority_binding": "真实可退出 Draft／资源",
+      "cases": [
+        "CASE-04",
+        "CASE-10",
+        "CASE-34"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.abort_version"
+    },
+    {
+      "id": "extend_content",
+      "owners": [
+        "CONTENT"
+      ],
+      "interface_families": [
+        "F07"
+      ],
+      "authority_binding": "真实 Blob 生命周期",
+      "cases": [
+        "CASE-11",
+        "CASE-16"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.extend_content"
+    },
+    {
+      "id": "read_maker_version",
+      "owners": [
+        "MAKER"
+      ],
+      "interface_families": [
+        "F05"
+      ],
+      "authority_binding": "公开准确源版本",
+      "cases": [
+        "CASE-03",
+        "CASE-05",
+        "CASE-11",
+        "CASE-18",
+        "CASE-37",
+        "CASE-46"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.read_maker_version"
+    },
+    {
+      "id": "offer_channel_terms",
+      "owners": [
+        "CHANNEL"
+      ],
+      "interface_families": [
+        "F09"
+      ],
+      "authority_binding": "本实例条款版本",
+      "cases": [
+        "CASE-30",
+        "CASE-55"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.offer_channel_terms"
+    },
+    {
+      "id": "accept_channel_terms",
+      "owners": [
+        "CHANNEL"
+      ],
+      "interface_families": [
+        "F09"
+      ],
+      "authority_binding": "精确对象／版本／动作协议",
+      "cases": [
+        "CASE-08",
+        "CASE-30",
+        "CASE-31",
+        "CASE-35"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.accept_channel_terms"
+    },
+    {
+      "id": "revoke_channel_terms",
+      "owners": [
+        "CHANNEL"
+      ],
+      "interface_families": [
+        "F09"
+      ],
+      "authority_binding": "本协议新增业务与存量分开",
+      "cases": [
+        "CASE-08",
+        "CASE-32",
+        "CASE-33",
+        "CASE-34"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.revoke_channel_terms"
+    },
+    {
+      "id": "obtain_access",
+      "owners": [
+        "MAKER"
+      ],
+      "interface_families": [
+        "F06",
+        "F11"
+      ],
+      "authority_binding": "原资格／经济与意图",
+      "cases": [
+        "CASE-06",
+        "CASE-30",
+        "CASE-38",
+        "CASE-59"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.obtain_access"
+    },
+    {
+      "id": "create_player",
+      "owners": [
+        "MAKER"
+      ],
+      "interface_families": [
+        "F06"
+      ],
+      "authority_binding": "实际源／Pack 配方",
+      "cases": [
+        "CASE-05",
+        "CASE-06"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.create_player"
+    },
+    {
+      "id": "complete_soul",
+      "owners": [
+        "MAKER",
+        "NATIVE"
+      ],
+      "interface_families": [
+        "F01",
+        "F06",
+        "F11"
+      ],
+      "authority_binding": "由真实选定生产者维护发行；Standard 不取得总供给",
+      "cases": [
+        "CASE-05",
+        "CASE-06",
+        "CASE-13",
+        "CASE-15",
+        "CASE-30",
+        "CASE-34",
+        "CASE-38",
+        "CASE-48",
+        "CASE-49",
+        "CASE-56",
+        "CASE-57",
+        "CASE-59",
+        "CASE-60"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.complete_soul"
+    },
+    {
+      "id": "enhance_soul",
+      "owners": [
+        "MAKER",
+        "EXTENSIONS"
+      ],
+      "interface_families": [
+        "F04",
+        "F06"
+      ],
+      "authority_binding": "同一 Soul、实际组件源与权利",
+      "cases": [
+        "CASE-09",
+        "CASE-22"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.enhance_soul"
+    },
+    {
+      "id": "withdraw_asset_income",
+      "owners": [
+        "MAKER",
+        "POLICY"
+      ],
+      "interface_families": [
+        "F11"
+      ],
+      "authority_binding": "原资产权益账本",
+      "cases": [
+        "CASE-08",
+        "CASE-36",
+        "CASE-37",
+        "CASE-50"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.withdraw_asset_income"
+    },
+    {
+      "id": "list_asset",
+      "owners": [
+        "MARKET"
+      ],
+      "interface_families": [
+        "F03",
+        "F10"
+      ],
+      "authority_binding": "真实资产与合法交付／托管关系",
+      "cases": [
+        "CASE-07",
+        "CASE-19",
+        "CASE-26",
+        "CASE-28",
+        "CASE-29",
+        "CASE-31",
+        "CASE-35",
+        "CASE-46",
+        "CASE-53",
+        "CASE-54",
+        "CASE-57",
+        "CASE-60"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.list_asset"
+    },
+    {
+      "id": "quote_order",
+      "owners": [
+        "MARKET"
+      ],
+      "interface_families": [
+        "F10",
+        "F11"
+      ],
+      "authority_binding": "该订单有效规则与报价承诺",
+      "cases": [
+        "CASE-29",
+        "CASE-33",
+        "CASE-36",
+        "CASE-37",
+        "CASE-55"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.quote_order"
+    },
+    {
+      "id": "settle_order",
+      "owners": [
+        "MARKET"
+      ],
+      "interface_families": [
+        "F09",
+        "F10",
+        "F11"
+      ],
+      "authority_binding": "钱、权利、计数、交付原子；只选渠道才要求 F09",
+      "cases": [
+        "CASE-07",
+        "CASE-13",
+        "CASE-14",
+        "CASE-15",
+        "CASE-19",
+        "CASE-21",
+        "CASE-29",
+        "CASE-31",
+        "CASE-32",
+        "CASE-36",
+        "CASE-37",
+        "CASE-48",
+        "CASE-53",
+        "CASE-54",
+        "CASE-55",
+        "CASE-57",
+        "CASE-58",
+        "CASE-60"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.settle_order"
+    },
+    {
+      "id": "cancel_order",
+      "owners": [
+        "MARKET"
+      ],
+      "interface_families": [
+        "F10"
+      ],
+      "authority_binding": "原订单合法退出",
+      "cases": [
+        "CASE-19",
+        "CASE-29",
+        "CASE-32",
+        "CASE-33",
+        "CASE-34",
+        "CASE-50",
+        "CASE-57"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.cancel_order"
+    },
+    {
+      "id": "withdraw_service_income",
+      "owners": [
+        "CHANNEL",
+        "MARKET"
+      ],
+      "interface_families": [
+        "F11"
+      ],
+      "authority_binding": "精确服务实例自己的账本",
+      "cases": [
+        "CASE-35",
+        "CASE-50",
+        "CASE-52",
+        "CASE-55"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.withdraw_service_income"
+    },
+    {
+      "id": "read_soul",
+      "owners": [
+        "STANDARD"
+      ],
+      "interface_families": [
+        "F01",
+        "F02",
+        "F03"
+      ],
+      "authority_binding": "公开根与选用扩展",
+      "cases": [
+        "CASE-24",
+        "CASE-39",
+        "CASE-41",
+        "CASE-44",
+        "CASE-46",
+        "CASE-49",
+        "CASE-56",
+        "CASE-58",
+        "CASE-60"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.read_soul"
+    },
+    {
+      "id": "install_extension",
+      "owners": [
+        "STANDARD",
+        "EXTENSIONS"
+      ],
+      "interface_families": [
+        "F02",
+        "F03",
+        "F04"
+      ],
+      "authority_binding": "真实根路径与准确 namespace",
+      "cases": [
+        "CASE-19",
+        "CASE-56"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.install_extension"
+    },
+    {
+      "id": "update_extension",
+      "owners": [
+        "EXTENSIONS"
+      ],
+      "interface_families": [
+        "F04",
+        "F08"
+      ],
+      "authority_binding": "自己的范围、代次和 CAS",
+      "cases": [
+        "CASE-20",
+        "CASE-21",
+        "CASE-25",
+        "CASE-27",
+        "CASE-40",
+        "CASE-42",
+        "CASE-58"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.update_extension"
+    },
+    {
+      "id": "remove_extension",
+      "owners": [
+        "EXTENSIONS"
+      ],
+      "interface_families": [
+        "F03",
+        "F04"
+      ],
+      "authority_binding": "本扩展退出，必要来源／余额不丢",
+      "cases": [
+        "CASE-20",
+        "CASE-23",
+        "CASE-53"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.remove_extension"
+    },
+    {
+      "id": "equip_or_remove_item",
+      "owners": [
+        "EXTENSIONS"
+      ],
+      "interface_families": [
+        "F04",
+        "F06"
+      ],
+      "authority_binding": "Reference／Bound／Free 三权利",
+      "cases": [
+        "CASE-09",
+        "CASE-22",
+        "CASE-23",
+        "CASE-24"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.equip_or_remove_item"
+    },
+    {
+      "id": "grant_operation",
+      "owners": [
+        "CONTENT",
+        "EXTENSIONS",
+        "MAKER"
+      ],
+      "interface_families": [
+        "F08"
+      ],
+      "authority_binding": "实际目标域的授权；不是 CONTENT 全局总授权",
+      "cases": [
+        "CASE-17",
+        "CASE-26",
+        "CASE-28",
+        "CASE-40"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.grant_operation"
+    },
+    {
+      "id": "revoke_operation",
+      "owners": [
+        "CONTENT",
+        "EXTENSIONS",
+        "MAKER"
+      ],
+      "interface_families": [
+        "F08"
+      ],
+      "authority_binding": "原域／代次撤销；验证持有路径",
+      "cases": [
+        "CASE-17",
+        "CASE-28"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.revoke_operation"
+    },
+    {
+      "id": "withdraw_vault",
+      "owners": [
+        "EXTENSIONS"
+      ],
+      "interface_families": [
+        "F03",
+        "F04"
+      ],
+      "authority_binding": "原 Vault 完整支出证明",
+      "cases": [
+        "CASE-14",
+        "CASE-26",
+        "CASE-27",
+        "CASE-28",
+        "CASE-54"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.withdraw_vault"
+    },
+    {
+      "id": "maintain_profile_or_post",
+      "owners": [
+        "COMMUNITY"
+      ],
+      "interface_families": [
+        "F13"
+      ],
+      "authority_binding": "原作者／本实例内容与关系",
+      "cases": [
+        "CASE-43",
+        "CASE-44",
+        "CASE-57"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.maintain_profile_or_post",
+      "subcommands": [
+        "profile",
+        "posts/comments",
+        "follow",
+        "vote",
+        "accept_answer",
+        "private bookmarks",
+        "author/relations/pagination"
+      ]
+    },
+    {
+      "id": "use_application",
+      "owners": [
+        "CLIENTS",
+        "EXTENSIONS"
+      ],
+      "interface_families": [
+        "F12",
+        "F04"
+      ],
+      "authority_binding": "选定应用／实际证明及能力",
+      "cases": [
+        "CASE-24",
+        "CASE-38",
+        "CASE-39",
+        "CASE-40",
+        "CASE-41",
+        "CASE-42",
+        "CASE-57"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.use_application"
+    },
+    {
+      "id": "manage_forms_history_nesting",
+      "owners": [
+        "EXTENSIONS"
+      ],
+      "interface_families": [
+        "F03",
+        "F04"
+      ],
+      "authority_binding": "原形态、历史与嵌套受约束更新",
+      "cases": [
+        "CASE-25",
+        "CASE-26"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.manage_forms_history_nesting"
+    },
+    {
+      "id": "configure_service",
+      "owners": [
+        "CHANNEL",
+        "MARKET",
+        "COMMUNITY",
+        "POLICY"
+      ],
+      "interface_families": [
+        "F16"
+      ],
+      "authority_binding": "实际服务实例；不是全生态 Config",
+      "cases": [
+        "CASE-45",
+        "CASE-52",
+        "CASE-59"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.configure_service",
+      "subcommands": [
+        "per-instance config",
+        "Maker/Pack product lifecycle mapped separately"
+      ]
+    },
+    {
+      "id": "pause_service",
+      "owners": [
+        "CHANNEL",
+        "MARKET",
+        "COMMUNITY",
+        "POLICY",
+        "MAKER"
+      ],
+      "interface_families": [
+        "F16"
+      ],
+      "authority_binding": "实际实例必要风险动作与退出",
+      "cases": [
+        "CASE-50",
+        "CASE-52"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.pause_service",
+      "subcommands": [
+        "pause selected actions",
+        "resume after all active reasons resolved; actual governance",
+        "product pause/resume/archive not service switch"
+      ]
+    },
+    {
+      "id": "upgrade_package",
+      "owners": [
+        "STANDARD",
+        "CONTENT",
+        "MAKER",
+        "CHANNEL",
+        "MARKET",
+        "EXTENSIONS",
+        "COMMUNITY",
+        "NATIVE",
+        "POLICY",
+        "LEGACY"
+      ],
+      "interface_families": [
+        "F16"
+      ],
+      "authority_binding": "实际包及全部有效 UpgradeCap 路径",
+      "cases": [
+        "CASE-45",
+        "CASE-49",
+        "CASE-52"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.upgrade_package",
+      "subcommands": [
+        "package upgrade",
+        "effective Cap/governance transfer",
+        "predeployed recovery; no platform backdoor"
+      ]
+    },
+    {
+      "id": "execute_maintenance",
+      "owners": [
+        "CONTENT",
+        "MAKER",
+        "CHANNEL",
+        "MARKET",
+        "EXTENSIONS",
+        "POLICY"
+      ],
+      "interface_families": [
+        "F07",
+        "F14",
+        "F16"
+      ],
+      "authority_binding": "实际入口限制的执行者／预算／受益人；DevOps 只提供工程工具而非链上权威",
+      "cases": [
+        "CASE-13",
+        "CASE-15",
+        "CASE-16"
+      ],
+      "status": "Semantic entry; current ABI mapping and runtime evidence pending",
+      "namespace": "ECO.entry.execute_maintenance"
+    }
+  ],
+  "cases_reference": "INTEROPERABILITY_CASES.json",
+  "evidence_policy": "Every case Not run until exact candidate, environment and reproducible evidence are attached to original records",
+  "retained_maintenance_units": [
+    {
+      "id": "AUTHORING.EDITOR",
+      "group": "AUTHORING",
+      "name": "Animacraft 制作编辑",
+      "original_record_refs": [
+        "DOF-002",
+        "DOF-004"
+      ],
+      "journey_refs": [
+        "J02",
+        "J03",
+        "J04",
+        "J05",
+        "J06",
+        "J07",
+        "J08",
+        "J09"
+      ],
+      "source_authority_selector": "Animacraft实际源码/工程；按原记录选择当前worktree",
+      "write_scope": "编辑器/Player test/快照导出",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "AUTHORING.PUBLISHER",
+      "group": "AUTHORING",
+      "name": "Animacraft 发布客户端",
+      "original_record_refs": [
+        "DOF-007",
+        "DOF-010"
+      ],
+      "journey_refs": [
+        "J09",
+        "J10",
+        "J11",
+        "J12",
+        "J13",
+        "J35"
+      ],
+      "source_authority_selector": "Animacraft当前发布store/controller/adapters；tmp仅行为证据",
+      "write_scope": "内容材料/链上交易适配/意图恢复",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "NATIVE.PRODUCER",
+      "group": "NATIVE",
+      "name": "Native 独立生产者",
+      "original_record_refs": [
+        "DOF-001",
+        "DOF-007"
+      ],
+      "journey_refs": [
+        "J20",
+        "J21",
+        "J31"
+      ],
+      "source_authority_selector": "重构worktree实际Native职责/当前CURRENT",
+      "write_scope": "birth/registry/初始内容/源政策/原生更新",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "POLICY.ASSET_RULES",
+      "group": "POLICY",
+      "name": "真实资产经济与唯一权威",
+      "original_record_refs": [
+        "DOF-004",
+        "DOF-005",
+        "DOF-008"
+      ],
+      "journey_refs": [
+        "J06",
+        "J19",
+        "J27",
+        "J28",
+        "J29",
+        "J30",
+        "J37"
+      ],
+      "source_authority_selector": "Foundation及各实际资产规则；按当前source authority",
+      "write_scope": "原权利/经济/收入/唯一计数适配",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "POLICY.PACKAGE_GOVERNANCE",
+      "group": "POLICY",
+      "name": "各包治理责任索引",
+      "original_record_refs": [
+        "C12",
+        "A07",
+        "D05",
+        "D07"
+      ],
+      "journey_refs": [
+        "J37"
+      ],
+      "source_authority_selector": "各实际包/UpgradeCap/包装/部署身份；无总治理包",
+      "write_scope": "逐包生命周期/恢复接口及有效权力",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "LEGACY.HISTORY",
+      "group": "LEGACY",
+      "name": "历史只读谱系与原出口",
+      "original_record_refs": [
+        "A08",
+        "P26"
+      ],
+      "journey_refs": [
+        "J35"
+      ],
+      "source_authority_selector": "历史已部署类型/原包/已付资源/会话；原卡取实际身份",
+      "write_scope": "只读证据；原退出责任，不替代目标发行",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.SO_WEB",
+      "group": "CLIENTS",
+      "name": "Soulidity 网站",
+      "original_record_refs": [
+        "DOF-003",
+        "DOF-008",
+        "DOF-011"
+      ],
+      "journey_refs": [
+        "J14",
+        "J21",
+        "J22",
+        "J23",
+        "J24",
+        "J26",
+        "J27",
+        "J28",
+        "J29",
+        "J30",
+        "J31",
+        "J33"
+      ],
+      "source_authority_selector": "现有Soulidity原站前端/当前产品工作树",
+      "write_scope": "原页面组件/状态/SDK与交易适配",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.SOULDESK",
+      "group": "CLIENTS",
+      "name": "SoulDesk",
+      "original_record_refs": [
+        "DOF-009",
+        "F21"
+      ],
+      "journey_refs": [
+        "J34"
+      ],
+      "source_authority_selector": "现有Soulidity内desktop/SoulDesk准确源选择器待关口0",
+      "write_scope": "desktop独立客户端及能力适配",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.ENGINE",
+      "group": "CLIENTS",
+      "name": "infinite-flow-engine",
+      "original_record_refs": [
+        "DOF-009",
+        "F21"
+      ],
+      "journey_refs": [
+        "J34"
+      ],
+      "source_authority_selector": "现有infinite-flow-engine仓库及其CURRENT",
+      "write_scope": "本引擎接口/结果/发布",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.EXPEDITION",
+      "group": "CLIENTS",
+      "name": "soul-expedition",
+      "original_record_refs": [
+        "DOF-009",
+        "F21"
+      ],
+      "journey_refs": [
+        "J34"
+      ],
+      "source_authority_selector": "现有soul-expedition仓库及其CURRENT",
+      "write_scope": "本游戏已确认范围/消费契约/发布",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.THEATER",
+      "group": "CLIENTS",
+      "name": "soul-paper-theater",
+      "original_record_refs": [
+        "DOF-009",
+        "F21"
+      ],
+      "journey_refs": [
+        "J34"
+      ],
+      "source_authority_selector": "现有soul-paper-theater仓库及其CURRENT",
+      "write_scope": "本游戏已确认范围/消费契约/发布",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.STELLAR",
+      "group": "CLIENTS",
+      "name": "infinite-stellar",
+      "original_record_refs": [
+        "DOF-009",
+        "F21"
+      ],
+      "journey_refs": [
+        "J34"
+      ],
+      "source_authority_selector": "现有infinite-stellar当前本地在途分支/CURRENT",
+      "write_scope": "本游戏已确认范围/消费契约/发布",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.HABITAT",
+      "group": "CLIENTS",
+      "name": "soul-habitat",
+      "original_record_refs": [
+        "DOF-009",
+        "F21"
+      ],
+      "journey_refs": [
+        "J34"
+      ],
+      "source_authority_selector": "现有soul-habitat仓库/CURRENT，模拟状态保留",
+      "write_scope": "本游戏已确认范围/消费契约/发布",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.DOCS",
+      "group": "CLIENTS",
+      "name": "soulidity-docs与标准文档",
+      "original_record_refs": [
+        "P01",
+        "P02",
+        "P09",
+        "P10"
+      ],
+      "journey_refs": [
+        "J34"
+      ],
+      "source_authority_selector": "现有文档仓库及版本化自有示例",
+      "write_scope": "文档/公开格式/版本示例",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    },
+    {
+      "id": "CLIENTS.EXTERNAL_INTERFACE",
+      "group": "CLIENTS",
+      "name": "第三方接入支持",
+      "original_record_refs": [
+        "DOF-009",
+        "F21"
+      ],
+      "journey_refs": [
+        "J34"
+      ],
+      "source_authority_selector": "自有接入规范和示例；不管理第三方仓库",
+      "write_scope": "自有消费者接口/支持矩阵/示例",
+      "maintenance_owner_ref": "沿原记录负责人；关口0核当前实际责任，不新任命",
+      "review_owner_ref": "沿原记录验收责任；高风险实际独立有资格者",
+      "release_unit": "Named responsibility; exact source/build/release unit pending Gate0",
+      "engineering_authority_applicability": {
+        "source": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "version_release": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "production_deployment": "Pending Gate0; historical/external-interface may be N/A with evidence",
+        "onchain_control": "Pending Gate0; historical/external-interface may be N/A with evidence"
+      },
+      "switch_condition": "唯一源码writer与链上issuer/writer分别证明；旧目标不得成为第二新目标权威",
+      "status": "Design mapped; exact execution mapping pending"
+    }
+  ],
+  "original_scope_reference": "ORIGINAL_SCOPE_TRACE.json",
+  "boundary_decisions_reference": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+  "baseline_profiles": [
+    "historical_production",
+    "evolving_new_target",
+    "frozen_target_acceptance"
+  ],
+  "gate_B0": "B0: coherent new-target runnable minimal market then freeze four identities before independent extension publication; freeze failure retained"
+}

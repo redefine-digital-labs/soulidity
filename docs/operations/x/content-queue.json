@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "account": "@MaximusSega",
+  "language": "en",
+  "updated_at": "2026-10-08T16:50:51.727930+03:00",
+  "items": [
+    {
+      "id": "X-20261008-01",
+      "topic": "Introduction",
+      "text": "A character's story should grow beyond its first canvas.\n\nAt Soulidity Labs, we're building Animacraft for character creation and Soulidity for identity, content and permissions on Sui.\n\nCreate Once. Live Across Worlds.\n\nMore demos and development updates here.",
+      "language": "en",
+      "status": "posted",
+      "post_url": "https://x.com/MaximusSega/status/2108192679108731115",
+      "published_date": "2026-10-08",
+      "verified_at": "2026-10-08T16:50:51.727930+03:00",
+      "verification": "Chrome X profile displayed matching full text, account @MaximusSega, post URL and profile count 46.",
+      "sources": [
+        "docs/SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md",
+        "docs/SOULIDITY_ECOSYSTEM_EN.md",
+        "docs/codex/PROJECT_MEMORY.md"
+      ],
+      "claim_scope": "Building tools and product positioning.",
+      "slack_record_id": "Rec0C7L39BE9H"
+    },
+    {
+      "id": "X-20261008-02",
+      "topic": "Creator problem",
+      "text": "Your original character can have art, a backstory, outfits and years of memories. Keeping them connected is part of the creative work.\n\nThat's the problem we're working on at Soulidity Labs.\n\nWhat is hardest to manage as your character grows?",
+      "language": "en",
+      "status": "source-checked",
+      "proposed_slot": "2026-10-09T18:00:00+03:00",
+      "scheduled_id": null,
+      "post_url": null,
+      "sources": [
+        "docs/SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md"
+      ],
+      "claim_scope": "Problem framing and research question; no measured prevalence claim.",
+      "checked_at": "2026-10-08T16:50:51.727930+03:00",
+      "recheck_before_publish": true,
+      "media": null,
+      "slack_record_id": "Rec0C7W0T2WKW"
+    },
+    {
+      "id": "X-20261008-03",
+      "topic": "Animacraft",
+      "text": "One character-making tool, many possible characters.\n\nIn Animacraft, creators define the layers, styles, colors and composition rules of a reusable Maker.\n\nWe're building for artists who want to share a creative system as well as a finished image.",
+      "language": "en",
+      "status": "source-checked",
+      "proposed_slot": "2026-10-12T18:00:00+03:00",
+      "scheduled_id": null,
+      "post_url": null,
+      "sources": [
+        "docs/SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md",
+        "docs/SOULIDITY_ECOSYSTEM_EN.md"
+      ],
+      "claim_scope": "Explain confirmed Maker concept; do not imply the entire publishing journey is release-ready.",
+      "checked_at": "2026-10-08T16:50:51.727930+03:00",
+      "recheck_before_publish": true,
+      "media": null,
+      "slack_record_id": "Rec0C7QB03CRL"
+    },
+    {
+      "id": "X-20261008-04",
+      "topic": "Soul identity",
+      "text": "A character's identity and its files solve different problems.\n\nSoulidity is designed to connect a persistent Soul identity with versioned content and explicit permissions.\n\nThe aim: keep developing the same character as its story, appearance and uses grow.",
+      "language": "en",
+      "status": "source-checked",
+      "proposed_slot": "2026-10-14T18:00:00+03:00",
+      "scheduled_id": null,
+      "post_url": null,
+      "sources": [
+        "docs/SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md"
+      ],
+      "claim_scope": "Architecture and design intent, not a completed interoperability claim.",
+      "checked_at": "2026-10-08T16:50:51.727930+03:00",
+      "recheck_before_publish": true,
+      "media": null,
+      "slack_record_id": "Rec0C7U8BMU0Z"
+    },
+    {
+      "id": "X-20261008-05",
+      "topic": "Creator rights",
+      "text": "Owning a character, accessing its content and holding a copyright license are different rights.\n\nWe're designing Soulidity to express those differences clearly.\n\nCreators should be able to tell people what they can use, and under which conditions.",
+      "language": "en",
+      "status": "source-checked",
+      "proposed_slot": "2026-10-16T18:00:00+03:00",
+      "scheduled_id": null,
+      "post_url": null,
+      "sources": [
+        "docs/SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md",
+        "docs/SOULIDITY_ECOSYSTEM_EN.md"
+      ],
+      "claim_scope": "Product design, not legal advice or an assertion that blockchain determines copyright.",
+      "checked_at": "2026-10-08T16:50:51.727930+03:00",
+      "recheck_before_publish": true,
+      "media": null,
+      "slack_record_id": "Rec0C8LM5HJLQ"
+    },
+    {
+      "id": "X-20261008-06",
+      "topic": "Character use",
+      "text": "Where would you want your original character to live next?\n\nOn your desktop? In a game? Alongside an AI agent workflow?\n\nSoulDesk and our game projects explore those directions. We're developing each use case separately around the broader Soulidity ecosystem.",
+      "language": "en",
+      "status": "source-checked",
+      "proposed_slot": "2026-10-19T18:00:00+03:00",
+      "scheduled_id": null,
+      "post_url": null,
+      "sources": [
+        "docs/SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md",
+        "docs/SOULIDITY_ECOSYSTEM_EN.md"
+      ],
+      "claim_scope": "SoulDesk and games remain development directions; no universal runtime compatibility.",
+      "checked_at": "2026-10-08T16:50:51.727930+03:00",
+      "recheck_before_publish": true,
+      "media": null,
+      "slack_record_id": "Rec0C7QATTMQW"
+    },
+    {
+      "id": "X-20261008-07",
+      "topic": "Architecture",
+      "text": "Our current engineering focus is Sui.\n\nThe Soulidity design uses onchain identity and permissions, Walrus for content, and Seal for conditional access. Editing and rendering happen in clients.\n\nEach layer has a clear job in the character lifecycle.",
+      "language": "en",
+      "status": "source-checked",
+      "proposed_slot": "2026-10-21T18:00:00+03:00",
+      "scheduled_id": null,
+      "post_url": null,
+      "sources": [
+        "docs/SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md",
+        "docs/codex/PROJECT_MEMORY.md"
+      ],
+      "claim_scope": "Architecture scope; recheck network/config before release; no Solana/Sonic production claim.",
+      "checked_at": "2026-10-08T16:50:51.727930+03:00",
+      "recheck_before_publish": true,
+      "media": null,
+      "slack_record_id": "Rec0C7QB13BJA"
+    },
+    {
+      "id": "X-DEMO-01",
+      "topic": "Actual creation demo",
+      "language": "en",
+      "status": "needs-evidence",
+      "text": null,
+      "sources": [
+        "docs/codex/CURRENT.md"
+      ],
+      "requirement": "New authorized clean demo from the exact live build; confirm creator rights; use real preview/edit/export footage without wallet/private data. State internal demo where applicable. Do not reuse acceptance drafts or present a mockup as product proof.",
+      "slack_record_id": "Rec0C7W0U5BV2"
+    },
+    {
+      "id": "X-PROGRESS-01",
+      "topic": "Verified engineering progress",
+      "language": "en",
+      "status": "needs-evidence",
+      "text": null,
+      "sources": [
+        "docs/codex/CURRENT.md",
+        "docs/SOUL_DOF_V1_REBUILD_CN.md"
+      ],
+      "requirement": "Read latest active delivery evidence. Describe one user-facing verified change and its remaining limit. DOF target specification does not prove production release. No release date until confirmed.",
+      "slack_record_id": "Rec0C7U8CJ0BT"
+    }
+  ],
+  "source_snapshot": [
+    {
+      "path": "docs/SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md",
+      "sha256": "3eb5f54ad803ea1a0f802816374ccf367c63f6f41fc90fb27226fa6ececd2656"
+    },
+    {
+      "path": "docs/SOULIDITY_ECOSYSTEM_EN.md",
+      "sha256": "05ac517390467d01e35ca11bafc9ada8a2035e6c817924be2d278107376d3485"
+    },
+    {
+      "path": "docs/codex/PROJECT_MEMORY.md",
+      "sha256": "94a6c8030a66d20aba1c2cb762dce20bec7d3d54f7fa900d2e82b2bcfa284e58"
+    },
+    {
+      "path": "docs/codex/CURRENT.md",
+      "sha256": "2c9cf369d720f5d9319613acf020c2d236c79f3dcbf90057cddc148c39430512"
+    },
+    {
+      "path": "docs/SOUL_DOF_V1_REBUILD_CN.md",
+      "sha256": "96fd5125840287c0b0a752888fb86004c632c82c04d61e256a4741f16662a1e2"
+    },
+    {
+      "path": "agent-management/PRODUCT_ENGINEERING_HANDBOOK_CN.md",
+      "sha256": "1972858dffa38006f1d3784bcaca9370c52bdebade730b20bb0294b42125ec95"
+    },
+    {
+      "path": "agent-management/roles/NOVA.md",
+      "sha256": "b19ecafde5a2f156b9564efaa48b01f1e903849a60a033393faffe3c0cdb7728"
+    }
+  ],
+  "role": "Local seed snapshot, not a second live task board; maintain current content in Slack.",
+  "slack_list_id": "F0C7QARMQJ2"
+}

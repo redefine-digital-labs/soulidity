@@ -1,0 +1,8 @@
+[package]
+name = "soul_dof_v1"
+edition = "2024"
+
+[dependencies]
+
+[addresses]
+soul_dof_v1 = "0x0"

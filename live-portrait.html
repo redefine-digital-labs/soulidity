@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Portrait</title>
+<style>
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+:root {
+  --bg: #0b0b16;
+  --card: #13131f;
+  --border: #1f1f35;
+  --purple: #a855f7;
+  --green: #34d399;
+  --text: #dde0f0;
+  --muted: #5a5a80;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+}
+
+/* ── Header ── */
+.header {
+  width: 100%;
+  padding: 14px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: rgba(11,11,22,0.9);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; }
+.logo .p { color: var(--purple); }
+.logo .g { color: var(--green); }
+.badge {
+  font-size: 0.68rem;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(168,85,247,0.12);
+  color: var(--purple);
+  border: 1px solid rgba(168,85,247,0.25);
+}
+
+/* ── Layout ── */
+.layout {
+  display: flex;
+  gap: 20px;
+  padding: 22px;
+  width: 100%;
+  max-width: 1100px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* ── Stage ── */
+.stage-wrap {
+  position: relative;
+  width: 460px;
+  height: 580px;
+  flex-shrink: 0;
+}
+
+.stage {
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at 50% 85%, #180a30 0%, #0b0b16 55%);
+  border-radius: 24px;
+  border: 1.5px solid var(--border);
+  overflow: hidden;
+  position: relative;
+  box-shadow:
+    0 0 0 1px rgba(168,85,247,0.05),
+    0 20px 80px rgba(0,0,0,0.6),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+  cursor: crosshair;
+}
+
+/* The image wrapper - gets CSS 3D transform */
+#imgWrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition: transform 0.05s linear;
+}
+#charImg {
+  max-width: 92%;
+  max-height: 92%;
+  object-fit: contain;
+  display: none;
+  filter: drop-shadow(0 8px 40px rgba(168,85,247,0.25));
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Blink canvas overlay */
+#blinkCanvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Upload prompt */
+#uploadPrompt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+#uploadPrompt:hover { background: rgba(168,85,247,0.04); }
+#uploadPrompt.hidden { display: none; }
+.up-icon { font-size: 4rem; margin-bottom: 16px; animation: floatUpload 3s ease-in-out infinite; }
+@keyframes floatUpload {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.up-title { font-size: 1.05rem; font-weight: 600; color: #c4b5fd; margin-bottom: 8px; }
+.up-sub { font-size: 0.76rem; color: var(--muted); text-align: center; line-height: 1.7; }
+.up-drag {
+  margin-top: 20px;
+  font-size: 0.7rem;
+  color: #333355;
+  border: 1px dashed #2a2a44;
+  padding: 6px 18px;
+  border-radius: 8px;
+}
+
+/* Drag-over highlight */
+.stage.drag-over { border-color: var(--purple) !important; background: radial-gradient(ellipse at 50% 85%, #260a50 0%, #0b0b16 55%) !important; }
+
+/* Expression chip */
+.expr-chip {
+  position: absolute;
+  top: 14px; left: 14px;
+  background: rgba(11,11,22,0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.expr-chip.show { opacity: 1; }
+.ec-emoji { font-size: 1.6rem; line-height: 1; }
+.ec-info { line-height: 1; }
+.ec-mode { font-size: 0.65rem; color: var(--muted); }
+.ec-name { font-size: 0.88rem; font-weight: 700; color: var(--text); margin-top: 3px; }
+
+/* Mode badge */
+.mode-badge {
+  position: absolute;
+  bottom: 14px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.68rem;
+  color: var(--muted);
+  background: rgba(11,11,22,0.7);
+  backdrop-filter: blur(8px);
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  z-index: 5;
+  white-space: nowrap;
+  transition: all 0.3s;
+}
+.mode-badge.active { color: var(--green); border-color: rgba(52,211,153,0.3); }
+
+/* Cam preview */
+.cam-pip {
+  position: absolute;
+  bottom: 14px; right: 14px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid var(--purple);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+  z-index: 6;
+  display: none;
+}
+.cam-pip.show { display: block; }
+#camPreview { width: 130px; height: 98px; object-fit: cover; display: block; }
+
+/* Click ripple */
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(168,85,247,0.25);
+  animation: rippleAnim 0.6s ease-out forwards;
+  pointer-events: none;
+  z-index: 8;
+}
+@keyframes rippleAnim {
+  0%   { width:0; height:0; opacity:1; transform:translate(-50%,-50%); }
+  100% { width:120px; height:120px; opacity:0; transform:translate(-50%,-50%); }
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 296px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px 18px;
+}
+.card-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+/* Tracking button */
+.track-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s;
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  color: white;
+  box-shadow: 0 4px 18px rgba(109,40,217,0.4);
+}
+.track-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(109,40,217,0.5);
+}
+.track-btn:disabled {
+  background: #1e1e30;
+  color: #3a3a5a;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.track-btn.running {
+  background: linear-gradient(135deg, #065f46, #059669);
+  box-shadow: 0 4px 18px rgba(5,150,105,0.35);
+}
+.track-btn.running:hover { box-shadow: 0 6px 24px rgba(5,150,105,0.45); }
+
+.btn-sm {
+  display: block;
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all 0.15s;
+  text-align: center;
+}
+.btn-sm:hover { background: #1a1a2e; color: #c4b5fd; border-color: rgba(168,85,247,0.4); }
+
+/* Status */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.dot { width:8px; height:8px; border-radius:50%; background:#2a2a40; flex-shrink:0; }
+.dot.pulse { background:var(--green); box-shadow:0 0 8px rgba(52,211,153,0.7); animation:pulseAnim 2s infinite; }
+.dot.warn  { background:#f59e0b; box-shadow:0 0 8px rgba(245,158,11,0.5); animation:pulseAnim 0.8s infinite; }
+.dot.mouse { background:var(--purple); box-shadow:0 0 8px rgba(168,85,247,0.5); }
+@keyframes pulseAnim { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Metrics */
+.metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.metric {
+  background: #0d0d1a;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.m-label { font-size:0.65rem; color:var(--muted); margin-bottom:4px; }
+.m-val { font-size:1rem; font-weight:700; color:#c4b5fd; font-variant-numeric:tabular-nums; }
+.m-bar { margin-top:5px; height:3px; background:#1a1a2e; border-radius:2px; overflow:hidden; }
+.m-fill { height:100%; background:linear-gradient(90deg,#7c3aed,#34d399); border-radius:2px; transition:width 0.08s; }
+
+/* Sliders */
+.sl-row { margin-bottom:11px; }
+.sl-row:last-child { margin-bottom:0; }
+.sl-label { display:flex; justify-content:space-between; font-size:0.76rem; color:var(--muted); margin-bottom:5px; }
+.sl-label b { color:#c4b5fd; font-weight:600; }
+input[type=range] { width:100%; accent-color:var(--purple); cursor:pointer; }
+
+/* Info box */
+.info-box {
+  font-size:0.74rem;
+  color: var(--muted);
+  background: #0d0d1a;
+  border-radius:10px;
+  padding:10px 12px;
+  line-height:1.7;
+  border-left: 2px solid rgba(168,85,247,0.3);
+}
+.info-box strong { color: #8b8baa; }
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">Live<span class="p">Port</span><span class="g">rait</span></div>
+  <div class="badge">🖱 鼠标驱动 · 摄像头可选</div>
+</div>
+
+<div class="layout">
+
+  <!-- ── Stage ── -->
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+
+      <!-- Upload prompt -->
+      <div id="uploadPrompt" onclick="document.getElementById('fileIn').click()">
+        <div class="up-icon">🎨</div>
+        <div class="up-title">点击或拖入角色图片</div>
+        <div class="up-sub">上传后立即可以用鼠标控制头部<br>推荐透明背景 PNG 效果最佳</div>
+        <div class="up-drag">支持 PNG · JPG · WebP · GIF</div>
+      </div>
+
+      <!-- Image wrapper (CSS 3D transforms applied here) -->
+      <div id="imgWrap" style="perspective:700px">
+        <img id="charImg" alt="character">
+      </div>
+
+      <!-- Blink overlay canvas -->
+      <canvas id="blinkCanvas"></canvas>
+
+      <!-- Expression chip -->
+      <div class="expr-chip" id="exprChip">
+        <div class="ec-emoji" id="ecEmoji">😐</div>
+        <div class="ec-info">
+          <div class="ec-mode" id="ecMode">鼠标模式</div>
+          <div class="ec-name" id="ecName">中性</div>
+        </div>
+      </div>
+
+      <!-- Mode label -->
+      <div class="mode-badge" id="modeBadge">上传图片开始使用</div>
+
+      <!-- Cam PiP -->
+      <div class="cam-pip" id="camPip">
+        <video id="camPreview" autoplay playsinline muted></video>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+
+    <!-- Tracking card -->
+    <div class="card">
+      <div class="card-title">追踪模式</div>
+      <div class="status-row">
+        <div class="dot mouse" id="statusDot"></div>
+        <span id="statusText">鼠标控制模式</span>
+      </div>
+      <button class="track-btn" id="camBtn" onclick="toggleCamera()">🎥 升级：开启摄像头追踪</button>
+      <button class="btn-sm" onclick="document.getElementById('fileIn').click()">📂 更换图片</button>
+      <button class="btn-sm" id="pipBtn" onclick="togglePip()" style="display:none">📷 摄像头预览</button>
+    </div>
+
+    <!-- Live metrics -->
+    <div class="card">
+      <div class="card-title">实时数据</div>
+      <div class="metric-grid">
+        <div class="metric">
+          <div class="m-label">头部左右</div>
+          <div class="m-val" id="mYaw">0°</div>
+          <div class="m-bar"><div class="m-fill" id="bYaw" style="width:50%"></div></div>
+        </div>
+        <div class="metric">
+          <div class="m-label">头部俯仰</div>
+          <div class="m-val" id="mPitch">0°</div>
+          <div class="m-bar"><div class="m-fill" id="bPitch" style="width:50%"></div></div>
+        </div>
+        <div class="metric">
+          <div class="m-label">左眼开合</div>
+          <div class="m-val" id="mLE">100%</div>
+          <div class="m-bar"><div class="m-fill" id="bLE" style="width:100%"></div></div>
+        </div>
+        <div class="metric">
+          <div class="m-label">右眼开合</div>
+          <div class="m-val" id="mRE">100%</div>
+          <div class="m-bar"><div class="m-fill" id="bRE" style="width:100%"></div></div>
+        </div>
+        <div class="metric">
+          <div class="m-label">嘴部开合</div>
+          <div class="m-val" id="mMouth">0%</div>
+          <div class="m-bar"><div class="m-fill" id="bMouth" style="width:0%"></div></div>
+        </div>
+        <div class="metric">
+          <div class="m-label">侧倾</div>
+          <div class="m-val" id="mRoll">0°</div>
+          <div class="m-bar"><div class="m-fill" id="bRoll" style="width:50%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="card">
+      <div class="card-title">动画参数</div>
+      <div class="sl-row">
+        <div class="sl-label">头部移动幅度 <b id="vAmp">35</b></div>
+        <input type="range" min="5" max="80" value="35" oninput="cfg.amp=+this.value;document.getElementById('vAmp').textContent=this.value">
+      </div>
+      <div class="sl-row">
+        <div class="sl-label">透视深度 <b id="vPersp">700</b></div>
+        <input type="range" min="200" max="1500" value="700" oninput="cfg.persp=+this.value;document.getElementById('imgWrap').style.perspective=this.value+'px';document.getElementById('vPersp').textContent=this.value">
+      </div>
+      <div class="sl-row">
+        <div class="sl-label">平滑度 <b id="vSmooth">8</b></div>
+        <input type="range" min="1" max="20" value="8" oninput="cfg.smooth=+this.value;document.getElementById('vSmooth').textContent=this.value">
+      </div>
+    </div>
+
+    <!-- Info -->
+    <div class="card">
+      <div class="card-title">使用说明</div>
+      <div class="info-box">
+        <strong>🖱 鼠标模式（默认）</strong><br>
+        上传图片后，移动鼠标到舞台上控制头部朝向，点击触发动作反应。<br><br>
+        <strong>🎥 摄像头模式</strong><br>
+        点击「开启摄像头追踪」后，角色将跟随你的真实面部表情和头部动作。首次加载约需 15 秒。<br><br>
+        <strong>💡 小技巧</strong><br>
+        使用透明背景 PNG 图片，效果会好很多！
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Hidden elements -->
+<input type="file" id="fileIn" accept="image/*" style="display:none">
+<video id="webcamEl" autoplay playsinline muted style="display:none"></video>
+
+<script>
+// ══════════════════════════════════════════════════
+//  Config
+// ══════════════════════════════════════════════════
+const cfg = { amp: 35, smooth: 8, persp: 700 };
+
+// ══════════════════════════════════════════════════
+//  State — smoothed values
+// ══════════════════════════════════════════════════
+const cur = { rotY:0, rotX:0, rotZ:0, tx:0, ty:0, le:1, re:1, mouth:0 };
+const tgt = { rotY:0, rotX:0, rotZ:0, tx:0, ty:0, le:1, re:1, mouth:0 };
+
+let imgLoaded    = false;
+let camRunning   = false;
+let showPip      = false;
+let landmarker   = null;
+let blinkFlash   = 0;   // 0-1
+let bounceY      = 0;   // click bounce
+let bounceVY     = 0;
+let idleT        = 0;
+
+// ══════════════════════════════════════════════════
+//  Elements
+// ══════════════════════════════════════════════════
+const stage      = document.getElementById('stage');
+const imgWrap    = document.getElementById('imgWrap');
+const charImg    = document.getElementById('charImg');
+const blinkCv    = document.getElementById('blinkCanvas');
+const blinkCtx   = blinkCv.getContext('2d');
+const webcamEl   = document.getElementById('webcamEl');
+
+// ══════════════════════════════════════════════════
+//  Resize blink canvas
+// ══════════════════════════════════════════════════
+function syncCanvas() {
+  blinkCv.width  = stage.clientWidth;
+  blinkCv.height = stage.clientHeight;
+}
+syncCanvas();
+new ResizeObserver(syncCanvas).observe(stage);
+
+// ══════════════════════════════════════════════════
+//  Image upload
+// ══════════════════════════════════════════════════
+document.getElementById('fileIn').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) applyImage(f);
+  e.target.value = '';
+});
+
+// Drag & drop
+stage.addEventListener('dragover',  e => { e.preventDefault(); stage.classList.add('drag-over'); });
+stage.addEventListener('dragleave', ()  => stage.classList.remove('drag-over'));
+stage.addEventListener('drop', e => {
+  e.preventDefault();
+  stage.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) applyImage(f);
+});
+
+function applyImage(file) {
+  const url = URL.createObjectURL(file);
+  charImg.onload = () => {
+    imgLoaded = true;
+    document.getElementById('uploadPrompt').classList.add('hidden');
+    charImg.style.display = 'block';
+    document.getElementById('exprChip').classList.add('show');
+    document.getElementById('modeBadge').textContent = '🖱 移动鼠标控制头部';
+    document.getElementById('modeBadge').classList.add('active');
+  };
+  charImg.src = url;
+}
+
+// ══════════════════════════════════════════════════
+//  Mouse tracking (primary mode)
+// ══════════════════════════════════════════════════
+let mouseNX = 0, mouseNY = 0; // normalized -1..1, only when over stage
+
+stage.addEventListener('mousemove', e => {
+  if (!imgLoaded) return;
+  const r = stage.getBoundingClientRect();
+  mouseNX = ((e.clientX - r.left) / r.width  - 0.5) * 2;
+  mouseNY = ((e.clientY - r.top)  / r.height - 0.5) * 2;
+});
+
+stage.addEventListener('mouseleave', () => {
+  mouseNX = 0;
+  mouseNY = 0;
+});
+
+// Click → bounce + ripple
+stage.addEventListener('click', e => {
+  if (!imgLoaded) return;
+  bounceVY = -12;
+  spawnRipple(e.clientX, e.clientY);
+});
+
+function spawnRipple(cx, cy) {
+  const r   = stage.getBoundingClientRect();
+  const div = document.createElement('div');
+  div.className = 'ripple';
+  div.style.left = (cx - r.left) + 'px';
+  div.style.top  = (cy - r.top)  + 'px';
+  stage.appendChild(div);
+  setTimeout(() => div.remove(), 600);
+}
+
+// ══════════════════════════════════════════════════
+//  Camera toggle
+// ══════════════════════════════════════════════════
+window.toggleCamera = async function() {
+  if (camRunning) {
+    stopCamera();
+    return;
+  }
+  const btn = document.getElementById('camBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 加载 AI 模型中...';
+  setStatus('加载模型...', 'warn');
+
+  try {
+    // Dynamically load MediaPipe as ES module
+    const { FaceLandmarker, FilesetResolver } = await import(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'
+    );
+    const fileset = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+    );
+    landmarker = await FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+        delegate: 'GPU'
+      },
+      outputFaceBlendshapes: true,
+      runningMode: 'VIDEO',
+      numFaces: 1
+    });
+
+    btn.textContent = '📸 正在请求摄像头...';
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width:640, height:480, facingMode:'user', frameRate:30 }
+    });
+    webcamEl.srcObject = stream;
+    document.getElementById('camPreview').srcObject = stream;
+    await new Promise(r => webcamEl.onloadeddata = r);
+
+    camRunning = true;
+    btn.disabled = false;
+    btn.textContent = '⏹ 停止摄像头追踪';
+    btn.classList.add('running');
+    document.getElementById('pipBtn').style.display = '';
+    document.getElementById('ecMode').textContent = '摄像头模式';
+    document.getElementById('modeBadge').textContent = '🎥 摄像头追踪中';
+    setStatus('摄像头追踪中', 'pulse');
+
+  } catch(err) {
+    console.error(err);
+    btn.disabled = false;
+    btn.textContent = '🎥 升级：开启摄像头追踪';
+    setStatus('启动失败（鼠标模式继续）', 'mouse');
+  }
+};
+
+function stopCamera() {
+  camRunning = false;
+  const stream = webcamEl.srcObject;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  webcamEl.srcObject = null;
+  const btn = document.getElementById('camBtn');
+  btn.textContent = '🎥 升级：开启摄像头追踪';
+  btn.classList.remove('running');
+  document.getElementById('camPip').classList.remove('show');
+  document.getElementById('pipBtn').style.display = 'none';
+  document.getElementById('ecMode').textContent = '鼠标模式';
+  document.getElementById('modeBadge').textContent = '🖱 移动鼠标控制头部';
+  setStatus('鼠标控制模式', 'mouse');
+  showPip = false;
+}
+
+window.togglePip = function() {
+  showPip = !showPip;
+  document.getElementById('camPip').classList.toggle('show', showPip);
+};
+
+function setStatus(msg, type='mouse') {
+  document.getElementById('statusText').textContent = msg;
+  const d = document.getElementById('statusDot');
+  d.className = 'dot' + (type==='pulse' ? ' pulse' : type==='warn' ? ' warn' : ' mouse');
+}
+
+// ══════════════════════════════════════════════════
+//  MediaPipe face processing
+// ══════════════════════════════════════════════════
+let lastVT = -1;
+
+function processCam(now) {
+  if (!landmarker || webcamEl.currentTime === lastVT || webcamEl.readyState < 2) return;
+  lastVT = webcamEl.currentTime;
+
+  try {
+    const res = landmarker.detectForVideo(webcamEl, now);
+    if (!res.faceLandmarks?.length) return;
+    const lm = res.faceLandmarks[0];
+
+    const nose    = lm[4];
+    const leftEar = lm[234];
+    const rightEar= lm[454];
+    const earMidX = (leftEar.x + rightEar.x) / 2;
+    const earMidY = (leftEar.y + rightEar.y) / 2;
+    const earDX   = rightEar.x - leftEar.x;
+
+    tgt.rotY = ((nose.x - earMidX) / earDX * 2.5) * cfg.amp * 0.9;
+    tgt.rotX = ((nose.y - earMidY) / (lm[152].y - lm[10].y) * 3) * cfg.amp * 0.6;
+    tgt.rotZ = Math.atan2(rightEar.y - leftEar.y, rightEar.x - leftEar.x) * -30;
+    tgt.tx   = (earMidX - 0.5) * cfg.amp * 1.2;
+    tgt.ty   = (earMidY - 0.45) * cfg.amp;
+
+    if (res.faceBlendshapes?.[0]?.categories) {
+      const bs = {};
+      res.faceBlendshapes[0].categories.forEach(c => bs[c.categoryName] = c.score);
+      const prevLE = tgt.le;
+      tgt.le    = 1 - (bs.eyeBlinkLeft  || 0);
+      tgt.re    = 1 - (bs.eyeBlinkRight || 0);
+      tgt.mouth = bs.jawOpen || 0;
+      if (prevLE > 0.6 && tgt.le < 0.3) blinkFlash = 1;
+      updateExpression(bs);
+    }
+  } catch(e) {}
+}
+
+const EXPRS = [
+  { e:'😂', n:'大笑',  t: b => (b.mouthSmileLeft||0)>.45 && (b.jawOpen||0)>.3 },
+  { e:'😊', n:'微笑',  t: b => (b.mouthSmileLeft||0)>.4  },
+  { e:'😮', n:'张嘴',  t: b => (b.jawOpen||0)>.45 },
+  { e:'😲', n:'惊讶',  t: b => (b.browInnerUp||0)>.55 && (b.jawOpen||0)>.2 },
+  { e:'😠', n:'皱眉',  t: b => (b.browDownLeft||0)>.4 },
+  { e:'😉', n:'单眼眨', t: b => Math.abs((b.eyeBlinkLeft||0)-(b.eyeBlinkRight||0))>.5 },
+  { e:'😑', n:'闭眼',  t: b => (b.eyeBlinkLeft||0)>.7 && (b.eyeBlinkRight||0)>.7 },
+  { e:'😐', n:'中性',  t: () => true },
+];
+function updateExpression(bs) {
+  const ex = EXPRS.find(x => x.t(bs));
+  document.getElementById('ecEmoji').textContent = ex.e;
+  document.getElementById('ecName').textContent  = ex.n;
+}
+
+// ══════════════════════════════════════════════════
+//  Main animation loop
+// ══════════════════════════════════════════════════
+let lastTime = 0;
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (!imgLoaded) return;
+
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  idleT += dt;
+
+  // ── Camera processing ──
+  if (camRunning) processCam(now);
+
+  // ── Target from mouse (when no camera) ──
+  if (!camRunning) {
+    const amp = cfg.amp;
+    tgt.rotY = mouseNX * amp * 0.85;
+    tgt.rotX = mouseNY * amp * -0.55;
+    tgt.rotZ = mouseNX * 4;
+    tgt.tx   = mouseNX * amp * 0.25;
+    tgt.ty   = mouseNY * amp * 0.2;
+    // idle blink
+    tgt.le = tgt.re = 1;
+    if (Math.random() < 0.003) blinkFlash = 1;
+    tgt.mouth = 0;
+  }
+
+  // ── Smooth interpolation ──
+  const s = 1 / Math.max(1, cfg.smooth);
+  for (const k in cur) cur[k] += (tgt[k] - cur[k]) * s;
+
+  // ── Bounce physics ──
+  bounceVY += 30 * dt;                  // gravity
+  bounceY  += bounceVY * dt * 60;
+  if (bounceY >= 0) { bounceY = 0; bounceVY = 0; }
+  const bounceScale = 1 + Math.abs(bounceVY) * 0.002;
+
+  // ── Breathing ──
+  const breathe = 1 + Math.sin(idleT * 0.65) * 0.007;
+
+  // ── Apply CSS 3D transform to imgWrap ──
+  const rotY = cur.rotY;
+  const rotX = cur.rotX;
+  const rotZ = cur.rotZ;
+  const tx   = cur.tx;
+  const ty   = cur.ty + bounceY;
+
+  imgWrap.style.transform =
+    `translateX(${tx}px) translateY(${ty}px)` +
+    ` rotateY(${rotY}deg) rotateX(${rotX}deg) rotateZ(${rotZ}deg)` +
+    ` scale(${breathe * bounceScale})`;
+
+  // ── Blink canvas overlay ──
+  blinkCv.width = blinkCv.width; // clear
+  if (blinkFlash > 0.05) {
+    const W = blinkCv.width, H = blinkCv.height;
+    const alpha = Math.pow(blinkFlash, 1.5) * 0.7;
+    const sweep = blinkFlash * 0.48;
+    // top curtain
+    const tg = blinkCtx.createLinearGradient(0, 0, 0, H * sweep);
+    tg.addColorStop(0,   `rgba(11,11,22,${alpha})`);
+    tg.addColorStop(0.7, `rgba(11,11,22,${alpha * 0.3})`);
+    tg.addColorStop(1,   'rgba(11,11,22,0)');
+    blinkCtx.fillStyle = tg;
+    blinkCtx.fillRect(0, 0, W, H * 0.5);
+    // bottom curtain
+    const bg = blinkCtx.createLinearGradient(0, H, 0, H - H * sweep);
+    bg.addColorStop(0,   `rgba(11,11,22,${alpha})`);
+    bg.addColorStop(0.7, `rgba(11,11,22,${alpha * 0.3})`);
+    bg.addColorStop(1,   'rgba(11,11,22,0)');
+    blinkCtx.fillStyle = bg;
+    blinkCtx.fillRect(0, H * 0.5, W, H * 0.5);
+    blinkFlash = Math.max(0, blinkFlash - 0.07);
+  }
+
+  // ── Update metrics ──
+  const pct = v => Math.round(Math.max(0,Math.min(1,v))*100)+'%';
+  const deg = v => (v>=0?'+':'')+v.toFixed(1)+'°';
+  document.getElementById('mYaw').textContent   = deg(cur.rotY);
+  document.getElementById('mPitch').textContent = deg(cur.rotX);
+  document.getElementById('mRoll').textContent  = deg(cur.rotZ);
+  document.getElementById('mLE').textContent    = pct(cur.le);
+  document.getElementById('mRE').textContent    = pct(cur.re);
+  document.getElementById('mMouth').textContent = pct(cur.mouth);
+  document.getElementById('bYaw').style.width   = (50 + cur.rotY * 0.9) + '%';
+  document.getElementById('bPitch').style.width = (50 - cur.rotX * 0.9) + '%';
+  document.getElementById('bRoll').style.width  = (50 + cur.rotZ * 2) + '%';
+  document.getElementById('bLE').style.width    = pct(cur.le);
+  document.getElementById('bRE').style.width    = pct(cur.re);
+  document.getElementById('bMouth').style.width = pct(cur.mouth);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

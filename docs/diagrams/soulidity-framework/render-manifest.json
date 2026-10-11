@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-04",
+  "revision": "onchain-positioning",
+  "source": "../../SOULIDITY_PROBLEM_PRODUCT_ARCHITECTURE_CN.md",
+  "renderer": "Mermaid 11.4.1",
+  "diagrams": [
+    {
+      "diagram": "onchain-model",
+      "source_sha256": "5e6813676f46e328cc4609165b45adad03805f08f3d14e62b524e24a5862fee5",
+      "exports": {
+        "svg": {
+          "file": "onchain-model.svg",
+          "sha256": "ddf124ede61cd3027e318529ef05c8f9825bf60057a18c13b8ba235c99ea4417",
+          "bytes": 15438
+        },
+        "png": {
+          "file": "onchain-model.png",
+          "sha256": "6357da90668050dd23d7366892c0efd0beb022cd567e6ab774a5a922d9373d2b",
+          "bytes": 159155
+        }
+      }
+    },
+    {
+      "diagram": "product-map",
+      "source_sha256": "6c616b2e452cb2dca343e996c1300fd39f03113d82c272ba443cf0eebbaee559",
+      "exports": {
+        "svg": {
+          "file": "product-map.svg",
+          "sha256": "4fd920637f7d2e505d0d585200b95233bb6ff6fafadcb0f1ee82595f89991b78",
+          "bytes": 21935
+        },
+        "png": {
+          "file": "product-map.png",
+          "sha256": "d4f044995496c9cef6602af8961a5f37ea92ff82eff99686d23d8325ab9b616e",
+          "bytes": 183603
+        }
+      }
+    },
+    {
+      "diagram": "oc-journey",
+      "source_sha256": "d99ce1955bee81ec1e8e6efa5de464e90ad943f69f1e7885f278cb2994ea18f7",
+      "exports": {
+        "svg": {
+          "file": "oc-journey.svg",
+          "sha256": "de1207f0e079cada6c3b0676dab38caa7a6d1d899da6194ca16fafdff50d1b67",
+          "bytes": 26315
+        },
+        "png": {
+          "file": "oc-journey.png",
+          "sha256": "c1111529cc2104187d66281c7b8a11933fdf3f08467d78c29df1574fceaa6ded",
+          "bytes": 243181
+        }
+      }
+    },
+    {
+      "diagram": "technical-architecture",
+      "source_sha256": "5dc418c37f698bed38af2951f308648e01e6aea2c737b9dd3daf4a2134f6635d",
+      "exports": {
+        "svg": {
+          "file": "technical-architecture.svg",
+          "sha256": "3ec5852e9aa60c741a64b6c776c270c290175c9f521d243d6af085d42364ba76",
+          "bytes": 20528
+        },
+        "png": {
+          "file": "technical-architecture.png",
+          "sha256": "f03d3ea4b28b10c74dcd4f51421aedebdcc4a8164946d37e9055c9d2e39d1ff4",
+          "bytes": 184096
+        }
+      }
+    }
+  ],
+  "verification": {
+    "local_links": 22,
+    "broken_local_links": 0,
+    "external_references": 2,
+    "mermaid_parse_and_render": "PASS; three unchanged source/export pairs retained, new onchain diagram rendered",
+    "svg_xml": "PASS",
+    "visual_review": "PASS",
+    "inline_problem_map": {
+      "widths_px": [
+        760,
+        360,
+        320
+      ],
+      "states_per_width": 8,
+      "nodes_per_state": 5,
+      "overflow": false,
+      "page_errors": 0
+    }
+  },
+  "scope": "Documentation and visual artifacts only. Global-first claim unverified; current product status is a sourced local snapshot."
+}

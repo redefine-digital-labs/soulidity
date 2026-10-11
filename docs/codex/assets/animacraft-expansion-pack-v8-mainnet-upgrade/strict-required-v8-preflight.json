@@ -1,0 +1,31 @@
+{
+  "recordedAtUtc": "2026-08-12T00:52:46Z",
+  "command": "npm run preflight:v8-mainnet -- --json",
+  "ok": true,
+  "strict": true,
+  "network": true,
+  "requireExpansionPackV8": true,
+  "expansionPackV8Only": true,
+  "checks": {
+    "runtimeTuple": true,
+    "deploymentEvidence": true,
+    "runtimeConfig": true,
+    "suiGrpc": true,
+    "suiGraphql": true,
+    "walrusUploadRelay": true,
+    "walrusAggregator": true,
+    "walrusRelayTipPolicy": true,
+    "exactPackageAbi": true,
+    "exactTypeOrigins": true,
+    "versionV8": 8,
+    "companionProofVersionV8": 8,
+    "completeBridgeEnabledV8": false,
+    "physicalBridgeEnabledV8": false,
+    "companionProofAvailableV8": false,
+    "completeBridgeAssertionAborts": true,
+    "physicalBridgeAssertionAborts": true
+  },
+  "callablePackageId": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+  "typeOriginPackageId": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+  "productReleaseGateEnabled": false
+}

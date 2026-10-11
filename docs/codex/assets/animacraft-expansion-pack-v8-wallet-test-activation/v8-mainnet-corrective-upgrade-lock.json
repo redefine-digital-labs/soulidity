@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "soulidity.animacraft.v8-mainnet-upgrade-lock.v2",
+  "network": {
+    "name": "mainnet",
+    "chainIdentifier": "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+    "rpc": "https://fullnode.mainnet.sui.io:443",
+    "epoch": "1217",
+    "referenceGasPriceMist": "100"
+  },
+  "source": {
+    "repository": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-drop-legacy",
+    "commit": "3c2ffeeb86be6df2cd1f278454a72f5d02c796ea",
+    "tree": "0872c4142ee5e811594efbadba032b7b21e5b57c",
+    "branch": "codex/expansion-pack-v8-wallet-activation",
+    "dirtyTrackedPaths": [],
+    "preservedUntrackedExcludedPaths": [
+      "scripts/expansion-pack-v8-parent-migration.mjs"
+    ]
+  },
+  "signer": {
+    "address": "0xadea1910ac0e738dc020247bc5408b57b15f3701026a96098b716a35c3a6c52f",
+    "keystoreAlias": "hardcore-beryl",
+    "addressBalanceMist": "49982909501",
+    "coinBalanceMist": "0",
+    "gasMode": "address-balance"
+  },
+  "upgradeCapability": {
+    "objectId": "0xe7d1269532bbfbf5e448cb5c58f07fc6720ed3d22e7853e9f13b7b6282746520",
+    "objectVersion": "955119810",
+    "objectDigest": "7TTHPiXmMNo19C2C6RBwRYnWduqoLa2hRTBCtfSRnALy",
+    "owner": "0xadea1910ac0e738dc020247bc5408b57b15f3701026a96098b716a35c3a6c52f",
+    "policy": 0,
+    "packageVersionBefore": "6",
+    "packageBefore": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a"
+  },
+  "build": {
+    "toolchain": "sui 1.76.1-homebrew",
+    "deterministicBuilds": 2,
+    "buildJsonSha256": "67adac3b7bd820a862990b554b4e55c1595fdb6effd5b7d322841005ea525ebe",
+    "moduleCount": 6,
+    "moduleBytes": [19100, 34009, 17360, 4727, 12437, 1910],
+    "moduleTotalBytes": 89543,
+    "moduleSha256": [
+      "63e84a76d6c6bd9c167bf6d2972ceefc577ea2db1029a9ebec72adcfcda50916",
+      "95923d0f54509f88247e74524f66ae0b127216d58b73f1a62b64769256a66422",
+      "9a09cae091a3d2a7bc3900a1ef2dd894368c7f9b2f0cad91e1fa6afa19db8689",
+      "9ccbb18ca8ec7152ed3bddafbfead3974cc8cfddf7d8f3355abb3303b197e342",
+      "48fa3d23cfa53dbac1a51b196787cb41c45ea67369d76a73d945120ac4632b98",
+      "70162a87bdff64a1dfac316b06dd0c54aaa4acbb54dad81f00287beb28ac59e3"
+    ],
+    "packageUpgradeDigestHex": "b4952103aedc5d78cdd4846d3e8348c42e0f93c481e173f81f3634cb5c6f0269",
+    "dependencies": [
+      "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "0x0000000000000000000000000000000000000000000000000000000000000002"
+    ]
+  },
+  "tests": {
+    "webTestsPassed": 1038,
+    "webTestsSkipped": 1,
+    "webTestsFailed": 0,
+    "animacraftMoveTestsPassed": 122,
+    "physicalV7MoveTestsPassed": 42,
+    "strictBuildPassed": true,
+    "viteBuildPassed": true
+  },
+  "transaction": {
+    "digest": "GFJYxZ6hc83ma5itvJ5CN2ZAtTAqjizrgi9o2jKuTwZt",
+    "bytesSha256": "b699bb9c6e30ecda9d693e9535c0f3131fc5c02233a6b32a39e553c2536b403e",
+    "byteLength": 90050,
+    "gasPriceMist": "100",
+    "gasBudgetMist": "1500000000",
+    "gasPayment": [],
+    "expiration": {
+      "kind": "ValidDuring",
+      "minEpoch": "1217",
+      "maxEpoch": "1218",
+      "chain": "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+      "nonce": 1838335908
+    },
+    "rawBytesRecorded": false,
+    "signatureRecorded": false
+  },
+  "dryRun": {
+    "success": true,
+    "newPackageId": "0x393d33f494b2fd34a0949799eaa043a5e47f8c4e72113d50ab4d0c893dc19199",
+    "computationCostMist": "871000",
+    "storageCostMist": "761459200",
+    "storageRebateMist": "1617660",
+    "nonRefundableStorageFeeMist": "16340",
+    "changedObjectIds": [
+      "0x393d33f494b2fd34a0949799eaa043a5e47f8c4e72113d50ab4d0c893dc19199",
+      "0xe7d1269532bbfbf5e448cb5c58f07fc6720ed3d22e7853e9f13b7b6282746520",
+      "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    ],
+    "businessEvents": [],
+    "walrusWrites": 0,
+    "sealWrites": 0
+  },
+  "releaseGates": {
+    "expansionPackV8ReleaseEnabled": false,
+    "completeToSoulidityEnabled": false,
+    "physicalBridgeEnabled": false,
+    "commerceV5ReleaseEnabled": false,
+    "canonicalSoulMintEnabled": false,
+    "compositionV6ReleaseEnabled": false,
+    "physicalStyleV7ReleaseEnabled": false
+  },
+  "rollback": {
+    "preBroadcast": "Discard the unsigned bytes; no state changes exist.",
+    "postBroadcast": "Published packages are immutable. Keep every web product gate false, retain the prior callable IDs as the documented recovery point, and use only a separately reviewed compatible roll-forward upgrade.",
+    "priorCallablePackage": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+    "priorSourceCommit": "97fadeed6c107d448dd44cb1a68b04c2b85389ba",
+    "priorSourceTree": "7a5ba4566a54309d259f58d12db92c40ef8062a8"
+  }
+}
+

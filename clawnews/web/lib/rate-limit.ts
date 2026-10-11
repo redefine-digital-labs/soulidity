@@ -1,0 +1,148 @@
+import { createHash } from 'node:crypto'
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
+import {
+  resetRateLimitBucketsForTests,
+  takeRateLimitTokenWithFallback,
+  type RateLimitOptions,
+  type RateLimitResult,
+} from '@/lib/rate-limit-core'
+
+export const MISSING_CLIENT_IP_ERROR = 'Unable to determine client IP'
+
+// ---------------------------------------------------------------------------
+// Redis-backed rate limiter (Upstash) with in-memory fallback for local dev
+// and transient Upstash/network failures.
+// ---------------------------------------------------------------------------
+
+const globalRateLimitState = globalThis as typeof globalThis & {
+  __clawnewsUpstashRedis?: Redis
+  __clawnewsRateLimitFallbackWarnings?: Set<string>
+}
+
+// --- Upstash Redis (production) ---
+
+function getRedis(): Redis | null {
+  if (globalRateLimitState.__clawnewsUpstashRedis) {
+    return globalRateLimitState.__clawnewsUpstashRedis
+  }
+  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN
+  if (!url || !token) return null
+
+  const redis = new Redis({ url, token })
+  globalRateLimitState.__clawnewsUpstashRedis = redis
+  return redis
+}
+
+function createUpstashLimiter(opts: RateLimitOptions): Ratelimit | null {
+  const redis = getRedis()
+  if (!redis) return null
+  const windowSec = Math.max(1, Math.ceil(opts.windowMs / 1000))
+  return new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(opts.max, `${windowSec} s`),
+    prefix: 'clawnews:rl',
+  })
+}
+
+function warnRateLimitFallbackOnce(details: { reason: 'remote_unavailable' | 'remote_error'; error?: unknown }) {
+  const warnings = globalRateLimitState.__clawnewsRateLimitFallbackWarnings ?? new Set<string>()
+  if (!globalRateLimitState.__clawnewsRateLimitFallbackWarnings) {
+    globalRateLimitState.__clawnewsRateLimitFallbackWarnings = warnings
+  }
+
+  const warningKey = details.reason
+  if (warnings.has(warningKey)) {
+    return
+  }
+  warnings.add(warningKey)
+
+  console.warn('[rate-limit] Falling back to in-memory limiter', {
+    reason: details.reason,
+    error: details.error instanceof Error ? details.error.message : undefined,
+  })
+}
+
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === 'production'
+    || process.env.VERCEL === '1'
+    || process.env.VERCEL === 'true'
+    || Boolean(process.env.VERCEL_ENV)
+}
+
+function allowsInMemoryFallback(): boolean {
+  if (process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK === 'true') {
+    return true
+  }
+  return !isProductionRuntime()
+}
+
+// ---------------------------------------------------------------------------
+// Public API — same interface as before
+// ---------------------------------------------------------------------------
+
+export async function takeRateLimitToken(
+  key: string,
+  options: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const limiter = createUpstashLimiter(options)
+  return takeRateLimitTokenWithFallback({
+    key,
+    options,
+    takeRemoteToken: limiter ? () => limiter.limit(key) : null,
+    allowInMemoryFallback: allowsInMemoryFallback(),
+    onRemoteFallback: warnRateLimitFallbackOnce,
+  })
+}
+
+export async function takeBestEffortRateLimitToken(
+  key: string,
+  options: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const limiter = createUpstashLimiter(options)
+  return takeRateLimitTokenWithFallback({
+    key,
+    options,
+    takeRemoteToken: limiter ? () => limiter.limit(key) : null,
+    allowInMemoryFallback: true,
+    onRemoteFallback: warnRateLimitFallbackOnce,
+  })
+}
+
+// --- IP resolution (unchanged) ---
+
+function trustsProxyHeaders(): boolean {
+  return process.env.TRUST_PROXY_HEADERS === 'true'
+    || process.env.VERCEL === '1'
+    || process.env.VERCEL === 'true'
+    || Boolean(process.env.VERCEL_ENV)
+}
+
+export function getRequestIp(headers: Headers): string | null {
+  if (!trustsProxyHeaders()) return null
+  const realIp = headers.get('x-real-ip')?.trim()
+  if (realIp) return realIp
+  const forwardedFor = headers.get('x-forwarded-for')
+  if (forwardedFor) {
+    const first = forwardedFor.split(',')[0]?.trim()
+    if (first) return first
+  }
+  return null
+}
+
+export function getAnonymousRateLimitFingerprint(headers: Headers): string | null {
+  const fingerprintParts = [
+    headers.get('user-agent')?.trim() ?? '',
+    headers.get('accept-language')?.trim() ?? '',
+    headers.get('sec-ch-ua')?.trim() ?? '',
+    headers.get('sec-ch-ua-platform')?.trim() ?? '',
+  ]
+  if (fingerprintParts.every((value) => value.length === 0)) {
+    return null
+  }
+  return createHash('sha256').update(fingerprintParts.join('\n')).digest('hex').slice(0, 24)
+}
+
+// --- Test helpers ---
+export { resetRateLimitBucketsForTests }

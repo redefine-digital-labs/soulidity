@@ -1,0 +1,34 @@
+{
+  "recordedAtUtc": "2026-08-12T00:52:46Z",
+  "command": "node scripts/mainnet-preflight.mjs --strict --network --allow-v6-enabled --require-expansion-pack-v8 --json",
+  "overallOk": false,
+  "expansionPackV8PackageAbiOk": true,
+  "expansionPackV8GateOk": true,
+  "unrelatedPreexistingFailures": [
+    "Animacraft protocol objects differ from disabled product runtime",
+    "Animacraft commerce v5 objects differ from disabled product runtime",
+    "Animacraft composition v6 objects differ from disabled product runtime"
+  ],
+  "activationTransactionDigest": "AVYsGvyfgSVFQ8mrQWXCpNbNzwDcPc4BboegLsetSYXT",
+  "activationCheckpoint": "305867277",
+  "activatedAtMs": "1785663256910",
+  "observed": {
+    "protocolFeeEnabled": true,
+    "commerceV5Enabled": true,
+    "commerceV5DependenciesBound": true,
+    "compositionV6Enabled": true,
+    "compositionV6SoulOwnerProofBound": true,
+    "compositionV6ValidatorEpoch": 1,
+    "soulidityMarketPrimaryGateEnabled": true,
+    "soulidityMarketSecondaryGateEnabled": true
+  },
+  "productRuntime": {
+    "canonicalSoulMintEnabled": false,
+    "commerceV5ReleaseEnabled": false,
+    "compositionV6ReleaseEnabled": false,
+    "physicalStyleV7ReleaseEnabled": false,
+    "expansionPackV8ReleaseEnabled": false
+  },
+  "changedByV8Upgrade": false,
+  "nextAction": "Reconcile this pre-existing chain/runtime split in the independent Web wallet-test activation phase."
+}

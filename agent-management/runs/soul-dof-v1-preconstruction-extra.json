@@ -1,0 +1,1294 @@
+{
+  "artifacts": {
+    "schema": "soulidity.preconstruction-artifacts.v1",
+    "date": "2026-10-07",
+    "status": "Ready for review / Awaiting explicit user start confirmation",
+    "list_id": "F0C6ZRFR6VD",
+    "rows": [
+      {
+        "交付项": "借贷/Oracle/清算/YBT/激励专项",
+        "ID": "P30",
+        "准备状态": "Not applicable",
+        "适用阶段／门禁": "当前不适用",
+        "负责人／审查": "产品Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/01_SCOPE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "E表 / 原路线图",
+        "当前证据": "当前无相应产品；不引入虚构DeFi路线图",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "真实引入时再论证参数、压力与专用登记",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "工程评审与开工/上线门禁",
+        "ID": "P29",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R0–R7 / G0–G5",
+        "负责人／审查": "Codex / 产品Owner＋独立复核；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/10_ENGINEERING_REVIEW_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-001–014 / R0–R7",
+        "当前证据": "手册v1.0适用性、证据与剩余项；准备不等于生产通过",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "用户开工确认；后续各门禁真实验收",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "告警登记及演练模板",
+        "ID": "P28",
+        "准备状态": "Template prepared",
+        "适用阶段／门禁": "R7 / G5",
+        "负责人／审查": "HARBOR / SENTINEL；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/templates/monitoring-register.csv；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "D07/D08 / J37",
+        "当前证据": "10类信号Planned；未编造阈值/通知/自动化",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "真实数据源/窗口/阈值/响应人/演练结果",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "运行、事故、支持与内容续期",
+        "ID": "P27",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R6–R7 / G5",
+        "负责人／审查": "HARBOR＋ECHO / 原Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/09_OPERATIONS_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-014 / D07/D08 / J37",
+        "当前证据": "监控、未知结果、Walrus/Seal、Cap/域名事故和对账流程",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "真实服务Owner/预算/续期与故障演练",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "前端切换、旧访问与退出",
+        "ID": "P26",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R6 / G5",
+        "负责人／审查": "FLUX＋HARBOR / 产品Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/08_DELIVERY_RELEASE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-013 / J36",
+        "当前证据": "新部署不要求旧ABI，旧资产留存；前端回退不撤销链上成交",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "准确双站切换/故障恢复与用户退出验证",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "发布初始化与权限读回手册",
+        "ID": "P25",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R6 / G5",
+        "负责人／审查": "HARBOR / 发布Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/08_DELIVERY_RELEASE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-013 / D06 / J36",
+        "当前证据": "发布→初始化→Cap/配置→双站→真实冒烟顺序",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "实际目标网络/授权/预算/digest和对象读回",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "安全发现整改复验模板",
+        "ID": "P24",
+        "准备状态": "Template prepared",
+        "适用阶段／门禁": "R1–R6 / G1–G4",
+        "负责人／审查": "SENTINEL / 独立复验；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/templates/security-findings.csv；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "原BUG表 / C表",
+        "当前证据": "severity/invariant/candidate/复现/资金权利影响/修复/复验",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "阻断发现修复与原操作复验，不靠接受风险闭环",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "独立审查与外部审计范围",
+        "ID": "P23",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R6 / G4",
+        "负责人／审查": "SENTINEL / 非实现审查者；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/05_SECURITY_GOVERNANCE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "C表 / DOF-012",
+        "当前证据": "审查范围、发现/复验、审计后diff；实际审查未执行",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "资金/权限审查及适用审计覆盖准确候选",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "准确候选与部署证据模板",
+        "ID": "P22",
+        "准备状态": "Template prepared",
+        "适用阶段／门禁": "R6 / G4–G5",
+        "负责人／审查": "HARBOR / 发布Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/templates/release-manifest.template.json；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-012/013 / D04–D06",
+        "当前证据": "源码/ABI/依赖/双站hash/包对象Cap/费用/读回字段空值",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "同候选审核与部署初始化真实读回",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "工具链、依赖与CI/CD设计",
+        "ID": "P21",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R1–R6 / G1–G4",
+        "负责人／审查": "HARBOR / FLUX＋SENTINEL；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/08_DELIVERY_RELEASE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "D01–D06 / DOF-012",
+        "当前证据": "准确lock/编译器/包/双站制品/配置/SBOM合同",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "真实可重复构建和CI运行证据",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "Sprint Ready/Done与资源计划",
+        "ID": "P20",
+        "准备状态": "Template prepared",
+        "适用阶段／门禁": "R0–R7 / G0–G5",
+        "负责人／审查": "IRIS / 原Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/templates/sprint-plan.template.json；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-001–014 / R0–R7",
+        "当前证据": "沿既有节奏与角色；开工确认待用户；日期未估",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "确认后Ready项按优先用户结果实施",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "旅程执行证据模板",
+        "ID": "P19",
+        "准备状态": "Template prepared",
+        "适用阶段／门禁": "R1–R7 / G1–G5",
+        "负责人／审查": "SENTINEL / 原旅程Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/templates/journey-execution.template.json；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "J01–J37",
+        "当前证据": "记录身份/版本/对象/attempt/tx/费用/图片/实际/恢复",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "每条有真实结果，不继承研究10/10",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "完整用户旅程验收计划",
+        "ID": "P17",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R1–R7 / G1–G5",
+        "负责人／审查": "SENTINEL / 产品Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/07_TEST_ACCEPTANCE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "J01–J37 / DOF-011",
+        "当前证据": "37步顺序及Creator→Player→Soul→市场→运行；全部Not run",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "准确候选逐步实测及失败恢复复验",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "素材矩阵与来源hash登记",
+        "ID": "P18",
+        "准备状态": "Template prepared",
+        "适用阶段／门禁": "R1–R4 / G1–G2",
+        "负责人／审查": "LUQI / SABLE；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/templates/fixture-manifest.json；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-002 / J07/21–26",
+        "当前证据": "F02 demo复制/hash；第二真实Maker和三权利发布未准备",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "两真实Maker与资格/预算/许可/黄金图齐全",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "逐笔资金与对账账本模板",
+        "ID": "P16",
+        "准备状态": "Template prepared",
+        "适用阶段／门禁": "R3–R7 / G2–G5",
+        "负责人／审查": "HARBOR / 资金Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/templates/reconciliation-ledger.csv；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "E表 / J37",
+        "当前证据": "network/币种/digest/attempt/整数expected/actual；无虚假实款",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "真实effects去重；差异回原Bug",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "报价、分账、成本模型",
+        "ID": "P15",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R2–R6 / G2–G4",
+        "负责人／审查": "IRIS＋CIPHER / 资金Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/06_ECONOMICS_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "E01–E11 / J16–20/27–32",
+        "当前证据": "整数/CoinType/quote/feeSnapshot/舍入/守恒",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "实际费率/供给/预算与边界核验",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "Cap及有效权限登记模板",
+        "ID": "P13",
+        "准备状态": "Template prepared",
+        "适用阶段／门禁": "R1–R6 / G4–G5",
+        "负责人／审查": "CIPHER＋HARBOR / 权限Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/templates/permission-register.csv；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "C表 / A表",
+        "当前证据": "7类控制登记；真实Cap/Owner/锁均未填",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "逐权限链上读回及绕过/恢复验证",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "私密委托转移边界决策",
+        "ID": "P14",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R4–R5 / G3",
+        "负责人／审查": "IRIS＋CIPHER / 用户；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/05_SECURITY_GOVERNANCE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-007 / A01–A11 / J31",
+        "当前证据": "自由public_transfer无清理钩子；转回旧issuer复活风险明确",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "确定profile并实测后才上线相应委托承诺",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "威胁模型与业务不变量",
+        "ID": "P12",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R1–R6 / G1–G4",
+        "负责人／审查": "CIPHER / 独立审查；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/05_SECURITY_GOVERNANCE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "C01–C15 / A01–A11",
+        "当前证据": "12不变量及来源/资金/授权/Cap攻击面",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "生产候选相关负例/独立复核",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "Scene/Slot/Adapter视觉规格",
+        "ID": "P11",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R1–R4 / G1–G2",
+        "负责人／审查": "SABLE＋FLUX / SENTINEL；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/04_VISUAL_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-002 / J07/21–26",
+        "当前证据": "坐标/锚点/多片/层/颜色/微调/hash与revision",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "两真实不同画布Maker及定点读回/黄金图",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "SDK与第三方接口合同",
+        "ID": "P10",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R1–R5 / G1–G3",
+        "负责人／审查": "FLUX / SENTINEL；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/03_PROTOCOL_INTERFACES_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-003/009 / J34",
+        "当前证据": "读Soul/Item、saleManifest、build/confirm、错误/事件草案",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "固定实际typeTag/ABI；钱包/Kiosk/容器实测",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "标准对象与状态机合同",
+        "ID": "P09",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R1 / G1",
+        "负责人／审查": "CIPHER / 非实现复核；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/03_PROTOCOL_INTERFACES_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-001/006 / C01–C05",
+        "当前证据": "Soul key+store、DOF必要模块、Bound Table、Free原子attach/detach",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "准确Move布局/ABI/BCS及负例验证",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "界面状态与失败恢复规格",
+        "ID": "P08",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R1–R5 / G1–G3",
+        "负责人／审查": "SABLE / FLUX；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/02_UIUX_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-010 / J35",
+        "当前证据": "失败/取消/未知/Adapter/revision/quote在原控件与恢复入口提示，保留草稿选择；不另造独立交互",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "原页面按同attempt查询/恢复，失败不丢装配不盲重复扣款；J35新候选实际执行",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "现前端原操作到新合约／SDK映射",
+        "ID": "P07",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R0 / G0",
+        "负责人／审查": "SABLE / SENTINEL；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/02_UIUX_CN.md；output/soul-dof-v1-preparation/current-frontend/；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "J03/19/22–24/29/31",
+        "当前证据": "30现有入口/区块逐项对应新读取/交易目标、三权利与原J；标L实站/S源码，37旅程Not run。HTML交互及截图Superseded。",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "在现有前端完成同路径回归；不以模拟图替代实站或新合约测试",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "现有页面最小UI差异标注",
+        "ID": "P06",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R0 / G0",
+        "负责人／审查": "SABLE / 产品Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/02_UIUX_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "J03/19/22–24/29/31",
+        "当前证据": "U01–U30映射现有页面/弹层、原控件、接入差异和五类必要细节；历史44画板候选Superseded，退出施工依据。",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "每项有现页/源码/接口/最小差异/原J映射；不新增导航、页面或交易向导",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "现网站真实前端施工基线",
+        "ID": "P04",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R0–R4 / G0–G2",
+        "负责人／审查": "SABLE / 产品Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/02_UIUX_CN.md；docs/soul-dof-v1-preparation/11_DESIGN_TOOL_HANDOFF_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-002/003 / F01–F10",
+        "当前证据": "正式AC/SO＋准确源码；AC广场/详情/Creator十工具/Player、SO市场只读观察；其余受限流程明确标S源码核对。另做HTML/Penpot退出依据。",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "保留原页面结构、工具弹层/返回与操作路径；每项仅标新合约/三权利/装卸/微调/出售清单差异，按原J验收",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "历史原型工具记录（Penpot）",
+        "ID": "P05",
+        "准备状态": "Not applicable",
+        "适用阶段／门禁": "R0 / G0",
+        "负责人／审查": "SABLE / 产品Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/02_UIUX_CN.md；docs/soul-dof-v1-preparation/11_DESIGN_TOOL_HANDOFF_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "J01–13 / J14–26",
+        "当前证据": "历史37画板及工具收据留存；仅回答过去使用工具，不是当前UI基线。当前以网站真实前端为准。",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "不继续旧云迁移；不将Penpot验证列为本次开工门禁",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "资产与三权利矩阵",
+        "ID": "P03",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R1–R5 / G1–G3",
+        "负责人／审查": "CIPHER / IRIS；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/01_SCOPE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-001/004/005/006/008 / C15",
+        "当前证据": "引用、永久Soul绑定记录、真实自由组件与产品控制分离",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "Move验证无越权发行/Bound出口/重复持有",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "产品范围与现有行为基线",
+        "ID": "P02",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R0–R3 / G0–G2",
+        "负责人／审查": "IRIS / 产品Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/01_SCOPE_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "F01–F23 / J01–20",
+        "当前证据": "单Part一件、固定Style、公开/付费Maker与Pack政策",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "逐需求映射到实现与原旅程",
+        "最近核验": "2026-10-07"
+      },
+      {
+        "交付项": "评审总入口与开工边界",
+        "ID": "P01",
+        "准备状态": "Ready for review",
+        "适用阶段／门禁": "R0 / G0",
+        "负责人／审查": "Codex / 产品Owner；岗位沿用既有，不表示已启动新执行者",
+        "文件／模板": "docs/soul-dof-v1-preparation/REVIEW_INDEX_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+        "关联记录": "DOF-001–014 / R0",
+        "当前证据": "文档已准备；必须等用户确认开始重构",
+        "实现／运行检查": "Not run；准备文件/模板不是实现、支付、审计、部署或运行通过",
+        "退出条件": "用户审阅明确开工后才进入Code",
+        "最近核验": "2026-10-07"
+      }
+    ],
+    "receipts": [
+      {
+        "id": "P01",
+        "record_id": "Rec0C7JUHDK1A",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUHDK1A\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUHDK1A\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P02",
+        "record_id": "Rec0C6ZSJHU5V",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C6ZSJHU5V\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C6ZSJHU5V\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P03",
+        "record_id": "Rec0C7F3PER3L",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7F3PER3L\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7F3PER3L\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P04",
+        "record_id": "Rec0C7D9H5B6J",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7D9H5B6J\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7D9H5B6J\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P05",
+        "record_id": "Rec0C791PEF2P",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C791PEF2P\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C791PEF2P\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P06",
+        "record_id": "Rec0C7JUJ7P8U",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUJ7P8U\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUJ7P8U\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P07",
+        "record_id": "Rec0C89KC2G8G",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C89KC2G8G\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C89KC2G8G\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P08",
+        "record_id": "Rec0C79UY0FHB",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UY0FHB\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UY0FHB\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P09",
+        "record_id": "Rec0C6ZSKKRPH",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C6ZSKKRPH\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C6ZSKKRPH\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P10",
+        "record_id": "Rec0C79UY99NZ",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UY99NZ\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UY99NZ\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P11",
+        "record_id": "Rec0C7F3Q8GPL",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7F3Q8GPL\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7F3Q8GPL\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P12",
+        "record_id": "Rec0C7JUJS6UU",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUJS6UU\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUJS6UU\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P13",
+        "record_id": "Rec0C7JUDQ0QL",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUDQ0QL\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUDQ0QL\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P14",
+        "record_id": "Rec0C7D9JG2SJ",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7D9JG2SJ\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7D9JG2SJ\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P15",
+        "record_id": "Rec0C7D9J8SAJ",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7D9J8SAJ\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7D9J8SAJ\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P16",
+        "record_id": "Rec0C791R0WF5",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C791R0WF5\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C791R0WF5\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P17",
+        "record_id": "Rec0C79UZJR53",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UZJR53\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UZJR53\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P18",
+        "record_id": "Rec0C79UZ9KRB",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UZ9KRB\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UZ9KRB\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P19",
+        "record_id": "Rec0C79UZS55K",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UZS55K\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UZS55K\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P20",
+        "record_id": "Rec0C79UZATEH",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C79UZATEH\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C79UZATEH\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P21",
+        "record_id": "Rec0C7D9K16MU",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7D9K16MU\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7D9K16MU\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P22",
+        "record_id": "Rec0C89KE15C0",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C89KE15C0\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C89KE15C0\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P23",
+        "record_id": "Rec0C7H6J61LH",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7H6J61LH\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7H6J61LH\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P24",
+        "record_id": "Rec0C791RU18B",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C791RU18B\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C791RU18B\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P25",
+        "record_id": "Rec0C89KEF6PJ",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C89KEF6PJ\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C89KEF6PJ\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P26",
+        "record_id": "Rec0C7F3RUMDY",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7F3RUMDY\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7F3RUMDY\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P27",
+        "record_id": "Rec0C89KEAA7J",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C89KEAA7J\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C89KEAA7J\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P28",
+        "record_id": "Rec0C7JULP3D2",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JULP3D2\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JULP3D2\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P29",
+        "record_id": "Rec0C7F3SEQKC",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7F3SEQKC\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7F3SEQKC\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      },
+      {
+        "id": "P30",
+        "record_id": "Rec0C7JUHGW04",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"Record added successfully!\\n\\n**Record ID**: Rec0C7JUHGW04\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD?record_id=Rec0C7JUHGW04\\n\"}"
+            }
+          ],
+          "isError": false
+        }
+      }
+    ],
+    "productionCodeStarted": false,
+    "columns": [
+      {
+        "name": "交付项",
+        "type": "text"
+      },
+      {
+        "name": "ID",
+        "type": "text"
+      },
+      {
+        "name": "准备状态",
+        "type": "select",
+        "options": {
+          "choices": [
+            "Draft",
+            "Ready for review",
+            "Template prepared",
+            "Not applicable"
+          ]
+        }
+      },
+      {
+        "name": "适用阶段／门禁",
+        "type": "text"
+      },
+      {
+        "name": "负责人／审查",
+        "type": "text"
+      },
+      {
+        "name": "文件／模板",
+        "type": "text"
+      },
+      {
+        "name": "关联记录",
+        "type": "text"
+      },
+      {
+        "name": "当前证据",
+        "type": "text"
+      },
+      {
+        "name": "实现／运行检查",
+        "type": "text"
+      },
+      {
+        "name": "退出条件",
+        "type": "text"
+      },
+      {
+        "name": "最近核验",
+        "type": "date"
+      }
+    ],
+    "create_result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"result\":\"List created successfully!\\n\\n**Name**: AC \\u00d7 SO\\uff5cSoul DOF v1 \\u4ea4\\u4ed8\\u6587\\u4ef6\\u4e0e\\u4e0a\\u7ebf\\u95e8\\u7981\\n**ID**: F0C6ZRFR6VD\\n**Link**: https:\\/\\/sega-xya5661.slack.com\\/lists\\/T08LQTJFZRS\\/F0C6ZRFR6VD\\n**Description**: \\u6587\\u4ef6\\/\\u539f\\u578b\\/\\u8bc1\\u636e\\u7684\\u4ea4\\u4ed8\\u767b\\u8bb0\\uff1b\\u5173\\u8054\\u65e2\\u6709\\u7814\\u53d1\\u3001\\u5b89\\u5168\\u3001\\u65c5\\u7a0b\\u4e0e\\u53d1\\u5e03\\u8bb0\\u5f55\\u3002\\u7528\\u6237\\u786e\\u8ba4\\u5f00\\u59cb\\u91cd\\u6784\\u524d\\u53ea\\u505a\\u51c6\\u5907\\uff1b\\u6a21\\u677f\\u4e0d\\u4ee3\\u8868\\u5b9e\\u73b0\\u3001\\u5ba1\\u8ba1\\u6216\\u90e8\\u7f72\\u3002\\n**Columns**: \\u4ea4\\u4ed8\\u9879 (text), ID (text), \\u51c6\\u5907\\u72b6\\u6001 (select), \\u9002\\u7528\\u9636\\u6bb5\\uff0f\\u95e8\\u7981 (text), \\u8d1f\\u8d23\\u4eba\\uff0f\\u5ba1\\u67e5 (text), \\u6587\\u4ef6\\uff0f\\u6a21\\u677f (text), \\u5173\\u8054\\u8bb0\\u5f55 (text), \\u5f53\\u524d\\u8bc1\\u636e (text), \\u5b9e\\u73b0\\uff0f\\u8fd0\\u884c\\u68c0\\u67e5 (text), \\u9000\\u51fa\\u6761\\u4ef6 (text), \\u6700\\u8fd1\\u6838\\u9a8c (date)\\n\"}"
+        }
+      ],
+      "isError": false
+    },
+    "verification": {
+      "key": "artifacts",
+      "list_id": "F0C6ZRFR6VD",
+      "rows": 30,
+      "errors": [],
+      "status": "PASS"
+    },
+    "currentFrontendCorrection": {
+      "date": "2026-10-07",
+      "scope": "Current deployed frontend only; preserve page structure, controls, tool dialogs and operation paths; minimal contract/rights/equip/tuning/sale-manifest details.",
+      "startConfirmationRequired": true,
+      "productionCodeStarted": false,
+      "deploymentStarted": false,
+      "historicalPrototypeStatus": "Superseded; not construction or acceptance authority",
+      "activeUIUXAuthority": "docs/soul-dof-v1-preparation/02_UIUX_CN.md",
+      "reviewCanvas": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    }
+  },
+  "agileRows": [
+    {
+      "研发项": "Operate／Monitor与反馈闭环",
+      "ID": "DOF-014",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R7／运行与下一轮计划",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：HARBOR＋ECHO（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "正式用户旅程与运行反馈",
+      "施工范围": "任务成功／恢复／成本、资金与实例对账、异常权限和支持；真实数据回流原卡；生产故障处置／暂停／退出",
+      "验收条件": "监控窗口、来源、责任与响应演练有证据；流程文档不等于自动告警／无人值守已部署",
+      "依赖": "DOF-013",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "未配置新调度、告警或无人值守进程",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：部署后真实观测和恢复演练，发现回原研发／Bug",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C10/C12/C13；A09/A10；E07/E08/E10；D07/D08；R7；J37；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "准确候选、审查与隔离验证部署",
+      "ID": "DOF-012",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "每轮发布／新版本准备",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：HARBOR＋SENTINEL（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "原发布与预览验收流程",
+      "施工范围": "构建制品／依赖／ABI／大小／协议限制；独立权限／资金／治理复核；测试网络新包与前端Preview，完整初始化读回",
+      "验收条件": "适用G1–G3、目标／报价／权限清单齐；无占位生产配置；预览与新包精确配对；验收缺口显式",
+      "依赖": "该增量Code／Build／Test完成",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "部署已获用户授权；新候选、费用与独立审查未形成；本轮无部署",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：首个闭环准备可复核制品后部署验证；不发布不完整商业入口",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C12/C13；A07/A08/A09；E08；D03–D06；R6；J35/J36；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "Mainnet新部署与正式前端切换",
+      "ID": "DOF-013",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R6／Release→Deploy",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：已授权发布执行者＋HARBOR（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "部署→正式站Creator与Player→SO同新Soul",
+      "施工范围": "新包／cap／初始化／目录／市场配置；两站同一候选、配置读回、域名与原旅程复验；单一新发行权威",
+      "验收条件": "适用G1–G5；真实新Soul及收费／私密／市场旅程证据齐；旧资产不删除，旧ABI／兼容双轨不保留",
+      "依赖": "DOF-011、DOF-012及发布审查",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "尚无新Mainnet发布或签名；签名工具边界在具体操作时执行",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：用准确部署清单执行；前端回退不代表链上撤销",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C12/C13；A07/A08；D05/D06；R6；J36；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "按既有用户旅程逐步验收",
+      "ID": "DOF-011",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "每轮＋最终E2E",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：SENTINEL＋IRIS（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "用户授权的新测试旅程表",
+      "施工范围": "Creator→发布→Player→Complete→Soul→Wardrobe→Market；公开／付费／Included、Physical、Outputs、账号／社区及真实异常",
+      "验收条件": "37步按既有Creator→Player→Soul→市场原路径执行；页面/工具弹层/返回/移动端均对照现站，不以另做HTML/Penpot验收；当前均Not run",
+      "依赖": "对应每轮实现；最终需DOF-001至DOF-010",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "只建立测试计划；新候选E2E未运行，旧结果不自动继承",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "等待明确开工；沿02_UIUX_CN.md U01–U30及既有J顺序补真实候选/费用/对象/失败恢复证据",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "所有F/C/A/E关联；用户旅程J01–J37；对应R1–R7逐轮验收，不依赖全部实现后才单测；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "Loadouts、Showcase与第三方接入",
+      "ID": "DOF-009",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R4–R5／持久配置与展示",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：FLUX＋LUQI（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "既有Wardrobe→Loadouts→Showcase",
+      "施工范围": "私密命名搭配、准确应用、当前Showcase；SoulDesk、Display、第三方容器／Kiosk／模块发现",
+      "验收条件": "不把快照当持有；无静默源图回退；跨会话／设备一致；未知关键模块明确不支持",
+      "依赖": "DOF-002、DOF-003、DOF-006、DOF-007",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "原界面保留；第三方独立容器、私密命名搭配新协议未验",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：先统一recipe读取和资格，后接保存／展示",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C08/C13；F17/F20/F21；A03/A09；R4；J26/J31/J33/J34；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "贯穿式失败恢复与发布器",
+      "ID": "DOF-010",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "每轮必需／跨阶段",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：SABLE＋FLUX＋HARBOR（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "每个需签名操作的原恢复入口",
+      "施工范围": "完整报价／签名预算；不可变交易字节、SIGNING前落盘、未知查原digest、CAS／WebLocks、同尝试准确恢复",
+      "验收条件": "拒签／超时／刷新／切钱包／双标签不重复支付、扣额或铸造；Blob成员／原图hash映射真实可追踪",
+      "依赖": "贯穿研发项的恢复能力，不作为自依赖或等待DOF-013完成的前置；随每轮接口就绪联动",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "借鉴BUG005／006及原WAL经验；新实现未验收",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：在业务交易实现时同步做恢复，不能发布后补",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C04/C09/C10/C12/C13；F10/F11/F14/F18/F22；A08/A09；E10；D02–D08；J35；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "市场：单售、整套售、组件售",
+      "ID": "DOF-008",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R5／Market",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：CIPHER＋FLUX（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "原Market上架／购买／取消，仅补交接清单细节",
+      "施工范围": "整套root＋全部已装Free Item＋必需模块/Bound记录及配方；Bound已卸下仍随Soul且不可独售；Ref不冒称资产/卖家Pass；清旧Grant＋支付＋交接原子",
+      "验收条件": "买家获得准确同一Soul／Item；未选资产不动；整套后可拆／独售／再装；实际交易政策正确、无重复收费",
+      "依赖": "DOF-005、DOF-006、DOF-007",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "Kiosk无规则测试已通过；生产USDC、政策／清单／权限未验收",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：先精确资产清单与托管边界，再接既有Market UI",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C09/C10；F12/F18；A04/A06；E05/E06/E07；R5；J27–J30；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；C15/F23/A11/E11：Creator Ref/Bound/Free三权利贯穿；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "SoulConfiguration、Walrus／Seal与权限",
+      "ID": "DOF-007",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R2–R4／内容与权限",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：LUQI＋CIPHER（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "Soul配置→发布→owner／grantee／visitor查看",
+      "施工范围": "Soul DOF授权/配置/BoundParts模块，内部字段/Table；私密owner-only真实持有；市场出售原子清旧Grant；绑定内容随Soul交接；自由转移强撤销边界验证",
+      "验收条件": "无角色混淆／私钥泄漏；源素材／权利准确；SKILL错误在收费前拒绝；Grant撤销／交接覆盖实际路径",
+      "依赖": "DOF-001、DOF-004",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "手册及Seal模式已核对；新模块与真实读取未实现",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：先验证原生owner-only；强制委托交接使用受控profile，不声称自由transfer自动撤销",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C07；F09/F15/F17；A03；R3/R4；J05/J21/J31/J34；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；C15/F23/A11/E11：Creator Ref/Bound/Free三权利贯穿；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "Composable Item唯一实例与跨Maker",
+      "ID": "DOF-006",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R2–R4／组件发行与使用",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：CIPHER＋FLUX（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "作者发布组件→Player使用→Soul持有／换装",
+      "施工范围": "Item/Style准确来源及Creator rightsMode三态：REFERENCE／SOUL_BOUND／TRANSFERABLE；Free真实唯一Item对象，Bound仅Soul内记录；Style在发行时固定",
+      "验收条件": "Ref无钱包/交易对象；Bound可卸下再装同Soul、不可返钱包/跨Soul/独售；Free装入与持有绑定原子、detach原ID、合法跨Maker；已发权利不静默转换",
+      "依赖": "DOF-001、DOF-002、DOF-004",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "原key-only／锁实现不约束新底层；唯一原生持有原型已验证",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：先冻结三模式ABI、准入/发行/取下接口及许可证快照；Creator发布→Complete→三类装卸→市场逐分支验证",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C02/C05/C06；F07/F16；A01/A05；R2/R4；J12/J18/J22–J25/J30；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；C15/F23/A11/E11：Creator Ref/Bound/Free三权利贯穿；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "Maker／Pack发行、控制与生命周期",
+      "ID": "DOF-004",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R2／Creator发布",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：CIPHER＋SABLE（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "Creator发布Maker和＋Expansion Pack",
+      "施工范围": "十Creator标签保持；Maker/Pack产品控制/Definition/Runtime/Pass/版本/生命周期；Creator在Item/Style发布引用／绑定OC／自由交易三种权利方式",
+      "验收条件": "独立发布FREE/PAID/INCLUDED；控制权≠访问资格≠玩家Soul；三种权利明确可见、准确版本固定，收费不隐式授予独售权；来源停用仍可安全退出",
+      "依赖": "DOF-001、DOF-003",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "原功能矩阵仅作行为基线，新发行接口未实现",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：保留原Creator配置，重构编译／发布／初始化",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C03/C10；F02/F06/F08/F10/F12；E02/E03/E06；R2；J09–J13/J27；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；C15/F23/A11/E11：Creator Ref/Bound/Free三权利贯穿；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "Player资格、Complete与结算",
+      "ID": "DOF-005",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R3／Player到Soul",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：CIPHER＋FLUX（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "Player进入→搭配→Complete",
+      "施工范围": "四Complete政策/total cap/资格/实际Pack贡献/报价与原子结算；各Part固定Style单位按Ref/Bound/Free生成准确Soul",
+      "验收条件": "只为声明Free的组件发行唯一真实对象；Ref保留许可内容引用，Bound生成永久Soul绑定记录；选择/颜色/布局/Outputs完整；不重复扣费/发行",
+      "依赖": "DOF-004、DOF-007",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "商业规则沿用；新路径、金额／精度／费用预算待实现验证",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "按用户2026-10-07最新要求，先审阅准备包并明确确认开始重构；未确认不进入Code。确认后：先免费Maker完整发布→Complete，再扩展付费矩阵",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C04/C10/C11/C14；F05/F06/F08/F13/F14/F19；E02–E04/E09；R3；J15–J21/J32；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；C15/F23/A11/E11：Creator Ref/Bound/Free三权利贯穿；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "二维视觉契约与准确适配",
+      "ID": "DOF-002",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R1／合约与视觉最小闭环",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：CIPHER＋SABLE（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "Creator原画布→Player保真→Soul当前外观",
+      "施工范围": "以现网站画布/原预览/Creator Inspector为依据；新Scene/Representation/Adapter、layout/recipe与Creator约束；玩家仅原预览旁必要微调，不重建编辑器",
+      "验收条件": "两真实Maker视觉及固定Style/颜色/布局准确；原页面/弹层/操作路径保留；新独立原型不得作为预期图",
+      "依赖": "DOF-001最小接口",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "定向现有renderer核对；新adapter、遮罩及视觉验收未实现",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "等待明确开工；按02_UIUX_CN.md U04/U06/U07/U15/U20核对后在原组件实现",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C06/C14；F01/F03–F05/F15/F16；A02/A05/A09；R1；J03–J07/J21–J25/J34；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "现有前端与统一SDK接新合约",
+      "ID": "DOF-003",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R1–R2／数据与交易接入",
+      "状态": "Backlog",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：FLUX＋LUQI（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "现有面板操作→新对象读回",
+      "施工范围": "现有AC原Creator十工具弹层/Player与SO详情Wardrobe/Grants/市场/交易页接新合约、SDK、对象读取与交易；按U01–U30只补五类细节",
+      "验收条件": "保留页面结构/原组件/导航/关闭返回/主操作；新包/manifest/revision一致；不得沿HTML/Penpot新交互施工",
+      "依赖": "DOF-001、DOF-002",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "Plan：准确AC65b/SO0cfb源码＋实站只读证据；U01–U30 L/S分别标记；无生产实现/新交易验收",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "等待明确开工；逐项按原页面→原控件→新SDK→最小差异→原J实施",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0（2026-10-06）§1–4／7／8.3／8.4／9／12；按原评审模板作为本卡附件。EVM／借贷金融模型不适用。",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C13；F10/F13–F17/F20–F22；A08/A09；R1–R6；J21/J34–J36；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    },
+    {
+      "研发项": "标准Soul对象与原生组合核心",
+      "ID": "DOF-001",
+      "产品／模块": "Animacraft／Soulidity",
+      "迭代": "R1／合约与视觉最小闭环",
+      "状态": "Review",
+      "优先级": "P0",
+      "负责人": "Codex本任务执行／集成；领域职责：CIPHER（角色分工，不表示已启动独立会话）",
+      "验收人": "SENTINEL职责／独立复核待执行；产品验收沿用现有职责",
+      "DevOps 阶段": "Plan",
+      "用户结果／原UI操作": "Creator Complete→同一Soul；Wardrobe装入／取出",
+      "施工范围": "Soul key+store根；DOF Core/Composition/BoundParts/授权模块＋已装自由Item；DF/Table内部记录；attach/detach/replace分权利模式；受控UID与一致revision",
+      "验收条件": "每Part最多一个固定Style单位；引用不铸资产；绑定组件仅同Soul装卸；自由组件detach原ID回钱包；必需模块不可取出；source/rights/slot索引准确",
+      "依赖": "无",
+      "候选／环境": "新工作树／SO基线0cfb60a；AC UI参考65b4218。未部署新候选。",
+      "阶段证据／退出条件": "Plan：九表157项及准备文件保留；施工纠正为现网站逐页U01–U30映射，历史HTML/Penpot增量/ZIP退出依据。新协议生产实现/37旅程/部署未开始。",
+      "风险／恢复": "不删除旧资产／稿件或接管原钱包。资金／权限及生产发布需准确候选和独立复核；未知结果查询原回执。",
+      "下一步": "等待用户明确开始重构；R1在现有组件与画布内接新标准Soul，完成三权利及两真实Maker验证",
+      "关联原研发／Bug": "原M1–M4、S0–S14、DEV-002；参考BUG005／006／044。新表不修改原完成状态。",
+      "手册／评审": "手册v1.0 §§1–4/5/6支付/7/8.3/8.4/9/10/11/12；docs/soul-dof-v1-preparation/10_ENGINEERING_REVIEW_CN.md；https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+      "最近核验": "2026-10-07",
+      "关联专项记录": "C01/C02/C14；F01/F09/F14/F16；A01/A02；R1；J20–J25；导航：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C7GSJ47BK；C15/F23/A11/E11：Creator Ref/Bound/Free三权利贯穿；P01–P30文件/门禁：https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+    }
+  ],
+  "milestoneHold": {
+    "里程碑": "重构前准备",
+    "ID": "R0",
+    "状态": "Review",
+    "负责人": "Codex／本重构集成；领域职责沿用既有岗位，不表示已新建账号",
+    "验收责任": "现有产品Owner＋SENTINEL；高风险另需具备能力的非实现者审查，尚未执行",
+    "原产品里程碑": "既有M1–M4/S0–S14不改完成状态",
+    "前置里程碑": "无；用户授权、准确基线与现有行为来源是输入，不依赖后续实现",
+    "DevOps关联": "D01",
+    "研发项": "DOF-001～DOF-014",
+    "用户旅程": "J01～J37",
+    "进入条件": "授权、准确基线及原行为来源已查",
+    "验收／退出条件": "施工以现网站真实前端为准，保留结构/组件/工具弹层/路径，仅五类细节；用户审阅并明确开工后才进入Code",
+    "计划时间／估算": "保持既有每周迭代/两周组合评审；按Ready项估算后排日期。当前无承诺上线日/虚构工期",
+    "实际完成／证据": "准备纠正可审阅：九表157项、12规格/流程、9模板；30现有入口/区块映射及实站只读记录。历史HTML/Penpot增量/v1v2ZIP退出依据。生产代码/37旅程/部署未开始。",
+    "范围／约束": "只完善准备；R1–R7未开始。新独立交互原型不适用，不需云原型门禁；原CURRENT/Owner/钱包会话保留",
+    "最近核验": "2026-10-07"
+  },
+  "reviewCanvas": {
+    "id": "F0C89LN2YAU",
+    "url": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU"
+  },
+  "uploads": {
+    "bundle": {
+      "id": "F0C700A4J6B",
+      "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C700A4J6B/soul-dof-v1-preconstruction-review-v2.zip",
+      "path": "/Users/naoer/Documents/Claude/Projects/soulidity/output/soul-dof-v1-preparation/soul-dof-v1-preconstruction-review-v2.zip",
+      "bytes": 7470495,
+      "previousFileId": "F0C7A0N9753",
+      "status": "Uploaded and Canvas link read back"
+    },
+    "screenshots": [
+      {
+        "path": "/Users/naoer/Documents/Claude/Projects/soulidity/output/soul-dof-v1-preparation/uiux/creator.jpg",
+        "filename": "soul-dof-v1-creator.jpg",
+        "size": 128990,
+        "id": "F0C89LT4CTS",
+        "complete": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"File upload completed successfully!\\n\\nFile ID: F0C89LT4CTS\\nTitle: soul-dof-v1-creator.jpg\\nLink: https:\\/\\/sega-xya5661.slack.com\\/files\\/U08LQTJJGP6\\/F0C89LT4CTS\\/soul-dof-v1-creator.jpg\\n\"}"
+            }
+          ],
+          "isError": false
+        },
+        "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C89LT4CTS/soul-dof-v1-creator.jpg"
+      },
+      {
+        "path": "/Users/naoer/Documents/Claude/Projects/soulidity/output/soul-dof-v1-preparation/uiux/wardrobe.jpg",
+        "filename": "soul-dof-v1-wardrobe.jpg",
+        "size": 131321,
+        "id": "F0C7H8216CR",
+        "complete": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"File upload completed successfully!\\n\\nFile ID: F0C7H8216CR\\nTitle: soul-dof-v1-wardrobe.jpg\\nLink: https:\\/\\/sega-xya5661.slack.com\\/files\\/U08LQTJJGP6\\/F0C7H8216CR\\/soul-dof-v1-wardrobe.jpg\\n\"}"
+            }
+          ],
+          "isError": false
+        },
+        "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C7H8216CR/soul-dof-v1-wardrobe.jpg"
+      },
+      {
+        "path": "/Users/naoer/Documents/Claude/Projects/soulidity/output/soul-dof-v1-preparation/uiux/market.jpg",
+        "filename": "soul-dof-v1-market.jpg",
+        "size": 133196,
+        "id": "F0C7DAZT7LN",
+        "complete": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"result\":\"File upload completed successfully!\\n\\nFile ID: F0C7DAZT7LN\\nTitle: soul-dof-v1-market.jpg\\nLink: https:\\/\\/sega-xya5661.slack.com\\/files\\/U08LQTJJGP6\\/F0C7DAZT7LN\\/soul-dof-v1-market.jpg\\n\"}"
+            }
+          ],
+          "isError": false
+        },
+        "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C7DAZT7LN/soul-dof-v1-market.jpg"
+      }
+    ],
+    "bundle_previous": {
+      "id": "F0C7A0N9753",
+      "url": "https://sega-xya5661.slack.com/files/U08LQTJJGP6/F0C7A0N9753/soul-dof-v1-preconstruction-review.zip"
+    }
+  },
+  "currentFrontendCorrection": {
+    "date": "2026-10-07",
+    "scope": "Current deployed frontend only; preserve page structure, controls, tool dialogs and operation paths; minimal contract/rights/equip/tuning/sale-manifest details.",
+    "startConfirmationRequired": true,
+    "productionCodeStarted": false,
+    "deploymentStarted": false,
+    "historicalPrototypeStatus": "Superseded; not construction or acceptance authority",
+    "activeUIUXAuthority": "docs/soul-dof-v1-preparation/02_UIUX_CN.md",
+    "reviewCanvas": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C89LN2YAU",
+    "handoff": "docs/codex/handoffs/2026-10-07-current-frontend-preparation-correction.md"
+  }
+}

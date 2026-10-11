@@ -1,0 +1,1321 @@
+{
+  "template_version": "1.0",
+  "record_id": "Rec0C6ULYUDLJ",
+  "milestone": "M1–M3 / S13-F02",
+  "user_outcome": "全新素材批量上传→发布 ACTIVE→Complete→SO 接收同一 Soul→刷新与恢复",
+  "original_operation": "正确 Chrome 从零新建与上传，不依赖旧稿件",
+  "existing_behavior_or_new_capability": "Repair original full publication/consumption journey and prevent observed delivery regressions",
+  "owner": "Codex / 当前交付执行者",
+  "reviewer": "按现有 SENTINEL 验收职责；产品结果由用户评审",
+  "stage": "Operate",
+  "status": "in-progress",
+  "baseline": {
+    "workspace": "AC/SO exact clean candidate archives; dirty source roots retained",
+    "source_revision": {
+      "ac": {
+        "commit": "a6ac94728e8498781637555ff73fcdf44be97a54",
+        "run_id": 37410729140,
+        "pr": 82
+      },
+      "so": {
+        "commit": "d3e8ee2f5aed03da77013a3c93836e7fe46ac206",
+        "run_id": 37410730737,
+        "pr": 34
+      }
+    },
+    "environment": "Sui mainnet / production-config staging, no public promotion",
+    "authoritative_spec": "tmp/animacraft-v8-mainnet-release/docs/codex/PRODUCT_DELIVERY_MILESTONES.md#2026-10-06"
+  },
+  "scope": {
+    "write_paths": [
+      "scripts/codex/delivery_gate.py",
+      "scripts/codex/test_delivery_gate.py",
+      "agent-management/runs/dev-002-delivery.json",
+      "ac/scripts/write-pair-receipt.mjs",
+      "ac/test/paired-source-receipt.test.mjs",
+      "ac/test/maker-v8-asset-quilt.test.js",
+      "ac/test/original-pure-views.test.js",
+      "ac/test/fixtures/approved-ui-donors/workflow-locale-deltas.json",
+      "ac/scripts/check-workflow-locales.mjs",
+      "ac/test/workflow-locale-deltas.test.mjs",
+      "ac/.github/workflows/repository-hygiene.yml",
+      "so/.github/workflows/soulidity-fast-path-smoke.yml",
+      "scripts/codex/delivery_execute.py",
+      "so/tests/scripts/paired-move-ci.test.ts",
+      "so/tests/helpers/chrome-cdp.ts",
+      "so/tests/new-web/chrome-cdp-lifecycle.test.ts",
+      "so/tests/new-web/collection-buy-browser.test.ts",
+      "so/tests/new-web/content-append-rebase-store.test.ts",
+      "so/tests/new-web/content-append-restore-store.test.ts",
+      "so/tests/new-web/private-bookmark-recovery.test.ts",
+      "so/vitest.config.ts",
+      "ac/maker-v8-rpc-deadline.js",
+      "ac/maker-v8-sui-grpc.js",
+      "ac/maker-workspace-i18n.js",
+      "ac/maker-workspace-v8-view.js",
+      "ac/package.json",
+      "ac/package-lock.json",
+      "ac/scripts/fresh-v8-delivery-scan.mjs",
+      "ac/test/maker-v8-rpc-deadline.test.js",
+      "ac/test/maker-v8-publication-controller.test.js",
+      "ac/test/maker-workspace-v8-view.test.js",
+      "ac/test/original-product-app.test.js",
+      "ac/docs/codex/assets/bug005-publication-recovery-2026-10-06/README.md",
+      "ac/maker-v8-product-bridge.js",
+      "ac/test/maker-v8-product-bridge.test.js",
+      "ac/original-product-app.js",
+      "ac/maker-v8-player-adapters.js",
+      "ac/test/maker-v8-player-adapters.test.js",
+      "ac/maker-v8-player-controller.js",
+      "ac/test/maker-v8-player-controller.test.js",
+      "ac/maker-v8-product-runtime.js",
+      "ac/test/maker-v8-product-runtime.test.js",
+      "ac/maker-v8-player-journey.js",
+      "ac/test/maker-v8-player-journey.test.js",
+      "ac/app.js",
+      "ac/test/animacraft-product-app.test.js",
+      "so/web/components/souls/native-current-appearance.tsx",
+      "so/web/components/souls/soul-cover-image.tsx",
+      "so/tests/new-web/native-current-appearance.test.tsx",
+      "so/tests/new-web/soul-current-cover.test.tsx",
+      "ac/test/maker-v8-native-content-provider.test.js",
+      "ac/maker-v8-native-content-provider.js",
+      "ac/maker-v8-walrus.js",
+      "ac/test/maker-v8-walrus.test.js",
+      "ac/test/maker-v8-walrus-quote.test.js",
+      "ac/maker-v8-walrus-execution.js",
+      "ac/test/maker-v8-walrus-batch-objects.test.js",
+      "ac/test/maker-v8-native-content-production.test.js",
+      "ac/maker-player-v8-view.js",
+      "ac/test/maker-player-v8-view.test.js"
+    ],
+    "non_goals": [],
+    "dependencies": [],
+    "interface_contract": null,
+    "revision": "fresh-journey-2026-10-06",
+    "mode": "fresh",
+    "required_draft_id": null,
+    "required_revision": null,
+    "bug_040_followup": "Existing approved BUG-040 browser lifecycle repair: separate bounded startup readiness from unchanged 4s command timeout; same six paths as prior lifecycle followup. New source must re-pass exact-pair CI before release. Full local run with 9 workers then reproduced Runtime.evaluate4s timeout (12332 pass/16 setup-skipped), so cap worker concurrency at2 to budget browser child processes; preserve all assertions/timeouts/test discovery."
+  },
+  "acceptance": {
+    "normal": [],
+    "failure": [],
+    "recovery": [],
+    "not_applicable_with_reason": [],
+    "interaction_budget": {
+      "signature_count": null,
+      "plan_evidence": null,
+      "note": "BUG006本地实际固定SDK交易证明：render+native3全新存储两次签名；已认证render复用时新native3也两次。Complete整程预算仍待准确候选真实计划和Chrome核验；不把两次存储签名当整程预算。"
+    }
+  },
+  "execution": {
+    "authorization_reference": "本线程用户明确授权该修复的提交、PR、合并与部署；最新确认落实防重犯计划",
+    "budget": null,
+    "stop_and_escalate_conditions": [],
+    "exclusive_resources": [],
+    "integration_owner": "Codex / current delivery executor",
+    "browser": {
+      "browser": "chrome",
+      "origin": "https://animacraft.soulidity.ai",
+      "account": "0xadea1910ac0e738dc020247bc5408b57b15f3701026a96098b716a35c3a6c52f",
+      "profile": "0xbotdao",
+      "wallet": "OKX Wallet 01 - Account 03"
+    },
+    "grants": [
+      {
+        "source": "本线程用户明确授权该修复的提交、PR、合并与部署；最新确认落实防重犯计划",
+        "actions": [
+          "commit",
+          "push",
+          "pr",
+          "merge",
+          "deploy"
+        ],
+        "targets": [
+          "redefine-digital-labs/animacraft",
+          "redefine-digital-labs/soulidity"
+        ],
+        "expires_at": null
+      }
+    ],
+    "active_bug": "BUG-006",
+    "bug_wip_limit": 1,
+    "sequence_source": "用户确认先主流程阻断；BUG044正式视觉验收已关闭，当前唯一WIP BUG006，随后恢复验收及F03/F04。",
+    "release_dependency_bug": null,
+    "communication": {
+      "mode": "existing_tables_only",
+      "channel_progress_messages": false,
+      "source": "2026-10-06用户明确：太吵了，就直接修改表；优先阻断主流程的问题。"
+    },
+    "staging_entry": {
+      "directory": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug006-player-batch",
+      "sha256": "a3567494d30f6cb9c34e7c16c6201c20c461a0ce1504883b5840d87d0be61526"
+    }
+  },
+  "evidence": {
+    "candidate_identity": {
+      "ac": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+      "so": "0cfb60a29b2b378dd9fbf31970b324b2ef2e301e"
+    },
+    "checks": [
+      {
+        "kind": "local",
+        "name": "delivery-gate-negative-cases",
+        "status": "pass",
+        "tests": 14
+      },
+      {
+        "kind": "local",
+        "name": "AC affected regression on Node22",
+        "status": "pass",
+        "tests": 202
+      },
+      {
+        "kind": "local",
+        "name": "SO paired workflow regression",
+        "status": "pass",
+        "tests": 6
+      },
+      {
+        "kind": "exact-pair-ci",
+        "status": "pass",
+        "runs": [
+          37374789340,
+          37374793633
+        ],
+        "paired_source_artifacts": "both exact pair/run/attempt verified by live delivery gate",
+        "note": "Historical a6ac9472/d67cfea4 pair only; invalid for d3e8ee2f release."
+      },
+      {
+        "kind": "Move-artifact",
+        "status": "pass",
+        "checks": 33,
+        "evidence": "release-r3/move-verified.json"
+      },
+      {
+        "kind": "immutable-staging",
+        "site": "so",
+        "status": "pass",
+        "checks": 169,
+        "deployment": "dpl_83braMvwRSrQU5iGpRDF4kAxHLZn",
+        "source": "d67cfea4f07cb14c1cef76fb95bb24f8b2995d78",
+        "note": "R3 cloud parity also pass; public aliases unchanged; do not promote after candidate changes."
+      },
+      {
+        "kind": "local",
+        "name": "BUG-040 bounded startup and worker load",
+        "status": "pass",
+        "tests": 12348,
+        "suites": 583,
+        "commit": "d3e8ee2f5aed03da77013a3c93836e7fe46ac206"
+      },
+      {
+        "kind": "exact-pair-ci",
+        "status": "in-progress",
+        "runs": [
+          37410729140,
+          37410730737
+        ],
+        "pair": {
+          "ac": "a6ac94728e8498781637555ff73fcdf44be97a54",
+          "so": "d3e8ee2f5aed03da77013a3c93836e7fe46ac206"
+        }
+      },
+      {
+        "kind": "build-and-upload-input",
+        "status": "pass",
+        "release_dir": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-r4",
+        "pair": {
+          "ac": "a6ac94728e8498781637555ff73fcdf44be97a54",
+          "so": "d3e8ee2f5aed03da77013a3c93836e7fe46ac206"
+        }
+      },
+      {
+        "kind": "BUG-005-local-repair",
+        "status": "pass",
+        "candidate": "0f7c38559958c3d80e1b202bb7c6a2ad584a2542",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair",
+        "note": "4415/4417 initial; two missing paired sources corrected, affected258/258 pass; Node22 build/source625/dist8 pass. Exact paired CI pending."
+      },
+      {
+        "kind": "BUG005-deployed-acceptance",
+        "status": "pass",
+        "candidate": "0f7c38559958c3d80e1b202bb7c6a2ad584a2542",
+        "merge": "0b771587da1baeef7c33b875c945b0e04adbd0ea",
+        "deployment": "dpl_EwkCqsYDptJ3gXzv6ff7Vbbujf6M",
+        "activation_digest": "HeDWUpZ6AFLSfnZ4uVfwYHHUNsi4V49496rJSGT2BcLn",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/root-activation-readback.json",
+        "note": "Same fresh Maker refresh11/11→final user signature→web Published and chain ACTIVE. Full F02 remains incomplete."
+      },
+      {
+        "kind": "BUG041-local",
+        "status": "pass",
+        "candidate": "fc23e6d12daab51316c2a8e761ee928319a44023",
+        "tests": 4419,
+        "skipped": 0,
+        "focused": 427,
+        "build": "pass",
+        "sourceScan": 625,
+        "distScan": 8,
+        "log": "output/f02-fresh-2026-10-06/bug005-repair/bug041-fullcheck.log"
+      },
+      {
+        "kind": "BUG041-release",
+        "status": "pass",
+        "candidate": "fc23e6d12daab51316c2a8e761ee928319a44023",
+        "merge": "7a1354d28dfb3c363b1cf63f669a7c6f565349a1",
+        "deployment": "dpl_2TNu31tT3Bnbm9dSr6uTXmqT9q9G",
+        "ci": [
+          37464090790,
+          37464104702
+        ],
+        "move": 33,
+        "immutable": 8,
+        "public": 8,
+        "routingRestored": true,
+        "note": "Live Player acceptance in progress; never rerun mutations."
+      },
+      {
+        "kind": "BUG042-local",
+        "status": "pass",
+        "candidate": "51474592ced92cf76ef23b241d3ecb11dfaa698e",
+        "tests": 4425,
+        "focused": 433,
+        "build": "pass",
+        "sourceScan": 625,
+        "distScan": 8,
+        "log": "output/f02-fresh-2026-10-06/bug005-repair/bug042-fullcheck.log"
+      },
+      {
+        "kind": "BUG042-release",
+        "status": "pass",
+        "candidate": "51474592ced92cf76ef23b241d3ecb11dfaa698e",
+        "merge": "bf3def5cc7b36d05887a1781888c7f1bb23d7cde",
+        "deployment": "dpl_DE6fMnzn7wY74M27wdF4hPsaGA6L",
+        "ci": [
+          37468003309,
+          37468028169
+        ],
+        "move": 33,
+        "immutable": 8,
+        "public": 8,
+        "routingRestored": true
+      },
+      {
+        "kind": "BUG018-grpc-local",
+        "status": "pass",
+        "candidate": "10bf7ac2ee55187bcaf1e95de95f70f6778ae593",
+        "tests": 4427,
+        "skipped": 0,
+        "focused": 52,
+        "build": "pass",
+        "sourceScan": 625,
+        "distScan": 8
+      },
+      {
+        "kind": "BUG018-grpc-release",
+        "status": "pass",
+        "candidate": "10bf7ac2ee55187bcaf1e95de95f70f6778ae593",
+        "merge": "0d9e88068de272c59484ee0fef1934b8ff49659d",
+        "deployment": "dpl_AnTdgvCXjXzSCPTDCycESjfToJHC",
+        "ci": [
+          37471776031,
+          37471780510
+        ],
+        "move": 33,
+        "immutable": 8,
+        "public": 8,
+        "routingRestored": true
+      },
+      {
+        "kind": "BUG018-counter-local",
+        "status": "pass",
+        "candidate": "a3fd04b5810db9770dea8e86eb5ebfd9fadd0631",
+        "tests": 4428,
+        "skipped": 0,
+        "focused": 53,
+        "build": "pass",
+        "sourceScan": 625,
+        "distScan": 8,
+        "mainnetCounterRead": "baseOrdinal0; zero chainwrites"
+      },
+      {
+        "kind": "BUG018-counter-release",
+        "status": "pass",
+        "candidate": "a3fd04b5810db9770dea8e86eb5ebfd9fadd0631",
+        "merge": "88e742fa6292ac10e17c2fc002cc6fb8e64a8b8c",
+        "deployment": "dpl_CiKSVyfmudFy5W9EfPGNZGBgR1Uh",
+        "ci": [
+          37475009056,
+          37475014736
+        ],
+        "move": 33,
+        "immutable": 8,
+        "public": 8,
+        "routingRestored": true
+      },
+      {
+        "kind": "BUG018-optional-local",
+        "status": "pass",
+        "candidate": "8bdb2eced5a6afbc96df4c25c2c8b64251cbbc5d",
+        "tests": 4429,
+        "skipped": 0,
+        "focused": 54,
+        "build": "pass",
+        "sourceScan": 625,
+        "distScan": 8
+      },
+      {
+        "kind": "BUG018-current-violet-mainnet-quote",
+        "status": "pass",
+        "candidate": "8bdb2eced5a6afbc96df4c25c2c8b64251cbbc5d",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug018-optional-violet-quote.json",
+        "note": "UI exported current selection, actual certified catalog/manifest/runtime and two consistent quote reads; no transaction or signature; not full mint acceptance"
+      },
+      {
+        "kind": "BUG018-optional-release",
+        "status": "pass",
+        "candidate": "8bdb2eced5a6afbc96df4c25c2c8b64251cbbc5d",
+        "merge": "a41fd252dc55f95c0e4c46fe876ad9a07c5c965e",
+        "deployment": "dpl_3N8A3MdeE28e5bRudbYMJt5y2Mhj",
+        "ci": [
+          37478684368,
+          37478689226
+        ],
+        "move": 33,
+        "immutable": 8,
+        "public": 8,
+        "routingRestored": true
+      },
+      {
+        "kind": "BUG018-clock-expiration-local",
+        "status": "pass",
+        "candidate": "3bbb6acb8e7ab8c7b2e6c4f96fd2fd3510d9efc0",
+        "tests": 4437,
+        "skipped": 0,
+        "focused": 62,
+        "build": "pass",
+        "sourceScan": 625,
+        "distScan": 8,
+        "actualMainnetReadOnly": "custody,compile,freshness,build,simulation SUCCESS; no signing/broadcast"
+      },
+      {
+        "kind": "BUG018-clock-expiration-release",
+        "status": "pass",
+        "candidate": "3bbb6acb8e7ab8c7b2e6c4f96fd2fd3510d9efc0",
+        "merge": "035b1c97a8308461e22ffe7d3ab604965c508a06",
+        "deployment": "dpl_AvkYBqvuCidwmjtELkrJ9EHRq5qE",
+        "ci": [
+          37483196770,
+          37483202024
+        ],
+        "requiredPrCi": {
+          "run": 37483152999,
+          "attempt": 2,
+          "status": "success"
+        },
+        "move": 33,
+        "immutable": 8,
+        "public": 8,
+        "routingRestored": true
+      },
+      {
+        "kind": "BUG018-controller-expiration",
+        "candidate": "e40447c0d7704543dd2e78d9b06f82c26b649afd",
+        "status": "pending-full-check-and-CI",
+        "controller_tests": 32,
+        "real_mainnet_prepare": "PREPARED; no signature or broadcast; ephemeral IDB probe only",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug018-controller-mainnet.log",
+        "ci": [
+          37487941202,
+          37487976874
+        ]
+      },
+      {
+        "kind": "local",
+        "candidate": "e40447c0d7704543dd2e78d9b06f82c26b649afd",
+        "name": "BUG018 controller fullcheck",
+        "status": "pass",
+        "tests": 4439,
+        "fail": 0,
+        "skip": 0,
+        "sourceFiles": 625,
+        "distFiles": 8,
+        "uploadProof": "release-bug018-controller/upload-verified.json"
+      },
+      {
+        "kind": "BUG018-controller-exactpair",
+        "candidate": "e40447c0d7704543dd2e78d9b06f82c26b649afd",
+        "status": "pass",
+        "ci": [
+          37487941202,
+          37487976874
+        ],
+        "requiredPRCI": 37487934188,
+        "moveChecks": 33,
+        "evidence": "release-bug018-controller/move-verified.json"
+      },
+      {
+        "kind": "BUG018-controller-release",
+        "candidate": "e40447c0d7704543dd2e78d9b06f82c26b649afd",
+        "status": "pass",
+        "merge": "e3cff27c15032bacc82356e41d08bcece751df6e",
+        "deployment": "dpl_BgnXyqEsvKncPBTAeBaB3ukjfN15",
+        "immutableFiles": 8,
+        "publicFiles": 8,
+        "routingRestored": true,
+        "liveAcceptance": "pending same Chrome Complete, no Soul/signature evidence"
+      },
+      {
+        "kind": "BUG018-context-clock-focused",
+        "status": "pass",
+        "tests": 102,
+        "fail": 0,
+        "skip": 0,
+        "evidence": "/tmp/bug018-context-clock-after.log",
+        "note": "Includes cold controller recovery, exact bytes, drift refusal, signed/unknown nonreplacement and IndexedDB atomic unsigned retirement. Local uncommitted source; full check running, no deployment."
+      },
+      {
+        "kind": "BUG018-context-clock-readonly-execute",
+        "status": "pass",
+        "candidate": "6cdbc2ef2349f8ac356eb3e5c8a2c49054325a5d",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug018-execute-fixed-cold.log",
+        "note": "Actual mainnet catalog/custody/compiler plus cold controller/boundary resumes same action and exact transaction to forbidden wallet sentinel; signature/broadcast null. Synthetic persistence/quota, not browser durability or Soul proof."
+      },
+      {
+        "kind": "BUG018-context-clock-fullcheck",
+        "status": "pass",
+        "candidate": "6cdbc2ef2349f8ac356eb3e5c8a2c49054325a5d",
+        "tests": 4447,
+        "fail": 0,
+        "skip": 0,
+        "build": "pass",
+        "sourceFiles": 625,
+        "distFiles": 8,
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug018-context-clock-fullcheck.log"
+      },
+      {
+        "kind": "BUG018-context-clock-archive",
+        "status": "pass",
+        "candidate": "6cdbc2ef2349f8ac356eb3e5c8a2c49054325a5d",
+        "releaseDir": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug018-context-clock",
+        "tree": "11e3e40368e3d415b1e1f133895feb396c194d99",
+        "trackedFiles": 623,
+        "uploadFiles": 157,
+        "note": "Clean git archive/npmci/build/upload input proof; NO stage/merge/promote attempted."
+      },
+      {
+        "kind": "BUG018-context-clock-AC-exact-ci",
+        "status": "pass",
+        "candidate": "6cdbc2ef2349f8ac356eb3e5c8a2c49054325a5d",
+        "run": 37493600296,
+        "requiredPRRun": 37493588924,
+        "pairedSourceRunAttemptVerified": true,
+        "note": "SO exact run37493603989 still live; not release permission by itself."
+      },
+      {
+        "kind": "BUG018-context-clock-exactpair",
+        "status": "pass",
+        "candidate": "6cdbc2ef2349f8ac356eb3e5c8a2c49054325a5d",
+        "ci": [
+          37493600296,
+          37493603989
+        ],
+        "requiredPRCI": 37493588924,
+        "pairedSourceRunAttemptVerified": true,
+        "moveChecks": 33,
+        "evidence": "release-bug018-context-clock/move-verified.json"
+      },
+      {
+        "kind": "BUG018-context-clock-release",
+        "status": "pass",
+        "candidate": "6cdbc2ef2349f8ac356eb3e5c8a2c49054325a5d",
+        "merge": "1ea0ae6c44cb65d70fd6ed580a41ed665f9313b5",
+        "deployment": "dpl_CCaA1YLimEDqEj6pqqHebynvrXfW",
+        "immutableFiles": 8,
+        "publicFiles": 8,
+        "routingRestored": true,
+        "soulidityUnchanged": true,
+        "liveAcceptance": "pending same author Chrome Complete"
+      },
+      {
+        "kind": "BUG018-context-clock-live-wallet",
+        "status": "pass",
+        "candidate": "6cdbc2ef2349f8ac356eb3e5c8a2c49054325a5d",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/pr91-live-wallet-request.json",
+        "note": "Actual same Chrome prewallet freshness passed and OKX unlock popup opened; no signature/broadcast/Soul. Does not complete F02."
+      },
+      {
+        "kind": "BUG018-loadout-focused",
+        "status": "pass",
+        "candidate": "b1018b255373e5d989c167d5e35533f78d292d6c",
+        "tests": 280,
+        "evidence": "/tmp/bug018-loadout-focused.log",
+        "mainnetReadOnly": "actual catalog, connected Player context, full controller READY; original recipe restored; no signature/broadcast",
+        "probe": "output/f02-fresh-2026-10-06/bug005-repair/bug018-loadout-fixed-readback.json"
+      },
+      {
+        "kind": "BUG018-loadout-fullcheck-and-archive",
+        "status": "pass",
+        "candidate": "b1018b255373e5d989c167d5e35533f78d292d6c",
+        "tests": 4448,
+        "fail": 0,
+        "skip": 0,
+        "sourceFiles": 625,
+        "distFiles": 8,
+        "archiveTracked": 623,
+        "uploadFiles": 157,
+        "log": "output/f02-fresh-2026-10-06/bug005-repair/bug018-loadout-fullcheck.log",
+        "releaseDir": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug018-loadout",
+        "stageAttempted": false
+      },
+      {
+        "kind": "BUG018-loadout-exactpair",
+        "status": "pass",
+        "candidate": "b1018b255373e5d989c167d5e35533f78d292d6c",
+        "ci": [
+          37514825801,
+          37514827284
+        ],
+        "requiredPRCI": 37514832132,
+        "pairedSourceRunAttemptVerified": true,
+        "moveChecks": 33,
+        "evidence": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug018-loadout/move-verified.json"
+      },
+      {
+        "kind": "BUG018-loadout-release",
+        "status": "pass",
+        "candidate": "b1018b255373e5d989c167d5e35533f78d292d6c",
+        "merge": "8ffea15927ac5c55a8d3b93e8cee895b820599de",
+        "deployment": "dpl_ATsnB61Us9sY9WRvkku1Netmm4mZ",
+        "immutableFiles": 8,
+        "publicFiles": 8,
+        "routingRestored": true,
+        "soulidityUnchanged": true,
+        "liveAcceptance": "Correct Chrome refreshed once; same Maker Complete restoration next, no Soul yet"
+      },
+      {
+        "kind": "BUG005-committed-loadout-focused",
+        "status": "pass",
+        "tests": 162,
+        "candidate": "uncommitted current branch",
+        "evidence": "/tmp/bug005-committed-focused.log",
+        "mainnetReadOnly": "Actual original live catalog, custody, controller, original exported recipe; reuse true. Synthetic IndexedDB, not native WAL/mint proof.",
+        "probe": "output/f02-fresh-2026-10-06/bug005-repair/bug005-committed-mainnet-readback.json"
+      },
+      {
+        "kind": "BUG005-committed-bootstrap",
+        "status": "pass",
+        "tests": 322,
+        "candidate": "945c87fab0e077ad37a44b7e8f13ed159f8cc2e6",
+        "evidence": "/tmp/bug005-committed-bootstrap-focused.log",
+        "note": "After actual full-check entry failure fixed production lazy facade. Initial stale full run was stopped and superseded; final full check running."
+      },
+      {
+        "kind": "BUG005-committed-archive",
+        "status": "pass",
+        "candidate": "945c87fab0e077ad37a44b7e8f13ed159f8cc2e6",
+        "tree": "a5bae874376edd1fbf1d2730c3a3f6f683532eac",
+        "trackedFiles": 623,
+        "uploadFiles": 157,
+        "releaseDir": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug005-committed-loadout",
+        "note": "Exact archive/npmci/build/dry upload input proof. No stage/merge/promote attempted."
+      },
+      {
+        "kind": "BUG005-committed-fullcheck",
+        "status": "pass",
+        "candidate": "945c87fab0e077ad37a44b7e8f13ed159f8cc2e6",
+        "tests": 4458,
+        "fail": 0,
+        "skip": 0,
+        "sourceFiles": 625,
+        "distFiles": 8,
+        "build": "pass",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug005-committed-final-fullcheck.log"
+      },
+      {
+        "kind": "BUG005-committed-AC-exact-ci",
+        "status": "pass",
+        "candidate": "945c87fab0e077ad37a44b7e8f13ed159f8cc2e6",
+        "run": 37519610410,
+        "requiredPRRun": 37519603140,
+        "pairedSourceRunAttemptVerified": true
+      },
+      {
+        "kind": "BUG005-committed-exactpair",
+        "status": "pass",
+        "candidate": "945c87fab0e077ad37a44b7e8f13ed159f8cc2e6",
+        "ci": [
+          37519610410,
+          37519613394
+        ],
+        "requiredPRCI": 37519603140,
+        "pairedSourceRunAttemptVerified": true,
+        "moveChecks": 33,
+        "evidence": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug005-committed-loadout/move-verified.json"
+      },
+      {
+        "kind": "BUG005-committed-release",
+        "status": "pass",
+        "candidate": "945c87fab0e077ad37a44b7e8f13ed159f8cc2e6",
+        "merge": "f3c082417b9675c06ae70daae152f564c10edc9c",
+        "deployment": "dpl_2eHD64jgzUY93EvZGe4vNCowd7z6",
+        "immutableFiles": 8,
+        "publicFiles": 8,
+        "routingRestored": true,
+        "soulidityUnchanged": true,
+        "liveAcceptance": "pending same author Chrome Complete"
+      },
+      {
+        "kind": "BUG005-production-custody-focused",
+        "status": "pass",
+        "candidate": "036271855c8e719e9dbd0a450447cc851a8e386f",
+        "tests": 173,
+        "evidence": "/tmp/bug005-production-custody-focused.log",
+        "before": "/tmp/bug005-production-custody-before.log",
+        "mainnetReadOnly": "Actual production factory/controller READY, original recipe restored and reuse=true; signing/broadcast forbidden, synthetic persistence/observer not native WAL proof.",
+        "probe": "output/f02-fresh-2026-10-06/bug005-repair/bug005-production-custody-mainnet-readback.json"
+      },
+      {
+        "kind": "BUG005-production-custody-fullcheck-archive",
+        "status": "pass",
+        "candidate": "036271855c8e719e9dbd0a450447cc851a8e386f",
+        "tests": 4459,
+        "fail": 0,
+        "skip": 0,
+        "sourceFiles": 625,
+        "distFiles": 8,
+        "archiveTracked": 623,
+        "uploadFiles": 157,
+        "releaseDir": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug005-production-custody",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug005-production-custody-fullcheck.log"
+      },
+      {
+        "kind": "BUG005-production-custody-AC-exact-ci",
+        "status": "pass",
+        "candidate": "036271855c8e719e9dbd0a450447cc851a8e386f",
+        "run": 37523466641,
+        "requiredPRRun": 37523420496,
+        "pairedSourceRunAttemptVerified": true
+      },
+      {
+        "kind": "BUG005-production-custody-exactpair",
+        "status": "pass",
+        "candidate": "036271855c8e719e9dbd0a450447cc851a8e386f",
+        "ci": [
+          37523466641,
+          37523468872
+        ],
+        "requiredPRCI": 37523420496,
+        "pairedSourceRunAttemptVerified": true,
+        "moveChecks": 33,
+        "artifact": 11441578699,
+        "evidence": "release-bug005-production-custody/move-verified.json"
+      },
+      {
+        "kind": "BUG005-production-custody-release",
+        "status": "pass",
+        "candidate": "036271855c8e719e9dbd0a450447cc851a8e386f",
+        "merge": "af704c645801aa649ef870784dab38aff02527be",
+        "deployment": "dpl_AZEV8zBxpZtf99MZ4BmbghkAJGBn",
+        "immutableFiles": 8,
+        "publicFiles": 8,
+        "routingRestored": true,
+        "soulidityUnchanged": true,
+        "note": "Promotion succeeded. CLI team-discovery failed during routing restoration; observed exact alias and repaired only routing/final verification via separate restore-finalize intent. Never replay stage/merge/promote/restore."
+      },
+      {
+        "kind": "BUG005-production-custody-native",
+        "status": "partial-pass",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/pr94-live-storage-step.json",
+        "note": "Correct native Chrome restored same author/recipe; quote alreadyheld/business0; bypassed duplicate signed entry/COMMIT_LOADOUT; reached real rendered-image storage OKX Confirm. No signature, no Soul. No native journal readback proof."
+      },
+      {
+        "kind": "local",
+        "name": "native COMPLETE BCS target scope",
+        "status": "pass",
+        "tests": 164,
+        "candidate": "uncommitted codex/bug005-native-target-check",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug005-native-target-focused.log",
+        "note": "Before regression fails; fullcheck53837 and real production factory COMPLETE probe pending. Not deployed."
+      },
+      {
+        "kind": "local",
+        "name": "native-target fullcheck",
+        "status": "pass",
+        "tests": 4460,
+        "fail": 0,
+        "skipped": 0,
+        "commit": "a33c2fa7d884642a713e611e98b80ea4f57da3bf",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug005-native-target-fullcheck.log"
+      },
+      {
+        "kind": "mainnet-read-only",
+        "name": "real production factory COMPLETE build/simulate/execute prewallet",
+        "status": "pass",
+        "commit": "a33c2fa7d884642a713e611e98b80ea4f57da3bf",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/bug005-native-target-mainnet-readback.json",
+        "note": "Real owner Blob objects and authority; synthetic envelopes/persistence. PREPARED and forbidden signing sentinel reached; no signature/broadcast/mint."
+      },
+      {
+        "kind": "exact-pair-ci",
+        "status": "in-progress",
+        "runs": [
+          37528839876,
+          37528843330
+        ],
+        "pair": {
+          "ac": "a33c2fa7d884642a713e611e98b80ea4f57da3bf",
+          "so": "e5143164fb8b73169249bfa35afe4e2b3bf7cf22"
+        }
+      },
+      {
+        "kind": "exact-pair-ci",
+        "status": "pass",
+        "runs": [
+          37528839876,
+          37528843330
+        ],
+        "required_pr_run": 37528832898,
+        "paired_source_artifacts": "current source/run/attempt verified by live gate",
+        "pair": {
+          "ac": "a33c2fa7d884642a713e611e98b80ea4f57da3bf",
+          "so": "e5143164fb8b73169249bfa35afe4e2b3bf7cf22"
+        }
+      },
+      {
+        "kind": "release",
+        "status": "pass",
+        "pr": 95,
+        "candidate": "a33c2fa7d884642a713e611e98b80ea4f57da3bf",
+        "merge": "8ae807125890e87f6e469f9d2e74f34705209a01",
+        "ac_deployment": "dpl_F1rhL2PqzysxA3PEmmCM6Lpygxdx",
+        "local_tests": 4460,
+        "ci": [
+          37528839876,
+          37528843330,
+          37528832898
+        ],
+        "move_checks": 33,
+        "immutable_checks": 8,
+        "public_checks": 8,
+        "routing_restored": true,
+        "so_unchanged": true,
+        "evidence": "release-bug005-native-target/public-verified.json",
+        "note": "All mutations completed; never replay. Real Soul/receive/recovery still pending."
+      },
+      {
+        "kind": "BUG005-native-event-local",
+        "status": "pass",
+        "candidate": "fb4dedfbec5f08bb9a4ea181ffe4d9d63fce23a7",
+        "focused": 223,
+        "before": "pr96-event-before.log reproduced old entrypoint rejection",
+        "actual_finalized_probe": "pr96-finalized-event-diagnostics.json",
+        "native_objects": 6,
+        "browser_wal_recovery": false
+      },
+      {
+        "kind": "BUG005-native-event-fullcheck",
+        "status": "pass",
+        "candidate": "fb4dedfbec5f08bb9a4ea181ffe4d9d63fce23a7",
+        "tests": 4471,
+        "failures": 0,
+        "skipped": 0,
+        "build": "pass",
+        "source_scan": 625,
+        "dist_scan": 8,
+        "log": "output/f02-fresh-2026-10-06/bug005-repair/pr96-event-fullcheck.log"
+      },
+      {
+        "kind": "BUG005-native-SO-readonly-receive",
+        "status": "pass",
+        "source": "e5143164fb8b73169249bfa35afe4e2b3bf7cf22",
+        "transaction": "7UaWc5YFWCF3YWVpWdAoxDq3d73VktUjEnedW3jypi7D",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/pr96-so-receive-diagnostics.json",
+        "databaseWrite": false,
+        "browserReception": false
+      },
+      {
+        "kind": "BUG005-native-event-AC-exact-ci",
+        "status": "pass",
+        "candidate": "fb4dedfbec5f08bb9a4ea181ffe4d9d63fce23a7",
+        "run": 37533010165,
+        "required_run": 37533000872,
+        "paired_source_receipt": "exact currentrun/attempt passed"
+      },
+      {
+        "kind": "BUG005-native-event-release",
+        "status": "pass",
+        "pr": 96,
+        "candidate": "fb4dedfbec5f08bb9a4ea181ffe4d9d63fce23a7",
+        "merge": "14cfe4517ee54b243edeb314327bc7314306ece2",
+        "deployment": "dpl_AayPdo7bfA8wwXxGoH8t7xQp38ou",
+        "ci": [
+          37533010165,
+          37533066475,
+          37533000872
+        ],
+        "moveChecks": 33,
+        "immutableFiles": 8,
+        "publicFiles": 8,
+        "routingRestored": true,
+        "soulidityUnchanged": true,
+        "evidence": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug005-native-event/public-verified.json",
+        "browserRecovery": false
+      },
+      {
+        "kind": "BUG005-native-event-nativeChrome",
+        "status": "pass",
+        "evidence": "output/f02-fresh-2026-10-06/bug005-repair/pr96-native-recovery-step.json",
+        "sameSoul": "0x79ad675023398861f6986859c95bb28a03e07168b4175590c1c2cb43d9182f0f",
+        "sameDigest": "7UaWc5YFWCF3YWVpWdAoxDq3d73VktUjEnedW3jypi7D",
+        "soulidityReceiveAndRefresh": true,
+        "additionalWalletRequests": 0,
+        "fullF02Complete": false
+      },
+      {
+        "kind": "BUG044-focused",
+        "status": "pass",
+        "tests": 177,
+        "before_failed": 8,
+        "typecheck": "pass",
+        "lint_errors": 0,
+        "candidate": "4c0a9b86c018fa863d2f170e4e069075d749c366",
+        "live_original_preview": "Original OC visibly loads on original author Chrome via existing Wardrobe read-only entry; default covers still production e514 pending release."
+      },
+      {
+        "kind": "BUG044-full-local",
+        "status": "pass-after-dependency-setup",
+        "candidate": "4c0a9b86c018fa863d2f170e4e069075d749c366",
+        "suites": 583,
+        "tests": 12359,
+        "initial_setup_failure": "desktop write-excel-file missing",
+        "repair": "reuse matching installed desktop dependencies; one failed suite rerun passes1",
+        "typecheck": "pass",
+        "lint_errors": 0,
+        "build": "pass",
+        "upload_input_verification": "pass",
+        "releaseDir": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug044-original-cover"
+      },
+      {
+        "kind": "BUG044-native-Chrome-candidate",
+        "status": "partial-pass",
+        "source": "4c0a9b86c018fa863d2f170e4e069075d749c366",
+        "default_detail_original_visible": true,
+        "origin": "http://127.0.0.1:3101",
+        "wallet_requests": 0,
+        "sameMainnetSoul": "0x79ad675023398861f6986859c95bb28a03e07168b4175590c1c2cb43d9182f0f",
+        "evidence": "output/f02-fresh-2026-10-06/bug044-cover/candidate-default-cover.json",
+        "formalDeployment": false,
+        "refresh": "pending"
+      },
+      {
+        "kind": "BUG006-exact-full-local",
+        "status": "pass",
+        "candidate": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+        "tests": 4527,
+        "skipped": 0,
+        "build": "pass",
+        "source_scan": 626,
+        "dist_scan": 8,
+        "evidence": "output/f02-fresh-2026-10-06/bug006-player-batch/runtime-review.json"
+      },
+      {
+        "kind": "BUG006-exact-pair-CI",
+        "status": "in-progress",
+        "runs": [
+          37578975695,
+          37578978676
+        ],
+        "pair": {
+          "ac": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+          "so": "0cfb60a29b2b378dd9fbf31970b324b2ef2e301e"
+        },
+        "pr": 97
+      },
+      {
+        "kind": "BUG006-predeployment",
+        "status": "partial-pass",
+        "candidate": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+        "ac_ci": 37578975695,
+        "so_ci": 37578978676,
+        "so_ci_status": "live Move gate",
+        "move_checks": 33,
+        "ac_upload_files": 157,
+        "unchanged_so_checks": 169,
+        "visual_fixture": "pass; no wallet/runtime acceptance claim",
+        "release_dir": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug006-player-batch"
+      },
+      {
+        "kind": "BUG006-exact-pair-release",
+        "status": "pass",
+        "runs": [
+          37578975695,
+          37578978676
+        ],
+        "pair": {
+          "ac": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+          "so": "0cfb60a29b2b378dd9fbf31970b324b2ef2e301e"
+        },
+        "paired_source_run_attempt_receipts": "pass",
+        "all_actual_jobs": "pass",
+        "move_checks": 33,
+        "note": "No full online journey closure"
+      },
+      {
+        "kind": "BUG006-release",
+        "status": "pass",
+        "directory": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug006-player-batch",
+        "candidate": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+        "merge": "5fb13fa3a45a013c53f05de7da8f9749b0108568",
+        "tree": "bfaf99019aeef7db5e04a3db590813a8a3f6df7f",
+        "deployment": "dpl_6JxmMnPyWNSw8thZru8vKfEmKr1z",
+        "url": "https://animacraft-iabssactx-soulidity-ai.vercel.app",
+        "immutable_checks": 8,
+        "public_checks": 8,
+        "routingRestored": true,
+        "sameSoDeployment": "dpl_DTXmWfR4j4CJesnsNT5kdVcHKDMy",
+        "stage_merge_promote": "ALL COMPLETE; never replay",
+        "protocol": "Mainnet137/epoch1273 readonly pass",
+        "freshDraft": "maker-1791354140212",
+        "note": "No real batch wallet journey yet; not a BUG/DEV closure"
+      }
+    ],
+    "remaining_work": [
+      "BUG006批量存储与准确候选发布、F02真实预算及取消/未知/刷新；F03/F04保留。",
+      "第一优先F02完整真实旅程及取消/未知结果/刷新恢复",
+      "第二优先F03/F04资格、获取使用、装备、Loadouts、Showcase及政策/限额/权益/Seal",
+      "后续Market和M1-M4其余必需项保留排队，未删除、未完成"
+    ],
+    "next_owner_action": "核验已启动37578975695/37578978676的准确候选CI及run/attempt配对凭据、Move制品；审查PR97并准备新发布清单，不能复用旧已完成发布脚本。",
+    "operations_owner": null
+  },
+  "observations": {
+    "cost": null,
+    "review_minutes": null,
+    "user_feedback": null,
+    "bug044_release": {
+      "at": "2026-10-07",
+      "stage": "Release",
+      "evidence": "release-bug044-original-cover/move-verified.json; /tmp/bug044-stage.log; /tmp/bug044-cloud-inputs.log",
+      "result": "Exactpairedgate/Move33/cloudinput36+3/immutable169/public169PASS. Stage49494,merge21497,promote80611 allCOMPLETEDexit0. PR35merge0cfb60a29b2b378dd9fbf31970b324b2ef2e301e/source4c0a9b86 productionSOdpl_Cy5uqyT8GNFBFzEeic669zNRZmGE routingrestoredtrue; ACunchanged. Native image/card/refresh pending. Never replay mutations.",
+      "visual_evidence": "output/f02-fresh-2026-10-06/bug044-cover/production-cover-check.json",
+      "visual_result": "PASS formalChrome0xbotdao sameSoul79ad defaultdetail fullrobot/Violet, reload Original OC, MySoulsOwned(1) actualthumbnail; zero wallet/signatures/chainwrites. BUG044 closed only; fullF02/M1-M4 unfinished."
+    },
+    "bug006_bounded_start": {
+      "source": "用户已批准BUG006批量上传及已签恢复；2026-10-07确认优先级，044后执行006",
+      "test_path": "ac/test/maker-v8-native-content-provider.test.js",
+      "intent": "回归证明native3内容的持久准备不应签名或上传，从而与render1固定合批；不扩张产品行为、合同或授权",
+      "status": "Actual regression FAIL: expected0 preparation signatures, actual6; code source unchanged; test+27uncommitted",
+      "evidence": "output/f02-fresh-2026-10-06/bug006-player-batch/preparation-before.log"
+    },
+    "bug006_preparation_scope": {
+      "authorization": "用户已授权BUG006批量上传与已签恢复修复，复用同范围授权",
+      "paths": [
+        "ac/maker-v8-native-content-provider.js",
+        "ac/maker-v8-walrus.js",
+        "ac/test/maker-v8-walrus.test.js"
+      ],
+      "purpose": "分離无支付持久准备，再实现同批四个原始Blob的共享PTB；不改变已签记录、不变更合约收费规则",
+      "stage": "Code",
+      "release": "未构建、未发布"
+    },
+    "bug006_core_checkpoint": {
+      "bug": "BUG-006",
+      "stage": "Code",
+      "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/bug005-publication-recovery",
+      "branch": "codex/bug006-player-storage-batch",
+      "baseline": "14cfe4517ee54b243edeb314327bc7314306ece2",
+      "classification": "progress: reproduced 6 preparation signatures; now deferred preparation, fixed batch claim/review and exact mapping verified locally",
+      "files": {
+        "maker-v8-native-content-provider.js": "bda34fab82f65f76209db9b49a96cb5f1e7233a48b594d9b3387662161036541",
+        "maker-v8-walrus.js": "c19eb3be3bc1faa068abbfca8da89e499e841cb06c95aafa39d3f91841f84d09",
+        "maker-v8-walrus-execution.js": "ecb5392f68068ab17bcfcbc142a39163253dc4efa8b89bddbf09e6a52f67ab35",
+        "test/maker-v8-native-content-provider.test.js": "2a135b4ada5c27b7401431011da0d195c05da597651b56a253d36c683cac6ef9",
+        "test/maker-v8-native-content-production.test.js": "0ffa940da7341b8e29342896beb702bdf33a9e3415d26a36147df24e874e6105",
+        "test/maker-v8-walrus.test.js": "8a9410f7dff01e3ddfd9bb72d097fcc20bab1a9802d3f387f66834e3b1e47dc1",
+        "test/maker-v8-walrus-quote.test.js": "0fbc7b26c5b89600a8aa6a390a6bd7ebc89d6e3e6ab6ad6c505dae840813ff30",
+        "test/maker-v8-walrus-batch-objects.test.js": "e0021f6e7bcc99e560596a1b9a128bc517d2355d5ced9ae71876215e4c8424d5"
+      },
+      "tests": {
+        "status": "PASS",
+        "count": 188,
+        "log": "preparation-and-batch-core.log",
+        "scope": "native content crypto/intent/production/store/provider; Walrus publisher/quote/execution/batch mapping; Player journey; Creator Quilt"
+      },
+      "build": {
+        "status": "PASS",
+        "log": "core-build.log"
+      },
+      "source_scan": {
+        "status": "PASS",
+        "log": "core-source-scan.log"
+      },
+      "implemented": [
+        "deferred private durable preparation of three native ciphertexts and Seal envelopes, zero payment and stable cold recovery",
+        "four-member atomic batch claim, standalone-review invalidation, LEGACY selection for signed/paid prior records, claim failure rollback",
+        "actual pinned SDK shared registration/review compilation, aggregate precise fee quote and four certification quote tests",
+        "exact historical Object BCS/effects map for each Blob; shuffled/duplicated/wrong ownership/type/bytes/retention refused; Walrus epoch43 distinct from Sui epoch1272"
+      ],
+      "remaining": [
+        "durable unsigned batch transaction and signed journal with locks and cold reread",
+        "query-first batch REGISTER/CERTIFY execution and explicit mapped resume.blobObjectId for every offchain upload",
+        "atomic COMPLETE projections for four individual WALs",
+        "Complete journey integration before render payment, real signature-budget/fault/recovery checks",
+        "exact candidate full release gates and fresh formal Chrome journey"
+      ],
+      "production_changed": false,
+      "new_wallet_requests": 0,
+      "new_chain_writes": 0,
+      "bug_closed": false
+    },
+    "bug006_batch_ui_scope": {
+      "source": "User-approved BUG006 complete flow and accurate state UI",
+      "paths": [
+        "ac/maker-player-v8-view.js",
+        "ac/test/maker-player-v8-view.test.js"
+      ],
+      "purpose": "Exact persisted batch review in existing Complete confirmation; reuse single locale delta manifest, no new product direction"
+    },
+    "bug006_runtime_checkpoint": {
+      "bug": "BUG-006",
+      "baseline": "14cfe4517ee54b243edeb314327bc7314306ece2",
+      "frozen_source_unchanged": true,
+      "scope": "Player batch storage and exact Complete review/recovery; no contracts or fees/config changed",
+      "local_evidence": {
+        "runtime_sdk_signature_tests": {
+          "status": "PASS",
+          "tests": 20,
+          "log": "/tmp/bug006-paid-reuse.log",
+          "network": "synthetic Ledger/relay; real pinned SDK, BCS, IndexedDB and test-only Ed25519 signing/verifying"
+        },
+        "affected_previous_slice": {
+          "status": "PASS",
+          "tests": 557,
+          "log": "runtime-affected.log",
+          "note": "preceded 2–4-member reuse and shared locale manifest fix; not exact final candidate"
+        },
+        "initial_fullcheck": {
+          "status": "FAIL",
+          "tests": 4525,
+          "pass": 4524,
+          "failure": "duplicate workflow additions array in maker-workspace-v8-view.test.js; now reads existing single approved manifest"
+        },
+        "exact_final_fullcheck": {
+          "status": "PASS",
+          "tests": 4527,
+          "failures": 0,
+          "skipped": 0,
+          "log": "runtime-final-fullcheck.log",
+          "build": "PASS",
+          "source_scan": 626,
+          "dist_scan": 8,
+          "frozen17_path_hashes_after_commit": "MATCH"
+        }
+      },
+      "verified_boundaries": [
+        "unsigned PREPARED bytes/quote durable before wallet",
+        "fixed owner/root/member hashes/retention/nonce",
+        "SIGNING unknown query-only, SIGNED exact replay only",
+        "typed definitive rejection retains identical unsigned bytes",
+        "exact historical Object BCS and effects map relay object IDs",
+        "four member checkpoints commit atomically or all roll back",
+        "already-certified render reused; three new native files still two batch signatures",
+        "random protected render ciphertext persisted/reused",
+        "new completion waits for each exact batch review; no hidden single-file fallback",
+        "bounded finality polling does not request another signature"
+      ],
+      "remaining": [
+        "Independent review not performed; real candidate wallet/full-journey visual checks still pending",
+        "exact candidate review and paired CI/Move/release artifacts",
+        "fresh correct-author Chrome full journey and actual interaction budget",
+        "online cancel/unknown/refresh restoration; old serial topology fault regressions remain on existing related bugs",
+        "definitively failed batch stays explicit FAILED; no uncertain-result reset"
+      ],
+      "production_changed": true,
+      "wallet_actions": 0,
+      "chain_writes": 0,
+      "candidate": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+      "pr": "https://github.com/redefine-digital-labs/animacraft/pull/97",
+      "paired_ci": {
+        "ac": {
+          "run": 37578975695,
+          "commit": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+          "status": "completed_success"
+        },
+        "so": {
+          "run": 37578978676,
+          "commit": "0cfb60a29b2b378dd9fbf31970b324b2ef2e301e",
+          "status": "completed_success"
+        }
+      },
+      "visual_review": "/Users/naoer/Documents/Claude/Projects/soulidity/output/f02-fresh-2026-10-06/bug006-player-batch/visual-review.json",
+      "release_preparation": {
+        "directory": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug006-player-batch",
+        "source_manifest": "source-manifest.json",
+        "acBuild": "pass",
+        "acUploadInputs": 157,
+        "move_checks": 33,
+        "move_run": 37578975695,
+        "unchanged_so_deployment": "dpl_DTXmWfR4j4CJesnsNT5kdVcHKDMy",
+        "unchanged_so_public_checks": 169,
+        "noDeploymentAttempted": true
+      },
+      "release": {
+        "directory": "/var/folders/p7/xnbbfd1d3l12fp_fmj7bz85w0000gn/T/s13-publication-flow.dl089qk6/release-bug006-player-batch",
+        "candidate": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+        "merge": "5fb13fa3a45a013c53f05de7da8f9749b0108568",
+        "tree": "bfaf99019aeef7db5e04a3db590813a8a3f6df7f",
+        "deployment": "dpl_6JxmMnPyWNSw8thZru8vKfEmKr1z",
+        "url": "https://animacraft-iabssactx-soulidity-ai.vercel.app",
+        "immutable_checks": 8,
+        "public_checks": 8,
+        "routingRestored": true,
+        "sameSoDeployment": "dpl_DTXmWfR4j4CJesnsNT5kdVcHKDMy",
+        "stage_merge_promote": "ALL COMPLETE; never replay"
+      },
+      "fresh_journey": {
+        "draft_id": "maker-1791354140212",
+        "evidence": "output/f02-fresh-2026-10-07/journey-state.json",
+        "parts": 7,
+        "png_assets": 9,
+        "new_material_hash_overlap": 0,
+        "local_preflight_player_refresh": "PASS",
+        "wallet_review_pending_human": true,
+        "signatures": 4,
+        "chain_writes": 4,
+        "full_journey_complete": false,
+        "wallet_stage": "MANIFEST_REGISTER",
+        "registration_uploaded_application_readback": true,
+        "registration_receipt_independently_exported": false,
+        "current_evidence": "output/f02-fresh-2026-10-07/manifest-registration-review.json",
+        "certified_resources": 10,
+        "living_content_certified_application_readback": true,
+        "previous_receipts_independently_exported": false,
+        "asset_batch_registration_uploaded_application_readback": true,
+        "asset_batch_certified": true,
+        "asset_batch_certification_receipt_independently_exported": true,
+        "recovery_evidence": "output/f02-fresh-2026-10-07/asset-batch-signed-recovery.json"
+      },
+      "transaction_boundary_inspection": {
+        "evidence": "output/f02-fresh-2026-10-07/transaction-boundaries.json",
+        "source_input": "actual UI exported draft29",
+        "base_rows": 41,
+        "provisional_only": true,
+        "certified_transaction_plan": false,
+        "wallet_request_reobserved": "same pending OKX finalConfirm; no signature/chain write"
+      }
+    }
+  },
+  "dev_id": "DEV-002",
+  "review": {
+    "decision": "approved",
+    "scope_revision": "fresh-journey-2026-10-06",
+    "source": "本线程用户：然后落实一下，并继续按照敏捷开发和devops搞。"
+  },
+  "bugs": [
+    {
+      "id": "BUG-002",
+      "record_id": "Rec0C6DE31DC7",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-005",
+      "record_id": "Rec0C6DE3D15M",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-006",
+      "record_id": "Rec0C6YFYRPCL",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-008",
+      "record_id": "Rec0C7P6RPA3A",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-013",
+      "record_id": "Rec0C6W27PZGA",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-014",
+      "record_id": "Rec0C6U8178S2",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-018",
+      "record_id": "Rec0C6W21HRFC",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-040",
+      "record_id": "Rec0C6QRXT03D",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-041",
+      "record_id": "Rec0C6XV6JWG5",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-042",
+      "record_id": "Rec0C6N4W106B",
+      "review": "approved"
+    },
+    {
+      "id": "BUG-044",
+      "record_id": "Rec0C75DQ5P5K",
+      "review": "approved"
+    }
+  ],
+  "pair": {
+    "ac": {
+      "commit": "65b4218012b54c37966a5ad88e803a9d66185ff4",
+      "run_id": 37578975695,
+      "pr": 97
+    },
+    "so": {
+      "commit": "0cfb60a29b2b378dd9fbf31970b324b2ef2e301e",
+      "run_id": 37578978676,
+      "pr": 35,
+      "already_merged": true,
+      "promoted_source": "4c0a9b86c018fa863d2f170e4e069075d749c366"
+    }
+  },
+  "handbook": {
+    "version": "1.0",
+    "applicable_sections": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "evidence": "CI source binding, Move graph and source/output verification, existing product review; no contract/config/authority change in current frontend release",
+    "remaining_checks": "G4 immutable/config readback, G5 original user operation; wallet/chain authority and budget revalidated before irreversible action"
+  },
+  "objective_scope": {
+    "revision": "user-priority-clarified-2026-10-06",
+    "source": "用户澄清：别移除呀，我只是和你强调一下。强调F02、F03/F04优先级，不缩减完整M1-M4目标。",
+    "full_scope": "完整M1-M4全部保留",
+    "current_sequence": [
+      "第一优先F02完整作品到新Soul",
+      "第二优先F03/F04 Pack/Composable到装备、私密Loadouts及Showcase"
+    ],
+    "deferred_not_removed": [
+      "Market/S13-F05",
+      "M1-M4其余能力矩阵和最终验收"
+    ],
+    "wip_limit": 1
+  },
+  "current_actual_blocker": "BUG044已正式部署并验默认卡片/详情/刷新同Soul原图，零钱包；剩余主阻断BUG006：Player render1+native3仍逐份REGISTER/CERTIFY，共8次存储签名，需多原始Blob批量登记/认证及准确持久恢复。",
+  "next_action": "九张PNG原已签CERTIFY已恢复，独立Ledger回执5oiGp成功/checkpoint331304741，应用10/11；BUG005记录自动推进中断待诊断。Manifest REGISTER已打开OKX审核，待本人Confirm/Reject：0.018134865WAL+0.00257948SUI relay、gas预算6863836MIST。随后Manifest认证、ACTIVE、Player批量Complete、SO同新Soul/恢复验收。"
+}

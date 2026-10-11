@@ -1,0 +1,148 @@
+{
+  "packageId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+  "functions": [
+    {
+      "module": "commerce_v5",
+      "name": "finalize_independent_extension_root_v5",
+      "visibility": "public",
+      "isEntry": false,
+      "parameterCount": 12,
+      "returnCount": 0
+    },
+    {
+      "module": "expansion_pack_v8",
+      "name": "admit_expansion_pack_with_authority_v8",
+      "visibility": "public",
+      "isEntry": false,
+      "parameterCount": 5,
+      "returnCount": 0
+    },
+    {
+      "module": "expansion_pack_v8",
+      "name": "complete_bridge_enabled_v8",
+      "visibility": "public",
+      "isEntry": false,
+      "parameterCount": 0,
+      "returnCount": 1
+    },
+    {
+      "module": "expansion_pack_v8",
+      "name": "physical_bridge_enabled_v8",
+      "visibility": "public",
+      "isEntry": false,
+      "parameterCount": 0,
+      "returnCount": 1
+    },
+    {
+      "module": "expansion_pack_v8",
+      "name": "assert_complete_bridge_enabled_v8",
+      "visibility": "public",
+      "isEntry": false,
+      "parameterCount": 0,
+      "returnCount": 0
+    },
+    {
+      "module": "expansion_pack_v8",
+      "name": "assert_physical_bridge_enabled_v8",
+      "visibility": "public",
+      "isEntry": false,
+      "parameterCount": 0,
+      "returnCount": 0
+    },
+    {
+      "module": "expansion_pack_complete_v8",
+      "name": "companion_proof_available_v8",
+      "visibility": "public",
+      "isEntry": false,
+      "parameterCount": 0,
+      "returnCount": 1
+    },
+    {
+      "module": "expansion_pack_complete_v8",
+      "name": "begin_expansion_pack_complete_authorization_v8",
+      "visibility": "public",
+      "isEntry": false,
+      "parameterCount": 3,
+      "returnCount": 1
+    }
+  ],
+  "datatypes": [
+    {
+      "module": "commerce_v5",
+      "name": "IndependentExtensionLockStateV5",
+      "definingId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "expected": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "matches": true
+    },
+    {
+      "module": "commerce_v5",
+      "name": "IndependentExtensionAuthorityV5",
+      "definingId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "expected": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "matches": true
+    },
+    {
+      "module": "commerce_v5",
+      "name": "IndependentExtensionRootFinalizedV5",
+      "definingId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "expected": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "matches": true
+    },
+    {
+      "module": "commerce_v5",
+      "name": "LegacyLogicalCompatibilityStateV5",
+      "definingId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "expected": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "matches": true
+    },
+    {
+      "module": "commerce_v5",
+      "name": "LegacyLogicalStyleApprovalKeyV5",
+      "definingId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "expected": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "matches": true
+    },
+    {
+      "module": "commerce_v5",
+      "name": "LegacyLogicalStyleApprovalV5",
+      "definingId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "expected": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "matches": true
+    },
+    {
+      "module": "commerce_v5",
+      "name": "LegacyLogicalStyleRegisteredV5",
+      "definingId": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "expected": "0x1a797e32f594c53abab3e5bc0df9368c60deb4564e7947bea42db00d32dbe9ee",
+      "matches": true
+    },
+    {
+      "module": "expansion_pack_v8",
+      "name": "ExpansionPackReleaseV8",
+      "definingId": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+      "expected": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+      "matches": true
+    },
+    {
+      "module": "expansion_pack_v8",
+      "name": "ExpansionPackPassV8",
+      "definingId": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+      "expected": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+      "matches": true
+    },
+    {
+      "module": "expansion_pack_complete_v8",
+      "name": "ExpansionPackCompleteAuthorizationV8",
+      "definingId": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+      "expected": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+      "matches": true
+    },
+    {
+      "module": "commerce_v5",
+      "name": "MakerReleaseEvidenceV5",
+      "definingId": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+      "expected": "0x4b7109b4780c91ec528cced9fd77f4ed9dad4cb462484c74f100f1ed7f309c7a",
+      "matches": true
+    }
+  ]
+}

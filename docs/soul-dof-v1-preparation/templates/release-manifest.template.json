@@ -1,0 +1,52 @@
+{
+  "schema": "soulidity.release-evidence.v1",
+  "status": "Not run",
+  "candidate": {
+    "sourceCommit": null,
+    "dirtyPaths": [],
+    "frameworkCommit": null,
+    "moveCompiler": null,
+    "node": null,
+    "dependencyLockHashes": {},
+    "packageBytecodeHashes": {},
+    "abiHash": null,
+    "sdkVersion": null,
+    "renderVersion": null,
+    "animacraftArtifactHash": null,
+    "soulidityArtifactHash": null,
+    "sbomPath": null
+  },
+  "environment": {
+    "network": null,
+    "rpc": null,
+    "walrus": null,
+    "seal": null,
+    "configHash": null
+  },
+  "deployment": {
+    "packageIds": {},
+    "objects": [],
+    "capOwnershipReadbacks": [],
+    "digests": [],
+    "checkpoints": [],
+    "feesByCoinType": {},
+    "initializationReadbacks": []
+  },
+  "verification": {
+    "tests": [],
+    "journeys": [],
+    "independentReview": null,
+    "auditCoverage": null,
+    "postAuditDiff": null,
+    "reconciliation": null,
+    "monitoringDrill": null
+  },
+  "authorization": {
+    "startReconstruction": null,
+    "deployAndSpend": null,
+    "cutover": null
+  },
+  "remainingChecks": [
+    "Actual identifiers and evidence are intentionally empty; template is not release approval."
+  ]
+}

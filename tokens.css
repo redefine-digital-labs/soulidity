@@ -1,0 +1,244 @@
+/*
+ * SOULIDITY — Design Tokens
+ * Visual style reference for soulidity.xyz v1
+ * Sync with tailwind.config.js
+ * ─────────────────────────────────────────────
+ */
+
+:root {
+
+  /* ── Background Layers ─────────────────────── */
+  --color-bg:        #0D0A1E;  /* page base */
+  --color-card:      #1A1040;  /* primary card / panel */
+  --color-card-2:    #261558;  /* nested / secondary surface */
+  --color-border:    #2E1B6E;  /* subtle divider */
+
+  /* ── Brand Purple (Soul layer) ─────────────── */
+  --color-purple:        #A855F7;
+  --color-purple-light:  #C084FC;
+  --color-purple-dark:   #7C3AED;
+  --color-purple-deep:   #4C1D95;
+
+  /* ── Gold / Amber (SoulPass layer) ─────────── */
+  --color-gold:          #F59E0B;
+  --color-gold-light:    #FCD34D;
+  --color-gold-dark:     #D97706;
+
+  /* ── Teal (SoulGrant / access layer) ───────── */
+  --color-teal:          #14B8A6;
+  --color-teal-light:    #5EEAD4;
+  --color-teal-dark:     #0F766E;
+
+  /* ── Text ───────────────────────────────────── */
+  --color-white:     #F8F5FF;  /* brand white — purple-tinted */
+  --color-muted:     #9B8EC4;  /* secondary body text */
+
+  /* ── Status ─────────────────────────────────── */
+  --color-success:   #10B981;
+  --color-danger:    #EF4444;
+
+  /* ── Typography ─────────────────────────────── */
+  --font-heading:    "Space Grotesk", Inter, "Trebuchet MS", sans-serif;
+  --font-body:       Inter, "DM Sans", Calibri, sans-serif;
+  --font-mono:       "JetBrains Mono", "Fira Code", monospace;
+
+  /* ── Font Sizes ─────────────────────────────── */
+  --text-label:      0.6875rem; /* 11px — all-caps section tag */
+  --text-body-sm:    0.8125rem; /* 13px */
+  --text-body:       0.875rem;  /* 14px */
+  --text-body-lg:    1rem;      /* 16px */
+  --text-card-title: 1.125rem;  /* 18px */
+  --text-h3:         1.5rem;    /* 24px */
+  --text-h2:         2rem;      /* 32px */
+  --text-h1:         2.5rem;    /* 40px */
+  --text-hero:       3.5rem;    /* 56px */
+  --text-display:    4rem;      /* 64px */
+
+  /* ── Letter Spacing ─────────────────────────── */
+  --tracking-label:  0.12em;   /* for all-caps labels */
+  --tracking-tight:  -0.02em;  /* for large headings */
+
+  /* ── Line Heights ───────────────────────────── */
+  --leading-tight:   1.1;
+  --leading-snug:    1.25;
+  --leading-normal:  1.6;
+
+  /* ── Spacing ────────────────────────────────── */
+  --space-page-x:    3rem;     /* 48px horizontal page padding */
+  --space-section:   5rem;     /* 80px between sections */
+  --space-card:      1.5rem;   /* 24px card internal padding */
+  --space-gap:       1rem;     /* 16px default gap */
+
+  /* ── Border Radius ──────────────────────────── */
+  --radius-card:     0.5rem;   /* 8px */
+  --radius-badge:    0.25rem;  /* 4px */
+  --radius-pill:     9999px;
+
+  /* ── Borders ────────────────────────────────── */
+  --border-width:    1px;
+  --border-card:     1px solid var(--color-border);
+  --border-purple:   1px solid var(--color-purple);
+  --border-gold:     1px solid var(--color-gold);
+  --border-teal:     1px solid var(--color-teal);
+
+  /* ── Card Accent Bar (top colored stripe) ───── */
+  --bar-height:      4px;
+  --bar-purple:      linear-gradient(90deg, #A855F7, #7C3AED);
+  --bar-gold:        linear-gradient(90deg, #F59E0B, #FCD34D);
+  --bar-teal:        linear-gradient(90deg, #14B8A6, #5EEAD4);
+
+  /* ── Shadows / Glows ────────────────────────── */
+  --shadow-card:        0 4px 24px 0 rgba(0, 0, 0, 0.45);
+  --shadow-card-hover:  0 8px 40px 0 rgba(168, 85, 247, 0.18);
+  --glow-purple:        0 0 24px 4px rgba(168, 85, 247, 0.25);
+  --glow-gold:          0 0 24px 4px rgba(245, 158, 11, 0.25);
+  --glow-teal:          0 0 24px 4px rgba(20, 184, 166, 0.25);
+
+  /* ── Backgrounds ────────────────────────────── */
+  --bg-space:    radial-gradient(ellipse at 70% 30%, #261558 0%, #0D0A1E 60%);
+  --bg-orb-1:    radial-gradient(circle, rgba(124, 58, 237, 0.22) 0%, transparent 70%);
+  --bg-orb-2:    radial-gradient(circle, rgba(245, 158, 11, 0.15) 0%, transparent 70%);
+  --bg-hero:     radial-gradient(ellipse 80% 60% at 75% 20%, rgba(124, 58, 237, 0.18) 0%, transparent 100%);
+
+  /* ── Transitions ────────────────────────────── */
+  --transition-base:   150ms ease;
+  --transition-slow:   300ms ease;
+}
+
+
+/* ─────────────────────────────────────────────────
+   BASE RESETS
+───────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-white);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+}
+
+
+/* ─────────────────────────────────────────────────
+   UTILITY CLASSES
+───────────────────────────────────────────────── */
+
+/* Section label (e.g. "THE SOLUTION", "MARKET OPPORTUNITY") */
+.label {
+  font-family: var(--font-body);
+  font-size: var(--text-label);
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-purple);
+}
+.label-gold  { color: var(--color-gold); }
+.label-teal  { color: var(--color-teal); }
+.label-muted { color: var(--color-muted); }
+
+/* Headings */
+.heading {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-white);
+  line-height: var(--leading-snug);
+}
+.h1      { font-size: var(--text-h1); }
+.h2      { font-size: var(--text-h2); }
+.h3      { font-size: var(--text-h3); }
+.hero    { font-size: var(--text-hero); }
+.display { font-size: var(--text-display); }
+
+/* Body text */
+.text-muted   { color: var(--color-muted); }
+.text-purple  { color: var(--color-purple); }
+.text-gold    { color: var(--color-gold); }
+.text-teal    { color: var(--color-teal); }
+.text-success { color: var(--color-success); }
+.text-danger  { color: var(--color-danger); }
+
+/* Card base */
+.card {
+  background-color: var(--color-card);
+  border: var(--border-card);
+  border-radius: var(--radius-card);
+  padding: var(--space-card);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition-slow);
+}
+.card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+.card--purple { border-color: var(--color-purple); }
+.card--gold   { border-color: var(--color-gold); }
+.card--teal   { border-color: var(--color-teal); }
+
+/* Card with colored top accent bar */
+.card--accent-purple::before,
+.card--accent-gold::before,
+.card--accent-teal::before {
+  content: "";
+  display: block;
+  height: var(--bar-height);
+  margin: calc(-1 * var(--space-card)) calc(-1 * var(--space-card)) var(--space-card);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+.card--accent-purple::before { background: var(--bar-purple); }
+.card--accent-gold::before   { background: var(--bar-gold); }
+.card--accent-teal::before   { background: var(--bar-teal); }
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-badge);
+  font-size: var(--text-body-sm);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.badge--open    { color: var(--color-gold);    border: 1px solid var(--color-gold); }
+.badge--closed  { color: var(--color-muted);   border: 1px solid var(--color-border); }
+.badge--planned { color: var(--color-purple);  border: 1px solid var(--color-purple); }
+
+/* Glow orb (decorative background element) */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(80px);
+  opacity: 0.25;
+}
+.orb--purple { background: var(--color-purple-dark); }
+.orb--gold   { background: var(--color-gold); }
+
+/* Page layout */
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--space-page-x);
+}
+
+/* Section spacing */
+.section {
+  padding: var(--space-section) 0;
+}
+
+/* Divider line */
+.divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 2rem 0;
+}

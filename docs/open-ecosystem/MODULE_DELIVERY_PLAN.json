@@ -1,0 +1,232 @@
+{
+  "version": "1.2",
+  "date": "2026-10-10",
+  "stage": "Plan",
+  "remote_execution_status": "Not run",
+  "channel_market_separate": true,
+  "preserve_existing_owners_tasks_current": true,
+  "modules": [
+    {
+      "id": "SDK",
+      "repository": "soul-sdk",
+      "slack_channel": "mod-soul-sdk",
+      "batch": 1,
+      "maintenance_role_mapping_recommended": "LUQI",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "DEVOPS",
+      "repository": "ecosystem-devops",
+      "slack_channel": "mod-devops",
+      "batch": 1,
+      "maintenance_role_mapping_recommended": "HARBOR",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "INTEGRATION",
+      "repository": "ecosystem-integration",
+      "slack_channel": "mod-integration",
+      "batch": 1,
+      "maintenance_role_mapping_recommended": "FLUX",
+      "ci": 1,
+      "version_release": 0,
+      "cross_repository_integration": 1,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "STANDARD",
+      "repository": "soul-standard",
+      "slack_channel": "mod-soul-standard",
+      "batch": 2,
+      "maintenance_role_mapping_recommended": "CIPHER",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "CONTENT",
+      "repository": "soul-content",
+      "slack_channel": "mod-soul-content",
+      "batch": 2,
+      "maintenance_role_mapping_recommended": "LUQI",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "COMMUNITY",
+      "repository": "soul-community",
+      "slack_channel": "mod-community",
+      "batch": 3,
+      "maintenance_role_mapping_recommended": "CIPHER/LUQI/SABLE",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "MAKER",
+      "repository": "maker-protocol",
+      "slack_channel": "mod-maker",
+      "batch": 3,
+      "maintenance_role_mapping_recommended": "CIPHER",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "CHANNEL",
+      "repository": "soul-channel",
+      "slack_channel": "mod-channel",
+      "batch": 3,
+      "maintenance_role_mapping_recommended": "CIPHER",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "MARKET",
+      "repository": "soul-market",
+      "slack_channel": "mod-market",
+      "batch": 3,
+      "maintenance_role_mapping_recommended": "CIPHER",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    },
+    {
+      "id": "EXTENSIONS",
+      "repository": "soul-extensions",
+      "slack_channel": "mod-extensions",
+      "batch": 3,
+      "maintenance_role_mapping_recommended": "CIPHER/FLUX",
+      "ci": 1,
+      "version_release": 1,
+      "cross_repository_integration": 0,
+      "created_repository_url": null,
+      "created_slack_channel_id": null
+    }
+  ],
+  "targets": {
+    "new_repositories": 10,
+    "new_module_channels": 10,
+    "form_entries": 3,
+    "new_forms_min": 0,
+    "new_forms_max": 3,
+    "module_views": 10,
+    "cross_module_views": 1,
+    "total_views": 11,
+    "module_contracts": 10,
+    "contract_fields_per_module": 10,
+    "maintenance_review_assignments": 20,
+    "review_function_types": 2,
+    "ci_pipelines": 10,
+    "version_release_pipelines": 9,
+    "cross_repository_integration_pipelines": 1,
+    "total_logical_pipelines": 20,
+    "environment_categories": 3,
+    "deliverable_categories_per_repository": 6,
+    "total_deliverable_categories": 60,
+    "engineering_permission_categories_per_repository": 4,
+    "total_engineering_permission_applicability_records": 40,
+    "acceptance_scenario_groups": 10,
+    "normal_or_takeover_scenarios": 6,
+    "permission_or_failure_scenarios": 4
+  },
+  "forms": [
+    {
+      "kind": "requirement",
+      "required_fields": [
+        "module",
+        "user_problem",
+        "expected_result",
+        "acceptance",
+        "links"
+      ]
+    },
+    {
+      "kind": "bug",
+      "required_fields": [
+        "module",
+        "environment_version",
+        "reproduction",
+        "expected",
+        "actual",
+        "evidence",
+        "impact"
+      ]
+    },
+    {
+      "kind": "release",
+      "required_fields": [
+        "module",
+        "candidate",
+        "environment",
+        "compatible_combination",
+        "evidence",
+        "recovery",
+        "execution_responsibility_and_authorization"
+      ]
+    }
+  ],
+  "scenario_ids": [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T09",
+    "T10"
+  ],
+  "standardization_spec": "../SOULIDITY_ECOSYSTEM_MODULARIZATION_SPEC_CN.md",
+  "interoperability_contracts": "MODULE_INTEROPERABILITY_CONTRACTS.json",
+  "detailed_cases": "INTEROPERABILITY_CASES.json",
+  "standardization_targets": {
+    "retained_responsibility_groups": 5,
+    "semantic_capability_units": 30,
+    "interface_families": 16,
+    "decisions": 32,
+    "invariants": 16,
+    "semantic_entries": 38,
+    "detailed_cases": 60,
+    "required_design_cases": 57,
+    "conditional_design_cases": 3,
+    "retained_maintenance_units": 15,
+    "original_scope_records": 157
+  },
+  "parallel_pilot_capacity_recommended": {
+    "implementation_slots": 2,
+    "read_only_verifier_slots": 1,
+    "coordinator_slots": 1,
+    "does_not_increase_existing_global_wip": true
+  },
+  "release_rule": "Validation propagation is not mandatory release propagation; freeze unrelated consumers and revalidate exact declared combinations",
+  "construction_handoff": "../SOULIDITY_CONSTRUCTION_HANDOFF_CN.md",
+  "boundary_decisions": "CONSTRUCTION_BOUNDARY_DECISIONS_CN.md",
+  "original_scope_trace": "ORIGINAL_SCOPE_TRACE.json",
+  "gate_B0": "B0: coherent new-target runnable minimal market then freeze four identities before independent extension publication; freeze failure retained",
+  "execution_readiness": "Design handoff ready; Gate0 exact mapping/buildability pending; remote creation and runtime acceptance Not run"
+}

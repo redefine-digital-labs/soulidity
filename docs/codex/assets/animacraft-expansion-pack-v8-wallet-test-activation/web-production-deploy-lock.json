@@ -1,0 +1,138 @@
+{
+  "schemaVersion": "animacraft.web-production-deploy-lock.v1",
+  "status": "production-promoted-wallet-provider-pending",
+  "createdAtUtc": "2026-08-12T12:12:00Z",
+  "repository": {
+    "path": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-drop-legacy",
+    "branch": "codex/expansion-pack-v8-wallet-activation",
+    "commit": "99da8d3468998f4105aa1950b97746c6875785f7",
+    "tree": "7ce18fce6235c64d153eee2e2031f6e98699ce02",
+    "allowedUntracked": [
+      "scripts/expansion-pack-v8-parent-migration.mjs"
+    ],
+    "allowedUntrackedUploaded": false
+  },
+  "artifacts": {
+    "publicConfigSha256": "fd3f0c92cda19ae6060fa05ef1b99d976640b8b4f2907a384ad9b423c67518b3",
+    "deploymentRecordSha256": "e516a4c8ad0b7ca2ba077d5a7662bd5a1df3634d4ddb5537f601fbc18124abc8",
+    "vercelConfigSha256": "7e60f60521c2889d29d48da032908bd3664cbb457c4cbff4cb867c1415f73983",
+    "packageJsonSha256": "3fe985986d13b91f812189c05c6089ba4d75360976caefe962e105a1627afb13",
+    "packageLockSha256": "c12dc5736087fec6333410df27601ab6b68f5f4f0d7707f6b76d6a1e390c7210",
+    "vercelIgnoreSha256": "88b360bccaca4ccba1da144dbce94d81ccdec4e82583b336c2436b00993abde8",
+    "distConfigSha256": "fd3f0c92cda19ae6060fa05ef1b99d976640b8b4f2907a384ad9b423c67518b3",
+    "distIndexSha256": "a20a06bed91cad0308cace98dde1b3a55f69414451096b3528820b3d6f97e879",
+    "distFileManifestSha256": "97b1c1b99c78cbb6550a7d5375baa178fedaf9af4394ffce03513ccd0b499574"
+  },
+  "uploadDryRun": {
+    "fileCount": 146,
+    "ignoredCount": 152,
+    "totalSizeBytes": 24406083,
+    "framework": "vite",
+    "excludedOneShotMigrationScript": true
+  },
+  "gates": {
+    "expansionPackV8ReleaseEnabled": true,
+    "canonicalSoulMintEnabled": false,
+    "commerceV5ReleaseEnabled": false,
+    "compositionV6ReleaseEnabled": false,
+    "physicalStyleV7ReleaseEnabled": false,
+    "expansionPackV8CompleteBridgeEnabled": false,
+    "expansionPackV8PhysicalBridgeEnabled": false
+  },
+  "chainActivation": {
+    "releaseId": "0x8c2af3a0c7eb4bfe88bf5ed9e7b56cb407edae12f672a3331a09e41d046e071b",
+    "activationTransactionDigest": "8mw6HfPX1YHcfDwvgZbCNwawfUZHLHBMtYPQdSLcjdvv",
+    "activationCheckpoint": "309818089",
+    "strictMainnetPreflight": "pass"
+  },
+  "verification": {
+    "webTests": {
+      "passed": 1074,
+      "failed": 0,
+      "skipped": 1
+    },
+    "animacraftMoveTests": {
+      "passed": 122,
+      "failed": 0
+    },
+    "physicalMoveTests": {
+      "passed": 42,
+      "failed": 0
+    },
+    "viteBuild": "pass",
+    "animacraftMoveBuild": "pass",
+    "physicalMoveBuild": "pass",
+    "strictV8MainnetPreflight": "pass",
+    "browserAcceptance": {
+      "observedAtUtc": "2026-08-12T12:27:57Z",
+      "productionHomeLoaded": true,
+      "productionTitle": "Animacraft",
+      "disconnectedWalletStateObserved": true,
+      "walletClaimSigned": false,
+      "passReadBack": false,
+      "packStyleRendered": false,
+      "blocker": "No controllable browser currently exposes both a Sui Wallet Standard provider and the ChatGPT browser-control extension. The in-app browser loaded production but its chain-derived deep-link interactions timed out; running Chrome has no ChatGPT browser-control extension installed.",
+      "resumeRequirement": "Use a Chrome or Edge profile with the ChatGPT browser-control extension and an unlocked Sui/Slush Wallet on Mainnet, then connect at the production Maker deep link and approve the FREE Pack claim."
+    }
+  },
+  "vercel": {
+    "cliVersion": "56.5.0",
+    "scope": "soulidity-ai",
+    "project": "animacraft",
+    "projectId": "prj_CzV3sBiEr64aZhAPBG9fvpUNRACF",
+    "productionDomain": "https://animacraft.soulidity.ai",
+    "currentProductionDeploymentId": "dpl_GDrUED8AwUfFsRRsSJ9Wzdi6zfW3",
+    "currentProductionUrl": "https://animacraft-b9dxbt7yi-soulidity-ai.vercel.app",
+    "currentProductionReadyState": "READY",
+    "rollbackProductionDeploymentId": "dpl_7NwkGiWLh75AbZoaWH2FvjRqbqTY",
+    "rollbackProductionUrl": "https://animacraft-pk8xzaxs4-soulidity-ai.vercel.app",
+    "previewDeploymentId": "dpl_7vW499MkEzbMXs7HRv6cBtMzPyT1",
+    "previewUrl": "https://animacraft-d3ut150zi-soulidity-ai.vercel.app",
+    "previewReadyState": "READY",
+    "previewBuildFilesDownloaded": 146,
+    "previewBuildModulesTransformed": 683,
+    "previewBuildCompleted": true,
+    "previewNetworkSmoke": "blocked-by-local-network-route-to-vercel-app",
+    "previewNetworkControl": "the previous production vercel.app URL is equally unreachable while the custom production domain is HTTP 200",
+    "productionCandidateDeploymentId": "dpl_GDrUED8AwUfFsRRsSJ9Wzdi6zfW3",
+    "productionCandidateUrl": "https://animacraft-b9dxbt7yi-soulidity-ai.vercel.app",
+    "productionCandidateReadyState": "READY",
+    "productionCandidateTarget": "production",
+    "productionCandidateBuildFilesDownloaded": 146,
+    "productionCustomDomainBeforePromotionDeploymentId": "dpl_7NwkGiWLh75AbZoaWH2FvjRqbqTY",
+    "promotedAtUtc": "2026-08-12T12:14:00Z",
+    "productionDomainDeploymentIdAfterPromotion": "dpl_GDrUED8AwUfFsRRsSJ9Wzdi6zfW3",
+    "productionSmoke": "pass",
+    "productionConfigMatchesGit": true,
+    "productionStrictMainnetV8Preflight": "pass"
+  },
+  "commands": {
+    "preview": "vercel deploy . --scope soulidity-ai --project animacraft --yes --force --format=json",
+    "productionCandidate": "vercel deploy . --scope soulidity-ai --project animacraft --prod --skip-domain --yes --force --format=json",
+    "promote": "vercel promote <candidate-id> --scope soulidity-ai --yes",
+    "rollback": "vercel rollback dpl_7NwkGiWLh75AbZoaWH2FvjRqbqTY --scope soulidity-ai --yes"
+  },
+  "hardStops": [
+    "HEAD, tree, worktree status or any locked file digest drifts.",
+    "The Vercel upload includes the one-shot Mainnet migration script.",
+    "Strict v8 Mainnet preflight or any Web/Move/build baseline fails.",
+    "Preview or production candidate is not READY or does not serve the exact gate tuple.",
+    "Any non-v8 product or Complete/physical bridge gate becomes true.",
+    "Preview/candidate smoke, immutable config hash, Player route, or live chain/Walrus readback fails.",
+    "Promotion target differs from the reviewed production candidate ID."
+  ],
+  "walletAcceptance": {
+    "status": "pending-wallet-provider",
+    "makerUrl": "https://animacraft.soulidity.ai/maker/0x1329648b7ead8bc16dc7e209416922b2af25c68884def660534d6be541379390#template",
+    "releaseId": "0x8c2af3a0c7eb4bfe88bf5ed9e7b56cb407edae12f672a3331a09e41d046e071b",
+    "expectedButton": "Unlock Pack",
+    "expectedStyleId": "quiet-orbit-style",
+    "claimTransactionDigest": "",
+    "claimCheckpoint": "",
+    "passId": "",
+    "walletAddress": "",
+    "renderVerified": false,
+    "screenshots": [],
+    "note": "No wallet connection, claim signature, Pass creation, or browser render is asserted by this lock yet. All Mainnet Pack publication and production deployment evidence above remains complete and unchanged."
+  }
+}

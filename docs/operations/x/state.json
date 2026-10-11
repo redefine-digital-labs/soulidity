@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-11T18:07:58.389899+03:00",
+  "account": {
+    "handle": "@MaximusSega",
+    "url": "https://x.com/MaximusSega",
+    "user_confirmed": true,
+    "language": "en",
+    "account_type": "Existing personal/co-founder account; branding not changed"
+  },
+  "cadence": {
+    "check": "daily",
+    "time": "18:00",
+    "timezone": "Europe/Moscow",
+    "original_posts_per_week": 3,
+    "days": [
+      "Monday",
+      "Wednesday",
+      "Friday"
+    ],
+    "weekly_review": "Sunday",
+    "optimal_posting_time_verified": false
+  },
+  "automation": {
+    "id": "soulidity-labs-x",
+    "status": "ACTIVE",
+    "destination": "current chat",
+    "scope": "Daily reminder in current chat and dedicated Slack channel with one verified pending English draft; Slack planning and drafts; no unattended X posting",
+    "first_run_verified": true,
+    "name": "Soulidity Labs · 每日发推提醒与Slack运营",
+    "first_run_verified_at": "2026-10-08T18:00:43.228289+03:00",
+    "last_run_verified_at": "2026-10-11T18:07:58.389899+03:00"
+  },
+  "publishing_connection": {
+    "mode": "X native interface, human-initiated publication",
+    "additional_service_required": false,
+    "decision": "User 2026-10-08 chose Slack-only planning and a new dedicated table/channel; earlier Metricool suggestion not pursued."
+  },
+  "last_verified_post": "https://x.com/MaximusSega/status/2108192679108731115",
+  "last_post_result": "posted-and-read-back",
+  "baseline": {
+    "observed_at": "2026-10-08T16:50:51.727930+03:00",
+    "source": "Chrome X profile AX readback",
+    "followers": 5603,
+    "following": 230,
+    "profile_post_count_before": 45,
+    "profile_post_count_after": 46,
+    "previous_latest_observed_post": "https://x.com/MaximusSega/status/2096490045662281805",
+    "previous_post_date": "2026-09-06",
+    "previous_post_views": 537,
+    "previous_post_likes": 3,
+    "previous_post_reposts": 1,
+    "views_for_new_post": null,
+    "profile_visits": null,
+    "link_clicks": null,
+    "external_adoption": null
+  },
+  "metrics_note": "Missing metrics are unknown, not zero; single post reactions do not prove product adoption.",
+  "task_association": {
+    "list_id": "F0C7QARMQJ2",
+    "owner": "NOVA content/operations responsibility; current Codex chat executes",
+    "accountable": "Naoer / Foundation",
+    "related_existing_task": "PLAN-008; original scope/status/owner retained",
+    "primary_records": [
+      {
+        "id": "X-20261008-01",
+        "record_id": "Rec0C7L39BE9H"
+      },
+      {
+        "id": "X-20261008-02",
+        "record_id": "Rec0C7W0T2WKW"
+      },
+      {
+        "id": "X-20261008-03",
+        "record_id": "Rec0C7QB03CRL"
+      },
+      {
+        "id": "X-20261008-04",
+        "record_id": "Rec0C7U8BMU0Z"
+      },
+      {
+        "id": "X-20261008-05",
+        "record_id": "Rec0C8LM5HJLQ"
+      },
+      {
+        "id": "X-20261008-06",
+        "record_id": "Rec0C7QATTMQW"
+      },
+      {
+        "id": "X-20261008-07",
+        "record_id": "Rec0C7QB13BJA"
+      },
+      {
+        "id": "X-DEMO-01",
+        "record_id": "Rec0C7W0U5BV2"
+      },
+      {
+        "id": "X-PROGRESS-01",
+        "record_id": "Rec0C7U8CJ0BT"
+      },
+      {
+        "id": "OPS-X-001",
+        "record_id": "Rec0C7QB1HETG"
+      },
+      {
+        "id": "OPS-X-002",
+        "record_id": "Rec0C7L3BVAJF"
+      },
+      {
+        "id": "LAUNCH-001",
+        "record_id": "Rec0C7U8D73MX"
+      }
+    ]
+  },
+  "notified_blockers": [],
+  "feedback": [],
+  "planning_system": {
+    "workspace_id": "T08LQTJFZRS",
+    "channel_id": "C0C7U80CYE5",
+    "channel_name": "soulidity-labs-launch",
+    "channel_url": "https://sega-xya5661.slack.com/archives/C0C7U80CYE5",
+    "list_id": "F0C7QARMQJ2",
+    "list_name": "Soulidity Labs｜运营与发行",
+    "list_url": "https://sega-xya5661.slack.com/lists/T08LQTJFZRS/F0C7QARMQJ2"
+  },
+  "local_files_role": "Local evidence and content snapshot only; Slack is the authoritative operations plan.",
+  "last_maintenance_record": "docs/operations/x/maintenance-2026-10-11.json",
+  "operational_notifications": [
+    "due:X-20261008-02:2026-10-09",
+    "daily-reminder:2026-10-10",
+    "daily-reminder:2026-10-11"
+  ],
+  "daily_reminder_receipts": {
+    "2026-10-10": {
+      "content_id": "X-20261008-02",
+      "url": "https://sega-xya5661.slack.com/archives/C0C7U80CYE5/p1791644731779959"
+    },
+    "2026-10-11": {
+      "content_id": "X-20261008-02",
+      "url": "https://sega-xya5661.slack.com/archives/C0C7U80CYE5/p1791731223951359"
+    }
+  },
+  "last_weekly_review": {
+    "date": "2026-10-11",
+    "record_id": "Rec0C7L3BVAJF",
+    "status": "completed-with-unknown-metrics",
+    "url": "https://sega-xya5661.slack.com/archives/C0C7U80CYE5/p1791731223951359",
+    "next_review": "2026-10-18"
+  }
+}

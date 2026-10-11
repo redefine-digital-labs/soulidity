@@ -1,0 +1,24 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+
+# Build artifacts
+node_modules/
+dist/
+
+# Local/private workspace artifacts
+*.zip
+*.pdf
+chat-history/
+chat-history.html
+tmp/
+Unnamed/
+AEGIS/
+*.pptx
+
+# Separate open-source repository
+animacraft/

@@ -1,0 +1,11 @@
+Signal,DataSource,NetworkCandidate,Window,ThresholdBasis,Severity,Responder,Backup,Runbook,DrillEvidence,NotificationAuthorization,Status
+Complete failure/duplicate charge,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+Attach/detach ownership mismatch,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+Sale manifest/payment/grant mismatch,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+Treasury reconciliation difference,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+RPC/indexer freshness,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+Walrus expiry/content hash,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+Seal grant denial/expiry,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+Unexpected Cap or upgrade action,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+Paired frontend/config mismatch,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned
+Sponsor gas budget,To implement,,To establish,Measure baseline before setting,,HARBOR / relevant domain,To assign,09_OPERATIONS_CN.md,,No channel notifications configured,Planned

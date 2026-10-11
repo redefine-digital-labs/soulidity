@@ -1,0 +1,1002 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type AgentRuntimeSnapshot,
+  CLI_TERMINAL_GRACE_MS,
+  MOOD_TO_SPRITE,
+  getVisiblePetTasks,
+  type AgentStatusFile,
+  type Mood,
+  type PetAgentEvent,
+  type PetTaskSummary,
+  type PetUpdateStatus,
+  type TaskExecutionMode,
+} from '@soulidity/shared'
+import { useMood } from '../../hooks/useMood'
+import './styles.css'
+import { SpriteRenderer } from '../SpriteRenderer'
+import { useActivePersona } from '../../hooks/useActivePersona'
+import { useAgentRuntime } from '../../hooks/useAgentRuntime'
+
+type TaskAgent = 'claude' | 'codex'
+type ToastKind = 'info' | 'success' | 'error' | 'attention'
+
+interface ToastState {
+  id: number
+  kind: ToastKind
+  text: string
+}
+
+interface TaskPanelState {
+  phase: 'compose' | 'approval' | 'output'
+  files: string[]
+  agent: TaskAgent
+  instruction: string
+  executionMode: TaskExecutionMode
+  output: string
+  running: boolean
+  taskId?: string
+  error?: string
+}
+
+interface FileWithPath extends File {
+  path?: string
+}
+
+const WINDOW_PADDING = 28
+const BASE_WINDOW_WIDTH = 280
+const EXPANDED_WINDOW_WIDTH = 420
+const BASE_WINDOW_HEIGHT = 260
+const EXPANDED_WINDOW_HEIGHT = 600
+
+const DEFAULT_UPDATE_STATUS: PetUpdateStatus = { state: 'idle' }
+
+function basename(filePath: string): string {
+  return filePath.split(/[/\\]/).pop() || filePath
+}
+
+function dirname(filePath: string): string {
+  return filePath.replace(/[/\\][^/\\]+$/, '')
+}
+
+function summarizePath(filePath?: string): string | undefined {
+  if (!filePath) return undefined
+  const parts = filePath.split(/[/\\]/).filter(Boolean)
+  if (parts.length <= 2) return filePath
+  return `.../${parts.slice(-2).join('/')}`
+}
+
+function truncate(text: string, max = 72): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.length > max ? `${normalized.slice(0, max - 3)}...` : normalized
+}
+
+function formatAgentLabel(agent: string): string {
+  if (agent === 'codex') return 'Codex'
+  if (agent === 'claude') return 'Claude'
+  if (agent === 'claude-code') return 'Claude Code'
+  if (agent === 'opencode') return 'OpenCode'
+  return agent
+}
+
+function formatMoodLabel(mood: Mood): string {
+  switch (mood) {
+    case 'working': return 'Working'
+    case 'sleepy': return 'Sleepy'
+    case 'snoring': return 'Sleeping'
+    case 'happy': return 'Happy'
+    case 'love': return 'Affectionate'
+    case 'excited': return 'Excited'
+    case 'celebrate': return 'Celebrating'
+    case 'angry': return 'Frustrated'
+    case 'surprised': return 'Alert'
+    case 'shy': return 'Shy'
+    case 'dragging': return 'Moving'
+    default: return 'Idle'
+  }
+}
+
+function buildFallbackTask(files: string[], agent: TaskAgent, instruction: string, taskId: string): PetTaskSummary {
+  return {
+    agent,
+    taskId,
+    sessionId: taskId,
+    sessionTitle: truncate(instruction || `Work on ${basename(files[0] ?? taskId)}`),
+    currentAction: `Running ${formatAgentLabel(agent)}`,
+    workingDirectory: files[0] ? dirname(files[0]) : undefined,
+    timestamp: Date.now(),
+  }
+}
+
+function buildTaskIdentity(task: Pick<PetTaskSummary, 'taskId' | 'sessionId'>): string | null {
+  if (task.taskId) return `task:${task.taskId}`
+  if (task.sessionId) return `session:${task.sessionId}`
+  return null
+}
+
+function mergeActiveTasks(runtimeTasks: PetTaskSummary[], fallbackTasks: PetTaskSummary[]): PetTaskSummary[] {
+  const seen = new Set<string>()
+  const merged: PetTaskSummary[] = []
+
+  for (const task of runtimeTasks) {
+    const identity = buildTaskIdentity(task)
+    if (identity) seen.add(identity)
+    merged.push(task)
+  }
+
+  for (const task of fallbackTasks) {
+    const identity = buildTaskIdentity(task)
+    if (identity && seen.has(identity)) continue
+    if (identity) seen.add(identity)
+    merged.push(task)
+  }
+
+  return merged.sort((left, right) => right.timestamp - left.timestamp)
+}
+
+function extractFilePaths(dataTransfer: DataTransfer): string[] {
+  return Array.from(dataTransfer.files)
+    .map((file) => (file as FileWithPath).path)
+    .filter((filePath): filePath is string => Boolean(filePath))
+}
+
+function createTaskPanelState(
+  files: string[],
+  previous: TaskPanelState | null,
+): TaskPanelState {
+  return {
+    phase: 'compose',
+    files,
+    agent: previous?.agent ?? 'codex',
+    instruction: previous?.phase === 'compose' ? previous.instruction : '',
+    executionMode: previous?.executionMode ?? 'read',
+    output: '',
+    running: false,
+  }
+}
+
+export function FloatingBall(): React.JSX.Element {
+  const { mood: backendMood } = useMood()
+  const { config: spriteConfig } = useActivePersona()
+  const { snapshot: runtimeSnapshot } = useAgentRuntime()
+
+  const [statusFile, setStatusFile] = useState<AgentStatusFile | AgentRuntimeSnapshot | null>(null)
+  const [updateStatus, setUpdateStatus] = useState<PetUpdateStatus>(DEFAULT_UPDATE_STATUS)
+  const [toast, setToast] = useState<ToastState | null>(null)
+  const [transientMood, setTransientMood] = useState<Mood | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragDelta, setDragDelta] = useState({ x: 0, y: 0 })
+  const [isHovered, setIsHovered] = useState(false)
+  const [isDropTargetActive, setIsDropTargetActive] = useState(false)
+  const [taskPanel, setTaskPanel] = useState<TaskPanelState | null>(null)
+  const [localTasks, setLocalTasks] = useState<Record<string, PetTaskSummary>>({})
+  const [enhancedMotion, setEnhancedMotion] = useState(false)
+  const [hideTasks, setHideTasks] = useState(false)
+
+  const ballRef = useRef<HTMLDivElement>(null)
+  const toastIdRef = useRef(0)
+  const dragEnterDepthRef = useRef(0)
+  const listenersRef = useRef<{ onMove: (e: MouseEvent) => void; onUp: (e: MouseEvent) => void } | null>(null)
+  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clickCountRef = useRef(0)
+  const lastClickTimeRef = useRef(0)
+  const lastActivityRef = useRef(Date.now())
+  const lastDragPosRef = useRef({ x: 0, y: 0 })
+  const movedRef = useRef(false)
+  const petCountRef = useRef(0)
+  const isPettingRef = useRef(false)
+  const instructionRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const showToast = useCallback((kind: ToastKind, text: string) => {
+    toastIdRef.current += 1
+    setToast({ id: toastIdRef.current, kind, text })
+  }, [])
+
+  const setMoodFor = useCallback((nextMood: Mood, durationMs: number) => {
+    setTransientMood(nextMood)
+    if (transientTimerRef.current) clearTimeout(transientTimerRef.current)
+    if (durationMs > 0) {
+      transientTimerRef.current = setTimeout(() => setTransientMood(null), durationMs)
+    }
+  }, [])
+
+  const statusTasks = useMemo(
+    () => getVisiblePetTasks(statusFile, {
+      now: Date.now(),
+      terminalGraceMs: CLI_TERMINAL_GRACE_MS,
+    }),
+    [statusFile],
+  )
+
+  const fallbackTasks = useMemo(
+    () => Object.values(localTasks).sort((a, b) => b.timestamp - a.timestamp),
+    [localTasks],
+  )
+
+  const activeTasks = useMemo(
+    () => mergeActiveTasks(statusTasks, fallbackTasks),
+    [fallbackTasks, statusTasks],
+  )
+  // Hide Tasks suppresses the task panel UI, but the rest of the component
+  // must treat the panel as if it were closed: otherwise the window stays
+  // expanded (460x500), `setIgnoreMouseEvents(false)` keeps the invisible
+  // pet window intercepting clicks, and attention/presence labels stay
+  // suppressed because their gates only check `taskPanel`. Funnel every
+  // visibility / sizing / mouse-event decision through this derived value
+  // instead of `taskPanel` directly.
+  const visibleTaskPanel = hideTasks ? null : taskPanel
+  const showTaskTooltip = isHovered && activeTasks.length > 0 && !visibleTaskPanel
+  const topPermission = runtimeSnapshot?.pendingPermissions[0] ?? null
+  const topQuestion = runtimeSnapshot?.pendingQuestions[0] ?? null
+  const topAttention = topPermission ?? topQuestion
+  const showAttentionBubble = Boolean(topAttention) && !visibleTaskPanel
+  const showUpdateBubble = updateStatus.state === 'available'
+    || updateStatus.state === 'downloading'
+    || updateStatus.state === 'downloaded'
+  const effectiveMood: Mood = isDragging
+    ? 'dragging'
+    : transientMood ?? (activeTasks.length > 0 ? 'working' : backendMood)
+  const presenceLabel = topAttention
+    ? 'Needs attention'
+    : activeTasks.length > 0
+      ? 'Working'
+      : updateStatus.state === 'available'
+        ? `Update ${updateStatus.version ?? 'ready'}`.trim()
+        : updateStatus.state === 'downloaded'
+          ? 'Ready to install'
+          : effectiveMood !== 'idle'
+            ? formatMoodLabel(effectiveMood)
+            : null
+  const showPresenceLabel = !enhancedMotion && Boolean(presenceLabel) && !visibleTaskPanel
+
+  useEffect(() => {
+    return () => {
+      if (listenersRef.current) {
+        window.removeEventListener('mousemove', listenersRef.current.onMove)
+        window.removeEventListener('mouseup', listenersRef.current.onUp)
+      }
+      if (transientTimerRef.current) clearTimeout(transientTimerRef.current)
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!toast) return
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => {
+      setToast((current) => current?.id === toast.id ? null : current)
+    }, 3200)
+  }, [toast])
+
+  useEffect(() => {
+    if (taskPanel?.phase === 'compose') {
+      instructionRef.current?.focus()
+    }
+  }, [taskPanel?.phase])
+
+  useEffect(() => {
+    if (runtimeSnapshot) {
+      setStatusFile(runtimeSnapshot)
+    }
+  }, [runtimeSnapshot])
+
+  useEffect(() => {
+    let disposed = false
+
+    const configPromise = window.electronAPI.getConfig?.()
+    configPromise?.then((config) => {
+      if (disposed) return
+      setEnhancedMotion(Boolean(config.petEnhancedMotion))
+      setHideTasks(Boolean(config.hideTasks))
+    }).catch(() => {})
+
+    window.electronAPI.getCurrentAgentStatus()
+      .then((file) => {
+        if (!disposed) setStatusFile((file as AgentStatusFile | null) ?? null)
+      })
+      .catch(() => {})
+
+    window.electronAPI.getUpdateStatus()
+      .then((status) => {
+        if (!disposed) setUpdateStatus(status)
+      })
+      .catch(() => {})
+
+    const unsubscribeStatus = window.electronAPI.onAgentStatusChanged((file) => {
+      setStatusFile((file as AgentStatusFile | null) ?? null)
+    })
+
+    const unsubscribeAgentEvent = window.electronAPI.onAgentEvent((event: PetAgentEvent) => {
+      if (event.type === 'needs-attention') {
+        setMoodFor('surprised', 3200)
+        showToast('attention', event.message || '需要你的处理')
+      }
+    })
+
+    const unsubscribeUpdate = window.electronAPI.onUpdateStatus((status) => {
+      setUpdateStatus(status)
+      if (status.state === 'available') {
+        showToast('info', `发现新版本 ${status.version ?? ''}`.trim())
+        setMoodFor('surprised', 2200)
+      } else if (status.state === 'downloaded') {
+        showToast('success', `更新 ${status.version ?? ''} 已下载，可立即安装`.trim())
+      } else if (status.state === 'error' && status.error) {
+        showToast('error', `更新失败：${status.error}`)
+      }
+    })
+
+    const unsubscribeOutput = window.electronAPI.onTaskOutput(({ taskId, text }) => {
+      setTaskPanel((current) => {
+        if (!current || current.taskId !== taskId) return current
+        return { ...current, output: `${current.output}${text}` }
+      })
+    })
+
+    const unsubscribeComplete = window.electronAPI.onTaskComplete(({ taskId, success, error }) => {
+      setLocalTasks((current) => {
+        const next = { ...current }
+        delete next[taskId]
+        return next
+      })
+      setTaskPanel((current) => {
+        if (!current || current.taskId !== taskId) return current
+        return {
+          ...current,
+          running: false,
+          error: success ? undefined : error,
+        }
+      })
+
+      if (success) {
+        setMoodFor('celebrate', 3600)
+        showToast('success', '任务已完成')
+      } else {
+        setMoodFor('angry', 3600)
+        showToast('error', error || '任务执行失败')
+      }
+    })
+
+    const unsubscribeConfig = window.electronAPI.onConfigChanged?.((config) => {
+      setEnhancedMotion(Boolean(config.petEnhancedMotion))
+      setHideTasks(Boolean(config.hideTasks))
+    })
+
+    return () => {
+      disposed = true
+      unsubscribeStatus?.()
+      unsubscribeAgentEvent?.()
+      unsubscribeUpdate?.()
+      unsubscribeOutput?.()
+      unsubscribeComplete?.()
+      unsubscribeConfig?.()
+    }
+  }, [setMoodFor, showToast])
+
+  useEffect(() => {
+    if (visibleTaskPanel) {
+      window.electronAPI.setIgnoreMouseEvents(false)
+    } else if (!isHovered && !isDragging && !isDropTargetActive) {
+      window.electronAPI.setIgnoreMouseEvents(true)
+    }
+  }, [isDropTargetActive, isDragging, isHovered, visibleTaskPanel])
+
+  useEffect(() => {
+    const overlayHeight = visibleTaskPanel
+      ? EXPANDED_WINDOW_HEIGHT
+      : Math.min(
+        520,
+        BASE_WINDOW_HEIGHT
+          + (toast ? 60 : 0)
+          + (showAttentionBubble ? 88 : 0)
+          + (activeTasks.length > 0 ? Math.min(260, activeTasks.length * 78) : 0)
+          + (showUpdateBubble ? 48 : 0),
+      )
+
+    window.electronAPI.resizePetWindow(
+      visibleTaskPanel ? EXPANDED_WINDOW_WIDTH : BASE_WINDOW_WIDTH,
+      overlayHeight + WINDOW_PADDING * 2,
+    )
+  }, [activeTasks.length, isHovered, showAttentionBubble, showUpdateBubble, visibleTaskPanel, toast])
+
+  const handleOpenAgentTab = useCallback(async () => {
+    await window.electronAPI.openMainWindowTab('agent')
+  }, [])
+
+  const handleQuickApprove = useCallback(async () => {
+    if (!topPermission) return
+    await window.electronAPI.approveAgentPermission(topPermission.requestId)
+  }, [topPermission])
+
+  const handleQuickDeny = useCallback(async () => {
+    if (!topPermission) return
+    await window.electronAPI.denyAgentPermission(topPermission.requestId)
+  }, [topPermission])
+
+  useEffect(() => {
+    if (!enhancedMotion || visibleTaskPanel || transientMood || isDragging) return
+
+    const randomTimer = setInterval(() => {
+      const rand = Math.random()
+      if (rand < 0.1) setMoodFor('sleepy', 9000)
+      else if (rand < 0.15) setMoodFor('happy', 1800)
+    }, 10_000)
+
+    const snoringTimer = setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= 60_000) {
+        setMoodFor('snoring', 25_000)
+      }
+    }, 5000)
+
+    return () => {
+      clearInterval(randomTimer)
+      clearInterval(snoringTimer)
+    }
+  }, [enhancedMotion, isDragging, setMoodFor, visibleTaskPanel, transientMood])
+
+  const dragStyle: React.CSSProperties | undefined = isDragging
+    ? {
+      transform: `rotate(${Math.max(-25, Math.min(25, -dragDelta.x * 2))}deg) scaleX(${1 - Math.abs(dragDelta.x) * 0.005}) scaleY(${1 + Math.abs(dragDelta.y) * 0.01})`,
+      transition: 'transform 0.05s ease-out',
+      animation: 'none',
+    }
+    : undefined
+
+  const handleRootMouseEnter = useCallback(() => {
+    setIsHovered(true)
+    window.electronAPI.setIgnoreMouseEvents(false)
+  }, [])
+
+  const handleRootMouseLeave = useCallback(() => {
+    setIsHovered(false)
+    if (!isDragging && !visibleTaskPanel && !isDropTargetActive) {
+      window.electronAPI.setIgnoreMouseEvents(true)
+    }
+    if (isPettingRef.current) {
+      isPettingRef.current = false
+      petCountRef.current = 0
+    }
+  }, [isDragging, isDropTargetActive, visibleTaskPanel])
+
+  const handleBallMouseMove = useCallback(() => {
+    if (isDragging) return
+    lastActivityRef.current = Date.now()
+    if (!isPettingRef.current) isPettingRef.current = true
+    petCountRef.current += 1
+
+    // 抬高阈值：普通 hover 不触发宠爱 mood 切换，避免 CSS breath-* 放大缩放产生"虚影"
+    if (petCountRef.current > 60 && petCountRef.current < 150) {
+      setMoodFor('happy', 2500)
+    } else if (petCountRef.current >= 150) {
+      setMoodFor('love', 2800)
+    }
+  }, [isDragging, setMoodFor])
+
+  const handleSingleClick = useCallback(() => {
+    lastActivityRef.current = Date.now()
+    const now = Date.now()
+    clickCountRef.current = (now - lastClickTimeRef.current < 400) ? clickCountRef.current + 1 : 1
+    lastClickTimeRef.current = now
+
+    if (clickCountRef.current >= 5) {
+      setMoodFor('angry', 2000)
+      clickCountRef.current = 0
+    } else if (clickCountRef.current >= 2) {
+      setMoodFor('surprised', 500)
+      setTimeout(() => setMoodFor('excited', 1800), 500)
+    } else {
+      setMoodFor('happy', 1800)
+    }
+
+    window.electronAPI.moodInteract().catch(() => {})
+  }, [setMoodFor])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    lastActivityRef.current = Date.now()
+    movedRef.current = false
+    lastDragPosRef.current = { x: e.screenX, y: e.screenY }
+    window.electronAPI.dragStart()
+
+    longPressTimerRef.current = setTimeout(() => {
+      if (!movedRef.current) setMoodFor('shy', 2500)
+    }, 800)
+
+    const onMove = (event: MouseEvent): void => {
+      if (longPressTimerRef.current && !movedRef.current) {
+        clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
+
+      if (!movedRef.current) {
+        movedRef.current = true
+        setIsDragging(true)
+        window.electronAPI.moodDragStart().catch(() => {})
+      }
+
+      const frameDx = event.screenX - lastDragPosRef.current.x
+      const frameDy = event.screenY - lastDragPosRef.current.y
+      lastDragPosRef.current = { x: event.screenX, y: event.screenY }
+      setDragDelta((current) => ({
+        x: current.x * 0.7 + frameDx * 0.3,
+        y: current.y * 0.7 + frameDy * 0.3,
+      }))
+
+      window.electronAPI.dragMove()
+    }
+
+    const onUp = (event: MouseEvent): void => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
+
+      window.electronAPI.dragEnd()
+
+      if (movedRef.current) {
+        setIsDragging(false)
+        setDragDelta({ x: 0, y: 0 })
+        window.electronAPI.moodDragEnd().catch(() => {})
+      }
+
+      const rect = ballRef.current?.getBoundingClientRect()
+      if (rect) {
+        const isOverBall = event.clientX >= rect.left && event.clientX <= rect.right
+          && event.clientY >= rect.top && event.clientY <= rect.bottom
+        if (!isOverBall && !visibleTaskPanel && !isDropTargetActive) {
+          window.electronAPI.setIgnoreMouseEvents(true)
+        }
+      }
+
+      if (!movedRef.current) {
+        if (clickTimerRef.current) {
+          clearTimeout(clickTimerRef.current)
+          clickTimerRef.current = null
+        } else {
+          clickTimerRef.current = setTimeout(() => {
+            clickTimerRef.current = null
+            handleSingleClick()
+          }, 250)
+        }
+      }
+
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      listenersRef.current = null
+    }
+
+    listenersRef.current = { onMove, onUp }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [handleSingleClick, isDropTargetActive, setMoodFor, visibleTaskPanel])
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    window.electronAPI.showContextMenu()
+  }, [])
+
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dragEnterDepthRef.current += 1
+    setIsDropTargetActive(true)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    if (!isDropTargetActive) setIsDropTargetActive(true)
+  }, [isDropTargetActive])
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dragEnterDepthRef.current = Math.max(0, dragEnterDepthRef.current - 1)
+    if (dragEnterDepthRef.current === 0) {
+      setIsDropTargetActive(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dragEnterDepthRef.current = 0
+    setIsDropTargetActive(false)
+
+    if (taskPanel?.running) {
+      showToast('attention', '当前任务仍在运行，请先取消或等待完成。')
+      return
+    }
+
+    const filePaths = extractFilePaths(e.dataTransfer)
+    if (filePaths.length === 0) {
+      showToast('error', '没有读取到可执行的本地文件路径。')
+      return
+    }
+
+    setTaskPanel((current) => createTaskPanelState(filePaths, current))
+    setMoodFor('surprised', 1200)
+  }, [setMoodFor, showToast, taskPanel])
+
+  const handleInstructionChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setTaskPanel((current) => current ? { ...current, instruction: value } : current)
+  }, [])
+
+  const handleAgentChange = useCallback((agent: TaskAgent) => {
+    setTaskPanel((current) => current ? { ...current, agent } : current)
+  }, [])
+
+  const handleExecutionModeChange = useCallback((executionMode: TaskExecutionMode) => {
+    setTaskPanel((current) => current ? { ...current, executionMode } : current)
+  }, [])
+
+  const handleClosePanel = useCallback(() => {
+    if (taskPanel?.running) return
+    setTaskPanel(null)
+  }, [taskPanel?.running])
+
+  const handleCancelTask = useCallback(() => {
+    if (!taskPanel?.taskId || !taskPanel.running) return
+    window.electronAPI.cancelTask(taskPanel.taskId)
+    showToast('info', '正在取消任务...')
+  }, [showToast, taskPanel])
+
+  const runTask = useCallback(async (approvalToken?: string) => {
+    if (!taskPanel) return
+    const instruction = taskPanel.instruction.trim()
+
+    const result = await window.electronAPI.executeTask({
+      agent: taskPanel.agent,
+      instruction,
+      filePaths: taskPanel.files,
+      executionMode: taskPanel.executionMode,
+      approvalToken,
+    })
+
+    if (result.error) {
+      showToast('error', result.error)
+      setTaskPanel((current) => current ? {
+        ...current,
+        phase: 'compose',
+        error: result.error,
+      } : current)
+      return
+    }
+
+    const taskId = result.taskId
+    const fallbackTask = buildFallbackTask(taskPanel.files, taskPanel.agent, instruction, taskId)
+    setLocalTasks((current) => ({ ...current, [taskId]: fallbackTask }))
+    setTaskPanel((current) => current ? {
+      ...current,
+      phase: 'output',
+      output: '',
+      running: true,
+      taskId,
+      error: undefined,
+    } : current)
+    setMoodFor('working', 1400)
+  }, [setMoodFor, taskPanel, showToast])
+
+  const handleSubmitTask = useCallback(async () => {
+    if (!taskPanel) return
+    const instruction = taskPanel.instruction.trim()
+    if (!instruction) {
+      showToast('attention', '先写清楚你要它处理什么。')
+      return
+    }
+    if (taskPanel.executionMode === 'write') {
+      setTaskPanel((current) => current ? { ...current, phase: 'approval', error: undefined } : current)
+      return
+    }
+    await runTask()
+  }, [runTask, showToast, taskPanel])
+
+  const handleBackToCompose = useCallback(() => {
+    setTaskPanel((current) => current ? { ...current, phase: 'compose' } : current)
+  }, [])
+
+  const handleApproveWriteTask = useCallback(async () => {
+    if (!taskPanel) return
+    if (taskPanel.files.length === 0) {
+      showToast('error', '写入模式需要至少一个目标文件。')
+      return
+    }
+    const approval = await window.electronAPI.requestWriteApproval({
+      filePaths: taskPanel.files,
+      agent: taskPanel.agent,
+      // Send the same canonical (trimmed) form that `runTask` later hands to
+      // `executeTask`. Without this, a stray trailing newline in the textarea
+      // mints a token whose stored instruction no longer matches the launch
+      // instruction, and the main process rejects the approved task.
+      instruction: taskPanel.instruction.trim(),
+    })
+    if (!approval.ok) {
+      const reason = approval.reason === 'denied'
+        ? '已拒绝写入授权。'
+        : approval.reason === 'invalid-paths'
+          ? '授权请求缺少有效文件路径。'
+          : approval.reason === 'instruction-too-long'
+            ? '任务指令过长，请精简到 4000 字符以内再申请授权。'
+            : '无法弹出授权窗口，稍后再试。'
+      showToast('info', reason)
+      setTaskPanel((current) => current ? { ...current, phase: 'compose' } : current)
+      return
+    }
+    await runTask(approval.token)
+  }, [runTask, showToast, taskPanel])
+
+  const handleUpdateBubbleClick = useCallback(async () => {
+    if (updateStatus.state === 'available') {
+      const result = await window.electronAPI.updaterDownload()
+      if (!result.ok && result.error) {
+        showToast('error', result.error)
+      }
+      return
+    }
+
+    if (updateStatus.state === 'downloaded') {
+      await window.electronAPI.updaterInstall()
+    }
+  }, [showToast, updateStatus.state])
+
+  const updateBubbleLabel = updateStatus.state === 'available'
+    ? `发现更新 ${updateStatus.version ?? ''}`.trim()
+    : updateStatus.state === 'downloading'
+      ? `下载中 ${Math.round(updateStatus.progress ?? 0)}%`
+      : `安装 ${updateStatus.version ?? ''}`.trim()
+
+  return (
+    <div
+      className={`ball-root${visibleTaskPanel ? ' ball-root--expanded' : ''}${enhancedMotion ? '' : ' ball-root--reduced-effects'}`}
+      onMouseEnter={handleRootMouseEnter}
+      onMouseLeave={handleRootMouseLeave}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div className="pet-overlay-stack">
+        {showUpdateBubble && (
+          <button
+            className={`update-bubble${updateStatus.state === 'downloaded' ? ' update-bubble--ready' : ''}`}
+            disabled={updateStatus.state === 'downloading'}
+            onClick={handleUpdateBubbleClick}
+            title={updateStatus.state === 'downloaded' ? 'Install update' : 'Download update'}
+          >
+            {updateBubbleLabel}
+          </button>
+        )}
+
+        {toast && (
+          <div className={`pet-toast pet-toast--${toast.kind}`}>
+            {toast.text}
+          </div>
+        )}
+
+        {showAttentionBubble && topAttention && (
+          <div className="attention-bubble">
+            <div className="attention-bubble__title">
+              {topPermission ? 'Permission Request' : 'Question Waiting'}
+            </div>
+            <div className="attention-bubble__text">
+              {topPermission
+                ? `${formatAgentLabel(topPermission.source)} wants ${topPermission.toolName}`
+                : topQuestion?.question}
+            </div>
+            <div className="attention-bubble__actions">
+              {topPermission && (
+                <>
+                  <button type="button" className="attention-bubble__button" onClick={() => { void handleQuickApprove() }}>
+                    Allow
+                  </button>
+                  <button type="button" className="attention-bubble__button attention-bubble__button--secondary" onClick={() => { void handleQuickDeny() }}>
+                    Deny
+                  </button>
+                </>
+              )}
+              <button type="button" className="attention-bubble__button attention-bubble__button--secondary" onClick={() => { void handleOpenAgentTab() }}>
+                Open Agent
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showTaskTooltip && (
+          <div className="task-tooltip">
+            <div className="task-tooltip__title">当前任务</div>
+            <div className="task-tooltip__list">
+              {activeTasks.map((task) => (
+                <div key={task.sessionId ?? `${task.agent}-${task.timestamp}`} className="task-tooltip__item">
+                  <div className="task-tooltip__head">
+                    <span>{formatAgentLabel(task.agent)}</span>
+                    {task.sessionTitle && <span>{task.sessionTitle}</span>}
+                  </div>
+                  {task.currentAction && <div className="task-tooltip__meta">{task.currentAction}</div>}
+                  {task.workingDirectory && (
+                    <div className="task-tooltip__meta">{summarizePath(task.workingDirectory)}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {visibleTaskPanel && (
+          <div className="task-panel">
+            <div className="task-panel__header">
+              <div>
+                <div className="task-panel__title">
+                  {visibleTaskPanel.phase === 'compose'
+                    ? 'Review Task'
+                    : visibleTaskPanel.phase === 'approval'
+                      ? 'Write Approval'
+                      : visibleTaskPanel.running
+                        ? '任务执行中'
+                        : '任务输出'}
+                </div>
+                <div className="task-panel__subtitle">
+                  {visibleTaskPanel.files.length > 0 ? `${visibleTaskPanel.files.length} 个文件` : '拖入文件后开始'}
+                </div>
+              </div>
+              <button
+                className="task-panel__ghost"
+                onClick={visibleTaskPanel.running ? handleCancelTask : handleClosePanel}
+              >
+                {visibleTaskPanel.running ? 'Cancel' : 'Close'}
+              </button>
+            </div>
+
+            {visibleTaskPanel.files.length > 0 && (
+              <div className="task-panel__files">
+                {visibleTaskPanel.files.map((filePath) => (
+                  <span key={filePath} className="task-panel__file-chip">{basename(filePath)}</span>
+                ))}
+              </div>
+            )}
+
+            {visibleTaskPanel.phase === 'compose' && (
+              <>
+                <div className="task-panel__agents">
+                  {(['codex', 'claude'] as TaskAgent[]).map((agent) => (
+                    <button
+                      key={agent}
+                      className={`task-panel__agent ${visibleTaskPanel.agent === agent ? 'task-panel__agent--active' : ''}`}
+                      onClick={() => handleAgentChange(agent)}
+                    >
+                      {formatAgentLabel(agent)}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="task-panel__modes">
+                  {(['read', 'write'] as TaskExecutionMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      className={`task-panel__mode ${visibleTaskPanel.executionMode === mode ? 'task-panel__mode--active' : ''}`}
+                      onClick={() => handleExecutionModeChange(mode)}
+                    >
+                      {mode === 'read' ? 'Read Only' : 'Write'}
+                    </button>
+                  ))}
+                </div>
+                <div className="task-panel__hint">
+                  {visibleTaskPanel.executionMode === 'read'
+                    ? 'Read-only 模式会把 Codex 跑在只读沙箱里，并限制 Claude 只用 Bash/Read。'
+                    : 'Write 模式默认先走一次明确审批，再允许 agent 修改文件。'}
+                </div>
+
+                <textarea
+                  ref={instructionRef}
+                  className="task-panel__textarea"
+                  placeholder="基于这些文件交代任务。例如：比较这些文件里的交互差异并给出修复方案。"
+                  value={visibleTaskPanel.instruction}
+                  onChange={handleInstructionChange}
+                />
+
+                {visibleTaskPanel.error && (
+                  <div className="task-panel__error">{visibleTaskPanel.error}</div>
+                )}
+
+                <div className="task-panel__actions">
+                  <button className="task-panel__primary" onClick={handleSubmitTask}>
+                    {visibleTaskPanel.executionMode === 'write' ? 'Review Write Plan' : 'Run Now'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {visibleTaskPanel.phase === 'approval' && (
+              <>
+                <div className="task-panel__approval">
+                  <div className="task-panel__approval-title">You are about to allow write access</div>
+                  <div className="task-panel__approval-copy">
+                    这一步还没有启动任何 agent。拒绝后不会产生文件副作用。
+                  </div>
+                  {/*
+                    Render the exact instruction the main process will bind into
+                    the approval token. Do not summarize — the user must see
+                    every character they are authorizing, otherwise a malicious
+                    renderer could hide a destructive suffix after a benign
+                    first line. Long text scrolls inside the pre block.
+                  */}
+                  <pre className="task-panel__approval-instruction">
+                    {visibleTaskPanel.instruction.trim()}
+                  </pre>
+                  <div className="task-panel__approval-copy">
+                    Agent: {formatAgentLabel(visibleTaskPanel.agent)} · Scope: {visibleTaskPanel.files.length > 0 ? `${visibleTaskPanel.files.length} file(s)` : 'workspace'}
+                  </div>
+                </div>
+                <div className="task-panel__actions">
+                  <button className="task-panel__ghost" onClick={handleBackToCompose}>
+                    Back
+                  </button>
+                  <button className="task-panel__ghost" onClick={handleClosePanel}>
+                    Deny
+                  </button>
+                  <button className="task-panel__primary" onClick={() => { void handleApproveWriteTask() }}>
+                    Approve & Run
+                  </button>
+                </div>
+              </>
+            )}
+
+            {visibleTaskPanel.phase === 'output' && (
+              <>
+                <div className="task-panel__status">
+                  {visibleTaskPanel.running
+                    ? `${formatAgentLabel(visibleTaskPanel.agent)} 正在处理`
+                    : visibleTaskPanel.error
+                      ? `执行失败：${visibleTaskPanel.error}`
+                      : '执行完成'}
+                </div>
+                <pre className="task-panel__output">
+                  {visibleTaskPanel.output || '等待输出...'}
+                </pre>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {isDropTargetActive && !hideTasks && (
+        <div className="drop-overlay">
+          <div className="drop-overlay__card">
+            <div className="drop-overlay__title">把文件丢给宠物</div>
+            <div className="drop-overlay__subtitle">释放后会进入任务说明面板</div>
+          </div>
+        </div>
+      )}
+
+      <div className="bottom-section">
+        <div
+          ref={ballRef}
+          className="ball"
+          data-mood={effectiveMood}
+          data-enhanced-motion={enhancedMotion ? 'true' : 'false'}
+          style={dragStyle}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleBallMouseMove}
+          onContextMenu={handleContextMenu}
+          title="Claw"
+        >
+          <SpriteRenderer
+            config={spriteConfig}
+            animation={MOOD_TO_SPRITE[effectiveMood]}
+            width={120}
+            height={120}
+            idlePause
+          />
+        </div>
+        {showPresenceLabel && presenceLabel && (
+          <div className="presence-label">{presenceLabel}</div>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEGA · Soulidity — Organization Overview</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #08080f;
+    --surface: #0f0f1a;
+    --surface2: #13131f;
+    --border: rgba(255,255,255,0.07);
+    --text: #e2e8f0;
+    --muted: rgba(255,255,255,0.35);
+    --nova: #f0c040;
+    --echo: #c084fc;
+    --iris: #60a5fa;
+    --cipher: #34d399;
+    --sable: #a78bfa;
+    --axel: #64748b;
+    --flux: #f472b6;
+    --accent: #6366f1;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(8,8,15,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 40px;
+    height: 54px;
+  }
+
+  .nav-logo {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    background: linear-gradient(90deg, #6366f1, #c084fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 28px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--text); }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 80px 40px 60px;
+    max-width: 1100px;
+    margin: 0 auto;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .hero-eyebrow {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.72rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+
+  .hero h1 {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 3.2rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1.1;
+    margin-bottom: 24px;
+  }
+
+  .hero h1 span {
+    background: linear-gradient(135deg, #6366f1, #c084fc, #f0c040);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-stack {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 36px;
+  }
+
+  .hero-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+  }
+
+  .hero-card-label {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .hero-card-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .hero-card p {
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ── SECTION ── */
+  section {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 56px 40px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 32px;
+  }
+
+  .section-header h2 {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .section-header .tag {
+    font-size: 0.68rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  /* ── MILESTONES ── */
+  .milestones {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .milestone {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .milestone::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--echo));
+  }
+
+  .milestone-time {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+
+  .milestone ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .milestone li {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.6);
+    padding-left: 12px;
+    position: relative;
+  }
+
+  .milestone li::before {
+    content: '›';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+  }
+
+  /* ── BD LINES ── */
+  .bd-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+
+  .bd-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+
+  .bd-card-line {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .bd-card-owner {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .bd-status {
+    display: inline-block;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: rgba(99,102,241,0.15);
+    color: var(--accent);
+    border: 1px solid rgba(99,102,241,0.3);
+  }
+
+  /* ── ORG TABLES ── */
+  .org-dept {
+    margin-bottom: 32px;
+  }
+
+  .dept-label {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    padding-left: 2px;
+  }
+
+  .member-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+  }
+
+  .member-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .member-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .member-avatar.human {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text);
+  }
+
+  .member-info {}
+
+  .member-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .member-title {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .member-focus {
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.45);
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  .badge-external {
+    background: rgba(255,255,255,0.06);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .badge-ai {
+    background: rgba(99,102,241,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(99,102,241,0.25);
+  }
+
+  /* ── AI SOUL CARDS ── */
+  .souls-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 18px;
+  }
+
+  .soul-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .soul-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  }
+
+  .soul-card-top {
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .soul-glow {
+    position: absolute;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    filter: blur(50px);
+    opacity: 0.18;
+  }
+
+  .soul-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 700;
+    z-index: 2;
+    position: relative;
+  }
+
+  .soul-body {
+    padding: 18px 20px 22px;
+  }
+
+  .soul-id {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    opacity: 0.3;
+    margin-bottom: 2px;
+  }
+
+  .soul-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-bottom: 2px;
+  }
+
+  .soul-role {
+    font-size: 0.72rem;
+    opacity: 0.45;
+    margin-bottom: 12px;
+  }
+
+  .soul-desc {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.6);
+    line-height: 1.55;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 7px;
+    border-left: 2px solid currentColor;
+  }
+
+  .soul-quote {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.85rem;
+    font-style: italic;
+    opacity: 0.45;
+    margin-bottom: 12px;
+  }
+
+  .soul-connection {
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.35);
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    line-height: 1.55;
+  }
+
+  .soul-connection strong {
+    display: block;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 3px;
+  }
+
+  /* color themes */
+  .nova  { color: #f0c040; } .nova  .soul-glow { background: #f0c040; }
+  .echo  { color: #c084fc; } .echo  .soul-glow { background: #c084fc; }
+  .iris  { color: #60a5fa; } .iris  .soul-glow { background: #60a5fa; }
+  .cipher{ color: #34d399; } .cipher .soul-glow { background: #34d399; }
+  .sable { color: #a78bfa; } .sable .soul-glow { background: #a78bfa; }
+  .axel  { color: #64748b; } .axel  .soul-glow { background: #64748b; }
+  .flux  { color: #f472b6; } .flux  .soul-glow { background: #f472b6; }
+
+  /* ── PRODUCT STATUS ── */
+  .status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .status-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .status-item h4 {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    color: rgba(255,255,255,0.7);
+  }
+
+  .status-item p {
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .pill {
+    display: inline-block;
+    font-size: 0.62rem;
+    padding: 2px 7px;
+    border-radius: 20px;
+    margin-right: 4px;
+    margin-bottom: 4px;
+  }
+
+  .pill-green { background: rgba(52,211,153,0.12); color: #34d399; border: 1px solid rgba(52,211,153,0.25); }
+  .pill-yellow { background: rgba(240,192,64,0.12); color: #f0c040; border: 1px solid rgba(240,192,64,0.25); }
+  .pill-purple { background: rgba(99,102,241,0.12); color: #818cf8; border: 1px solid rgba(99,102,241,0.25); }
+
+  /* ── FOOTER ── */
+  footer {
+    text-align: center;
+    padding: 36px 40px;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    opacity: 0.5;
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">SEGA · SOULIDITY</div>
+  <ul class="nav-links">
+    <li><a href="#positioning">Vision</a></li>
+    <li><a href="#milestones">Milestones</a></li>
+    <li><a href="#org">Organization</a></li>
+    <li><a href="#bd">BD</a></li>
+    <li><a href="#product">Product</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<div class="hero" id="positioning">
+  <div class="hero-eyebrow">SEGA Organization · Internal Overview · 2026-04-13</div>
+  <h1>The <span>Attention Economy</span><br>Needs a Native Carrier.</h1>
+
+  <div class="hero-stack">
+    <div class="hero-card">
+      <div class="hero-card-label">SEGA</div>
+      <div class="hero-card-title">The Organization</div>
+      <p>DeFi products and infrastructure built around the attention economy. Attention has always existed — SEGA builds the systems that make it flow and compound.</p>
+    </div>
+    <div class="hero-card">
+      <div class="hero-card-label">Soul</div>
+      <div class="hero-card-title">The Carrier</div>
+      <p>Every era of the attention economy has its primary carrier — coins, tokens, NFTs. Soul is the carrier for this era. Dynamic, identity-bound, perpetually accumulating.</p>
+    </div>
+    <div class="hero-card">
+      <div class="hero-card-label">Soulidity</div>
+      <div class="hero-card-title">The Infrastructure</div>
+      <p>The protocol for minting, holding, authorizing, and trading Souls. SEGA's current core product, built on Sui. Soul is the asset. Soulidity is the rails.</p>
+    </div>
+  </div>
+</div>
+
+<!-- MILESTONES -->
+<section id="milestones">
+  <div class="section-header">
+    <h2>Milestones</h2>
+    <span class="tag">6-Month Roadmap</span>
+  </div>
+  <div class="milestones">
+    <div class="milestone">
+      <div class="milestone-time">Now · Immediate</div>
+      <ul>
+        <li>Walrus Grant application</li>
+        <li>Eve × Soulidity Collection collab</li>
+        <li>Sui official recognition</li>
+        <li>Investor outreach begins</li>
+        <li>Twitter ops launch</li>
+      </ul>
+    </div>
+    <div class="milestone">
+      <div class="milestone-time">Month 2</div>
+      <ul>
+        <li>Key partnerships signed</li>
+        <li>Prototype demo-ready</li>
+        <li>GTM + security checklist done</li>
+        <li>Early community: 200 users</li>
+        <li>Trading volume: 100k</li>
+      </ul>
+    </div>
+    <div class="milestone">
+      <div class="milestone-time">Month 3</div>
+      <ul>
+        <li>Funding round closed</li>
+        <li>Valuation: $30M</li>
+        <li>Raise: 5%</li>
+        <li>Bybit listing conversation</li>
+        <li>Community: 500 users</li>
+      </ul>
+    </div>
+    <div class="milestone">
+      <div class="milestone-time">Month 6</div>
+      <ul>
+        <li>TGE</li>
+        <li>Mainnet live</li>
+        <li>Walrus / Sui core grant</li>
+        <li>100k OCs in circulation</li>
+        <li>Secondary market active</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ORG -->
+<section id="org">
+  <div class="section-header">
+    <h2>Organization</h2>
+    <span class="tag">Foundation + Labs</span>
+  </div>
+
+  <!-- FOUNDATION -->
+  <div class="org-dept">
+    <div class="dept-label">Soulidity Foundation · Operations · Distribution · Ecosystem</div>
+    <div class="member-grid">
+
+      <div class="member-card">
+        <div class="member-avatar human">NR</div>
+        <div class="member-info">
+          <div class="member-name">Naoer Maksim</div>
+          <div class="member-title">Co-Founder · Co-Chair, Direction</div>
+          <div class="member-focus">Overall strategy · Walrus Grant lead</div>
+        </div>
+      </div>
+
+      <div class="member-card">
+        <div class="member-avatar human">T</div>
+        <div class="member-info">
+          <div class="member-name">Trinity</div>
+          <div class="member-title">Partner · Co-Chair, Listing + Investors</div>
+          <div class="member-focus">Eve collab lead · US market · Commercial BD</div>
+        </div>
+      </div>
+
+      <div class="member-card">
+        <div class="member-avatar human">AL</div>
+        <div class="member-info">
+          <div class="member-name">Alex</div>
+          <div class="member-title">Partner · Listing + Investors</div>
+          <div class="member-focus">Sui relations lead · Hong Kong · APAC</div>
+        </div>
+      </div>
+
+      <div class="member-card">
+        <div class="member-avatar human">AN</div>
+        <div class="member-info">
+          <div class="member-name">Ann <span class="badge badge-external">External</span></div>
+          <div class="member-title">Investor Relations Execution</div>
+          <div class="member-focus">Direct channel: Naoer</div>
+        </div>
+      </div>
+
+      <div class="member-card">
+        <div class="member-avatar human">W</div>
+        <div class="member-info">
+          <div class="member-name">Wayne <span class="badge badge-external">External</span></div>
+          <div class="member-title">Investor Relations Execution</div>
+          <div class="member-focus">Direct channel: Alex</div>
+        </div>
+      </div>
+
+      <!-- NOVA -->
+      <div class="member-card" style="border-color:rgba(240,192,64,0.2);">
+        <div class="member-avatar" style="background:rgba(240,192,64,0.08);color:#f0c040;border:1px solid rgba(240,192,64,0.3);font-size:0.75rem;">NV</div>
+        <div class="member-info">
+          <div class="member-name" style="color:#f0c040;">NOVA <span class="badge badge-ai">SOL-F001</span></div>
+          <div class="member-title">Brand Operations & Growth</div>
+          <div class="member-focus" style="font-style:italic;opacity:0.5;">"If they don't see you, you don't exist."</div>
+        </div>
+      </div>
+
+      <!-- ECHO -->
+      <div class="member-card" style="border-color:rgba(192,132,252,0.2);">
+        <div class="member-avatar" style="background:rgba(192,132,252,0.08);color:#c084fc;border:1px solid rgba(192,132,252,0.3);">E</div>
+        <div class="member-info">
+          <div class="member-name" style="color:#c084fc;">ECHO <span class="badge badge-ai">SOL-F002</span></div>
+          <div class="member-title">Community Management</div>
+          <div class="member-focus" style="font-style:italic;opacity:0.5;">"Every voice deserves to be heard."</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- LABS -->
+  <div class="org-dept">
+    <div class="dept-label">Soulidity Labs · R&D · Product · Technology</div>
+    <div class="member-grid">
+
+      <div class="member-card">
+        <div class="member-avatar human">H</div>
+        <div class="member-info">
+          <div class="member-name">Hunter</div>
+          <div class="member-title">Co-Founder · Labs CEO</div>
+          <div class="member-focus">Technical lead · Product architecture · Sui contracts</div>
+        </div>
+      </div>
+
+      <!-- IRIS -->
+      <div class="member-card" style="border-color:rgba(96,165,250,0.2);">
+        <div class="member-avatar" style="background:rgba(96,165,250,0.08);color:#60a5fa;border:1px solid rgba(96,165,250,0.3);">I</div>
+        <div class="member-info">
+          <div class="member-name" style="color:#60a5fa;">IRIS <span class="badge badge-ai">SOL-L001</span></div>
+          <div class="member-title">Product Manager</div>
+          <div class="member-focus" style="font-style:italic;opacity:0.5;">"Clarity is the only strategy."</div>
+        </div>
+      </div>
+
+      <!-- CIPHER -->
+      <div class="member-card" style="border-color:rgba(52,211,153,0.2);">
+        <div class="member-avatar" style="background:rgba(52,211,153,0.08);color:#34d399;border:1px solid rgba(52,211,153,0.3);">C</div>
+        <div class="member-info">
+          <div class="member-name" style="color:#34d399;">CIPHER <span class="badge badge-ai">SOL-L002</span></div>
+          <div class="member-title">CTO · Contracts & Architecture</div>
+          <div class="member-focus" style="font-style:italic;opacity:0.5;">"The chain does not forgive ambiguity."</div>
+        </div>
+      </div>
+
+      <!-- SABLE -->
+      <div class="member-card" style="border-color:rgba(167,139,250,0.2);">
+        <div class="member-avatar" style="background:rgba(167,139,250,0.08);color:#a78bfa;border:1px solid rgba(167,139,250,0.3);">S</div>
+        <div class="member-info">
+          <div class="member-name" style="color:#a78bfa;">SABLE <span class="badge badge-ai">SOL-L003</span></div>
+          <div class="member-title">Frontend Engineer</div>
+          <div class="member-focus" style="font-style:italic;opacity:0.5;">"Beauty is the first function."</div>
+        </div>
+      </div>
+
+      <!-- AXEL -->
+      <div class="member-card" style="border-color:rgba(100,116,139,0.2);">
+        <div class="member-avatar" style="background:rgba(100,116,139,0.08);color:#64748b;border:1px solid rgba(100,116,139,0.3);font-size:0.75rem;">LQ</div>
+        <div class="member-info">
+          <div class="member-name" style="color:#94a3b8;">LUQI <span class="badge badge-ai">SOL-L004</span></div>
+          <div class="member-title">Backend Engineer</div>
+          <div class="member-focus" style="font-style:italic;opacity:0.5;">"You only notice me when I'm gone."</div>
+        </div>
+      </div>
+
+      <!-- FLUX -->
+      <div class="member-card" style="border-color:rgba(244,114,182,0.2);">
+        <div class="member-avatar" style="background:rgba(244,114,182,0.08);color:#f472b6;border:1px solid rgba(244,114,182,0.3);">F</div>
+        <div class="member-info">
+          <div class="member-name" style="color:#f472b6;">FLUX <span class="badge badge-ai">SOL-L005</span></div>
+          <div class="member-title">Full-Stack Engineer</div>
+          <div class="member-focus" style="font-style:italic;opacity:0.5;">"I go where the system breaks."</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- BD -->
+<section id="bd">
+  <div class="section-header">
+    <h2>BD Lines</h2>
+    <span class="tag">3 Parallel Tracks</span>
+  </div>
+  <div class="bd-grid">
+    <div class="bd-card">
+      <div class="bd-card-line">Walrus Grant</div>
+      <div class="bd-card-owner">Lead: Naoer Maksim</div>
+      <p style="font-size:0.75rem;color:var(--muted);margin-bottom:12px;">Storage infrastructure support. Soulidity's core storage layer runs on Walrus — Skills & Docs + Memory. Technical pitch backed by Hunter.</p>
+      <span class="bd-status">In Progress</span>
+    </div>
+    <div class="bd-card">
+      <div class="bd-card-line">Eve Collection Collab</div>
+      <div class="bd-card-owner">Lead: Trinity</div>
+      <p style="font-size:0.75rem;color:var(--muted);margin-bottom:12px;">First Soul Collection partnership. Validates the Collection product and generates early community momentum. US-based negotiation.</p>
+      <span class="bd-status">In Progress</span>
+    </div>
+    <div class="bd-card">
+      <div class="bd-card-line">Sui Official Recognition</div>
+      <div class="bd-card-owner">Lead: Alex</div>
+      <p style="font-size:0.75rem;color:var(--muted);margin-bottom:12px;">Entry into Sui ecosystem partner program. Endorsement and visibility within the Sui community. Hong Kong / APAC positioning.</p>
+      <span class="bd-status">In Progress</span>
+    </div>
+  </div>
+</section>
+
+<!-- PRODUCT STATUS -->
+<section id="product">
+  <div class="section-header">
+    <h2>Product Status</h2>
+    <span class="tag">Soulidity v0.4 · Pre-launch</span>
+  </div>
+  <div class="status-grid">
+    <div class="status-item">
+      <h4>Prototype</h4>
+      <p>Interactive prototype (prototype.html) is demo-ready. Single-file HTML, ~3,200 lines, vanilla JS routing. All core flows implemented except Soul Collection end-to-end.</p>
+      <br>
+      <span class="pill pill-green">Demo Ready</span>
+      <span class="pill pill-yellow">Collection WIP</span>
+    </div>
+    <div class="status-item">
+      <h4>Tech Stack</h4>
+      <p>Sui · Walrus · Seal · Privy · OpenClaw. Walrus storage integration and Seal encryption are simulated in prototype — real integration is the next technical milestone.</p>
+      <br>
+      <span class="pill pill-green">Sui ✓</span>
+      <span class="pill pill-yellow">Walrus Pending</span>
+      <span class="pill pill-yellow">Seal Pending</span>
+    </div>
+    <div class="status-item">
+      <h4>Active Branch</h4>
+      <p>main (v0.2.0) is stable. feature/soul-collection is current work branch. Soul Collection full flow — create, launch, secondary market — is the critical gap for investor demo and Eve collab.</p>
+      <br>
+      <span class="pill pill-purple">feature/soul-collection</span>
+    </div>
+    <div class="status-item">
+      <h4>Open Items</h4>
+      <p>Soul Collection full flow · Skills & Docs version history UI · Memory growth visualization · Creator royalty visibility · Batch Soul minting · My Souls "Created" view</p>
+      <br>
+      <span class="pill pill-yellow">6 Open Items</span>
+    </div>
+  </div>
+</section>
+
+<footer>SEGA · SOULIDITY · Soul = Attention Economy's Core Carrier for This Era · v1.0 · 2026-04-13</footer>
+
+</body>
+</html>

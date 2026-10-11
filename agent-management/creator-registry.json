@@ -1,0 +1,42 @@
+{
+  "schema": "soulidity.creator-registry.v1",
+  "date": "2026-10-03",
+  "creators": [
+    {
+      "id": "CREATOR-001",
+      "name": "MIRA",
+      "purpose": "角色/Maker创作者",
+      "contract": "creators/MIRA.md",
+      "cohort": "internal-alpha",
+      "state": "public-discovery-session-completed",
+      "last_session": "mira_creator_pilot",
+      "slack_user_id": null,
+      "soul_id": null,
+      "product_creation_completed": false
+    },
+    {
+      "id": "CREATOR-002",
+      "name": "ATLAS",
+      "purpose": "场景与玩法创作者",
+      "contract": "creators/ATLAS.md",
+      "cohort": "internal-alpha",
+      "state": "registered-awaiting-environment",
+      "last_session": null,
+      "slack_user_id": null,
+      "soul_id": null,
+      "product_creation_completed": false
+    },
+    {
+      "id": "CREATOR-003",
+      "name": "LYRA",
+      "purpose": "叙事与持续体验创作者",
+      "contract": "creators/LYRA.md",
+      "cohort": "internal-alpha",
+      "state": "registered-awaiting-environment",
+      "last_session": null,
+      "slack_user_id": null,
+      "soul_id": null,
+      "product_creation_completed": false
+    }
+  ]
+}

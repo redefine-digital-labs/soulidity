@@ -1,0 +1,27 @@
+{
+  "schema": "soulidity.journey-evidence.v1",
+  "status": "Not run",
+  "slackJourneyId": null,
+  "slackRecordId": null,
+  "candidate": null,
+  "network": null,
+  "identityRole": null,
+  "identityAddress": null,
+  "preconditions": {
+    "objects": [],
+    "licences": [],
+    "access": [],
+    "quote": null
+  },
+  "expected": null,
+  "actual": null,
+  "attemptId": null,
+  "digest": null,
+  "checkpoint": null,
+  "feesByCoinType": {},
+  "evidencePaths": [],
+  "failureRecovery": null,
+  "bugRecord": null,
+  "reviewer": null,
+  "remainingChecks": []
+}

@@ -1,0 +1,18 @@
+{
+  "scope": "Agile + DevOps + AI/Codex methodology v1",
+  "date": "2026-10-05",
+  "canonical": "agent-management/OPERATING_MODEL.md#section-9",
+  "canvas": "https://sega-xya5661.slack.com/docs/T08LQTJFZRS/F0C6JN5BAC9",
+  "checks": {
+    "eight_stage_mapping": "pass",
+    "template_json": "pass",
+    "relative_file_links": "pass",
+    "canvas_readback": "pass"
+  },
+  "limits": [
+    "No production or implementation changes",
+    "No agents or schedulers started",
+    "Effectiveness not yet measured",
+    "Active implementation CURRENT preserved"
+  ]
+}

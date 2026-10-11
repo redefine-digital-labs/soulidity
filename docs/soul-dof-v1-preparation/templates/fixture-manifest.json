@@ -1,0 +1,55 @@
+{
+  "schema": "soulidity.fixture-plan.v1",
+  "status": "Demo files copied; production fixtures Not run",
+  "demoOnly": true,
+  "source": "output/f02-fresh-2026-10-07/materials",
+  "files": [
+    {
+      "name": "01-background.png",
+      "sha256": "89b3b0726bf2e29ed31df6a58768f0435244633d25c93a07835a541956b38fdf",
+      "bytes": 9818
+    },
+    {
+      "name": "02-body.png",
+      "sha256": "9a7e1a21c04e66b8016b5c48d01ed28bfefb8b1bc25d27524d4e0b0ce186e4d8",
+      "bytes": 6419
+    },
+    {
+      "name": "03-face.png",
+      "sha256": "943894eb66c1e6c2482c38e9993a3c96197c1daf5bbb895cbb739f85ee235335",
+      "bytes": 6541
+    },
+    {
+      "name": "04-mouth.png",
+      "sha256": "f364df15581da40dd91ba3143bb2a09298962123968a21994b07a38a279663c8",
+      "bytes": 4412
+    },
+    {
+      "name": "05-eyes.png",
+      "sha256": "b72edaf72e42c16a452bdb3adfa04c581b82fdb2d6a86340168d210766e1cc98",
+      "bytes": 5009
+    },
+    {
+      "name": "06-arms.png",
+      "sha256": "28fe1915d506c334198447025cc6ba0d3921ddd16111aa932c7d5bcf17f5c34e",
+      "bytes": 6179
+    },
+    {
+      "name": "07-headwear-antenna.png",
+      "sha256": "88b1266c9eb5da2ee40050261069bdc804ba971f54be7567dc2343bf24adb70d",
+      "bytes": 4980
+    },
+    {
+      "name": "08-headwear-crown.png",
+      "sha256": "9365669309bb3abe900422a882e8f7ef4addc13af72dd9b162bbdab24ed488c1",
+      "bytes": 5937
+    }
+  ],
+  "missingProductionFixtures": [
+    "Different canvas/anchor real Maker B",
+    "New public and paid Maker with published three rights",
+    "FREE/PAID/INCLUDED Pack variants",
+    "Independent identities and qualified budgets",
+    "Current candidate visual goldens and chain effects"
+  ]
+}

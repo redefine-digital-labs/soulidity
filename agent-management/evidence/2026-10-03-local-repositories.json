@@ -1,0 +1,640 @@
+{
+  "observed_at": "2026-10-03T12:35:30.831117+00:00",
+  "method": "Read-only local Git metadata; no fetch/reset/checkout/prune or product changes. Worktree list is not an assessment of active use.",
+  "records": [
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/soulidity",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/soulidity",
+      "branch": "codex/maker-editor-p0",
+      "head": "40dc2ce5ee568be1950f9d6b36eff11165dd49e4",
+      "status": [
+        "M .gitignore",
+        " M CONTEXT.md",
+        " M README.md",
+        " M agent-management/README.md",
+        " M agent-management/milestones.md",
+        " M agent-management/shared/decision-log.md",
+        "?? .pnpm-store/",
+        "?? AGENTS.md",
+        "?? agent-management/OPERATING_MODEL.md",
+        "?? agent-management/history/",
+        "?? clawnews/",
+        "?? docs/",
+        "?? live-portrait.html",
+        "?? output/",
+        "?? releases/",
+        "?? scripts/"
+      ],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity",
+          "HEAD": "40dc2ce5ee568be1950f9d6b36eff11165dd49e4",
+          "branch": "refs/heads/codex/maker-editor-p0"
+        },
+        {
+          "worktree": "/private/tmp/soulidity-idea-library-20260906",
+          "HEAD": "3610726f7dc6af11bac1cc0b2f78e9b4b620a80d",
+          "branch": "refs/heads/codex/playable-world-idea-library",
+          "prunable": "gitdir file points to non-existent location"
+        },
+        {
+          "worktree": "/private/tmp/soulidity-light-theme-master",
+          "HEAD": "920b6df3d63bf9ac88428868852378be856e5882",
+          "branch": "refs/heads/codex/light-theme-contrast-master",
+          "prunable": "gitdir file points to non-existent location"
+        },
+        {
+          "worktree": "/Users/naoer/.codex/worktrees/d3ba/soulidity",
+          "HEAD": "40dc2ce5ee568be1950f9d6b36eff11165dd49e4",
+          "detached": true
+        },
+        {
+          "worktree": "/Users/naoer/.codex/worktrees/f722/soulidity",
+          "HEAD": "a3a4a835e0298c3a4a0aba80943a05443770a9ef",
+          "detached": true
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-integration-worktree",
+          "HEAD": "20c46be3934adeeec93a3e0378287928055ed551",
+          "branch": "refs/heads/codex/commerce-rights-v5-soulidity"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-light-theme-contrast",
+          "HEAD": "a05f0bc7cfc71ebf038aff3a7f200ac6db1594d4",
+          "branch": "refs/heads/codex/light-theme-contrast"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-physical-v7",
+          "HEAD": "754e7d37d7c84aaa17c73e32c247b215fd9afcda",
+          "branch": "refs/heads/codex/physical-v7-soul-wardrobe"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-v5-mainnet-release",
+          "HEAD": "ccec77df9fcb7181b7fcfeb418d4403f8f83f240",
+          "branch": "refs/heads/master"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-v6-pr20-rebase",
+          "HEAD": "e18a942f1b12c70801f4ac7d89a024a786f0d27e",
+          "branch": "refs/heads/codex/v6-mainnet-record"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-v6-safety-integration",
+          "HEAD": "feae12ad8cfbea709f14a6499dd447db750a9a6e",
+          "detached": true
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/soulidity/animacraft",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/soulidity/animacraft",
+      "branch": "codex/commerce-rights-v5",
+      "head": "99c6b2b9b6ea432d4ee87d6b9523855d0d9a150c",
+      "status": [
+        "M README.md",
+        " M app.js",
+        " M completion-receipt-v5.js",
+        " M move/animacraft/README.md",
+        " M test/app-commerce-v5-public-player.test.js",
+        " M test/app-commerce-v5-wiring.test.js",
+        " M test/completion-receipt-v5.test.js"
+      ],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/animacraft",
+          "HEAD": "99c6b2b9b6ea432d4ee87d6b9523855d0d9a150c",
+          "branch": "refs/heads/codex/commerce-rights-v5"
+        },
+        {
+          "worktree": "/private/tmp/animacraft-store-audit.0N7jmv",
+          "HEAD": "4c3d8b8f287ce0cc1611f6077d4683b33dab968f",
+          "detached": true,
+          "prunable": "gitdir file points to non-existent location"
+        },
+        {
+          "worktree": "/private/tmp/animacraft-v8-seal-cap-protocol133",
+          "HEAD": "de5a0d0f39782ea39040ac08916f3d52f2effcff",
+          "branch": "refs/heads/codex/v8-seal-cap-protocol133",
+          "prunable": "gitdir file points to non-existent location"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-agent-compiler-v8",
+          "HEAD": "3a4eb023c0747822b0ad689f3eb647dd7781279a",
+          "branch": "refs/heads/codex/unified-v8-compiler"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-agent-market-v8",
+          "HEAD": "0fe54ff798e02fc930cc42f51fc85b4a7fc42fe8",
+          "branch": "refs/heads/codex/unified-v8-market-client"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-agent-recovery-hardening-v8",
+          "HEAD": "b11a8acffdb2aa016b2afc4189fb614c3bc3e33d",
+          "branch": "refs/heads/codex/unified-v8-recovery-hardening"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-agent-recovery-v8",
+          "HEAD": "b0895882e56078c70ee4279c1e968fa43c2c4d4c",
+          "branch": "refs/heads/codex/unified-v8-recovery-client"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-agent-runtime-v8",
+          "HEAD": "ebb9bb774ed5da564de210be8397a6d37e7f5925",
+          "branch": "refs/heads/codex/unified-v8-runtime-client"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-agent-web-v8",
+          "HEAD": "7be976734b019675c5ee05595bfc607d1940988d",
+          "branch": "refs/heads/codex/unified-v8-web-shell"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-commerce-v5-record",
+          "HEAD": "827abcbea3e81ff10bc54c2443deee375878d7d5",
+          "branch": "refs/heads/codex/animacraft-commerce-v5-record"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-controller-recovery-finalized-e2e",
+          "HEAD": "bdddd3c7c9f674dccedb648d7255002468c20f47",
+          "branch": "refs/heads/codex/controller-recovery-finalized-e2e"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-drop-legacy",
+          "HEAD": "aac90dbc0d1aad7ce7f7b76b3aa11ac43aac024e",
+          "branch": "refs/heads/codex/expansion-pack-v8-wallet-activation"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-maker-editor-v4",
+          "HEAD": "374ad6d099fdf233d56babf7f77e839b666218d1",
+          "branch": "refs/heads/codex/refine-editor-i18n-qa"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-maker-v8-grpc-execution-boundary",
+          "HEAD": "b980923cee1bc340bf97a432b9e7367129a3b420",
+          "branch": "refs/heads/codex/maker-v8-grpc-execution-boundary"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-maker-v8-grpc-read-normalization",
+          "HEAD": "7a29b9d291396f3c7e29079f68397fc740216620",
+          "branch": "refs/heads/codex/maker-v8-grpc-read-normalization"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-maker-v8-sui-grpc",
+          "HEAD": "5b7465e2e039798f9a7b43a75002a0cb17aef7c7",
+          "branch": "refs/heads/codex/maker-v8-sui-grpc"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-maker-v8-sui-grpc-real-shapes",
+          "HEAD": "012aa94313214cca3a26198783d1a248686b4137",
+          "branch": "refs/heads/codex/maker-v8-sui-grpc-real-shapes"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-maker-v8-sui-grpc-signature-binding",
+          "HEAD": "57334819685355c1ec5928f69952827f09aa72d6",
+          "branch": "refs/heads/codex/maker-v8-sui-grpc-signature-binding"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-pack-lifecycle-core",
+          "HEAD": "ce1718f6b59433394e9ffafe4d17994bdb7e7a45",
+          "branch": "refs/heads/codex/pack-lifecycle-core"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-pack-shared-maker-shell",
+          "HEAD": "27cb68ef97d55001cddcccbe687e69ed7ba397b5",
+          "branch": "refs/heads/codex/pack-shared-maker-shell"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-physical-v7",
+          "HEAD": "d944c476125e19d9e1fbe3f4480886f7b6b9fdb0",
+          "branch": "refs/heads/codex/record-physical-v7-mainnet"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-production-factory-e2e",
+          "HEAD": "35a19c0c955dae920d49226d9892bef948dd0f6b",
+          "branch": "refs/heads/codex/production-factory-e2e"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-publication-store-authority-upgrade",
+          "HEAD": "b6d37d6f62d543081bb2c49e065e7ae498a6cdd8",
+          "branch": "refs/heads/codex/publication-store-authority-upgrade"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-publication-store-historical-delete",
+          "HEAD": "28bc598292421a94ce467ab9f6ca1d142bf4be0e",
+          "branch": "refs/heads/codex/publication-store-historical-delete"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-shared-part-list-redesign",
+          "HEAD": "ecd45a929ebb2f432985dac43d980d4d494e1e2e",
+          "branch": "refs/heads/codex/shared-part-list-redesign"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-soulidity-v6-sync",
+          "HEAD": "759514152ca3abecc2931c974eb4d41fb3371093",
+          "branch": "refs/heads/codex/activate-mainnet-v6"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-type-origin-v6",
+          "HEAD": "bc0a8be48a02af30b860023f1b3cab5ea292ff8d",
+          "branch": "refs/heads/codex/soulidity-type-origin-split"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-unified-v8-market-output",
+          "HEAD": "117842314399cdab729a1e37241e0c567c3e9c54",
+          "branch": "refs/heads/codex/unified-v8-market-output"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-unified-v8-market-physical",
+          "HEAD": "f569374e7a5e412fc1619a36992d5367d4333f3e",
+          "branch": "refs/heads/codex/unified-v8-market-physical"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-unified-v8-resume",
+          "HEAD": "b980923cee1bc340bf97a432b9e7367129a3b420",
+          "branch": "refs/heads/codex/unified-maker-v8-resume"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v5-mainnet-compat",
+          "HEAD": "31073bd3b90d0256571133198518621980fc22c1",
+          "branch": "refs/heads/codex/v5-mainnet-compat"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v5-upgrade-diagnostic",
+          "HEAD": "156f352a6efca814f4d821c8c71b6a8cd570f89a",
+          "branch": "refs/heads/codex/v5-upgrade-diagnostic"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-14-production-chain",
+          "HEAD": "45d4a7a7cc1e75653e0c1e0f875f95b1dd18c162",
+          "branch": "refs/heads/codex/v8-14-production-chain"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-activation-evidence",
+          "HEAD": "b5bec3374a88059bd215ed3ea5d9126ec69eb1a4",
+          "branch": "refs/heads/codex/v8-activation-evidence"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-activation-tx-checkpoint",
+          "HEAD": "371d2e0df338b8f87c74c4e968392d8178059651",
+          "branch": "refs/heads/codex/fix-v8-activation-tx-checkpoint"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-boundary-resume",
+          "HEAD": "9310d434682b5f4c96f638b4a29289e4de13f5f8",
+          "branch": "refs/heads/codex/maker-v8-boundary-resume"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-browser-adapters",
+          "HEAD": "0c44ffd5540612d9e537ba8e7f25d720c14ee483",
+          "branch": "refs/heads/codex/v8-browser-adapters"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-compiler-web",
+          "HEAD": "400bbeeec3ac611332ef62f0103f08517c527957",
+          "branch": "refs/heads/codex/v8-compiler-web"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-core-field-limit",
+          "HEAD": "35a1e934b8f13fabb8dbd3c33c1858a61bc7b3c3",
+          "branch": "refs/heads/codex/v8-core-field-limit"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-finalized-verifier",
+          "HEAD": "e663c9d45077bf39a098e3acab4e80fda8401b72",
+          "branch": "refs/heads/codex/v8-finalized-verifier"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-mainnet-release",
+          "HEAD": "a8d025bf03ea4d0d6eeb6ae98401b1dde4d08c15",
+          "branch": "refs/heads/codex/restore-product-v8-integration"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-market",
+          "HEAD": "21ab8126dbe6a1a5ddf19fd8d10a2ac43cc1e657",
+          "branch": "refs/heads/codex/maker-v8-market"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-paused-player",
+          "HEAD": "1eea3c28cafa2b5d2c104f2c8486a0cf9f79897a",
+          "branch": "refs/heads/codex/v8-paused-player-entry"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-physical-full",
+          "HEAD": "00751d8d6d7ea66b17adea89d6251930ef2dc448",
+          "branch": "refs/heads/codex/maker-v8-physical-full"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-postclaim-evidence",
+          "HEAD": "8477e7f0de01b67477591b5ccdd16cabbc9ede79",
+          "branch": "refs/heads/codex/v8-postclaim-evidence"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-publication-controller",
+          "HEAD": "4c3d8b8f287ce0cc1611f6077d4683b33dab968f",
+          "branch": "refs/heads/codex/v8-publication-controller"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-publication-controller-resume",
+          "HEAD": "b980923cee1bc340bf97a432b9e7367129a3b420",
+          "branch": "refs/heads/codex/v8-publication-controller-resume"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-release-resume",
+          "HEAD": "7232fb26aa2708f90ea6913999b273d5e61df9c4",
+          "branch": "refs/heads/codex/maker-v8-release-resume"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-seal-cap",
+          "HEAD": "16d4c032ee0190d5c19f83a9f9875b39a3a74906",
+          "branch": "refs/heads/codex/v8-seal-cap"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-seal-repro",
+          "HEAD": "fda9f48909a3fb5316cd19b790c46d0103a46b02",
+          "branch": "refs/heads/codex/v8-seal-cap-repro-harness"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-wal-liveness",
+          "HEAD": "373cb0aa84e47412a8dcd7f063c7218eb2221f59",
+          "branch": "refs/heads/codex/v8-wal-liveness"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/animacraft-v8-web-action-ux",
+          "HEAD": "ee956238268c82e800d2b8694fa7f7fcacc4cc6c",
+          "branch": "refs/heads/codex/v8-web-action-ux"
+        }
+      ],
+      "workflow_files": [
+        "repository-hygiene.yml"
+      ]
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/soulidity/clawnews",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/soulidity",
+      "branch": "codex/maker-editor-p0",
+      "head": "40dc2ce5ee568be1950f9d6b36eff11165dd49e4",
+      "status": [
+        "M ../.gitignore",
+        " M ../CONTEXT.md",
+        " M ../README.md",
+        " M ../agent-management/README.md",
+        " M ../agent-management/milestones.md",
+        " M ../agent-management/shared/decision-log.md",
+        "?? ../.pnpm-store/",
+        "?? ../AGENTS.md",
+        "?? ../agent-management/OPERATING_MODEL.md",
+        "?? ../agent-management/history/",
+        "?? ./",
+        "?? ../docs/",
+        "?? ../live-portrait.html",
+        "?? ../output/",
+        "?? ../releases/",
+        "?? ../scripts/"
+      ],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity",
+          "HEAD": "40dc2ce5ee568be1950f9d6b36eff11165dd49e4",
+          "branch": "refs/heads/codex/maker-editor-p0"
+        },
+        {
+          "worktree": "/private/tmp/soulidity-idea-library-20260906",
+          "HEAD": "3610726f7dc6af11bac1cc0b2f78e9b4b620a80d",
+          "branch": "refs/heads/codex/playable-world-idea-library",
+          "prunable": "gitdir file points to non-existent location"
+        },
+        {
+          "worktree": "/private/tmp/soulidity-light-theme-master",
+          "HEAD": "920b6df3d63bf9ac88428868852378be856e5882",
+          "branch": "refs/heads/codex/light-theme-contrast-master",
+          "prunable": "gitdir file points to non-existent location"
+        },
+        {
+          "worktree": "/Users/naoer/.codex/worktrees/d3ba/soulidity",
+          "HEAD": "40dc2ce5ee568be1950f9d6b36eff11165dd49e4",
+          "detached": true
+        },
+        {
+          "worktree": "/Users/naoer/.codex/worktrees/f722/soulidity",
+          "HEAD": "a3a4a835e0298c3a4a0aba80943a05443770a9ef",
+          "detached": true
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-integration-worktree",
+          "HEAD": "20c46be3934adeeec93a3e0378287928055ed551",
+          "branch": "refs/heads/codex/commerce-rights-v5-soulidity"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-light-theme-contrast",
+          "HEAD": "a05f0bc7cfc71ebf038aff3a7f200ac6db1594d4",
+          "branch": "refs/heads/codex/light-theme-contrast"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-physical-v7",
+          "HEAD": "754e7d37d7c84aaa17c73e32c247b215fd9afcda",
+          "branch": "refs/heads/codex/physical-v7-soul-wardrobe"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-v5-mainnet-release",
+          "HEAD": "ccec77df9fcb7181b7fcfeb418d4403f8f83f240",
+          "branch": "refs/heads/master"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-v6-pr20-rebase",
+          "HEAD": "e18a942f1b12c70801f4ac7d89a024a786f0d27e",
+          "branch": "refs/heads/codex/v6-mainnet-record"
+        },
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity/tmp/soulidity-v6-safety-integration",
+          "HEAD": "feae12ad8cfbea709f14a6499dd447db750a9a6e",
+          "detached": true
+        }
+      ],
+      "workflow_files": [
+        "desktop-release.yml",
+        "soulidity-fast-path-smoke.yml"
+      ]
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/infinite-flow-engine",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/infinite-flow-engine",
+      "branch": "main",
+      "head": "8399544b0f48aa60cd70bedb64fd77b0e6b7e17a",
+      "status": [],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/infinite-flow-engine",
+          "HEAD": "8399544b0f48aa60cd70bedb64fd77b0e6b7e17a",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/soul-expedition",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/soul-expedition",
+      "branch": "main",
+      "head": "39e54642bd06f9e0d17c2aafe0a9f1410b67c40a",
+      "status": [],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soul-expedition",
+          "HEAD": "39e54642bd06f9e0d17c2aafe0a9f1410b67c40a",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/soul-paper-theater",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/soul-paper-theater",
+      "branch": "main",
+      "head": "2daebef1f74dfcfd7f5a3938cf590f194b337dbe",
+      "status": [],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soul-paper-theater",
+          "HEAD": "2daebef1f74dfcfd7f5a3938cf590f194b337dbe",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/infinite-stellar",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/infinite-stellar",
+      "branch": "codex/dark-forest-parity",
+      "head": "e4f6d325c98d28bd043fbeb64a212112eabe2ffd",
+      "status": [
+        "M apps/web/src/App.tsx",
+        " M apps/web/src/GameShell.tsx",
+        " M apps/web/src/RankedUniverseConsole.tsx",
+        " M apps/web/src/ranked-action-journal.ts",
+        " M apps/web/src/styles.css",
+        " M apps/web/src/use-ranked-actions.test.ts",
+        " M apps/web/src/use-ranked-actions.ts",
+        " M apps/web/test/ranked-actions-development.tsx",
+        " M docs/codex/CURRENT.md",
+        " M move/infinite_stellar/sources/identity.move",
+        " M move/infinite_stellar/sources/planet.move",
+        " M move/infinite_stellar/sources/season.move",
+        " M move/infinite_stellar/sources/voyage.move",
+        " M move/infinite_stellar/tests/voyage_tests.move",
+        " M packages/game-sdk/src/index.ts",
+        " M packages/game-sdk/src/ranked-map.ts",
+        " M packages/game-sdk/src/sui-gateway.ts",
+        " M packages/game-sdk/src/sui-player-runtime.ts",
+        " M packages/game-sdk/test/sui-player-runtime.test.ts",
+        "?? apps/web/src/RankedVoyageControls.test.tsx",
+        "?? apps/web/src/RankedVoyageControls.tsx",
+        "?? move/infinite_stellar/sources/arrival_actions.move",
+        "?? packages/game-sdk/src/ranked-settlement.ts",
+        "?? packages/game-sdk/test/ranked-settlement-fixtures.ts",
+        "?? packages/game-sdk/test/ranked-settlement.test.ts"
+      ],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/infinite-stellar",
+          "HEAD": "e4f6d325c98d28bd043fbeb64a212112eabe2ffd",
+          "branch": "refs/heads/codex/dark-forest-parity"
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/soul-habitat",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/soul-habitat",
+      "branch": "main",
+      "head": "53b249fb0fc852a4adaf621a64c69d4cd3dacbb8",
+      "status": [],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soul-habitat",
+          "HEAD": "53b249fb0fc852a4adaf621a64c69d4cd3dacbb8",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": [
+        "docs.yml"
+      ]
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/soulidity-docs",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/soulidity-docs",
+      "branch": "main",
+      "head": "258681ac1b5bb3785280db2cfb2363f2c84db88b",
+      "status": [],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity-docs",
+          "HEAD": "258681ac1b5bb3785280db2cfb2363f2c84db88b",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/soulidity-ideas",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/soulidity-ideas",
+      "branch": "main",
+      "head": "94e6beef203d45d09bbb71b5514f8da3e72a29e0",
+      "status": [],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/soulidity-ideas",
+          "HEAD": "94e6beef203d45d09bbb71b5514f8da3e72a29e0",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/onchain-experience-network",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/onchain-experience-network",
+      "branch": "main",
+      "head": "7a9ad0eafd49a3af6e3d64424bb61197ad5f014f",
+      "status": [],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/onchain-experience-network",
+          "HEAD": "7a9ad0eafd49a3af6e3d64424bb61197ad5f014f",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/animacraft-maker-launch-playbook",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/animacraft-maker-launch-playbook",
+      "branch": "main",
+      "head": "d732504fca75d5ba0beb3c14a224f4c0136da6ae",
+      "status": [
+        "A  ARTICLE.md",
+        "M  README.md"
+      ],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/animacraft-maker-launch-playbook",
+          "HEAD": "d732504fca75d5ba0beb3c14a224f4c0136da6ae",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": []
+    },
+    {
+      "path": "/Users/naoer/Documents/Claude/Projects/oc-autonomous-worlds-roadmap",
+      "git_root": "/Users/naoer/Documents/Claude/Projects/oc-autonomous-worlds-roadmap",
+      "branch": "main",
+      "head": "94219a28ddb0179d1ef8509e403b195cd64f94d8",
+      "status": [],
+      "worktrees": [
+        {
+          "worktree": "/Users/naoer/Documents/Claude/Projects/oc-autonomous-worlds-roadmap",
+          "HEAD": "94219a28ddb0179d1ef8509e403b195cd64f94d8",
+          "branch": "refs/heads/main"
+        }
+      ],
+      "workflow_files": []
+    }
+  ]
+}

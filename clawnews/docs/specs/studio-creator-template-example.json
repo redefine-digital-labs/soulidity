@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "studio.creator-template.v1",
+  "template": {
+    "id": "agent-companion-basic",
+    "name": "Agent Companion Basic",
+    "creator": "Soulidity Lab",
+    "world": "Personal Agent",
+    "license": "free-remix",
+    "royaltyBps": 300,
+    "canvas": {
+      "width": 1024,
+      "height": 1024,
+      "anchorX": 512,
+      "anchorY": 512
+    }
+  },
+  "slots": [
+    {
+      "key": "background",
+      "label": "Background",
+      "renderOrder": 0,
+      "colorable": true
+    },
+    {
+      "key": "hairBack",
+      "label": "Back hair",
+      "renderOrder": 1,
+      "colorable": true
+    },
+    {
+      "key": "hairFront",
+      "label": "Front hair",
+      "renderOrder": 2,
+      "colorable": true
+    },
+    {
+      "key": "eyes",
+      "label": "Eyes",
+      "renderOrder": 3,
+      "colorable": true
+    },
+    {
+      "key": "mouth",
+      "label": "Mouth",
+      "renderOrder": 4,
+      "colorable": false
+    },
+    {
+      "key": "outfit",
+      "label": "Outfit",
+      "renderOrder": 5,
+      "colorable": true
+    },
+    {
+      "key": "accessory",
+      "label": "Accessory",
+      "renderOrder": 6,
+      "colorable": true
+    }
+  ],
+  "assets": [
+    {
+      "id": "hairFront-side-default",
+      "fileName": "hairFront_side_default.png",
+      "slot": "hairFront",
+      "partId": "side",
+      "variantId": "default",
+      "license": "free-remix",
+      "royaltyBps": 300,
+      "status": "ready",
+      "notes": []
+    }
+  ]
+}

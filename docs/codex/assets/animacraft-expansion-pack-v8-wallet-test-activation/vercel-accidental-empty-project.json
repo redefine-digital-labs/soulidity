@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "animacraft.vercel-accidental-project-evidence.v1",
+  "observedAtUtc": "2026-08-12T12:06:00Z",
+  "cause": "A read-only deployment audit invoked a Vercel curl workflow without an existing local project link; the CLI created a new empty project and local .vercel link before the audit stopped.",
+  "project": {
+    "scope": "soulidity-ai",
+    "name": "animacraft-drop-legacy",
+    "id": "prj_jVkc6SrX1iHBDCCuRIeskhEQWZJM",
+    "createdAtLocal": "2026-08-12T20:04:26+08:00",
+    "deploymentCount": 0
+  },
+  "targetProductionProjectUnaffected": {
+    "name": "animacraft",
+    "id": "prj_CzV3sBiEr64aZhAPBG9fvpUNRACF",
+    "productionDeploymentId": "dpl_7NwkGiWLh75AbZoaWH2FvjRqbqTY",
+    "readyState": "READY"
+  },
+  "recovery": {
+    "localLinkWillBeReplacedWithReviewedTarget": true,
+    "emptyProjectMayBeDeletedBecauseItHasNoDeployments": true,
+    "completed": true,
+    "completedAtUtc": "2026-08-12T12:09:00Z",
+    "emptyProjectDeleted": true,
+    "localLinkTargetProjectId": "prj_CzV3sBiEr64aZhAPBG9fvpUNRACF"
+  }
+}
