@@ -9,8 +9,10 @@
 ///  Exact gross vectors and four current-rights negatives are below; frozen
 ///  creator rates and repeated real payments remain in native_market_v8_tests.
 /// -3 V4: actual native settlement replaces Maker treasury routing with immutable
-///  Maker creator routing; the generic bypass negative is upper. Collection fees
-///  are OPEN: upper proves add_soul currently succeeds but native listing rejects.
+///  Maker creator routing; the generic bypass negative is upper. Collection
+///  binding of native Souls is rejected at `collection::add_soul` and the
+///  combined-royalty cap at `market::add_soul_to_collection_v2`; see
+///  collection_tradeability_tests.move (2026-10-24 fix pass).
 /// -8 appearance: frozen original and current revision/owned locks map to upper
 ///  native_equipment/native_external_equipment; owner/listed guards remain in
 ///  native binding. Fixed-profile replacement semantics and nonempty transfer

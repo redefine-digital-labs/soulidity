@@ -5,19 +5,22 @@ use std::bcs;
 use sui::{clock::{Self as clock, Clock}, event, test_scenario::{Self as ts, Scenario}};
 use soulidity::{soul::{Self as soul, SoulState}, grant, paid_access::{Self as paid, SoulPaidAccessList},
     kind_registry::{Self as kinds, KindRegistry}, market::{Self as market, MarketConfigV2, MarketAdminCapV2}};
+use soulidity::protocol_gate;
 
 const OWNER: address = @0xA11;
 const BUYER: address = @0xB22;
 const OTHER: address = @0xC33;
 fun id(a: address): ID { object::id_from_address(a) }
 fun setup(s: &mut Scenario): (SoulState, SoulPaidAccessList, KindRegistry, Clock) {
+    let gate = protocol_gate::new_for_testing(s.ctx());
     kinds::init_for_testing(s.ctx()); s.next_tx(OWNER);
     let mut state = soul::create_state(id(@0x42), OWNER, 0, OWNER, id(@0x43), s.ctx());
     soul::set_content_id(&mut state, id(@0x45));
     let list = paid::create(soul::soul_id(&state), OWNER, s.ctx());
     soul::set_access_list_id(&mut state, object::id(&list));
     let clock = clock::create_for_testing(s.ctx());
-    grant::set_grant_capacity(&mut state, 3, &clock, s.ctx());
+    grant::set_grant_capacity(&gate, &mut state, 3, &clock, s.ctx());
+    protocol_gate::destroy_for_testing(gate);
     (state, list, s.take_shared<KindRegistry>(), clock)
 }
 fun finish(s: Scenario, state: SoulState, list: SoulPaidAccessList, registry: KindRegistry, clock: Clock) {
@@ -33,13 +36,17 @@ fun grant_guard(state: &SoulState, expected: Option<vector<u8>>, live: bool, clo
         soul::grant_capacity(state), soul::active_grant_count(state), expected, live, clock);
 }
 fun issue(state: &mut SoulState, clock: &Clock, ctx: &mut TxContext) {
-    grant::issue_to_grantee(state, BUYER, 3, option::some(10), clock, ctx);
+    let gate = protocol_gate::new_for_testing(ctx);
+    grant::issue_to_grantee(&gate, state, BUYER, 3, option::some(10), clock, ctx);
+    protocol_gate::destroy_for_testing(gate);
 }
 fun configure(list: &mut SoulPaidAccessList, state: &SoulState, registry: &KindRegistry, ctx: &TxContext) {
     paid::configure_paid_access_kind(list, state, registry, kinds::kind_sprite(), 100, 8, option::some(10), ctx);
 }
 fun add(list: &mut SoulPaidAccessList, state: &SoulState, registry: &KindRegistry, kind: u32, expiry: u64, clock: &Clock, ctx: &mut TxContext) {
-    paid::add_access(list, state, registry, BUYER, kind, 8, option::some(expiry), clock, ctx);
+    let gate = protocol_gate::new_for_testing(ctx);
+    paid::add_access(&gate, list, state, registry, BUYER, kind, 8, option::some(expiry), clock, ctx);
+    protocol_gate::destroy_for_testing(gate);
 }
 fun paid_guard(list: &SoulPaidAccessList, state: &SoulState, config: Option<vector<u8>>, table: Option<vector<u8>>, entry: Option<vector<u8>>) {
     paid::assert_mutation_snapshot(list, state, id(@0x42), kinds::kind_sprite(), option::some(BUYER),
@@ -49,36 +56,40 @@ fun paid_guard(list: &SoulPaidAccessList, state: &SoulState, config: Option<vect
 #[test]
 fun exact_guards_read_only_empty_live_expired_stale_and_zero_capacity() {
     let mut s = ts::begin(OWNER); let (mut state, list, registry, mut clock) = setup(&mut s);
+    let gate = protocol_gate::new_for_testing(s.ctx());
     let before = bcs::to_bytes(&state); let events = event::num_events();
     grant_guard(&state, option::none(), false, &clock); grant::assert_capacity(&state, 3);
     grant::assert_preserves_active_scopes(&state, BUYER, 1, &clock);
     assert!(before == bcs::to_bytes(&state) && events == event::num_events(), 99);
-    grant::set_grant_capacity(&mut state, 0, &clock, s.ctx()); grant::assert_capacity(&state, 0);
-    grant::set_grant_capacity(&mut state, 3, &clock, s.ctx()); issue(&mut state, &clock, s.ctx());
+    grant::set_grant_capacity(&gate, &mut state, 0, &clock, s.ctx()); grant::assert_capacity(&state, 0);
+    grant::set_grant_capacity(&gate, &mut state, 3, &clock, s.ctx()); issue(&mut state, &clock, s.ctx());
     let raw = slot(&state); grant_guard(&state, raw, true, &clock);
     grant::assert_preserves_active_scopes(&state, BUYER, 7, &clock);
     clock.increment_for_testing(10); grant_guard(&state, raw, false, &clock);
     grant::assert_preserves_active_scopes(&state, BUYER, 1, &clock);
     soul::rotate_owner(&mut state, OTHER, id(@0x44)); grant_guard(&state, raw, false, &clock);
+    protocol_gate::destroy_for_testing(gate);
     finish(s, state, list, registry, clock);
 }
 #[test]
 fun guards_compose_with_existing_issue_partial_revoke_config_and_manual_access() {
     let mut s = ts::begin(OWNER); let (mut state, mut list, registry, clock) = setup(&mut s);
+    let gate = protocol_gate::new_for_testing(s.ctx());
     grant_guard(&state, option::none(), false, &clock); issue(&mut state, &clock, s.ctx());
     grant_guard(&state, slot(&state), true, &clock);
-    grant::revoke_scope_to_grantee(&mut state, BUYER, 1, &clock, s.ctx());
+    grant::revoke_scope_to_grantee(&gate, &mut state, BUYER, 1, &clock, s.ctx());
     assert!(soul::active_grant_slot_scope_mask(soul::active_grant_slot_for_grantee(&state, BUYER)) == 2, 99);
-    grant_guard(&state, slot(&state), true, &clock); grant::revoke(&mut state, BUYER, &clock, s.ctx());
+    grant_guard(&state, slot(&state), true, &clock); grant::revoke(&gate, &mut state, BUYER, &clock, s.ctx());
     grant_guard(&state, option::none(), false, &clock); assert!(soul::active_grant_count(&state) == 0, 99);
     paid_guard(&list, &state, option::none(), option::none(), option::none()); configure(&mut list, &state, &registry, s.ctx());
     let (cfg, table, entry) = paid::mutation_rows_for_testing(&list, kinds::kind_sprite(), BUYER);
     paid_guard(&list, &state, cfg, table, entry); add(&mut list, &state, &registry, kinds::kind_sprite(), 10, &clock, s.ctx());
     let (cfg, table, entry) = paid::mutation_rows_for_testing(&list, kinds::kind_sprite(), BUYER);
-    paid_guard(&list, &state, cfg, table, entry); paid::revoke_access(&mut list, &state, BUYER, kinds::kind_sprite(), s.ctx());
+    paid_guard(&list, &state, cfg, table, entry); paid::revoke_access(&gate, &mut list, &state, BUYER, kinds::kind_sprite(), s.ctx());
     paid_guard(&list, &state, cfg, option::none(), option::none()); assert!(!paid::has_buyer_row(&list, BUYER), 99);
     paid::delete_paid_access_kind(&mut list, &state, kinds::kind_sprite(), s.ctx());
     paid_guard(&list, &state, option::none(), option::none(), option::none());
+    protocol_gate::destroy_for_testing(gate);
     finish(s, state, list, registry, clock);
 }
 #[test, expected_failure(abort_code = 1, location = soulidity::soul)]
@@ -98,11 +109,12 @@ fun removing_sdk_wall_clock_does_not_allow_expired_new_grant() {
 }
 fun changed_grant(mode: u8) {
     let mut s = ts::begin(OWNER); let (mut state, _list, _registry, mut clock) = setup(&mut s);
+    let gate = protocol_gate::new_for_testing(s.ctx());
     issue(&mut state, &clock, s.ctx()); let raw = slot(&state);
     if (mode == 0) { soul::rotate_owner(&mut state, OTHER, id(@0x44)); soul::rotate_owner(&mut state, OWNER, id(@0x43)); };
     if (mode == 1) issue(&mut state, &clock, s.ctx());
-    if (mode == 2) grant::set_grant_capacity(&mut state, 100, &clock, s.ctx());
-    if (mode == 3) grant::issue_to_grantee(&mut state, OTHER, 1, option::none(), &clock, s.ctx());
+    if (mode == 2) grant::set_grant_capacity(&gate, &mut state, 100, &clock, s.ctx());
+    if (mode == 3) grant::issue_to_grantee(&gate, &mut state, OTHER, 1, option::none(), &clock, s.ctx());
     if (mode == 4) clock.increment_for_testing(10);
     grant::assert_mutation_snapshot(&state, id(@0x42), BUYER, 0, 3, 1, raw, true, &clock); abort 99
 }
@@ -126,7 +138,8 @@ fun wrong_grant_soul_rejected() {
 #[test, expected_failure(abort_code = 17, location = soulidity::grant)]
 fun append_cannot_overwrite_new_capacity() {
     let mut s = ts::begin(OWNER); let (mut state, _list, _registry, clock) = setup(&mut s);
-    grant::set_grant_capacity(&mut state, 100, &clock, s.ctx()); grant::assert_capacity(&state, 3); abort 99
+    let gate = protocol_gate::new_for_testing(s.ctx());
+    grant::set_grant_capacity(&gate, &mut state, 100, &clock, s.ctx()); grant::assert_capacity(&state, 3); abort 99
 }
 #[test, expected_failure(abort_code = 17, location = soulidity::grant)]
 fun append_cannot_narrow_concurrently_widened_live_scope() {
@@ -148,6 +161,7 @@ fun paid_guard_reads_config_entry_table_and_config_only() {
 }
 fun changed_paid(mode: u8) {
     let mut s = ts::begin(OWNER); let (mut state, mut list, registry, clock) = setup(&mut s);
+    let gate = protocol_gate::new_for_testing(s.ctx());
     configure(&mut list, &state, &registry, s.ctx()); add(&mut list, &state, &registry, kinds::kind_sprite(), 10, &clock, s.ctx());
     let (cfg, table, entry) = paid::mutation_rows_for_testing(&list, kinds::kind_sprite(), BUYER);
     if (mode == 0) paid::update_paid_access_kind(&mut list, &state, &registry, kinds::kind_sprite(), 101, 8, option::some(10), s.ctx());
@@ -156,11 +170,11 @@ fun changed_paid(mode: u8) {
     if (mode == 3) add(&mut list, &state, &registry, kinds::kind_sprite(), 11, &clock, s.ctx());
     if (mode == 4) add(&mut list, &state, &registry, kinds::kind_audio(), 10, &clock, s.ctx());
     if (mode == 5) {
-        paid::revoke_access(&mut list, &state, BUYER, kinds::kind_sprite(), s.ctx());
+        paid::revoke_access(&gate, &mut list, &state, BUYER, kinds::kind_sprite(), s.ctx());
         add(&mut list, &state, &registry, kinds::kind_sprite(), 10, &clock, s.ctx());
     };
     if (mode == 6) { soul::rotate_owner(&mut state, OTHER, id(@0x44)); soul::rotate_owner(&mut state, OWNER, id(@0x43)); };
-    if (mode == 7) paid::revoke_access(&mut list, &state, BUYER, kinds::kind_sprite(), s.ctx());
+    if (mode == 7) paid::revoke_access(&gate, &mut list, &state, BUYER, kinds::kind_sprite(), s.ctx());
     paid::assert_mutation_snapshot(&list, &state, id(@0x42), kinds::kind_sprite(), option::some(BUYER), 0, cfg, table, entry); abort 99
 }
 #[test, expected_failure(abort_code = 14, location = soulidity::paid_access)] fun config_price_changed_rejected() { changed_paid(0); }

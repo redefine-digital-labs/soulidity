@@ -9,6 +9,7 @@ use soulidity::content::{Self as content, SoulContent};
 use soulidity::grant;
 use soulidity::kind_registry::{Self as kind_registry, KindRegistry};
 use soulidity::soul::{Self as soul, SoulState};
+use soulidity::protocol_gate::{Self as protocol_gate, ProtocolGate};
 
 const ENotOwner: u64 = 1;
 const EAlreadyHasAccess: u64 = 2;
@@ -305,7 +306,7 @@ public(package) fun share_paid_access_list(list: SoulPaidAccessList) {
 /// registry, must permit `READ_PAID`, and `scope_mask` must equal the
 /// descriptor's `default_grant_scope_mask`. Use `update_paid_access_kind`
 /// to mutate an existing config.
-public fun configure_paid_access_kind(
+public(package) fun configure_paid_access_kind(
     paid_access_list: &mut SoulPaidAccessList,
     state: &SoulState,
     registry: &KindRegistry,
@@ -349,7 +350,7 @@ public fun configure_paid_access_kind(
 /// kind descriptor's `default_grant_scope_mask` because slots cache that
 /// scope on append; rotating it here would silently desynchronise existing
 /// slot caches from the active config.
-public fun update_paid_access_kind(
+public(package) fun update_paid_access_kind(
     paid_access_list: &mut SoulPaidAccessList,
     state: &SoulState,
     registry: &KindRegistry,
@@ -393,7 +394,7 @@ public fun update_paid_access_kind(
 /// Remove a per-kind config. Existing entries remain valid until ownership
 /// rotates — buyers get what they paid for, but nobody new can purchase
 /// until reconfigured.
-public fun delete_paid_access_kind(
+public(package) fun delete_paid_access_kind(
     paid_access_list: &mut SoulPaidAccessList,
     state: &SoulState,
     kind: u32,
@@ -501,6 +502,7 @@ fun renewal_base_ms(now_ms: u64, previous_expires_at_ms: Option<u64>): u64 {
 // Clock remains in the public operation ABI; manual grants preserve their supplied expiry.
 #[allow(lint(unused_object_with_fields))]
 public fun add_access(
+    gate: &ProtocolGate,
     paid_access_list: &mut SoulPaidAccessList,
     state: &SoulState,
     registry: &KindRegistry,
@@ -511,6 +513,7 @@ public fun add_access(
     _clock: &Clock,
     ctx: &mut TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     let sender = ctx.sender();
     assert!(sender == soul::current_owner(state), ENotOwner);
     assert_paid_access_list_matches_state(paid_access_list, state);
@@ -566,12 +569,14 @@ public fun add_access(
 /// `(grantee, kind)` entry here also blocks `seal_approve_*` calls for that
 /// buyer until they re-purchase. See CLAUDE.md `System Invariants`.
 public fun revoke_access(
+    gate: &ProtocolGate,
     paid_access_list: &mut SoulPaidAccessList,
     state: &SoulState,
     grantee: address,
     kind: u32,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     let sender = ctx.sender();
     assert!(sender == soul::current_owner(state), ENotOwner);
     assert_paid_access_list_matches_state(paid_access_list, state);
@@ -595,12 +600,14 @@ public fun revoke_access(
 /// Anyone may call — invalidated entries hold no value and removing them
 /// reclaims storage rebate.
 public fun cleanup_stale_entries(
+    gate: &ProtocolGate,
     paid_access_list: &mut SoulPaidAccessList,
     state: &SoulState,
     addrs: vector<address>,
     kinds: vector<u32>,
     _ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     assert_paid_access_list_matches_state(paid_access_list, state);
     assert!(addrs.length() == kinds.length(), EMismatchedLengths);
     let current_epoch = soul::ownership_epoch(state);
@@ -655,6 +662,7 @@ fun drop_empty_buyer_row(paid_access_list: &mut SoulPaidAccessList, addr: addres
 /// callable in a PTB dryRun, which `public fun` satisfies.
 public fun seal_approve_content_paid_access(
     id: vector<u8>,
+    gate: &ProtocolGate,
     state: &SoulState,
     paid_access_list: &SoulPaidAccessList,
     content: &SoulContent,
@@ -664,6 +672,7 @@ public fun seal_approve_content_paid_access(
     clock: &Clock,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     assert_paid_access_list_matches_state(paid_access_list, state);
     let slot_scope_mask = content::assert_valid_content_seal_request(
         id,

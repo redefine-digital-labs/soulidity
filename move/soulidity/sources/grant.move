@@ -4,6 +4,7 @@ use sui::clock::Clock;
 use sui::event;
 use std::bcs;
 use soulidity::soul::{Self as soul, SoulState};
+use soulidity::protocol_gate::{Self as protocol_gate, ProtocolGate};
 
 const EInvalidGrantee: u64 = 1;
 const EGrantSoulMismatch: u64 = 2;
@@ -181,6 +182,7 @@ fun slot_is_live(state: &SoulState, grantee: address, clock: &Clock): bool {
 }
 
 public fun issue(
+    gate: &ProtocolGate,
     state: &mut SoulState,
     grantee: address,
     scope_mask: u64,
@@ -188,6 +190,7 @@ public fun issue(
     clock: &Clock,
     ctx: &mut TxContext,
 ): SoulGrant {
+    protocol_gate::assert_live(gate);
     soul::assert_owner(state, ctx.sender());
     assert!(grantee != @0x0, EInvalidGrantee);
     assert!(grantee != ctx.sender(), EInvalidGrantee);
@@ -247,6 +250,7 @@ public fun issue(
 }
 
 public fun issue_to_grantee(
+    gate: &ProtocolGate,
     state: &mut SoulState,
     grantee: address,
     scope_mask: u64,
@@ -254,16 +258,19 @@ public fun issue_to_grantee(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let grant = issue(state, grantee, scope_mask, expires_at_ms, clock, ctx);
+    protocol_gate::assert_live(gate);
+    let grant = issue(gate, state, grantee, scope_mask, expires_at_ms, clock, ctx);
     transfer::public_transfer(grant, grantee);
 }
 
 public fun revoke(
+    gate: &ProtocolGate,
     state: &mut SoulState,
     grantee: address,
     clock: &Clock,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     soul::assert_owner(state, ctx.sender());
     cleanup_inactive_grant_for_grantee(state, grantee, clock);
     assert!(soul::active_grant_contains_grantee(state, grantee), EGrantNotFound);
@@ -277,12 +284,14 @@ public fun revoke(
 }
 
 public fun revoke_scope(
+    gate: &ProtocolGate,
     state: &mut SoulState,
     grantee: address,
     revoked_scope_mask: u64,
     clock: &Clock,
     ctx: &mut TxContext,
 ): SoulGrant {
+    protocol_gate::assert_live(gate);
     soul::assert_owner(state, ctx.sender());
     assert_valid_scope_mask(revoked_scope_mask);
     cleanup_inactive_grant_for_grantee(state, grantee, clock);
@@ -334,21 +343,25 @@ public fun revoke_scope(
 }
 
 public fun revoke_scope_to_grantee(
+    gate: &ProtocolGate,
     state: &mut SoulState,
     grantee: address,
     revoked_scope_mask: u64,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let grant = revoke_scope(state, grantee, revoked_scope_mask, clock, ctx);
+    protocol_gate::assert_live(gate);
+    let grant = revoke_scope(gate, state, grantee, revoked_scope_mask, clock, ctx);
     transfer::public_transfer(grant, grantee);
 }
 
 public fun cleanup_inactive_grants(
+    gate: &ProtocolGate,
     state: &mut SoulState,
     grantees: vector<address>,
     clock: &Clock,
 ) {
+    protocol_gate::assert_live(gate);
     let mut grantees = grantees;
     while (!grantees.is_empty()) {
         let grantee = grantees.pop_back();
@@ -360,11 +373,13 @@ public fun cleanup_inactive_grants(
 // Clock remains in the public operation ABI; capacity updates have no time gate.
 #[allow(lint(unused_object_with_fields))]
 public fun set_grant_capacity(
+    gate: &ProtocolGate,
     state: &mut SoulState,
     capacity: u64,
     _clock: &Clock,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     soul::assert_owner(state, ctx.sender());
     assert!(capacity >= soul::active_grant_count(state), EGrantCapacityTooLow);
     assert!(capacity <= MAX_GRANT_CAPACITY, EGrantCapacityTooHigh);
@@ -385,11 +400,13 @@ public fun set_grant_capacity(
 /// identity, but `SoulGrant` is an owned object, so the transaction sender
 /// must still own/provide the grant object for Sui input validation to pass.
 public fun destroy_invalidated_grant(
+    gate: &ProtocolGate,
     grant: SoulGrant,
     state: &mut SoulState,
     clock: &Clock,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     assert!(grant.soul_id == soul::soul_id(state), EGrantSoulMismatch);
 
     let grant_id = object::id(&grant);

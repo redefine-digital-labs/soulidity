@@ -90,7 +90,8 @@ const ECollectionCommandSnapshotMismatch: u64 = 78;
 const EMintNonceInvalid: u64 = 79;
 const EMintContentIdentityMismatch: u64 = 80;
 const EMintManifestHashInvalid: u64 = 81;
-const EInitialEnvelopeConfigReserved: u64 = 82;
+const EStateConfigKeyReserved: u64 = 82;
+const ESoulListedForMutation: u64 = 83;
 const VERSION: u64 = 1;
 const MARKET_VERSION_V2: u64 = 2;
 const MARKET_VERSION_ANIMACRAFT_V8: u64 = 8;
@@ -1478,6 +1479,30 @@ fun create_collection_in_personal_kiosk_impl(
     collection_obj
 }
 
+/// Bind an owner-created Soul into the creator's collection. Besides the
+/// collection-level rules (creator / owner / not listed / supply / not native),
+/// the Soul must remain sellable afterwards: solo listing is impossible once
+/// bound, and the collection listing path requires
+/// `platform + creator + extra royalty <= MAX_BPS`, so that cap is enforced at
+/// bind time instead of surfacing as a permanently unlistable Soul.
+public fun add_soul_to_collection_v2(
+    config: &MarketConfigV2,
+    collection_obj: &mut SoulCollection,
+    state: &mut SoulState,
+    ctx: &TxContext,
+) {
+    assert!(config.primary_enabled, EPrimaryPausedV2);
+    assert!(
+        (
+            (config.platform_fee_bps as u64)
+                + (soul::creator_royalty_bps(state) as u64)
+                + (collection::extra_royalty_bps(collection_obj) as u64)
+        ) <= (MAX_BPS as u64),
+        ECombinedFeesTooHigh,
+    );
+    collection::add_soul(collection_obj, state, ctx);
+}
+
 // ── Active-binding / state-config wallet wrappers ─────────────────────
 
 /// Bind `(kind, name, version_index)` as the active version for `kind`
@@ -1496,6 +1521,7 @@ public fun set_active_content(
 ) {
     assert!(!config.paused, EMarketPaused);
     assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
+    assert!(!soul::is_listed(state), ESoulListedForMutation);
     content::set_active(content, state, kind_registry_obj, kind, name, version_index, ctx);
 }
 
@@ -1509,6 +1535,7 @@ public fun clear_active_content(
 ) {
     assert!(!config.paused, EMarketPaused);
     assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
+    assert!(!soul::is_listed(state), ESoulListedForMutation);
     content::clear_active(content, state, kind_registry_obj, kind, ctx);
 }
 
@@ -1522,6 +1549,8 @@ public fun set_state_config(
     assert!(!config.paused, EMarketPaused);
     assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
     assert!(!std::string::is_empty(&key), EStateConfigKeyEmpty);
+    assert_state_config_key_unreserved(&key);
+    assert!(!soul::is_listed(state), ESoulListedForMutation);
     let updater = ctx.sender();
     let key_for_event = copy key;
     soul::upsert_state_config(state, key, value);
@@ -1537,6 +1566,8 @@ public fun delete_state_config(
     assert!(!config.paused, EMarketPaused);
     assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
     assert!(!std::string::is_empty(&key), EStateConfigKeyEmpty);
+    assert_state_config_key_unreserved(&key);
+    assert!(!soul::is_listed(state), ESoulListedForMutation);
     let updater = ctx.sender();
     let key_for_event = copy key;
     soul::delete_state_config(state, key);
@@ -1555,6 +1586,7 @@ public fun set_active_content_v2(
 ) {
     assert!(config.primary_enabled, EPrimaryPausedV2);
     assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
+    assert!(!soul::is_listed(state), ESoulListedForMutation);
     content::set_active(content, state, kind_registry_obj, kind, name, version_index, ctx);
 }
 
@@ -1568,6 +1600,7 @@ public fun clear_active_content_v2(
 ) {
     assert!(config.primary_enabled, EPrimaryPausedV2);
     assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
+    assert!(!soul::is_listed(state), ESoulListedForMutation);
     content::clear_active(content, state, kind_registry_obj, kind, ctx);
 }
 
@@ -1581,6 +1614,8 @@ public fun set_state_config_v2(
     assert!(config.primary_enabled, EPrimaryPausedV2);
     assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
     assert!(!std::string::is_empty(&key), EStateConfigKeyEmpty);
+    assert_state_config_key_unreserved(&key);
+    assert!(!soul::is_listed(state), ESoulListedForMutation);
     let updater = ctx.sender();
     let key_for_event = copy key;
     soul::upsert_state_config(state, key, value);
@@ -1596,6 +1631,8 @@ public fun delete_state_config_v2(
     assert!(config.primary_enabled, EPrimaryPausedV2);
     assert!(soul::current_owner(state) == ctx.sender(), ENotSoulOwner);
     assert!(!std::string::is_empty(&key), EStateConfigKeyEmpty);
+    assert_state_config_key_unreserved(&key);
+    assert!(!soul::is_listed(state), ESoulListedForMutation);
     let updater = ctx.sender();
     let key_for_event = copy key;
     soul::delete_state_config(state, key);
@@ -2582,7 +2619,7 @@ fun apply_initial_state_config(
         let entry = entries.pop_back();
         let StateConfigEntry { key, value } = entry;
         assert!(!std::string::is_empty(&key), EStateConfigKeyEmpty);
-        assert_initial_config_key_unreserved(&key);
+        assert_state_config_key_unreserved(&key);
         let key_for_event = copy key;
         soul::upsert_state_config(state, key, value);
         soul::emit_state_config_upserted(state, updater, key_for_event);
@@ -2590,7 +2627,11 @@ fun apply_initial_state_config(
     entries.destroy_empty();
 }
 
-fun assert_initial_config_key_unreserved(key: &String) {
+/// `content_seal_envelope_v1:*` keys are written only by
+/// `content::persist_append_envelope`. Every state-config writer (mint-time
+/// entries and the owner wrappers) rejects the prefix so an owner cannot
+/// overwrite or delete a version's Seal envelope through generic config calls.
+fun assert_state_config_key_unreserved(key: &String) {
     let prefix = b"content_seal_envelope_v1:";
     let bytes = key.as_bytes();
     if (bytes.length() < prefix.length()) return;
@@ -2599,7 +2640,7 @@ fun assert_initial_config_key_unreserved(key: &String) {
         if (bytes[i] != prefix[i]) return;
         i = i + 1;
     };
-    abort EInitialEnvelopeConfigReserved
+    abort EStateConfigKeyReserved
 }
 
 fun apply_initial_content_entries(

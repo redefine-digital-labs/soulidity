@@ -6,6 +6,7 @@ use sui::{clock::{Self as clock, Clock}, event, test_scenario::{Self as ts, Scen
 use soulidity::{content::{Self as content, SoulContent}, soul::{Self as soul, SoulState},
     grant, kind_registry::{Self as kinds, KindRegistry}};
 use walrus::{blob::{Self as blob, Blob}, encoding, system, test_utils};
+use soulidity::protocol_gate;
 
 const OWNER: address = @0xA11;
 const OTHER: address = @0xB22;
@@ -20,6 +21,7 @@ fun make_blob(walrus: &mut system::System, root: u256, ctx: &mut TxContext): Blo
     payment.burn_for_testing(); result
 }
 fun setup(s: &mut Scenario): (SoulState, SoulContent, KindRegistry, Clock) {
+    let gate = protocol_gate::new_for_testing(s.ctx());
     kinds::init_for_testing(s.ctx());
     let mut walrus = system::new_for_testing(s.ctx());
     let first = make_blob(&mut walrus, 100, s.ctx()); let first_id = object::id(&first);
@@ -32,10 +34,11 @@ fun setup(s: &mut Scenario): (SoulState, SoulContent, KindRegistry, Clock) {
     let clock = clock::create_for_testing(s.ctx()); let registry = s.take_shared<KindRegistry>();
     let first = ts::take_from_address_by_id<Blob>(s, OWNER, first_id);
     let second = ts::take_from_address_by_id<Blob>(s, OWNER, second_id);
-    content::append_version_as_owner(&mut content, &mut state, &registry, kinds::kind_sprite(), name(), 3, 1,
+    content::append_version_as_owner(&gate, &mut content, &mut state, &registry, kinds::kind_sprite(), name(), 3, 1,
         0, b"envelope0", first, &clock, s.ctx());
-    content::append_version_as_owner(&mut content, &mut state, &registry, kinds::kind_sprite(), name(), 3, 1,
+    content::append_version_as_owner(&gate, &mut content, &mut state, &registry, kinds::kind_sprite(), name(), 3, 1,
         1, b"envelope1", second, &clock, s.ctx());
+    protocol_gate::destroy_for_testing(gate);
     (state, content, registry, clock)
 }
 fun finish(s: Scenario, state: SoulState, content: SoulContent, registry: KindRegistry, clock: Clock) {
@@ -48,11 +51,15 @@ fun assert_some(content: &SoulContent, version: u64) {
 fun set(content: &mut SoulContent, state: &SoulState, registry: &KindRegistry, version: u64, ctx: &TxContext) {
     content::set_active(content, state, registry, kinds::kind_sprite(), name(), version, ctx);
 }
-fun delete(content: &mut SoulContent, state: &SoulState, registry: &KindRegistry, ctx: &TxContext) {
-    content::delete_version_as_owner(content, state, registry, kinds::kind_sprite(), name(), 0, ctx);
+fun delete(content: &mut SoulContent, state: &SoulState, registry: &KindRegistry, ctx: &mut TxContext) {
+    let gate = protocol_gate::new_for_testing(ctx);
+    content::delete_version_as_owner(&gate, content, state, registry, kinds::kind_sprite(), name(), 0, ctx);
+    protocol_gate::destroy_for_testing(gate);
 }
 fun purge(content: &mut SoulContent, state: &SoulState, registry: &KindRegistry, ctx: &mut TxContext) {
-    content::purge_deleted_version_as_owner(content, state, registry, kinds::kind_sprite(), name(), 0, ctx);
+    let gate = protocol_gate::new_for_testing(ctx);
+    content::purge_deleted_version_as_owner(&gate, content, state, registry, kinds::kind_sprite(), name(), 0, ctx);
+    protocol_gate::destroy_for_testing(gate);
 }
 
 #[test]
@@ -128,9 +135,10 @@ fun passing_guards_do_not_authorize_another_owner() {
 #[test, expected_failure(abort_code = 7, location = soulidity::grant)]
 fun passing_guards_do_not_expand_a_grantees_scope() {
     let mut s = ts::begin(OWNER); let (mut state, mut content, registry, clock) = setup(&mut s);
-    let grant = grant::issue(&mut state, OTHER, grant::scope_skills(), option::none(), &clock, s.ctx());
+    let gate = protocol_gate::new_for_testing(s.ctx());
+    let grant = grant::issue(&gate, &mut state, OTHER, grant::scope_skills(), option::none(), &clock, s.ctx());
     s.next_tx(OTHER); content::assert_mutation_scope(&content, &state, 0); assert_none(&content);
-    content::delete_version_as_granted_agent(&mut content, &state, &registry, &grant, kinds::kind_sprite(), name(), 0, &clock, s.ctx()); abort 99
+    content::delete_version_as_granted_agent(&gate, &mut content, &state, &registry, &grant, kinds::kind_sprite(), name(), 0, &clock, s.ctx()); abort 99
 }
 fun invalid_slot(case: u8) {
     let mut s = ts::begin(OWNER); let (state, mut content, registry, _clock) = setup(&mut s);

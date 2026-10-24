@@ -6,6 +6,7 @@ use sui::{clock::{Self as clock, Clock}, event, test_scenario::{Self as ts, Scen
 use soulidity::{content::{Self as content, SoulContent}, soul::{Self as soul, SoulState},
     grant::{Self as grant, SoulGrant}, kind_registry::{Self as kinds, KindRegistry}};
 use walrus::{blob::{Self as blob, Blob}, encoding, system, test_utils};
+use soulidity::protocol_gate;
 
 const OWNER: address = @0xA11;
 const AGENT: address = @0xB22;
@@ -39,7 +40,10 @@ fun setup(s: &mut Scenario): (SoulState, SoulContent, KindRegistry, Clock, Blob,
 }
 fun append(content: &mut SoulContent, state: &mut SoulState, registry: &KindRegistry, expected: u64,
     bytes: vector<u8>, blob: Blob, clock: &Clock, ctx: &mut TxContext): u64 {
-    content::append_version_as_owner(content, state, registry, kinds::kind_skill(), name(), 3, 0, expected, bytes, blob, clock, ctx)
+    let gate = protocol_gate::new_for_testing(ctx);
+    let gated_result = content::append_version_as_owner(&gate, content, state, registry, kinds::kind_skill(), name(), 3, 0, expected, bytes, blob, clock, ctx);
+    protocol_gate::destroy_for_testing(gate);
+    gated_result
 }
 public struct ExpectedConfigEvent has drop { state_id: ID, soul_id: ID, updater: address, key: String }
 fun assert_config_event(state: &SoulState, key: String, updater: address) {
@@ -78,8 +82,9 @@ fun owner_append_writes_only_actual_new_version_key_and_emits_existing_event() {
 #[test]
 fun granted_append_preserves_owner_envelope_and_unrelated_config() {
     let mut s = ts::begin(OWNER); let (mut state, mut content, registry, clock, first, second) = setup(&mut s);
+    let gate = protocol_gate::new_for_testing(s.ctx());
     append(&mut content, &mut state, &registry, 0, b"owner-envelope", first, &clock, s.ctx());
-    let grant = grant::issue(&mut state, AGENT, grant::scope_skills(), option::some(1000), &clock, s.ctx());
+    let grant = grant::issue(&gate, &mut state, AGENT, grant::scope_skills(), option::some(1000), &clock, s.ctx());
     soul::upsert_state_config(&mut state, string::utf8(b"private-owner-key"), b"unchanged");
     soul::share_state(state); content::share_content(content); ts::return_shared(registry); clock.destroy_for_testing();
     transfer::public_transfer(grant, AGENT); transfer::public_transfer(second, AGENT); s.next_tx(AGENT);
@@ -87,7 +92,7 @@ fun granted_append_preserves_owner_envelope_and_unrelated_config() {
     let registry = s.take_shared<KindRegistry>(); let grant = s.take_from_sender<SoulGrant>();
     let blob = s.take_from_sender<Blob>(); let clock = clock::create_for_testing(s.ctx());
     let before_events = event::num_events();
-    assert!(content::append_version_as_granted_agent(&mut content, &mut state, &registry, &grant, kinds::kind_skill(), name(),
+    assert!(content::append_version_as_granted_agent(&gate, &mut content, &mut state, &registry, &grant, kinds::kind_skill(), name(),
         3, 0, 1, b"agent-envelope", blob, &clock, s.ctx()) == 1, 99);
     let content_id = object::id(&content);
     let key = content::envelope_config_key(content_id, kinds::kind_skill(), name(), 1);
@@ -98,6 +103,7 @@ fun granted_append_preserves_owner_envelope_and_unrelated_config() {
     assert_config_event(&state, key, AGENT);
     ts::return_shared(state); ts::return_shared(content); ts::return_shared(registry);
     clock.destroy_for_testing(); ts::return_to_sender(&s, grant); s.end();
+    protocol_gate::destroy_for_testing(gate);
 }
 
 #[test]
@@ -148,11 +154,12 @@ fun different_soul_state_precedes_cas() {
 }
 fun bad_grant(case: u8) {
     let mut s = ts::begin(OWNER); let (mut state, mut content, registry, mut clock, first, _spare) = setup(&mut s);
-    let grant = grant::issue(&mut state, AGENT, if (case == 1) grant::scope_assets() else grant::scope_skills(), option::some(1000), &clock, s.ctx());
+    let gate = protocol_gate::new_for_testing(s.ctx());
+    let grant = grant::issue(&gate, &mut state, AGENT, if (case == 1) grant::scope_assets() else grant::scope_skills(), option::some(1000), &clock, s.ctx());
     if (case == 2) clock.increment_for_testing(1000);
     if (case == 3) soul::rotate_owner(&mut state, OTHER, id(@0x44));
     s.next_tx(if (case == 0) OTHER else AGENT);
-    content::append_version_as_granted_agent(&mut content, &mut state, &registry, &grant, kinds::kind_skill(), name(),
+    content::append_version_as_granted_agent(&gate, &mut content, &mut state, &registry, &grant, kinds::kind_skill(), name(),
         3, 0, 999, vector[], first, &clock, s.ctx()); abort 99
 }
 #[test, expected_failure(abort_code = 5, location = soulidity::grant)] fun wrong_grantee_precedes_new_checks() { bad_grant(0); }
@@ -163,10 +170,11 @@ fun bad_grant(case: u8) {
 #[test, expected_failure(abort_code = 30, location = soulidity::content)]
 fun granted_competing_append_cannot_reuse_consumed_version() {
     let mut s = ts::begin(OWNER); let (mut state, mut content, registry, clock, first, second) = setup(&mut s);
-    let grant = grant::issue(&mut state, AGENT, grant::scope_skills(), option::none(), &clock, s.ctx());
+    let gate = protocol_gate::new_for_testing(s.ctx());
+    let grant = grant::issue(&gate, &mut state, AGENT, grant::scope_skills(), option::none(), &clock, s.ctx());
     append(&mut content, &mut state, &registry, 0, b"owner-won-version-zero", first, &clock, s.ctx());
     s.next_tx(AGENT);
-    content::append_version_as_granted_agent(&mut content, &mut state, &registry, &grant, kinds::kind_skill(), name(),
+    content::append_version_as_granted_agent(&gate, &mut content, &mut state, &registry, &grant, kinds::kind_skill(), name(),
         3, 0, 0, envelope(), second, &clock, s.ctx()); abort 99
 }
 
@@ -193,25 +201,29 @@ fun recovery_golden(): vector<u8> {
 #[test]
 fun author_recovery_approves_exact_binary_namespace_without_state_or_events() {
     let mut s = ts::begin(@0x11); let before = event::num_events(); let id = recovery_golden();
+    let gate = protocol_gate::new_for_testing(s.ctx());
     assert!(id.length() == 142, 99);
-    content::seal_approve_upload_recovery(id, s.ctx());
+    content::seal_approve_upload_recovery(id, &gate, s.ctx());
     assert!(event::num_events() == before, 99);
     // Opaque content/operation/nonce do not add authority over a live Soul slot.
     let mut different = recovery_golden(); *different.borrow_mut(62) = 1; *different.borrow_mut(94) = 2; *different.borrow_mut(126) = 3;
-    content::seal_approve_upload_recovery(different, s.ctx()); s.end();
+    content::seal_approve_upload_recovery(different, &gate, s.ctx()); s.end();
+    protocol_gate::destroy_for_testing(gate);
 }
 #[test, expected_failure(abort_code = 34, location = soulidity::content)]
 fun other_sender_cannot_approve_upload_recovery() {
-    let mut s = ts::begin(@0x12); content::seal_approve_upload_recovery(recovery_golden(), s.ctx()); abort 99
+    let mut s = ts::begin(@0x12); let gate = protocol_gate::new_for_testing(s.ctx()); content::seal_approve_upload_recovery(recovery_golden(), &gate, s.ctx()); abort 99
 }
 #[test, expected_failure(abort_code = 8, location = soulidity::content)]
 fun upload_recovery_id_does_not_approve_an_existing_content_document() {
     let mut s = ts::begin(OWNER); let (mut state, mut content, registry, clock, first, _spare) = setup(&mut s);
+    let gate = protocol_gate::new_for_testing(s.ctx());
     append(&mut content, &mut state, &registry, 0, envelope(), first, &clock, s.ctx());
-    content::seal_approve_content_owner(recovery_golden(), &state, &content, kinds::kind_skill(), name(), 0, s.ctx()); abort 99
+    content::seal_approve_content_owner(recovery_golden(), &gate, &state, &content, kinds::kind_skill(), name(), 0, s.ctx()); abort 99
 }
 fun bad_recovery(case: u8) {
     let mut s = ts::begin(@0x11); let mut id = recovery_golden();
+    let gate = protocol_gate::new_for_testing(s.ctx());
     if (case == 0) id = b"soul-content:old-slot-document";
     if (case == 1) id = vector::tabulate!(32, |_| 1);
     if (case == 2) id.push_back(0);
@@ -223,7 +235,7 @@ fun bad_recovery(case: u8) {
         while (i < old.length()) { *id.borrow_mut(i) = old[i]; i = i + 1; };
     };
     if (case == 7) id = vector[];
-    content::seal_approve_upload_recovery(id, s.ctx()); abort 99
+    content::seal_approve_upload_recovery(id, &gate, s.ctx()); abort 99
 }
 #[test, expected_failure(abort_code = 32, location = soulidity::content)] fun recovery_rejects_old_content_namespace() { bad_recovery(0); }
 #[test, expected_failure(abort_code = 32, location = soulidity::content)] fun recovery_rejects_32_byte_loadout_id() { bad_recovery(1); }

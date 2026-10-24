@@ -13,6 +13,7 @@ use sui::kiosk::{Self as kiosk, Kiosk};
 use sui::test_scenario::{Self as ts};
 use sui::transfer_policy::TransferPolicy;
 use usdc::usdc::USDC;
+use soulidity::protocol_gate;
 
 const ADMIN: address = @0xA;
 const PLAYER: address = @0xB;
@@ -28,6 +29,7 @@ fun exercise_settlement(mode: u8) {
     let creator_bps = if (mode == 15) 750 else if (mode == 16) 1000 else if (mode == 17) 0 else 250;
     let source_bps = if (mode == 15) 250 else if (mode == 16) 0 else if (mode == 17) 1000 else 500;
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     market::init_fresh_for_testing(ADMIN, scenario.ctx());
     scenario.next_tx(ADMIN);
     let mut config = ts::take_shared<MarketConfigV2>(&scenario);
@@ -58,7 +60,7 @@ fun exercise_settlement(mode: u8) {
     content::share_content(content);
     let state_id = object::id(&state);
     let clock = sui::clock::create_for_testing(scenario.ctx());
-    let grant_obj = grant::issue(&mut state, GRANTEE, grant::scope_seal(), option::none(), &clock, scenario.ctx());
+    let grant_obj = grant::issue(&gate, &mut state, GRANTEE, grant::scope_seal(), option::none(), &clock, scenario.ctx());
     transfer::public_transfer(grant_obj, GRANTEE);
     clock.destroy_for_testing();
     kiosk::lock(&mut seller_kiosk, personal_kiosk::borrow(&seller_cap), &policy, soul_obj);
@@ -214,6 +216,7 @@ fun exercise_settlement(mode: u8) {
     };
     ts::return_shared(config);
     ts::return_to_sender(&scenario, admin);
+    protocol_gate::destroy_for_testing(gate);
     scenario.end();
 }
 

@@ -8,6 +8,7 @@ use sui::event;
 use sui::table::{Self as table, Table};
 use soulidity::grant::{Self as grant, SoulGrant};
 use soulidity::kind_registry::{Self as kind_registry, KindRegistry};
+use soulidity::protocol_gate::{Self as protocol_gate, ProtocolGate};
 use soulidity::soul::{Self as soul, SoulState};
 use walrus::blob::{Self as blob, Blob};
 
@@ -44,6 +45,7 @@ const EUploadRecoveryIdDomain: u64 = 33;
 const EUploadRecoveryAuthor: u64 = 34;
 const EExpectedOwnershipEpochMismatch: u64 = 35;
 const EExpectedActiveBindingMismatch: u64 = 36;
+const ESoulListed: u64 = 37;
 
 const DOCUMENT_ID_VERSION: u8 = 1;
 const DOCUMENT_ID_NONCE_BYTES: u64 = 16;
@@ -445,6 +447,7 @@ public(package) fun share_content(content: SoulContent) {
 // ── Append (owner) ────────────────────────────────────────────────────
 
 public fun append_version_as_owner(
+    gate: &ProtocolGate,
     content: &mut SoulContent,
     state: &mut SoulState,
     registry: &KindRegistry,
@@ -458,8 +461,10 @@ public fun append_version_as_owner(
     clock: &Clock,
     ctx: &mut TxContext,
 ): u64 {
+    protocol_gate::assert_live(gate);
     soul::assert_owner(state, ctx.sender());
     assert_content_matches_state(content, state);
+    assert_not_listed(state);
     assert_append_envelope(content, kind, name, expected_version_index, &encrypted_envelope);
     let version = append_version_impl(
         content,
@@ -479,6 +484,7 @@ public fun append_version_as_owner(
 // ── Append (granted agent) ────────────────────────────────────────────
 
 public fun append_version_as_granted_agent(
+    gate: &ProtocolGate,
     content: &mut SoulContent,
     state: &mut SoulState,
     registry: &KindRegistry,
@@ -493,7 +499,9 @@ public fun append_version_as_granted_agent(
     clock: &Clock,
     ctx: &mut TxContext,
 ): u64 {
+    protocol_gate::assert_live(gate);
     assert_content_matches_state(content, state);
+    assert_not_listed(state);
     let descriptor = kind_registry::borrow_descriptor(registry, kind);
     let scope_mask = kind_registry::descriptor_default_grant_scope_mask(descriptor);
     grant::assert_active_with_scope(state, soul_grant, scope_mask, clock, ctx);
@@ -755,6 +763,7 @@ fun append_version_impl(
 // ── Delete (owner) ────────────────────────────────────────────────────
 
 public fun delete_version_as_owner(
+    gate: &ProtocolGate,
     content: &mut SoulContent,
     state: &SoulState,
     registry: &KindRegistry,
@@ -763,8 +772,10 @@ public fun delete_version_as_owner(
     version_index: u64,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     soul::assert_owner(state, ctx.sender());
     assert_content_matches_state(content, state);
+    assert_not_listed(state);
     assert_canonical_name_for_kind(kind, &name);
     let descriptor = kind_registry::borrow_descriptor(registry, kind);
     let kind_name = *kind_registry::descriptor_name(descriptor);
@@ -778,6 +789,7 @@ public fun delete_version_as_owner(
 // ── Delete (granted agent) ────────────────────────────────────────────
 
 public fun delete_version_as_granted_agent(
+    gate: &ProtocolGate,
     content: &mut SoulContent,
     state: &SoulState,
     registry: &KindRegistry,
@@ -788,7 +800,9 @@ public fun delete_version_as_granted_agent(
     clock: &Clock,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     assert_content_matches_state(content, state);
+    assert_not_listed(state);
     assert_canonical_name_for_kind(kind, &name);
     let descriptor = kind_registry::borrow_descriptor(registry, kind);
     let kind_name = *kind_registry::descriptor_name(descriptor);
@@ -830,6 +844,7 @@ fun mark_slot_deleted(
 // ── Purge (owner only) ────────────────────────────────────────────────
 
 public fun purge_deleted_version_as_owner(
+    gate: &ProtocolGate,
     content: &mut SoulContent,
     state: &SoulState,
     registry: &KindRegistry,
@@ -838,8 +853,10 @@ public fun purge_deleted_version_as_owner(
     version_index: u64,
     ctx: &mut TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     soul::assert_owner(state, ctx.sender());
     assert_content_matches_state(content, state);
+    assert_not_listed(state);
     assert_canonical_name_for_kind(kind, &name);
     let descriptor = kind_registry::borrow_descriptor(registry, kind);
     let kind_name = *kind_registry::descriptor_name(descriptor);
@@ -958,9 +975,13 @@ public(package) fun clear_active(
 // Declared `public` (not `entry`) so other Move modules can compose them.
 // Seal client only needs the function to be callable in a PTB dryRun,
 // which `public fun` satisfies.
+// Every approval takes `gate: &ProtocolGate` right after `id` (Seal requires
+// the document id to be the first argument) and aborts before any other check
+// while the protocol is paused or this package version has been superseded.
 
 public fun seal_approve_content_owner(
     id: vector<u8>,
+    gate: &ProtocolGate,
     state: &SoulState,
     content: &SoulContent,
     kind: u32,
@@ -968,6 +989,7 @@ public fun seal_approve_content_owner(
     version_index: u64,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     soul::assert_owner(state, ctx.sender());
     assert_content_matches_state(content, state);
     assert_canonical_name_for_kind(kind, &name);
@@ -980,6 +1002,7 @@ public fun seal_approve_content_owner(
 
 public fun seal_approve_content_granted_agent(
     id: vector<u8>,
+    gate: &ProtocolGate,
     state: &SoulState,
     content: &SoulContent,
     soul_grant: &SoulGrant,
@@ -989,6 +1012,7 @@ public fun seal_approve_content_granted_agent(
     clock: &Clock,
     ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     assert_content_matches_state(content, state);
     assert_canonical_name_for_kind(kind, &name);
     assert_matching_document_id(id, object::id(content), kind, name, version_index);
@@ -1003,6 +1027,7 @@ public fun seal_approve_content_granted_agent(
 /// `READ_OWNER` and Seal encryption, so the owner read path remains available.
 public fun seal_approve_content_public(
     id: vector<u8>,
+    gate: &ProtocolGate,
     state: &SoulState,
     content: &SoulContent,
     kind: u32,
@@ -1010,6 +1035,7 @@ public fun seal_approve_content_public(
     version_index: u64,
     _ctx: &TxContext,
 ) {
+    protocol_gate::assert_live(gate);
     assert_content_matches_state(content, state);
     assert_canonical_name_for_kind(kind, &name);
     assert_matching_document_id(id, object::id(content), kind, name, version_index);
@@ -1023,7 +1049,8 @@ public fun seal_approve_content_public(
 /// Author-only recovery for an uploaded, not-yet-appended ciphertext. This
 /// separate fixed-length namespace cannot approve any existing content ID.
 /// content ID / operation hash / nonce are opaque bindings, not state authority.
-public fun seal_approve_upload_recovery(id: vector<u8>, ctx: &TxContext) {
+public fun seal_approve_upload_recovery(id: vector<u8>, gate: &ProtocolGate, ctx: &TxContext) {
+    protocol_gate::assert_live(gate);
     let domain = b"soul-content-upload-recovery:";
     let offset = domain.length();
     assert!(id.length() == offset + 1 + 32 + 32 + 32 + 16, EUploadRecoveryIdLength);
@@ -1087,6 +1114,13 @@ public(package) fun assert_slot_paid_read_allowed(
 }
 
 // ── Validation ────────────────────────────────────────────────────────
+
+/// Content, envelopes and active bindings are frozen while a `market::SoulListing`
+/// holds the Soul: a buyer must receive exactly the content they inspected.
+/// Sellers cancel the listing first; Seal reads are unaffected.
+fun assert_not_listed(state: &SoulState) {
+    assert!(!soul::is_listed(state), ESoulListed);
+}
 
 fun assert_content_matches_state(content: &SoulContent, state: &SoulState) {
     assert!(content.soul_id == soul::soul_id(state), EContentMismatch);

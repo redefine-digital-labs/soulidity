@@ -6,6 +6,7 @@ use std::{bcs, string::{Self as string, String}};
 use std::hash;
 use soulidity::soul::{Self as soul, SoulState};
 use soulidity::animacraft_equipment_adapter_v8 as equipment_adapter;
+use soulidity::protocol_gate::{Self as protocol_gate, ProtocolGate};
 use animacraft_v8_core::protocol_config_v8::ProtocolConfigV8;
 use animacraft_v8_runtime::runtime_v8::{Self as runtime, MakerLoadoutV8};
 
@@ -69,7 +70,8 @@ public fun seal_id(state: &SoulState, owner: address, ownership_epoch: u64): vec
     }))
 }
 
-public fun seal_approve(id: vector<u8>, state: &SoulState, expected_epoch: u64, ctx: &TxContext) {
+public fun seal_approve(id: vector<u8>, gate: &ProtocolGate, state: &SoulState, expected_epoch: u64, ctx: &TxContext) {
+    protocol_gate::assert_live(gate);
     assert_scope(state, expected_epoch, ctx);
     assert!(id == seal_id(state, ctx.sender(), expected_epoch), ESealIdMismatch);
 }
@@ -164,10 +166,12 @@ fun commit(state: &mut SoulState, expected_revision: u64, request_id: vector<u8>
 
 /// Save a verified current equipment capture. Replay is resolved before new
 /// capture/CAS validation; the receipt stays queryable after equipment closure.
-public fun save(state: &mut SoulState, equipment: &MakerLoadoutV8, protocol: &ProtocolConfigV8,
+public fun save(
+    gate: &ProtocolGate, state: &mut SoulState, equipment: &MakerLoadoutV8, protocol: &ProtocolConfigV8,
     expected_epoch: u64, expected_revision: u64, request_id: vector<u8>,
     blob_object_id: ID, blob_id: String, cipher_sha256: vector<u8>, cipher_bytes: u64,
     equipment_revision: u64, equipment_commitment: vector<u8>, ctx: &TxContext): u64 {
+    protocol_gate::assert_live(gate);
     assert_scope(state, expected_epoch, ctx);
     let ciphertext = CipherRefV1 { blob_object_id, blob_id, sha256: cipher_sha256, byte_length: cipher_bytes };
     let capture = option::some(CaptureV1 { equipment_id: object::id(equipment),
@@ -183,8 +187,10 @@ public fun save(state: &mut SoulState, equipment: &MakerLoadoutV8, protocol: &Pr
 
 /// Rename/delete modify only encrypted library metadata, not old equipment.
 /// No market-primary/listed gate: match the existing owner-only library policy.
-public fun update(state: &mut SoulState, expected_epoch: u64, expected_revision: u64, request_id: vector<u8>,
+public fun update(
+    gate: &ProtocolGate, state: &mut SoulState, expected_epoch: u64, expected_revision: u64, request_id: vector<u8>,
     blob_object_id: ID, blob_id: String, cipher_sha256: vector<u8>, cipher_bytes: u64, ctx: &TxContext): u64 {
+    protocol_gate::assert_live(gate);
     assert_scope(state, expected_epoch, ctx);
     let ciphertext = CipherRefV1 { blob_object_id, blob_id, sha256: cipher_sha256, byte_length: cipher_bytes };
     let capture = option::none();

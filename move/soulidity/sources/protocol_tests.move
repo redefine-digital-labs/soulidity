@@ -24,6 +24,7 @@ use sui::test_scenario::{Self as ts};
 use sui::transfer_policy::{Self as transfer_policy, TransferPolicy, TransferPolicyCap};
 use usdc::usdc::USDC;
 use walrus::{blob, encoding, system, test_utils};
+use soulidity::protocol_gate;
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -464,10 +465,12 @@ fun issue_default_grant(
     grantee: address,
     scope_mask: u64,
 ): ID {
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     scenario.next_tx(owner);
     let test_clock = clock::create_for_testing(scenario.ctx());
     let mut state = ts::take_shared<SoulState>(scenario);
     let g = grant::issue(
+        &gate,
         &mut state,
         grantee,
         scope_mask,
@@ -479,12 +482,14 @@ fun issue_default_grant(
     transfer::public_transfer(g, grantee);
     test_clock.destroy_for_testing();
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     grant_id
 }
 
 #[test]
 fun issue_to_grantee_entry_transfers_grant() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector[]);
@@ -493,6 +498,7 @@ fun issue_to_grantee_entry_transfers_grant() {
     let test_clock = clock::create_for_testing(scenario.ctx());
     let mut state = ts::take_shared<SoulState>(&scenario);
     grant::issue_to_grantee(
+        &gate,
         &mut state,
         AGENT,
         grant::scope_seal(),
@@ -507,6 +513,7 @@ fun issue_to_grantee_entry_transfers_grant() {
     let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
     assert!(grant::grantee(&g) == AGENT, 0);
     ts::return_to_address(AGENT, g);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -1001,6 +1008,7 @@ fun register_kind_accepts_seal_scope_for_doc_like_kind() {
 #[test, expected_failure(abort_code = soulidity::content::EOpNotAllowed)]
 fun admin_registered_kind_enforces_configured_ops_and_reads() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
@@ -1036,6 +1044,7 @@ fun admin_registered_kind_enforces_configured_ops_and_reads() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let version_index = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -1061,6 +1070,7 @@ fun admin_registered_kind_enforces_configured_ops_and_reads() {
     );
     content::seal_approve_content_owner(
         id,
+        &gate,
         &state,
         &content_obj,
         notes_kind,
@@ -1070,6 +1080,7 @@ fun admin_registered_kind_enforces_configured_ops_and_reads() {
     );
 
     content::delete_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -1667,6 +1678,7 @@ fun mint_with_state_config_emits_upserted_events() {
 #[test, expected_failure(abort_code = soulidity::content::EOpNotAllowed)]
 fun soul_doc_append_as_owner_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -1684,6 +1696,7 @@ fun soul_doc_append_as_owner_aborts() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let _ = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -1703,6 +1716,7 @@ fun soul_doc_append_as_owner_aborts() {
 #[test, expected_failure(abort_code = soulidity::content::EOwnerReadModeRequired)]
 fun append_version_rejects_slot_without_owner_read() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -1720,6 +1734,7 @@ fun append_version_rejects_slot_without_owner_read() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let _ = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -1739,6 +1754,7 @@ fun append_version_rejects_slot_without_owner_read() {
 #[test, expected_failure(abort_code = soulidity::content::EOpNotAllowed)]
 fun soul_doc_delete_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector[]);
@@ -1748,6 +1764,7 @@ fun soul_doc_delete_aborts() {
     let mut content_obj = ts::take_shared<SoulContent>(&scenario);
     let state = ts::take_shared<SoulState>(&scenario);
     content::delete_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -1762,6 +1779,7 @@ fun soul_doc_delete_aborts() {
 #[test, expected_failure(abort_code = soulidity::content::EOpNotAllowed)]
 fun soul_doc_purge_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector[]);
@@ -1771,6 +1789,7 @@ fun soul_doc_purge_aborts() {
     let mut content_obj = ts::take_shared<SoulContent>(&scenario);
     let state = ts::take_shared<SoulState>(&scenario);
     content::purge_deleted_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -1811,6 +1830,7 @@ fun soul_doc_set_active_aborts() {
 #[test]
 fun memory_append_and_delete_succeed() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -1828,6 +1848,7 @@ fun memory_append_and_delete_succeed() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let v = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -1848,6 +1869,7 @@ fun memory_append_and_delete_succeed() {
     );
 
     content::delete_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -1865,12 +1887,14 @@ fun memory_append_and_delete_succeed() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(content_obj);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test, expected_failure(abort_code = soulidity::content::EMemoryNameMismatch)]
 fun memory_append_wrong_name_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -1888,6 +1912,7 @@ fun memory_append_wrong_name_aborts() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let _ = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -1907,6 +1932,7 @@ fun memory_append_wrong_name_aborts() {
 #[test]
 fun memory_purge_after_delete_succeeds() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -1924,6 +1950,7 @@ fun memory_purge_after_delete_succeeds() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let v = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -1938,6 +1965,7 @@ fun memory_purge_after_delete_succeeds() {
         scenario.ctx(),
     );
     content::delete_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -1947,6 +1975,7 @@ fun memory_purge_after_delete_succeeds() {
         scenario.ctx(),
     );
     content::purge_deleted_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -1964,6 +1993,7 @@ fun memory_purge_after_delete_succeeds() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(content_obj);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -1996,6 +2026,7 @@ fun memory_set_active_aborts() {
 #[test]
 fun set_active_content_derives_binding_policy_from_slot() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -2014,6 +2045,7 @@ fun set_active_content_derives_binding_policy_from_slot() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let version_index = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -2049,12 +2081,14 @@ fun set_active_content_derives_binding_policy_from_slot() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(content_obj);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test]
 fun skill_full_crud_succeeds() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector[]);
@@ -2065,6 +2099,7 @@ fun skill_full_crud_succeeds() {
     let state = ts::take_shared<SoulState>(&scenario);
 
     content::delete_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -2074,6 +2109,7 @@ fun skill_full_crud_succeeds() {
         scenario.ctx(),
     );
     content::purge_deleted_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -2090,6 +2126,7 @@ fun skill_full_crud_succeeds() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(content_obj);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -2122,6 +2159,7 @@ fun skill_set_active_aborts() {
 #[test, expected_failure(abort_code = soulidity::content::EActiveVersionDeleted)]
 fun delete_active_sprite_version_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -2131,6 +2169,7 @@ fun delete_active_sprite_version_aborts() {
     let mut content_obj = ts::take_shared<SoulContent>(&scenario);
     let state = ts::take_shared<SoulState>(&scenario);
     content::delete_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -2145,6 +2184,7 @@ fun delete_active_sprite_version_aborts() {
 #[test]
 fun clear_active_then_delete_sprite_succeeds() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -2166,6 +2206,7 @@ fun clear_active_then_delete_sprite_succeeds() {
     assert!(!content::has_active(&content_obj, kind_registry::kind_sprite()), 0);
 
     content::delete_version_as_owner(
+        &gate,
         &mut content_obj,
         &state,
         &kind_registry_obj,
@@ -2183,6 +2224,7 @@ fun clear_active_then_delete_sprite_succeeds() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(content_obj);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -2193,6 +2235,7 @@ fun clear_active_then_delete_sprite_succeeds() {
 #[test]
 fun soul_doc_owner_seal_reads() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector[]);
@@ -2208,6 +2251,7 @@ fun soul_doc_owner_seal_reads() {
     );
     content::seal_approve_content_owner(
         id,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_soul_doc(),
@@ -2217,12 +2261,14 @@ fun soul_doc_owner_seal_reads() {
     );
     ts::return_shared(state);
     ts::return_shared(content_obj);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test]
 fun soul_doc_grant_seal_reads_with_seal_scope() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector[]);
@@ -2242,6 +2288,7 @@ fun soul_doc_grant_seal_reads_with_seal_scope() {
     );
     content::seal_approve_content_granted_agent(
         id,
+        &gate,
         &state,
         &content_obj,
         &g,
@@ -2256,12 +2303,14 @@ fun soul_doc_grant_seal_reads_with_seal_scope() {
     ts::return_to_address(AGENT, g);
     ts::return_shared(state);
     ts::return_shared(content_obj);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test, expected_failure(abort_code = soulidity::content::EReadModeNotAllowed)]
 fun soul_doc_public_seal_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector[]);
@@ -2277,6 +2326,7 @@ fun soul_doc_public_seal_aborts() {
     );
     content::seal_approve_content_public(
         id,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_soul_doc(),
@@ -2290,6 +2340,7 @@ fun soul_doc_public_seal_aborts() {
 #[test]
 fun memory_owner_and_grant_seal_read() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector[]);
@@ -2308,6 +2359,7 @@ fun memory_owner_and_grant_seal_read() {
     );
     content::seal_approve_content_owner(
         id_owner,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_memory(),
@@ -2332,6 +2384,7 @@ fun memory_owner_and_grant_seal_read() {
     );
     content::seal_approve_content_granted_agent(
         id_grant,
+        &gate,
         &state2,
         &content_obj2,
         &g,
@@ -2345,12 +2398,14 @@ fun memory_owner_and_grant_seal_read() {
     ts::return_to_address(AGENT, g);
     ts::return_shared(state2);
     ts::return_shared(content_obj2);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test, expected_failure(abort_code = soulidity::content::EReadModeNotAllowed)]
 fun memory_public_seal_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_invariant_only(), vector[]);
@@ -2366,6 +2421,7 @@ fun memory_public_seal_aborts() {
     );
     content::seal_approve_content_public(
         id,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_memory(),
@@ -2379,6 +2435,7 @@ fun memory_public_seal_aborts() {
 #[test, expected_failure(abort_code = soulidity::content::EReadModeNotAllowed)]
 fun skill_public_seal_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector[]);
@@ -2394,6 +2451,7 @@ fun skill_public_seal_aborts() {
     );
     content::seal_approve_content_public(
         id,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_skill(),
@@ -2407,6 +2465,7 @@ fun skill_public_seal_aborts() {
 #[test]
 fun skill_owner_and_grant_seal_read() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector[]);
@@ -2424,6 +2483,7 @@ fun skill_owner_and_grant_seal_read() {
     );
     content::seal_approve_content_owner(
         id_owner,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_skill(),
@@ -2447,6 +2507,7 @@ fun skill_owner_and_grant_seal_read() {
     );
     content::seal_approve_content_granted_agent(
         id_grant,
+        &gate,
         &state2,
         &content_obj2,
         &g,
@@ -2460,12 +2521,14 @@ fun skill_owner_and_grant_seal_read() {
     ts::return_to_address(AGENT, g);
     ts::return_shared(state2);
     ts::return_shared(content_obj2);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test]
 fun sprite_all_four_modes_pass_when_mask_full() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -2482,6 +2545,7 @@ fun sprite_all_four_modes_pass_when_mask_full() {
     );
     content::seal_approve_content_owner(
         id_owner,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_sprite(),
@@ -2498,6 +2562,7 @@ fun sprite_all_four_modes_pass_when_mask_full() {
     );
     content::seal_approve_content_public(
         id_public,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_sprite(),
@@ -2523,6 +2588,7 @@ fun sprite_all_four_modes_pass_when_mask_full() {
     );
     content::seal_approve_content_granted_agent(
         id_grant,
+        &gate,
         &state2,
         &content_obj2,
         &g,
@@ -2536,12 +2602,14 @@ fun sprite_all_four_modes_pass_when_mask_full() {
     ts::return_to_address(AGENT, g);
     ts::return_shared(state2);
     ts::return_shared(content_obj2);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test]
 fun audio_owner_public_paid_and_active_paths() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_audio_active(), vector[]);
@@ -2565,6 +2633,7 @@ fun audio_owner_public_paid_and_active_paths() {
     );
     content::seal_approve_content_owner(
         id_owner,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_audio(),
@@ -2580,6 +2649,7 @@ fun audio_owner_public_paid_and_active_paths() {
     );
     content::seal_approve_content_public(
         id_public,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_audio(),
@@ -2624,6 +2694,7 @@ fun audio_owner_public_paid_and_active_paths() {
     );
     paid_access::seal_approve_content_paid_access(
         id_paid,
+        &gate,
         &state2,
         &paid_list,
         &content_obj2,
@@ -2639,6 +2710,7 @@ fun audio_owner_public_paid_and_active_paths() {
     ts::return_shared(paid_list);
     ts::return_shared(state2);
     ts::return_shared(content_obj2);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -2700,6 +2772,7 @@ fun sprite_pure_public_slot_append_aborts() {
 #[test]
 fun grant_scope_assets_reads_sprite_and_audio() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
@@ -2769,6 +2842,7 @@ fun grant_scope_assets_reads_sprite_and_audio() {
     );
     content::seal_approve_content_granted_agent(
         id_sprite,
+        &gate,
         &state,
         &content_obj,
         &g,
@@ -2786,6 +2860,7 @@ fun grant_scope_assets_reads_sprite_and_audio() {
     );
     content::seal_approve_content_granted_agent(
         id_audio,
+        &gate,
         &state,
         &content_obj,
         &g,
@@ -2800,12 +2875,14 @@ fun grant_scope_assets_reads_sprite_and_audio() {
     ts::return_to_address(AGENT, g);
     ts::return_shared(state);
     ts::return_shared(content_obj);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test, expected_failure(abort_code = soulidity::grant::EGrantScopeMissing)]
 fun grant_scope_skills_cannot_read_sprite() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -2824,6 +2901,7 @@ fun grant_scope_skills_cannot_read_sprite() {
     );
     content::seal_approve_content_granted_agent(
         id,
+        &gate,
         &state,
         &content_obj,
         &g,
@@ -2967,6 +3045,7 @@ fun configure_paid_access_kind_duplicate_aborts() {
 #[test]
 fun paid_access_purchase_grants_seal_read_for_sprite() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -3005,6 +3084,7 @@ fun paid_access_purchase_grants_seal_read_for_sprite() {
     );
     paid_access::seal_approve_content_paid_access(
         id,
+        &gate,
         &state,
         &paid_list,
         &content_obj,
@@ -3020,6 +3100,7 @@ fun paid_access_purchase_grants_seal_read_for_sprite() {
     ts::return_shared(paid_list);
     ts::return_shared(state);
     ts::return_shared(content_obj);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -3151,6 +3232,7 @@ fun paid_access_purchase_requires_current_owner_config_epoch() {
 #[test, expected_failure(abort_code = soulidity::paid_access::EMismatchedLengths)]
 fun cleanup_stale_entries_rejects_mismatched_vectors() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -3159,6 +3241,7 @@ fun cleanup_stale_entries_rejects_mismatched_vectors() {
     let mut paid_list = ts::take_shared<SoulPaidAccessList>(&scenario);
     let state = ts::take_shared<SoulState>(&scenario);
     paid_access::cleanup_stale_entries(
+        &gate,
         &mut paid_list,
         &state,
         vector[BUYER],
@@ -3232,6 +3315,7 @@ fun owner_cannot_purchase_paid_access() {
 #[test]
 fun add_access_per_kind_free_grants_only_that_kind() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -3250,6 +3334,7 @@ fun add_access_per_kind_free_grants_only_that_kind() {
     let state = ts::take_shared<SoulState>(&scenario);
     let test_clock = clock::create_for_testing(scenario.ctx());
     paid_access::add_access(
+        &gate,
         &mut paid_list,
         &state,
         &kind_registry_obj,
@@ -3271,12 +3356,14 @@ fun add_access_per_kind_free_grants_only_that_kind() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(paid_list);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test]
 fun revoke_kind_revokes_only_that_kind() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -3295,6 +3382,7 @@ fun revoke_kind_revokes_only_that_kind() {
     let state = ts::take_shared<SoulState>(&scenario);
     let test_clock = clock::create_for_testing(scenario.ctx());
     paid_access::add_access(
+        &gate,
         &mut paid_list,
         &state,
         &kind_registry_obj,
@@ -3306,6 +3394,7 @@ fun revoke_kind_revokes_only_that_kind() {
         scenario.ctx(),
     );
     paid_access::revoke_access(
+        &gate,
         &mut paid_list,
         &state,
         BUYER,
@@ -3318,6 +3407,7 @@ fun revoke_kind_revokes_only_that_kind() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(paid_list);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -3362,6 +3452,7 @@ fun delete_paid_access_kind_removes_config_only() {
 #[test]
 fun owner_can_append_skill_version() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
@@ -3386,6 +3477,7 @@ fun owner_can_append_skill_version() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let v = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -3409,12 +3501,14 @@ fun owner_can_append_skill_version() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(content_obj);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test]
 fun granted_agent_can_append_skill_version() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -3435,6 +3529,7 @@ fun granted_agent_can_append_skill_version() {
     let b = ts::take_from_address<blob::Blob>(&scenario, AGENT);
 
     let v = content::append_version_as_granted_agent(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -3457,12 +3552,14 @@ fun granted_agent_can_append_skill_version() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(content_obj);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test]
 fun deprecated_kind_blocks_new_append_but_keeps_historical_read() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector[]);
@@ -3485,6 +3582,7 @@ fun deprecated_kind_blocks_new_append_but_keeps_historical_read() {
     );
     content::seal_approve_content_owner(
         id,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_skill(),
@@ -3495,12 +3593,14 @@ fun deprecated_kind_blocks_new_append_but_keeps_historical_read() {
 
     ts::return_shared(state);
     ts::return_shared(content_obj);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
 #[test, expected_failure(abort_code = soulidity::kind_registry::EKindDeprecated)]
 fun deprecated_kind_rejects_new_append() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -3525,6 +3625,7 @@ fun deprecated_kind_rejects_new_append() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let _ = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -3544,6 +3645,7 @@ fun deprecated_kind_rejects_new_append() {
 #[test, expected_failure(abort_code = soulidity::content::EDocumentIdPrefixMismatch)]
 fun seal_approve_rejects_wrong_kind_in_document_id() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector[]);
@@ -3559,6 +3661,7 @@ fun seal_approve_rejects_wrong_kind_in_document_id() {
     );
     content::seal_approve_content_owner(
         id,
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_skill(),
@@ -3572,6 +3675,7 @@ fun seal_approve_rejects_wrong_kind_in_document_id() {
 #[test, expected_failure(abort_code = soulidity::content::EDocumentIdInvalidLength)]
 fun seal_approve_rejects_short_document_id() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_skill(), vector[]);
@@ -3581,6 +3685,7 @@ fun seal_approve_rejects_short_document_id() {
     let content_obj = ts::take_shared<SoulContent>(&scenario);
     content::seal_approve_content_owner(
         b"too-short",
+        &gate,
         &state,
         &content_obj,
         kind_registry::kind_skill(),
@@ -3594,6 +3699,7 @@ fun seal_approve_rejects_short_document_id() {
 #[test, expected_failure(abort_code = soulidity::content::EKindRequiresDownloadPolicy)]
 fun append_skill_with_nonzero_policy_aborts() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_invariant_with_extras(
@@ -3611,6 +3717,7 @@ fun append_skill_with_nonzero_policy_aborts() {
     let b = ts::take_from_address<blob::Blob>(&scenario, MINTER);
 
     let _ = content::append_version_as_owner(
+        &gate,
         &mut content_obj,
         &mut state,
         &kind_registry_obj,
@@ -3839,6 +3946,7 @@ fun admin_can_adjust_transfer_policy_rules_after_init() {
 #[test]
 fun version_fields_cover_persistent_objects() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
 
@@ -3915,6 +4023,7 @@ fun version_fields_cover_persistent_objects() {
         12,
     );
     paid_access::add_access(
+        &gate,
         &mut paid_list,
         &state,
         &kind_registry_obj,
@@ -3932,6 +4041,7 @@ fun version_fields_cover_persistent_objects() {
     );
 
     let grant_obj = grant::issue(
+        &gate,
         &mut state,
         AGENT,
         grant::scope_seal(),
@@ -4005,6 +4115,7 @@ fun version_fields_cover_persistent_objects() {
     ts::return_shared(state);
     ts::return_shared(content_obj);
     ts::return_shared(paid_list);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -4104,6 +4215,7 @@ fun paid_access_revoke_drops_empty_buyer_row() {
     // accumulate empty `Table<u32, KindPaidEntry>` shells per historical
     // buyer.
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -4122,6 +4234,7 @@ fun paid_access_revoke_drops_empty_buyer_row() {
     let state = ts::take_shared<SoulState>(&scenario);
     let test_clock = clock::create_for_testing(scenario.ctx());
     paid_access::add_access(
+        &gate,
         &mut paid_list,
         &state,
         &kind_registry_obj,
@@ -4135,6 +4248,7 @@ fun paid_access_revoke_drops_empty_buyer_row() {
     assert!(paid_access::has_buyer_row(&paid_list, BUYER), 0);
 
     paid_access::revoke_access(
+        &gate,
         &mut paid_list,
         &state,
         BUYER,
@@ -4148,6 +4262,7 @@ fun paid_access_revoke_drops_empty_buyer_row() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(paid_list);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -4157,6 +4272,7 @@ fun paid_access_cleanup_drops_empty_buyer_row_on_rotation() {
     // `cleanup_stale_entries` for the only configured kind must reclaim the
     // outer row, not just the inner kind entry.
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(&mut scenario, MINTER, minter_kiosk_id, spec_with_sprite_active(), vector[]);
@@ -4175,6 +4291,7 @@ fun paid_access_cleanup_drops_empty_buyer_row_on_rotation() {
     let mut state = ts::take_shared<SoulState>(&scenario);
     let test_clock = clock::create_for_testing(scenario.ctx());
     paid_access::add_access(
+        &gate,
         &mut paid_list,
         &state,
         &kind_registry_obj,
@@ -4193,6 +4310,7 @@ fun paid_access_cleanup_drops_empty_buyer_row_on_rotation() {
 
     // Anyone can call cleanup; AGENT is fine.
     paid_access::cleanup_stale_entries(
+        &gate,
         &mut paid_list,
         &state,
         vector[BUYER],
@@ -4206,6 +4324,7 @@ fun paid_access_cleanup_drops_empty_buyer_row_on_rotation() {
     ts::return_shared(kind_registry_obj);
     ts::return_shared(paid_list);
     ts::return_shared(state);
+    protocol_gate::destroy_for_testing(gate);
     ts::end(scenario);
 }
 
@@ -4391,6 +4510,7 @@ fun soul_state_destroy_helper_smoke() {
 #[test, expected_failure(abort_code = soulidity::grant::EGrantStillActive)]
 fun destroy_invalidated_grant_aborts_when_grant_still_active() {
     let mut scenario = ts::begin(ADMIN);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
     init_protocol_for_testing(&mut scenario, ADMIN);
     let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
     let _ = setup_and_mint_native(
@@ -4415,7 +4535,7 @@ fun destroy_invalidated_grant_aborts_when_grant_still_active() {
     let test_clock = clock::create_for_testing(scenario.ctx());
     let mut state = ts::take_shared<SoulState>(&scenario);
     let g = ts::take_from_address<SoulGrant>(&scenario, AGENT);
-    grant::destroy_invalidated_grant(g, &mut state, &test_clock, scenario.ctx());
+    grant::destroy_invalidated_grant(&gate, g, &mut state, &test_clock, scenario.ctx());
     abort 42
 }
 
@@ -4505,4 +4625,94 @@ fun delete_soul_listing_aborts_when_active() {
     // listing.is_active = true here — delete_soul_listing must abort.
     market::delete_soul_listing(listing, scenario.ctx());
     abort 42
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 2026-10-24 fix pass: content mutations freeze for the whole listing
+// lifecycle (list → write rejected → cancel → write restored).
+// ─────────────────────────────────────────────────────────────────────
+
+fun list_minted_soul_for_lifecycle(scenario: &mut ts::Scenario, minter_kiosk_id: ID) {
+    scenario.next_tx(MINTER);
+    let config = ts::take_shared<MarketConfig>(scenario);
+    let registry = ts::take_shared<KioskRegistry>(scenario);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(scenario);
+    let listing = market::list_soul_fixed_price(&config, &registry, &mut kiosk_obj, &cap, &mut state, SOUL_PRICE, scenario.ctx());
+    market::finalize_soul_listing(listing);
+    ts::return_shared(state); ts::return_to_address(MINTER, cap); ts::return_shared(kiosk_obj);
+    ts::return_shared(registry); ts::return_shared(config);
+}
+
+fun append_memory_for_lifecycle(scenario: &mut ts::Scenario): u64 {
+    scenario.next_tx(MINTER);
+    let gate = protocol_gate::new_for_testing(scenario.ctx());
+    let kind_registry_obj = ts::take_shared<KindRegistry>(scenario);
+    let mut content_obj = ts::take_shared<SoulContent>(scenario);
+    let mut state = ts::take_shared<SoulState>(scenario);
+    let test_clock = clock::create_for_testing(scenario.ctx());
+    let b = ts::take_from_address<blob::Blob>(scenario, MINTER);
+    let version = content::append_version_as_owner(
+        &gate,
+        &mut content_obj,
+        &mut state,
+        &kind_registry_obj,
+        kind_registry::kind_memory(),
+        b"default".to_string(),
+        read_owner_grant(),
+        content::download_policy_public(),
+        1,
+        b"test-encrypted-envelope",
+        b,
+        &test_clock,
+        scenario.ctx(),
+    );
+    test_clock.destroy_for_testing();
+    ts::return_shared(state); ts::return_shared(content_obj); ts::return_shared(kind_registry_obj);
+    protocol_gate::destroy_for_testing(gate);
+    version
+}
+
+#[test, expected_failure(abort_code = soulidity::content::ESoulListed)]
+fun listed_soul_rejects_memory_append_through_real_listing() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
+    );
+    list_minted_soul_for_lifecycle(&mut scenario, minter_kiosk_id);
+    let _ = append_memory_for_lifecycle(&mut scenario);
+    abort 42
+}
+
+#[test]
+fun cancelled_real_listing_restores_memory_append() {
+    let mut scenario = ts::begin(ADMIN);
+    init_protocol_for_testing(&mut scenario, ADMIN);
+    let minter_kiosk_id = init_personal_kiosk_for_sender(&mut scenario, MINTER);
+    let _ = setup_and_mint_invariant_with_extras(
+        &mut scenario,
+        MINTER,
+        minter_kiosk_id,
+        vector[blob_req(MINTER, BLOB_ROOT_HASH_EXTRA_A)],
+    );
+    list_minted_soul_for_lifecycle(&mut scenario, minter_kiosk_id);
+
+    scenario.next_tx(MINTER);
+    let mut kiosk_obj = ts::take_shared_by_id<Kiosk>(&scenario, minter_kiosk_id);
+    let cap = ts::take_from_address<PersonalKioskCap>(&scenario, MINTER);
+    let mut state = ts::take_shared<SoulState>(&scenario);
+    let mut listing = ts::take_shared<SoulListing>(&scenario);
+    market::cancel_soul_listing(&mut kiosk_obj, &cap, &mut state, &mut listing);
+    assert!(!soul::is_listed(&state), 99);
+    ts::return_shared(listing); ts::return_shared(state); ts::return_to_address(MINTER, cap); ts::return_shared(kiosk_obj);
+
+    let version = append_memory_for_lifecycle(&mut scenario);
+    assert!(version == 1, 99);
+    ts::end(scenario);
 }

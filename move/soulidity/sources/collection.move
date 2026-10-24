@@ -17,6 +17,7 @@ const ECollectionSupplyExceeded: u64 = 4;
 const ESupplyCapInvalid: u64 = 5;
 const ESoulCurrentlyListed: u64 = 6;
 const EFloorPriceInvalid: u64 = 7;
+const ENativeSoulNotCollectable: u64 = 8;
 const MAX_FLOOR_PRICE_ATOMIC: u128 = 99_999_999_999_999_999_999;
 const VERSION: u64 = 1;
 
@@ -190,7 +191,10 @@ public(package) fun create(
     (collection, right)
 }
 
-public fun add_soul(
+/// Package-only: wallets go through `market::add_soul_to_collection_v2`, which
+/// also checks the market gate and the combined royalty cap so a Soul is never
+/// bound into a collection it can no longer be sold from.
+public(package) fun add_soul(
     collection: &mut SoulCollection,
     state: &mut SoulState,
     ctx: &TxContext,
@@ -205,6 +209,10 @@ public fun add_soul(
     // listing to carry the collection id at list time). Force the seller
     // through cancel → list_with_collection instead.
     assert!(!soul::is_listed(state), ESoulCurrentlyListed);
+    // Animacraft-native Souls settle only through the dedicated V8 market
+    // path, which requires `collection_id.is_none()`; the ordinary paths reject
+    // native provenance. Binding one here would make it permanently unsellable.
+    assert!(!soul::has_animacraft_provenance(state), ENativeSoulNotCollectable);
 
     if (collection.max_supply.is_some()) {
         let cap = *collection.max_supply.borrow();
