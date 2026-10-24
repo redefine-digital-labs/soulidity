@@ -91,10 +91,10 @@ export async function contentMutationTransactionFixture(options: {
     deployment: { ...raw.deployment, originalPackageId: pkg }, stateId: raw.state.id,
     expectedState: { version: String(raw.rows.get(raw.state.id).version), digest: raw.rows.get(raw.state.id).digest },
     viewerAddresses: [author], kindIds: [kind] }), soulId: raw.soul.id, stateId: raw.state.id, contentId: raw.content.id,
-    originalPackageId: pkg, callablePackageId: raw.config.target.soulidityCallablePackageId, kindRegistryId: raw.registry.id })
+    originalPackageId: pkg, callablePackageId: raw.config.target.soulidityCallablePackageId, kindRegistryId: raw.registry.id, protocolGateId: raw.config.protocolGateId })
   const proof = await read()
   const plan: ContentMutationPlan = { deployment: { chainIdentifier: raw.deployment.chainIdentifier, originalPackageId: pkg,
-    callablePackageId: raw.config.target.soulidityCallablePackageId, marketConfigId: mutationId(7000), kindRegistryId: raw.registry.id },
+    callablePackageId: raw.config.target.soulidityCallablePackageId, marketConfigId: mutationId(7000), kindRegistryId: raw.registry.id, protocolGateId: raw.config.protocolGateId },
     soulId: raw.soul.id, stateId: raw.state.id, contentId: raw.content.id, author, ownershipEpoch: raw.state.ownership_epoch, kind, action,
     target: action === 'clear-active' ? null : { name, versionIndex: '0' },
     expectedActive: options.memory || options.emptyActive ? null : { name: raw.active.name, versionIndex: raw.active.version_index },

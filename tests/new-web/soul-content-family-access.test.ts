@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   getMoveObjectDefiningPackageId: vi.fn(),
@@ -50,6 +50,9 @@ import {
   resolveContentAccessPayload,
 } from '../../web/lib/soulidity/access'
 
+afterEach(() => vi.unstubAllEnvs())
+
+const PROTOCOL_GATE_ID = `0x${'cc'.repeat(32)}`
 const SOUL_ID = `0x${'11'.repeat(32)}`
 const STATE_ID = `0x${'22'.repeat(32)}`
 const CONTENT_ID = `0x${'33'.repeat(32)}`
@@ -123,6 +126,7 @@ function state(soulId = SOUL_ID) {
 
 describe('historical Soul package-family access', () => {
   beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', PROTOCOL_GATE_ID)
     vi.clearAllMocks()
     mocks.getMoveObjectDefiningPackageId.mockResolvedValue(HISTORICAL_ORIGINAL)
     mocks.getSoulStateObject.mockResolvedValue(state())
@@ -167,6 +171,7 @@ describe('historical Soul package-family access', () => {
         packageId: HISTORICAL_ORIGINAL,
         sealPackageId: HISTORICAL_ORIGINAL,
         callablePackageId: HISTORICAL_CALLABLE,
+        protocolGateId: PROTOCOL_GATE_ID,
       },
       sealSidecar: {
         sealPackageId: HISTORICAL_ORIGINAL,

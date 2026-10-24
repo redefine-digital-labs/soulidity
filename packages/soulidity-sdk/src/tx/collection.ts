@@ -257,10 +257,12 @@ export async function buildCollectionCoverCertifyTx(params: {
 
 export function buildAddSoulToCollectionTx(params: AddSoulToCollectionTxParams) {
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const tx = new Transaction()
   tx.moveCall({
-    target: `${packageId}::collection::add_soul`,
+    target: `${packageId}::market::add_soul_to_collection_v2`,
     arguments: [
+      tx.object(marketConfigId),
       tx.object(params.collectionObjectId),
       tx.object(params.stateObjectId),
     ],
@@ -270,7 +272,7 @@ export function buildAddSoulToCollectionTx(params: AddSoulToCollectionTxParams) 
 
 /**
  * Builds one PTB that binds N souls to the same collection in a single
- * wallet signature. The collection is shared, so all `add_soul` calls share
+ * wallet signature. The collection is shared, so all `add_soul_to_collection_v2` calls share
  * the same `&mut SoulCollection` reference; each `SoulState` is shared and
  * referenced by id. Move enforces ownership via `SoulCollection.owner`,
  * which must match the kiosk-held SoulCollectionRight — the caller (owner)
@@ -281,11 +283,13 @@ export function buildBatchAddSoulToCollectionTx(params: BatchAddSoulToCollection
     throw new Error('buildBatchAddSoulToCollectionTx requires at least one bind')
   }
   const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const marketConfigId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const tx = new Transaction()
   for (const bind of params.binds) {
     tx.moveCall({
-      target: `${packageId}::collection::add_soul`,
+      target: `${packageId}::market::add_soul_to_collection_v2`,
       arguments: [
+        tx.object(marketConfigId),
         tx.object(params.collectionObjectId),
         tx.object(bind.stateObjectId),
       ],

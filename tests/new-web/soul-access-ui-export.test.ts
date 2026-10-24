@@ -17,6 +17,7 @@ it.each(['grant-issue','grant-revoke-scope','grant-revoke','paid-configure','pai
   const r=soulAccessRawFixture()
   r.market.legacy_config_id='0x'+'0'.repeat(64)
   const f=await soulAccessTransactionFixture({action,...(purchase?{entry:scenario==='paid-purchase'?'absent' as const:undefined,paymentBalances:['20000']}: {})},async f=>{
+    f.deployment.protocolGateId = r.params.deployment.protocolGateId
     r.raw.state.current_owner=f.state.current_owner; r.raw.putState()
     r.raw.grant.issued_by=f.state.current_owner; r.raw.putGrant()
     if(purchase) {

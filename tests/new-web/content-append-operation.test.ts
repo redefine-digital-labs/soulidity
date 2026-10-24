@@ -122,14 +122,14 @@ describe('attachment exact command template', () => {
   for (const grantee of [false, true]) it(`binds ${grantee ? 'grantee' : 'owner'} CAS/envelope/Blob and all object inputs`, async () => {
     const f = await contentAppendOperationFixture({ grantee }), tx = new Transaction()
     const attachment = contentAppendAttachment(f.record); attachment.append(tx, f.result.blobObjectId)
-    const data = tx.getData(), call = data.commands[1].MoveCall!, at = grantee ? 8 : 7
+    const data = tx.getData(), call = data.commands[1].MoveCall!, at = grantee ? 9 : 8
     expect(data.commands[0].MoveCall).toMatchObject({ package: f.scope.callablePackageId, module: 'content', function: 'assert_mutation_scope' })
     expect(bcs.u64().parse(pure(tx, 0, 2))).toBe(f.intent.ownershipEpoch)
     expect(call).toMatchObject({ package: f.scope.callablePackageId, module: 'content',
       function: grantee ? 'append_version_as_granted_agent' : 'append_version_as_owner' })
     expect(bcs.u64().parse(pure(tx, 1, at))).toBe(f.scope.versionIndex)
     expect(bcs.vector(bcs.u8()).parse(pure(tx, 1, at + 1))).toEqual([...contentAppendPreparedEnvelope(f.record, f.result.blobObjectId)])
-    for (const [position, objectId] of [[0, f.scope.contentObjectId], [1, f.intent.stateId], [2, f.intent.kindRegistryId], [at + 2, f.result.blobObjectId]] as const) {
+    for (const [position, objectId] of [[0, f.scope.protocolGateId], [1, f.scope.contentObjectId], [2, f.intent.stateId], [3, f.intent.kindRegistryId], [at + 2, f.result.blobObjectId]] as const) {
       const arg = call.arguments[position]; expect(arg.$kind).toBe('Input')
       expect(data.inputs[(arg as { Input: number }).Input]).toMatchObject({ UnresolvedObject: { objectId } })
     }

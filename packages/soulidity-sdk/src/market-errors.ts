@@ -76,6 +76,8 @@ export type MarketErrorName =
   | 'EAnimacraftV5CreatorRoyaltyTooHigh'
   | 'EAnimacraftV5ListingMismatch'
   | 'EAnimacraftV5CreatorRoyaltyMismatch'
+  | 'EStateConfigKeyReserved'
+  | 'ESoulListedForMutation'
 
 export interface MarketErrorEntry {
   readonly name: MarketErrorName
@@ -371,6 +373,16 @@ export const MARKET_ERROR_CATALOG: { readonly [code: number]: MarketErrorEntry }
     summary: 'The listing tried to change the Soul creator royalty frozen at the original v5 mint.',
     recoveryHint: 'Refresh the Soul and use its immutable creator royalty snapshot.',
   },
+  82: {
+    name: 'EStateConfigKeyReserved',
+    summary: 'This state config key is reserved for protocol-managed content envelopes.',
+    recoveryHint: 'Choose an application-owned state config key; reserved keys cannot be set or deleted.',
+  },
+  83: {
+    name: 'ESoulListedForMutation',
+    summary: 'Content, state config and active content bindings cannot change while this Soul is listed.',
+    recoveryHint: 'Cancel the active listing first, then retry the mutation.',
+  },
 }
 
 export interface MarketAbortInfo {
@@ -518,7 +530,7 @@ export function enhanceMarketError(error: unknown): unknown {
 }
 
 export function enhanceSoulidityError(error: unknown): unknown {
-  return enhanceCollectionError(enhanceMarketError(error))
+  return enhanceProtocolGateError(enhanceContentError(enhanceCollectionError(enhanceMarketError(error))))
 }
 
 export function assertSoulidityTxSucceeded(
@@ -545,6 +557,7 @@ export type CollectionErrorName =
   | 'ECollectionSupplyExceeded'
   | 'ESupplyCapInvalid'
   | 'ESoulCurrentlyListed'
+  | 'ENativeSoulNotCollectable'
 
 export interface CollectionErrorEntry {
   readonly name: CollectionErrorName
@@ -595,6 +608,12 @@ export const COLLECTION_ERROR_CATALOG: { readonly [code: number]: CollectionErro
     summary: 'This Soul is currently listed for sale.',
     recoveryHint: 'Cancel the active listing first, then bind the Soul into a collection.',
     httpStatus: 409,
+  },
+  8: {
+    name: 'ENativeSoulNotCollectable',
+    summary: 'Animacraft native Souls cannot be added to a collection.',
+    recoveryHint: 'Keep this Animacraft native Soul outside collections to preserve its trading path.',
+    httpStatus: 400,
   },
 }
 
@@ -705,4 +724,65 @@ export function enhanceCollectionError(error: unknown): unknown {
     writable: false,
   })
   return enhanced
+}
+
+// Content writes and the shared protocol gate have independent abort namespaces.
+export interface ProtocolMutationErrorEntry {
+  readonly name: string
+  readonly summary: string
+  readonly recoveryHint: string
+}
+export const CONTENT_ERROR_CATALOG: { readonly [code: number]: ProtocolMutationErrorEntry } = {
+  37: { name: 'ESoulListed', summary: 'Content writes are frozen while this Soul is listed.',
+    recoveryHint: 'Cancel the active listing first, then retry the content change.' },
+}
+export const PROTOCOL_GATE_ERROR_CATALOG: { readonly [code: number]: ProtocolMutationErrorEntry } = {
+  0: { name: 'EGateVersionMismatch', summary: 'This client uses a superseded protocol package.',
+    recoveryHint: 'Upgrade the client and select the current Soulidity deployment before retrying.' },
+  1: { name: 'EGatePaused', summary: 'The Soulidity protocol is paused.',
+    recoveryHint: 'Wait for the protocol operator to resume the protocol before retrying.' },
+  2: { name: 'EGateCapMismatch', summary: 'The supplied protocol gate capability does not match this gate.',
+    recoveryHint: 'Use the capability issued for this protocol gate.' },
+  3: { name: 'ENothingToMigrate', summary: 'This protocol gate needs no migration.',
+    recoveryHint: 'Refresh the gate state and omit the unnecessary migration call.' },
+}
+export interface ProtocolMutationAbortInfo {
+  readonly code: number
+  readonly module: 'content' | 'protocol_gate'
+  readonly functionName: string | null
+  readonly entry: ProtocolMutationErrorEntry
+  readonly raw: string
+}
+function parseProtocolMutationAbort(error: unknown, module: ProtocolMutationAbortInfo['module'],
+  catalog: { readonly [code: number]: ProtocolMutationErrorEntry }): ProtocolMutationAbortInfo | null {
+  const raw = getErrorMessage(error)
+  if (!raw) return null
+  const full = raw.match(MOVE_ABORT_PATTERN_FUNCTION)
+  if (full && (raw.includes(`Identifier("${module}")`) || raw.includes(`::${module}::`))) {
+    const code = Number.parseInt(full[2] ?? '', 10), entry = catalog[code]
+    return entry ? { module, code, functionName: full[1] ?? null, entry, raw } : null
+  }
+  const short = raw.match(MOVE_ABORT_PATTERN_INSTRUCTION)
+  if (short?.[2] !== module) return null
+  const code = Number.parseInt(short[1] ?? '', 10), entry = catalog[code]
+  return entry ? { module, code, functionName: short[3] ?? null, entry, raw } : null
+}
+export function parseContentAbort(error: unknown): ProtocolMutationAbortInfo | null {
+  return parseProtocolMutationAbort(error, 'content', CONTENT_ERROR_CATALOG)
+}
+export function parseProtocolGateAbort(error: unknown): ProtocolMutationAbortInfo | null {
+  return parseProtocolMutationAbort(error, 'protocol_gate', PROTOCOL_GATE_ERROR_CATALOG)
+}
+function enhanceProtocolMutationError(error: unknown, info: ProtocolMutationAbortInfo | null, name: string, property: string) {
+  if (!info) return error
+  const enhanced = new Error(`${info.entry.summary} (${info.module}::${info.entry.name}, code ${info.code}) ${info.entry.recoveryHint}`, { cause: error })
+  enhanced.name = name
+  Object.defineProperty(enhanced, property, { value: info, enumerable: false, writable: false })
+  return enhanced
+}
+export function enhanceContentError(error: unknown): unknown {
+  return enhanceProtocolMutationError(error, parseContentAbort(error), 'SoulidityContentAbortError', 'contentAbort')
+}
+export function enhanceProtocolGateError(error: unknown): unknown {
+  return enhanceProtocolMutationError(error, parseProtocolGateAbort(error), 'SoulidityProtocolGateAbortError', 'protocolGateAbort')
 }

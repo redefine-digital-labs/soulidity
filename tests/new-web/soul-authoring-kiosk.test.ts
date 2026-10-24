@@ -15,7 +15,7 @@ function fixture(existing = true) {
   const target = { chainIdentifier: toHex(fromBase58(MAINNET_GENESIS_DIGEST).subarray(0, 4)), originalPackageId: id(1),
     callablePackageId: id(2), callableDigest: prior, marketConfigId: id(3), kioskRegistryId: id(4), personalKioskTypePackageId: id(5),
     paymentCoinType: SOUL_PUBLIC_USDC_TYPE, collectionTransferPolicyId: id(6), kioskPackageId: id(7), kindRegistryId: id(8),
-    soulTransferPolicyId: id(9), blobBaseUrl: 'https://aggregator.example' }
+    soulTransferPolicyId: id(9), protocolGateId: id(90), blobBaseUrl: 'https://aggregator.example' }
   const author = id(10), kioskId = id(11), capId = id(12), types = collectionBuyTypes(target)
   const registrationId = collectionCommandRegistration(target, author), markerId = collectionBuyOwnerMarker(target, kioskId)
   const rows = new Map<string, any>(), specs = new Map<string, any>()

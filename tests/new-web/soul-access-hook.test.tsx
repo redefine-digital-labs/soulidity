@@ -52,7 +52,7 @@ const grant = () => ({ action: 'grant-issue' as const, granteeAddress: id(5), sc
 function plan(action = 'paid-purchase'): any {
   return {
     deployment: { chainIdentifier: '35834a8a', originalPackageId: id(10), callablePackageId: id(11),
-      kindRegistryId: id(13), marketConfigId: id(12), paymentCoinType: 'USDC' },
+      protocolGateId: id(99), kindRegistryId: id(13), marketConfigId: id(12), paymentCoinType: 'USDC' },
     soulId: id(1), stateId: id(2), contentId: id(3), paidAccessListId: id(6), author: id(4),
     currentOwner: id(7), ownershipEpoch: '2', capturedAtMs: '10', action, kind: action.startsWith('grant-') ? null : 3,
     granteeAddress: id(4), expected: { frozen: 'raw-bcs' }, input: { renew: false, paymentCoins: [] },
@@ -72,7 +72,7 @@ function deferred() { let resolve!: (value: any) => void; const promise = new Pr
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks()
   h.account = { address: id(4) }; h.wallet = {}; h.client = { grpc: {} }; h.market = id(12); h.coin = 'USDC'
-  h.config = { target: { soulidityOriginalPackageId: id(10), soulidityCallablePackageId: id(11) }, kindRegistryId: id(13) }
+  h.config = { target: { soulidityOriginalPackageId: id(10), soulidityCallablePackageId: id(11) }, protocolGateId: id(99), kindRegistryId: id(13) }
   soul = { originalPackageId: id(10), onChainId: id(1), stateOnChainId: id(2), contentOnChainId: id(3), paidAccessListOnChainId: id(6) }
   h.asset = { stateId: id(2), contentId: id(3) }; h.proof = { snapshot: { paidAccessListId: id(6) } }
   h.records = []; h.history = []; h.adapter = null; h.observation = 'STILL_APPLIED'

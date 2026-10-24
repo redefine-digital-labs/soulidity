@@ -57,7 +57,7 @@ export async function verifyContentAppendRebaseLink(input: ContentAppendRebaseLi
   const before = parseContentAppendIntent(previous), after = parseContentAppendIntent(next), rebase = after.rebase
   check(rebase && rebase.predecessor === contentAppendPreparationFingerprint(previous)
     && contentAppendPreparationFingerprint(previous) !== contentAppendPreparationFingerprint(next), 'PREDECESSOR_MISMATCH')
-  for (const key of ['author', 'originalPackageId', 'callablePackageId', 'contentObjectId', 'kind', 'name'] as const)
+  for (const key of ['author', 'originalPackageId', 'callablePackageId', 'protocolGateId', 'contentObjectId', 'kind', 'name'] as const)
     check(previous.scope[key] === next.scope[key], 'SCOPE_CHANGED')
   check(BigInt(next.scope.versionIndex) >= BigInt(previous.scope.versionIndex) && previous.contentHash === next.contentHash
     && previous.payloadHash === next.payloadHash && previous.sidecar.iv === next.sidecar.iv, 'PAID_PAYLOAD_CHANGED')

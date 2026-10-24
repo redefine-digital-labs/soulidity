@@ -472,6 +472,8 @@ export type ContentAccessResponse =
         sealPackageId: string
         /** Latest package used only as the `seal_approve*` Move call target. */
         callablePackageId: string
+        /** Shared ProtocolGate required by every content Seal approval. */
+        protocolGateId: string
         stateObjectId: string
         contentObjectId: string
         kind: number

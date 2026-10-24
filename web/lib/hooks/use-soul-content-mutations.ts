@@ -75,7 +75,8 @@ export function useSoulContentMutations(soul: ChainSoulDetail, onSuccess: () => 
       preflight: async plan => {
         guard(); const config = getBrowserContentWriteConfig(), d = plan.deployment
         if (config.target.soulidityOriginalPackageId !== d.originalPackageId || config.target.soulidityCallablePackageId !== d.callablePackageId
-          || config.kindRegistryId !== d.kindRegistryId || getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID') !== d.marketConfigId)
+          || config.kindRegistryId !== d.kindRegistryId || config.protocolGateId !== d.protocolGateId
+          || getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID') !== d.marketConfigId)
           throw new Error('Recorded deployment changed; this transaction remains queryable')
         const proof = await readBrowserContentWriteState({ config, soulId: plan.soulId, stateId: plan.stateId, contentId: plan.contentId,
           viewerAddress: plan.author, kind: plan.kind, signal }, { client: () => grpc })
@@ -107,6 +108,7 @@ export function useSoulContentMutations(soul: ChainSoulDetail, onSuccess: () => 
       if (s.currentOwner !== author && (!grant || action !== 'delete')) throw new Error('Only the owner or a currently scoped delete grantee can perform this action')
       const plan = parseContentMutationPlan({ deployment: { chainIdentifier: toHex(fromBase58(MAINNET_GENESIS_DIGEST).subarray(0, 4)),
         originalPackageId: proof.originalPackageId, callablePackageId: proof.callablePackageId, kindRegistryId: proof.kindRegistryId,
+        protocolGateId: proof.protocolGateId,
         marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID') }, soulId: proof.soulId, stateId: proof.stateId,
         contentId: proof.contentId, author, ownershipEpoch: s.ownershipEpoch, kind, action, target,
         expectedActive: active ? { name: active.name, versionIndex: active.version_index } : null,

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { bcs } from '@mysten/sui/bcs'
 import { Transaction } from '@mysten/sui/transactions'
 import { fromBase64, toBase64 } from '@mysten/sui/utils'
@@ -10,7 +10,7 @@ import { buildConfigurePaidAccessKindTx, buildUpdatePaidAccessKindTx, buildDelet
   buildPurchasePaidAccessTx, buildAddPaidAccessTx, buildRevokePaidAccessTx, buildCleanupStalePaidAccessTx } from '../../packages/soulidity-sdk/src/tx/paid-access'
 
 const id = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
-const deployment = { packageId: id(10), marketConfigId: id(11) }, U = bcs.u64(), A = bcs.Address
+const deployment = { packageId: id(10), marketConfigId: id(11), protocolGateId: id(12) }, U = bcs.u64(), A = bcs.Address
 const Slot = bcs.struct('Slot', { version: U, grant_id: A, grantee: A, scope_mask: U, expires_at_ms: bcs.option(U), ownership_epoch_snapshot: U })
 const Config = bcs.struct('Config', { version: U, price_atomic: U, scope_mask: U, duration_ms: bcs.option(U), ownership_epoch_snapshot: U })
 const Entry = bcs.struct('Entry', { version: U, scope_mask: U, expires_at_ms: bcs.option(U), ownership_epoch_snapshot: U })
@@ -25,6 +25,7 @@ const roots = { stateObjectId: id(1), soulObjectId: id(2), paidAccessListObjectI
 const grantSnapshot = { ownershipEpoch: '18446744073709551615', capacity: '3', activeGrantCount: '1', slotBcs, live: false }
 const paidSnapshot = { ownershipEpoch: '18446744073709551615', configBcs, buyerTableBcs, entryBcs }
 const paidParams = { ...roots, priceAtomic: '9007199254740993', scopeMask: 8, durationMs: '18446744073709551615', expiresAtMs: '1' }
+beforeEach(() => vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', id(12)))
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks() })
 function pure(tx: Transaction, command: number, argument: number) {
   const data = tx.getData(), ref = data.commands[command].MoveCall!.arguments[argument]
@@ -135,7 +136,7 @@ it('grant historical expiry reconstruction never reads wall clock and accepts fu
   for (const expiresAtMs of ['1', '18446744073709551615', 1n, 1, null, undefined]) {
     const tx = new Transaction()
     addIssueGrantCalls(tx, { ...roots, scopeMask: 1, expiresAtMs }, deployment)
-    expect(bcs.option(U).parse(pure(tx, 0, 3))).toBe(expiresAtMs == null ? null : String(expiresAtMs))
+    expect(bcs.option(U).parse(pure(tx, 0, 4))).toBe(expiresAtMs == null ? null : String(expiresAtMs))
   }
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', id(10))
   expect(buildBatchIssueGrantsTx({ items: [{ ...roots, scopeMask: 1, expiresAtMs: '1', setCapacityTo: 0 }] }).getData().commands).toHaveLength(2)
@@ -159,7 +160,7 @@ it('configure serializes precise price/duration and manual grant serializes old 
   const config = buildConfigurePaidAccessKindTx(paidParams, deployment)
   expect(U.parse(pure(config, 0, 5))).toBe('9007199254740993')
   expect(bcs.option(U).parse(pure(config, 0, 7))).toBe('18446744073709551615')
-  expect(bcs.option(U).parse(pure(buildAddPaidAccessTx(paidParams, deployment), 0, 6))).toBe('1')
+  expect(bcs.option(U).parse(pure(buildAddPaidAccessTx(paidParams, deployment), 0, 7))).toBe('1')
 })
 it('purchase composes merge/split after both guards using shifted SDK NestedResult and roundtrips bytes', async () => {
   const tx = resolvedTx()

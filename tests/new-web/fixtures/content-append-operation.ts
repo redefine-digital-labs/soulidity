@@ -59,14 +59,14 @@ export async function contentAppendOperationFixture(options: {
     spriteConfigJson: null, setActive: false, autoGrantPlan: null,
     contentHash: toHex(sha256(crypto.params.plaintext)), plaintextByteLength: crypto.params.plaintext.length,
     fileName: crypto.params.fileName, mimeType: crypto.params.mimeType, uploadConfig, ...options.intent }
-  const config = { target: raw.config.target, kindRegistryId: raw.registry.id }
+  const config = { target: raw.config.target, protocolGateId: raw.config.protocolGateId, kindRegistryId: raw.registry.id }
   for (const [key, value] of Object.entries({ NEXT_PUBLIC_SUI_NETWORK: 'mainnet',
     NEXT_PUBLIC_SEAL_THRESHOLD: String(crypto.params.sealConfig.threshold), NEXT_PUBLIC_SEAL_SESSION_TTL_MIN: String(crypto.params.sealConfig.ttlMin),
     NEXT_PUBLIC_SEAL_SERVER_CONFIGS: JSON.stringify(crypto.params.sealConfig.serverConfigs), NEXT_PUBLIC_SEAL_VERIFY_KEY_SERVERS: 'true',
     NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: pkg, NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: config.target.soulidityCallablePackageId,
-    NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID: raw.registry.id, NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID: intent.marketConfigId,
+    NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID: raw.config.protocolGateId, NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID: raw.registry.id, NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID: intent.marketConfigId,
     NEXT_PUBLIC_WALRUS_UPLOAD_RELAY_URL: uploadConfig.relayUrl, NEXT_PUBLIC_WALRUS_WASM_URL: uploadConfig.wasmUrl })) vi.stubEnv(key, value)
-  const scope = { ...crypto.params.scope, originalPackageId: pkg, callablePackageId: config.target.soulidityCallablePackageId,
+  const scope = { ...crypto.params.scope, protocolGateId: raw.config.protocolGateId, originalPackageId: pkg, callablePackageId: config.target.soulidityCallablePackageId,
     contentObjectId: raw.content.id, kind, name, versionIndex: options.memory ? '1' : options.newKind || options.newName ? '0' : '2', intentJson: JSON.stringify(intent) }
   let record = await prepareContentAppend({ ...crypto.params, scope })
   const attributes: Record<string, string> = { max_programmable_tx_commands: '1024', max_pure_argument_size: '65540', max_tx_size_bytes: '131072' }

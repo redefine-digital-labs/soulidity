@@ -52,8 +52,8 @@ export function validatePrivateLoadoutPublicPlan(input: unknown): PrivateLoadout
   check(BigInt(value.expectedRevision) < MAX_U64, 'REVISION_EXHAUSTED')
   const ciphertext = assertPrivateNamedLoadoutCipherRef(value.ciphertext)
   const capture = value.capture === null ? null : assertPrivateNamedLoadoutCapture(value.capture)
-  check(new Set([scope.soulId, scope.stateId, value.protocolId, ...(capture ? [capture.equipmentId] : [])]).size
-    === (capture ? 4 : 3), 'OBJECT_ALIAS')
+  check(new Set([scope.soulId, scope.stateId, deployment.protocolGateId, value.protocolId, ...(capture ? [capture.equipmentId] : [])]).size
+    === (capture ? 5 : 4), 'OBJECT_ALIAS')
   return { deployment, scope, expectedRevision: value.expectedRevision, requestId: value.requestId,
     ciphertext, capture, protocolId: value.protocolId }
 }
@@ -83,7 +83,7 @@ export function validatePrivateLoadoutTransactionPacket(planInput: PrivateLoadou
   const payments = data.gasData.payment
   check(payments && payments.length > 0 && payments.length <= 256, 'GAS_REQUIRED')
   const reserved = [plan.scope.soulId, plan.scope.stateId, plan.protocolId, plan.ciphertext.blobObjectId,
-    plan.deployment.callablePackageId, plan.deployment.originalPackageId, ...(plan.capture ? [plan.capture.equipmentId] : [])]
+    plan.deployment.callablePackageId, plan.deployment.originalPackageId, plan.deployment.protocolGateId, ...(plan.capture ? [plan.capture.equipmentId] : [])]
   check(new Set(payments.map(row => row.objectId)).size === payments.length, 'DUPLICATE_GAS')
   payments.forEach(row => {
     assertPrivateNamedLoadoutId(row.objectId); positive(row.version); digest(row.digest)

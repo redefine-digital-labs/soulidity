@@ -12,7 +12,7 @@ const id = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
  * bodies deliberately have no decryptable private payload or usable raw DEK. */
 export async function contentAppendStoreFixture(changes: Partial<ContentAppendPreparationScope> = {}): Promise<ContentAppendPreparation> {
   const signer = Ed25519Keypair.fromSecretKey(new Uint8Array(32).fill(27))
-  const scope: ContentAppendPreparationScope = { author: signer.toSuiAddress(), originalPackageId: id(6), callablePackageId: id(7),
+  const scope: ContentAppendPreparationScope = { author: signer.toSuiAddress(), originalPackageId: id(6), callablePackageId: id(7), protocolGateId: id(70),
     contentObjectId: id(17), kind: 1, name: 'default', versionIndex: '9007199254740993', intentJson: '{"operation":"append"}', ...changes }
   const wrap = (documentId: string, length: number, aad = new Uint8Array()) => toBase64(EncryptedObject.serialize({
     version: 0, packageId: scope.originalPackageId, id: documentId, services: [[id(60), 1]], threshold: 1,

@@ -54,6 +54,6 @@ export function browserPrivateLoadoutFixture(empty = false, publicOriginal = tru
   const setCiphertext = (bytes: Uint8Array) => { ciphertext = new Uint8Array(bytes); ref.sha256 = [...sha256(bytes)]; ref.byte_length = String(bytes.length)
     blob.size = ref.byte_length; putHead(); putBlob() }
   return { ...f, scope, state, head, headFieldId, pointerId, storage, ref, blob, putState, putHead, putBlob, setCiphertext,
-    config: { ...f.config, storage }, fetcher, reset, blobType, system, walrusFactory, walrusClient: () => walrusClient,
+    config: { ...f.config, protocolGateId: id(700), storage }, fetcher, reset, blobType, system, walrusFactory, walrusClient: () => walrusClient,
     dependencies: { client: f.factory, walrus: walrusFactory } }
 }

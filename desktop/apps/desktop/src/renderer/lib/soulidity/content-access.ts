@@ -27,6 +27,7 @@ export interface SealedContentAccess {
   }
   accessPolicy: {
     packageId: string
+    protocolGateId: string
     stateObjectId: string
     contentObjectId: string
     kind: number
@@ -168,7 +169,14 @@ const VALID_FUNCTION_NAMES = new Set([
 const VALID_ACCESS_KINDS = new Set(['owner', 'granted-agent', 'paid', 'public'])
 const VALID_MODULE_NAMES = new Set(['content', 'paid_access'])
 
+function requireProtocolGateId(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(value) || /^0x0+$/.test(value)) {
+    throw new Error('Content approval requires protocolGateId')
+  }
+}
+
 export function parseContentAccessResponse(payload: unknown): SealedContentAccess {
+  if (isRecord(payload) && isRecord(payload.accessPolicy)) requireProtocolGateId(payload.accessPolicy.protocolGateId)
   if (
     !isRecord(payload)
     || payload.visibility !== 'sealed'
@@ -214,12 +222,9 @@ export function parseContentAccessResponse(payload: unknown): SealedContentAcces
   return payload as unknown as SealedContentAccess
 }
 
-async function buildContentApprovalTxBytes(params: {
-  access: SealedContentAccess
-  suiClient: unknown
-}) {
-  const { access } = params
+export function buildContentApprovalTransaction(access: SealedContentAccess): Transaction {
   const { accessPolicy } = access
+  requireProtocolGateId(accessPolicy.protocolGateId)
 
   const tx = new Transaction()
   tx.setSender(access.viewerAddress)
@@ -228,6 +233,7 @@ async function buildContentApprovalTxBytes(params: {
     'u8',
     Array.from(hexToBytes(accessPolicy.documentIdHex)),
   )
+  const gateArg = tx.object(accessPolicy.protocolGateId)
   const stateArg = tx.object(accessPolicy.stateObjectId)
   const contentArg = tx.object(accessPolicy.contentObjectId)
   const kindArg = tx.pure.u32(accessPolicy.kind)
@@ -239,7 +245,7 @@ async function buildContentApprovalTxBytes(params: {
   switch (accessPolicy.functionName) {
     case 'seal_approve_content_owner':
       target = `${accessPolicy.packageId}::content::seal_approve_content_owner`
-      argumentsList = [documentIdBytes, stateArg, contentArg, kindArg, nameArg, versionArg]
+      argumentsList = [documentIdBytes, gateArg, stateArg, contentArg, kindArg, nameArg, versionArg]
       break
     case 'seal_approve_content_granted_agent': {
       if (!accessPolicy.soulGrantObjectId) {
@@ -248,6 +254,7 @@ async function buildContentApprovalTxBytes(params: {
       target = `${accessPolicy.packageId}::content::seal_approve_content_granted_agent`
       argumentsList = [
         documentIdBytes,
+        gateArg,
         stateArg,
         contentArg,
         tx.object(accessPolicy.soulGrantObjectId),
@@ -260,7 +267,7 @@ async function buildContentApprovalTxBytes(params: {
     }
     case 'seal_approve_content_public':
       target = `${accessPolicy.packageId}::content::seal_approve_content_public`
-      argumentsList = [documentIdBytes, stateArg, contentArg, kindArg, nameArg, versionArg]
+      argumentsList = [documentIdBytes, gateArg, stateArg, contentArg, kindArg, nameArg, versionArg]
       break
     case 'seal_approve_content_paid_access': {
       const paidAccessListId = (accessPolicy as { paidAccessListOnChainId?: string | null })
@@ -271,6 +278,7 @@ async function buildContentApprovalTxBytes(params: {
       target = `${accessPolicy.packageId}::paid_access::seal_approve_content_paid_access`
       argumentsList = [
         documentIdBytes,
+        gateArg,
         stateArg,
         tx.object(paidAccessListId),
         contentArg,
@@ -289,7 +297,7 @@ async function buildContentApprovalTxBytes(params: {
 
   tx.moveCall({ target, arguments: argumentsList as never[] })
 
-  return tx.build({ client: params.suiClient as never, onlyTransactionKind: true })
+  return tx
 }
 
 export async function loadDecryptedContentVersion(params: {
@@ -305,6 +313,7 @@ export async function loadDecryptedContentVersion(params: {
     throw new Error('Sealed content Walrus blob URL is missing')
   }
 
+  const approval = buildContentApprovalTransaction(access)
   const sessionKey = await SessionKey.create({
     address: access.viewerAddress,
     packageId: access.accessPolicy.packageId,
@@ -314,10 +323,7 @@ export async function loadDecryptedContentVersion(params: {
   const personalMessageSignature = await params.signPersonalMessage(sessionKey.getPersonalMessage())
   await sessionKey.setPersonalMessageSignature(personalMessageSignature)
 
-  const txBytes = await buildContentApprovalTxBytes({
-    access,
-    suiClient: params.suiClient,
-  })
+  const txBytes = await approval.build({ client: params.suiClient as never, onlyTransactionKind: true })
   let encryptedBlobResponse: Response
   try {
     encryptedBlobResponse = await fetchImpl(walrusBlobUrl)

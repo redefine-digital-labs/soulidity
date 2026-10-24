@@ -121,6 +121,18 @@ export async function readCollectionPublicRoot(params: Common & { collectionId: 
   const collection = decode(SoulPublicCollectionBcs, raw.contents!.value!); rootValid(collection, collectionId)
   await s.verify(); return freeze({ collection, objectVersion: String(raw.version), objectDigest: raw.digest! })
 }
+/** Collection binding checks the primary V2 gate and the complete royalty sum.
+ * Both shared inputs are reread so concurrent changes fail closed. */
+export async function readCollectionBindSnapshot(params: Common & { collectionId: string }) {
+  const collectionId = params.collectionId, s = await session(params), pkg = s.d.originalPackageId
+  const raw = (await s.read(collectionId, `${pkg}::collection::SoulCollection`, 3))!
+  const collection = decode(SoulPublicCollectionBcs, raw.contents!.value!); rootValid(collection, collectionId)
+  const market = decode(SoulPublicMarketConfigBcs, (await s.read(s.d.marketConfigId, `${pkg}::market::MarketConfigV2`, 3))!.contents!.value!)
+  check(market.id === s.d.marketConfigId && market.version === '2' && market.legacy_config_id === ZERO
+    && market.platform_fee_bps <= 10000, 'MARKET_MISMATCH'); id(market.fee_recipient)
+  await s.verify()
+  return freeze({ collection, market, objectVersion: String(raw.version), objectDigest: raw.digest! })
+}
 /** A held Right is a candidate back-pointer only; the complete snapshot proves custody. */
 export async function readCollectionRightCandidate(params: Common & { rightId: string }): Promise<string> {
   const rightId = params.rightId, s = await session(params)

@@ -150,7 +150,7 @@ it('connects real SDK bytes/parser, local Ed25519 signature and fresh browser st
     import('@soulidity/sdk'), import('../../web/lib/soulidity/content-mutation-runner'),
   ])
   const id = (n: number) => `0x${n.toString(16).padStart(64, '0')}`, signer = Ed25519Keypair.fromSecretKey(new Uint8Array(32).fill(23))
-  const plan = { ...fixture().plan, deployment: { chainIdentifier: '35834a8a', originalPackageId: id(100), callablePackageId: id(101), marketConfigId: id(102), kindRegistryId: id(103) },
+  const plan = { ...fixture().plan, deployment: { chainIdentifier: '35834a8a', originalPackageId: id(100), callablePackageId: id(101), marketConfigId: id(102), protocolGateId: id(109), kindRegistryId: id(103) },
     soulId: id(104), stateId: id(105), contentId: id(106), author: signer.toSuiAddress(),
     expectedSlot: SoulContentSlotPublicBcs.serialize({ version: '1', kind: 3, blob_object_id: id(107), is_public: false, deleted: false, purged: false,
       download_policy: 1, grant_scope_mask: '8', read_mode_mask: '7', op_mask: '15', seal_encrypted: true, created_at_ms: '123' }).toBase64() }

@@ -8,7 +8,7 @@ import { attestNativeReceiveTarget, createNativeReceiveClient, readNativeReceive
 import type { BrowserContentAccessConfig } from './browser-content-access'
 
 /** Write preflight needs release and registry identity, not download services. */
-export type BrowserContentWriteConfig = Pick<BrowserContentAccessConfig, 'target' | 'kindRegistryId'>
+export type BrowserContentWriteConfig = Pick<BrowserContentAccessConfig, 'target' | 'kindRegistryId' | 'protocolGateId'>
 export interface BrowserContentWriteState {
   snapshot: SoulDetailStateSnapshot
   soulId: string
@@ -17,6 +17,7 @@ export interface BrowserContentWriteState {
   originalPackageId: string
   callablePackageId: string
   kindRegistryId: string
+  protocolGateId: string
 }
 function check(value: unknown, code: string): asserts value { if (!value) throw new Error(`BROWSER_CONTENT_WRITE_${code}`) }
 function freeze<T>(value: T): T {
@@ -25,17 +26,20 @@ function freeze<T>(value: T): T {
 }
 function configOf(input: BrowserContentWriteConfig): BrowserContentWriteConfig {
   const value = structuredClone(input)
-  check(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 2
-    && Object.hasOwn(value, 'target') && Object.hasOwn(value, 'kindRegistryId'), 'CONFIG_INVALID')
+  check(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 3
+    && Object.hasOwn(value, 'target') && Object.hasOwn(value, 'kindRegistryId') && Object.hasOwn(value, 'protocolGateId'), 'CONFIG_INVALID')
   const target = readNativeReceiveTarget({ NEXT_PUBLIC_SUI_NETWORK: 'mainnet',
     NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: value.target?.soulidityCallablePackageId,
     NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: value.target?.soulidityOriginalPackageId,
     NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON: JSON.stringify(value.target) })
+  check(typeof value.protocolGateId === 'string' && !!value.protocolGateId.trim(), 'protocolGateId_REQUIRED')
+  receiveId(value.protocolGateId)
   receiveId(value.kindRegistryId)
-  return freeze({ target, kindRegistryId: value.kindRegistryId })
+  return freeze({ target, kindRegistryId: value.kindRegistryId, protocolGateId: value.protocolGateId })
 }
 export function getBrowserContentWriteConfig(): BrowserContentWriteConfig {
-  return configOf({ target: getBrowserNativeReceiveTarget(), kindRegistryId: process.env.NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID! })
+  return configOf({ target: getBrowserNativeReceiveTarget(), kindRegistryId: process.env.NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID!,
+    protocolGateId: process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID! })
 }
 
 /** Raw domain snapshot only, never permission to append/delete/purge/configure.
@@ -85,6 +89,6 @@ export async function readBrowserContentWriteState(params: {
       'ROOT_MISMATCH')
     await session.finish(undefined)
     return freeze(structuredClone({ snapshot, soulId: subject.soulId, stateId: subject.stateId, contentId: subject.contentId,
-      originalPackageId: pkg, callablePackageId: config.target.soulidityCallablePackageId, kindRegistryId: config.kindRegistryId }))
+      originalPackageId: pkg, callablePackageId: config.target.soulidityCallablePackageId, kindRegistryId: config.kindRegistryId, protocolGateId: config.protocolGateId }))
   })
 }

@@ -36,6 +36,7 @@ export function getSoulidityDeploymentSignature() {
     ).trim().toLowerCase(),
     (deployment.marketConfigId ?? '').trim().toLowerCase(),
     (deployment.marketConfigV2Id ?? '').trim().toLowerCase(),
+    (process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID?.trim() || deployment.protocolGateId || '').trim().toLowerCase(),
     deployment.soulTransferPolicyId.trim().toLowerCase(),
     deployment.collectionTransferPolicyId.trim().toLowerCase(),
   ].join('|')

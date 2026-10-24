@@ -28,6 +28,7 @@ it.each(['granted-agent', 'paid', 'public'] as const)('uses actual raw %s author
   const fetcher = vi.fn(() => { throw new Error('No HTTP API expected') }); vi.stubGlobal('fetch', fetcher)
   const result = await f.read({ viewerAddress: viewer })
   expect(result.access.accessKind).toBe(kind); expect(result.access.visibility).toBe('sealed')
+  expect(result.access.accessPolicy.protocolGateId).toBe(f.config.protocolGateId)
   expect(result.access.accessPolicy.moduleName).toBe(kind === 'paid' ? 'paid_access' : 'content')
   expect(result.access.accessPolicy.soulGrantObjectId).toBe(kind === 'granted-agent' ? f.grant.id : null)
   expect(fetcher).not.toHaveBeenCalled(); expect(f.execute).not.toHaveBeenCalled()

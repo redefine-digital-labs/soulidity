@@ -49,7 +49,9 @@ export function buildBrowserContentApproval(access: BrowserContentAccess): Trans
   check(p && p.stateObjectId === access.stateId && p.contentObjectId === access.contentId
     && p.kind === access.kind && p.name === access.name && p.versionIndex === access.versionIndex,
   'Content approval identity mismatch')
-  const args = [tx.pure.vector('u8', fromHex(p.documentIdHex)), tx.object(p.stateObjectId)]
+  check(typeof p.protocolGateId === 'string' && /^0x[0-9a-f]{64}$/.test(p.protocolGateId) && !/^0x0+$/.test(p.protocolGateId),
+    'Content approval requires protocolGateId')
+  const args = [tx.pure.vector('u8', fromHex(p.documentIdHex)), tx.object(p.protocolGateId), tx.object(p.stateObjectId)]
   if (p.functionName === 'seal_approve_content_paid_access') {
     check(p.moduleName === 'paid_access' && p.paidAccessListOnChainId && !p.soulGrantObjectId, 'Content paid approval is invalid')
     args.push(tx.object(p.paidAccessListOnChainId), tx.object(p.contentObjectId))

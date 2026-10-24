@@ -112,7 +112,7 @@ export function createSoulAuthoringTransactionComposer(manifestInput: SoulAuthor
             const variant = mint.kind === 'ORDINARY' ? 'native' : mint.kind === 'IMPORTED' ? 'imported' : 'joined'
             const state = tx.moveCall({ target: `${pkg}::market::mint_${variant}_in_personal_kiosk_v2`,
               typeArguments: mint.source ? [mint.source.objectType] : [], arguments: callArgs })
-            if (chunk.collectionObjectId) tx.moveCall({ target: `${pkg}::collection::add_soul`, arguments: [tx.object(chunk.collectionObjectId), state] })
+            if (chunk.collectionObjectId) tx.moveCall({ target: `${pkg}::market::add_soul_to_collection_v2`, arguments: [tx.object(target.marketConfigId), tx.object(chunk.collectionObjectId), state] })
             if (mint.listingPriceAtomic !== null) {
               const listingArgs: TransactionArgument[] = [tx.object(target.marketConfigId), tx.object(target.kioskRegistryId)]
               if (chunk.collectionObjectId) listingArgs.push(tx.object(chunk.collectionObjectId))

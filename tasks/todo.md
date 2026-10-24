@@ -1,3 +1,138 @@
+# Soulidity ABI TS 同步 2026-10-24（codex-fixer / Claude accept）
+
+Reference: `docs/audits/2026-10-24-soulidity-audit.md` §11.1 清单、§11.3 复核；codex 规格 / TDD 证据 / 逐文件清单见 `docs/audits/2026-10-24-typescript-abi-sync.md`。角色（用户指定）：codex `gpt-6.1-sol` / `ultra` 改，Claude（xhigh）审核。
+
+## Spec
+- 按 §11.1 同步 `packages/soulidity-sdk` / `web` / `desktop` 全部调用点：gate 参数位置（非 seal 首位、seal 在 `id` 之后）、`collection::add_soul` → `market::add_soul_to_collection_v2`、新错误码映射、`protocolGateId` 配置贯通（manifest / env / 部署签名 / 生产 env 同步脚本）、用户文档说明上架冻结。
+- TDD：先扩展 vitest 并记录 RED，再实现；不弱化既有断言；不改 `move/`；不 commit。
+- 验收：`npm test`、`npm run typecheck`、SDK 独立 `tsc` 全通过。
+
+## 进度
+- [x] codex-fixer 完成（99 个文件；RED 证据表见 codex 文档）
+- [x] Claude accept：生产 diff 逐文件审查；22 个 gated 调用点 + Seal PTB 对照 Move 签名逐个比对参数位置 / 个数；错误码按模块限定解析；测试 diff 无弱化（删 27 / 增 71 条 expect，均为位移重写）
+- [x] 独立重跑：Move 522/522；`npm test` 首轮 588/589（唯一失败为 desktop pnpm 工作区未安装，非 diff 问题）→ 按 CI 配方安装后通过；typecheck root / web / SDK / desktop renderer 全部 0 errors；`git diff --check` 通过
+- [x] 验收结论写入报告 §11.3；codex 文档补复核者重跑结果
+
+## Review（TS 同步）
+
+**结论**：ACCEPT。§11.1 六项全部覆盖且超出清单（desktop、e2e 脚本、walrus batch seal、严格运行上下文 / 历史重放均携带 gate）；无 Blocker / Major。
+
+**验证**：见报告 §11.3 表格。codex 报告的 11 个失败 suite 全部是 codex 沙箱环境（Chrome/CDP SIGABRT、desktop 依赖未装）；无沙箱 + 补齐依赖后全绿。
+
+**影响范围 / 风险**：
+- 部署顺序：web / desktop 硬依赖 gate env，必须与 fresh publish 同批上线并填入 `NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID` / manifest `protocolGateId`；先上 web 会 fail-closed。
+- 跨仓库：Animacraft `export-config --format soulidity-env` 需新增 `NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID`，否则 `sync-vercel-production-env` 的 `mergeProductionChainEnv` 整体拒绝导出文件。
+- 未做链上 / 真实 Seal / 真实钱包验收；新包发布后跑 e2e。
+- `ProtocolGateCap` 随其它 cap 移交多签；运维需 `set_paused` / `migrate` 脚本（§11.1 第 1 条，未在本轮范围）。
+
+**回滚点**：全部未 commit；TS 侧 `git checkout -- packages web desktop scripts .env.example tests && git clean -fd tests/new-web` 可整体回退（保留 move/ 与 docs/audits）。
+
+---
+
+# Soulidity 审计修复 Pass 2026-10-24（F-1 / F-5 / F-6 / F-7）
+
+Reference: `docs/audits/2026-10-24-soulidity-audit.md` §10 必须项 1-3。角色：claude-fixer（xhigh）→ codex accept。方法：TDD（先写失败测试，再最小实现），每项补 Move 测试；本机用 scratch 测试图（animacraft 公开仓库 HEAD `5fb13fa` + CI 同款地址规则 0x100..0x107）跑 `sui move test`。
+
+## Spec
+
+### F-1 版本门控 / kill-switch
+- 新模块 `protocol_gate.move`：共享单例 `ProtocolGate { id, version: u64, paused: bool }`（init 创建，VERSION=1）+ `ProtocolGateCap { id, gate_id }` 给 deployer。
+- `assert_live(gate)`：`gate.version == VERSION && !gate.paused`；`set_paused(gate, cap, bool)`；`migrate(gate, cap)`：仅当 `gate.version < VERSION` 时写入 VERSION（本版恒 abort，升级版才生效）。事件：Created / PausedUpdated / Migrated。
+- 加 `gate: &ProtocolGate` 参数（非 seal 函数置首位；`seal_approve_*` 置 `id` 之后）：
+  - content：`append_version_as_owner` / `append_version_as_granted_agent` / `delete_version_as_owner` / `delete_version_as_granted_agent` / `purge_deleted_version_as_owner` / `seal_approve_content_owner` / `_granted_agent` / `_public` / `seal_approve_upload_recovery`
+  - paid_access：`add_access` / `revoke_access` / `cleanup_stale_entries` / `seal_approve_content_paid_access`；`configure/update/delete_paid_access_kind` 改 `public(package)`（关联收口 F-9，market `_v2` 包装器已有 primary gate）
+  - grant：`issue` / `issue_to_grantee` / `revoke` / `revoke_scope` / `revoke_scope_to_grantee` / `cleanup_inactive_grants` / `set_grant_capacity` / `destroy_invalidated_grant`
+  - named_loadout_v1：`save` / `update` / `seal_approve`
+  - collection：`add_soul` 经 F-6/F-7 的 market 包装器承接（primary gate），不单独加 gate。
+- 不改 market（已有 V2 gate）、profile / social / community（已有 `registry.version` 断言）。
+- 测试：paused 时上述入口 abort（抽样覆盖每模块至少 1 个写入口 + 1 个 seal 入口）；version 不匹配时 abort（test_only setter）；非 cap 持有者不能改 gate；取消 pause 后恢复；migrate 在同版本 abort。
+
+### F-5 保留前缀 + 上架冻结
+- `market::set_state_config(_v2)` / `delete_state_config(_v2)` 复用 `assert_initial_config_key_unreserved`（更名 `assert_state_config_key_unreserved`），拒绝 `content_seal_envelope_v1:` 前缀 → 新错误码 `EStateConfigKeyReserved`。
+- 上架冻结：`soul::is_listed(state)` 为真时中止 content append/delete/purge（owner 与 agent 路径）与 market `set/delete_state_config(_v2)`、`set/clear_active_content(_v2)` → content 新错误码 `ESoulListed`、market 新错误码 `ESoulListedForMutation`。
+- 测试：owner 写保留键 abort / 删保留键 abort / 非保留键仍可写；listed 状态下各 mutator abort，cancel 后恢复；grantee append 在 listed 下 abort；seal 读取不受 listed 影响。
+
+### F-6 / F-7 add_soul 可交易性
+- `collection::add_soul` 增加 `assert!(!soul::has_animacraft_provenance(state))` → `ENativeSoulNotCollectable`；改为 `public(package)`。
+- 新 `market::add_soul_to_collection_v2(config, collection, state, ctx)`：`primary_enabled` + `platform_fee_bps + creator_royalty_bps + extra_royalty_bps <= 10000`（复用 `ECombinedFeesTooHigh`）→ 调 `collection::add_soul`。
+- 测试：原生绑定 Soul 入 collection abort；合并 bps 超限 abort（9750 + 500 + 250）；边界 `== 10000` 通过；普通 Soul 正常加入并计 supply；primary 关闭时 abort；原有 `ESoulCurrentlyListed` 行为保持。
+
+### 验收
+- [x] 基线 `sui move test` 通过：sui 1.80.1 + `--warnings-are-errors` 429/429（1.70.1 下 429 条全失败，VM 不兼容，已弃用）
+- [x] 每项先有失败测试再实现（RED 均已观察），全套 468/468
+- [x] 旧调用点（6 个测试文件约 110 处）同步到新签名
+- [x] ABI 变更清单写入报告 §11.1
+- [x] codex accept 复核 PASS WITH NITS（F-1/F-5/F-6+F-7/F-9 全部 ACCEPT）；Minor + 2 Nit 已处理；报告 §0 / §11 记录 Fixed 状态
+- [x] 不 commit，交用户审 diff
+
+## 进度
+- [x] 主检出目录 package.json / package-lock.json 冲突已解决并暂存（取并集；Move 源码未变，审计结论不变）
+- [x] animacraft 公开仓库克隆到 scratchpad，scratch 测试图搭建中
+- [x] 基线测试
+- [x] F-1 / F-5 / F-6-7 实施（468/468）
+- [x] codex accept（PASS WITH NITS，补强后 522/522）
+
+## Review（fix pass）
+
+**结论**：F-1 / F-5 / F-6 / F-7（+F-9）已修复，TDD 全程（每项 RED → GREEN），codex accept PASS WITH NITS 且保留意见已全部处理。Move 全套 522/522（sui 1.80.1，`--warnings-are-errors`）。
+
+**验证**：scratch 8 包图（animacraft 公开仓库 HEAD `5fb13fa`）；sui 1.70.1 下 429 条全失败（VM 不兼容），最终以 CI 钉死的 1.80.1 为准。
+
+**影响范围 / 风险**：
+- Move ABI 变更 25 个签名 + 2 处可见性收窄 + 新共享对象 `ProtocolGate`（报告 §11.1 清单）。**SDK / web / desktop 已同步**（codex-fixer + Claude accept，见顶部「ABI TS 同步」节与报告 §11.3）。
+- 行为变化：上架期间 content/config/active-binding 写入中止；UI 需提示先取消 listing。
+- 发布面：这些变更只能随 fresh release 发布，不是现网包的兼容升级。
+
+**未处理（下一轮）**：F-2 Walrus 续期、F-3 MEMORY 存储结构、F-4 undelete、F-8/F-13 删 V1 + 依赖 git rev、全部 Low/Info。
+
+**回滚点**：所有改动未 commit；`git checkout -- move/soulidity/sources && git clean -fd move/soulidity/sources` 即可整体回退（docs/tasks 另行处理）。
+
+---
+
+# Soulidity Move 安全审计 2026-10-24（Claude × Codex 交叉独立审计）
+
+**目标**：对 `move/soulidity/sources/` 全部 14 个生产模块做一次完整安全审计。Claude（Fable 5.1）与 codex（`gpt-6.1-sol`，reasoning `ultra`，read-only sandbox）各自独立审计，禁止读取 `docs/audits/` 历史报告，最后逐条交叉核验。
+
+**范围**：soul / grant / kind_registry / content / paid_access / market / collection / profile / social / community_posts / community_votes / named_loadout_v1 / animacraft_v8_binding / animacraft_equipment_adapter_v8；`Move.toml` / `Move.lock` / `Published.toml` 依赖与升级面。测试文件与 `probes/` 只作行为参考。
+
+**约束**：
+- 只读，不改任何源码；不 commit，报告交用户审阅。
+- `sui move build/test` 本机不可用：`animacraft_v8_*` 为 `local` 依赖，路径 `/Users/naoer/...` 在本机不存在 → 静态审计 + Sui/Kiosk/Walrus 依赖源码（`~/.move/`）核对 API 语义 + mainnet 链上状态核对。
+- Admin cap（`MarketAdminCapV2` / `KindAdminCap` / `UpgradeCap` / TransferPolicyCap）默认由多签持有，纯“中心化”不计发现；仅当非持有者可获权或 admin 操作有超出声明的副作用时记录。
+
+**验收**：
+- [x] Claude 全文审阅 14 个生产模块并形成独立发现清单（含 file:line、攻击路径、严重度、置信度）
+- [x] codex 独立审计完成（`gpt-6.1-sol` / `ultra`），报告落盘 `docs/audits/2026-10-24-codex-independent-report.md`
+- [x] 两路发现逐条对照源码核验：确认 / 驳回 / 调级，标注证据与置信度；统计重合率（codex 3/3 重合，无驳回）
+- [x] 链上核对：mainnet 现网为 v5/v6 旧包（模块集合与源码不一致），源码为 fresh release；UpgradeCap owner `0xadea…`；V1/V2 gate 状态属旧包不再追查
+- [x] 产出 `docs/audits/2026-10-24-soulidity-audit.md`：总评 → 发现表 → 详情 → 已验证不变量 → 范围限制 → 与 2026-05-04 报告对比
+- [x] 本文件 Review 段记录结论与后续动作
+
+## 进度
+
+- [x] Skill 加载（web3-audit-sui-scanner / codex）
+- [x] 结构摸底：14 生产模块约 8.8k 行；测试约 7.7k 行；mainnet `Published.toml` version=2
+- [x] codex 后台启动（prompt / 输出见 scratchpad `codex-audit-*.{md,log}`）
+- [x] Claude 独立审计（发现基线见 scratchpad `claude-main-findings.md`）
+- [x] 链上状态核对（mainnet 现网为 v5/v6 旧包；源码为 fresh release；UpgradeCap owner 0xadea…）
+- [x] 交叉核验（Claude 三路 + codex，见报告 §8）
+- [x] 报告产出
+
+## Review
+
+**结论**：无 Critical / High；6 Medium / 9 Low / 11 Info。Medium 全部为跨模块生命周期与运维视角问题（升级 kill-switch、Walrus 续期、MEMORY 封顶、软删不可逆、售前 envelope/内容破坏、原生 Soul × collection），均为 2026-05-04 报告未覆盖的新增项。核心托管/授权/Seal/支付不变量三路逐行验证成立。
+
+**交叉核验**：codex（gpt-6.1-sol / ultra）3 条发现全部与 Claude 重合并确认，无驳回；codex 召回率明显低于 Claude（3 vs 26），未报告 F-1 / F-2 / F-4。
+
+**后续动作（需用户决策）**：
+1. 发布前必须项（报告 §10）是否纳入本次 release gate：F-1 版本门控、F-5 前缀断言 + 上架冻结、F-6/F-7 `add_soul` 可交易性校验、F-2 `extend_content_blob`、F-4 undelete、F-3 版本存储改造、F-8/F-13 删 V1 + 依赖改 git rev。
+2. 评级分歧需拍板：F-5（三路 Low / 一路 Medium，合并维持 Medium）、F-7（codex 并入 Medium，本报告 Low）。
+3. 修复轮次建议按 `review-fix-roles`：claude-fixer 落地 → codex accept 复核。
+
+**过程教训**：后台 `codex exec` 必须 `< /dev/null`（首次启动卡 stdin 约 30 分钟），已记入 `tasks/lessons.md` 与长期记忆。
+
+---
+
 # Soulidity Audit 2026-05-04 Fix Pass
 
 Reference: `docs/audits/2026-05-04-soulidity-audit.md`

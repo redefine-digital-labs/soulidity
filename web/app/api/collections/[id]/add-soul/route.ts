@@ -49,7 +49,7 @@ export async function POST(
 
   // Optional `soulOnChainId` disambiguates which `SoulAddedToCollection`
   // event in the TX to mirror. Required when the TX bundles multiple
-  // add_soul calls (collection batch bind), optional otherwise. When
+  // add_soul_to_collection_v2 calls (collection batch bind), optional otherwise. When
   // provided, the dedup resource key includes it so each soul in the same
   // TX gets its own cache slot.
   const requestedSoulOnChainIdRaw = typeof body?.soulOnChainId === 'string'

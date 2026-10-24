@@ -29,7 +29,9 @@ it.each([false, true])('prepares real AES/Seal, signs exact public commitments, 
   const unlocked = await unlockContentAppendPreparation(cold, f.params.wallet)
   const [{ sessionKey, txBytes }] = f.decryptCall.mock.calls[0]
   expect(sessionKey.getPackageId()).toBe(id(1))
-  expect(bcs.TransactionKind.parse(txBytes).ProgrammableTransaction!.commands[0].MoveCall)
+  const pt = bcs.TransactionKind.parse(txBytes).ProgrammableTransaction!
+  expect(pt.inputs[pt.commands[0].MoveCall!.arguments[1].Input!].Object?.SharedObject).toMatchObject({ objectId: id(70), mutable: false })
+  expect(pt.commands[0].MoveCall)
     .toMatchObject({ package: id(10), module: 'content', function: 'seal_approve_upload_recovery' })
   expect(unlocked.plaintext).toEqual(f.params.plaintext); expect(unlocked.dek).toHaveLength(32)
   expect(f.sign).toHaveBeenCalledTimes(2)

@@ -11,7 +11,7 @@ import type { BrowserContentWriteState } from './browser-content-write-state'
 
 type Selection = { name: string; versionIndex: string }
 export interface ContentMutationPlan {
-  deployment: { chainIdentifier: string; originalPackageId: string; callablePackageId: string; marketConfigId: string; kindRegistryId: string }
+  deployment: { chainIdentifier: string; originalPackageId: string; callablePackageId: string; marketConfigId: string; kindRegistryId: string; protocolGateId: string }
   soulId: string; stateId: string; contentId: string; author: string; ownershipEpoch: string
   kind: number; action: 'delete' | 'purge' | 'set-active' | 'clear-active'
   target: Selection | null; expectedActive: Selection | null; grantId: string | null
@@ -53,14 +53,14 @@ function selection(v: unknown, kind: number) {
 export function parseContentMutationPlan(input: unknown): ContentMutationPlan {
   const p = structuredClone(input) as ContentMutationPlan
   exact(p, ['deployment', 'soulId', 'stateId', 'contentId', 'author', 'ownershipEpoch', 'kind', 'action', 'target', 'expectedActive', 'grantId', 'expectedSlot'])
-  exact(p.deployment, ['chainIdentifier', 'originalPackageId', 'callablePackageId', 'marketConfigId', 'kindRegistryId'])
+  exact(p.deployment, ['chainIdentifier', 'originalPackageId', 'callablePackageId', 'marketConfigId', 'kindRegistryId', 'protocolGateId'])
   const d = p.deployment
   check(typeof d.chainIdentifier === 'string' && /^[0-9a-f]{8}$/.test(d.chainIdentifier), 'INVALID_CHAIN')
-  ;[d.originalPackageId, d.callablePackageId, d.marketConfigId, d.kindRegistryId, p.soulId, p.stateId, p.contentId, p.author].forEach(id)
+  ;[d.originalPackageId, d.callablePackageId, d.marketConfigId, d.kindRegistryId, d.protocolGateId, p.soulId, p.stateId, p.contentId, p.author].forEach(id)
   uint(p.ownershipEpoch)
   check(Number.isInteger(p.kind) && p.kind >= 0 && p.kind <= 0xffff_ffff
     && ['delete', 'purge', 'set-active', 'clear-active'].includes(p.action), 'INVALID_ACTION')
-  const roots = [p.soulId, p.stateId, p.contentId, d.marketConfigId, d.kindRegistryId, CLOCK]
+  const roots = [p.soulId, p.stateId, p.contentId, d.marketConfigId, d.kindRegistryId, d.protocolGateId, CLOCK]
   check(new Set(roots).size === roots.length && !roots.includes(d.originalPackageId) && !roots.includes(d.callablePackageId), 'OBJECT_ALIAS')
   if (p.expectedActive !== null) selection(p.expectedActive, p.kind)
   if (p.grantId !== null) { id(p.grantId); check(p.action === 'delete' && !roots.includes(p.grantId)
@@ -83,7 +83,8 @@ export function contentMutationKey(input: ContentMutationPlan) {
   return `soulidity.content-mutation:${d.chainIdentifier}:${d.originalPackageId}:${d.callablePackageId}:${d.marketConfigId}:${d.kindRegistryId}:${p.soulId}:${p.author}`
 }
 export function buildContentMutationTransaction(input: ContentMutationPlan) {
-  const p = parseContentMutationPlan(input), d = { packageId: p.deployment.callablePackageId, marketConfigId: p.deployment.marketConfigId }
+  const p = parseContentMutationPlan(input), d = { packageId: p.deployment.callablePackageId,
+    marketConfigId: p.deployment.marketConfigId, protocolGateId: p.deployment.protocolGateId }
   const common = { contentObjectId: p.contentId, stateObjectId: p.stateId, kindRegistryObjectId: p.deployment.kindRegistryId,
     kind: p.kind, expectedOwnershipEpoch: p.ownershipEpoch, expectedActive: p.expectedActive }
   if (p.action === 'clear-active') return buildClearActiveContentTx(common, d)
@@ -148,7 +149,8 @@ export function assertContentMutationAuthority(input: ContentMutationPlan, proof
   const p = parseContentMutationPlan(input), s = proof.snapshot, d = p.deployment
   check(proof.soulId === p.soulId && proof.stateId === p.stateId && proof.contentId === p.contentId
     && proof.originalPackageId === d.originalPackageId && proof.callablePackageId === d.callablePackageId
-    && proof.kindRegistryId === d.kindRegistryId && s.ownershipEpoch === p.ownershipEpoch, 'SCOPE_CHANGED')
+    && proof.kindRegistryId === d.kindRegistryId && proof.protocolGateId === d.protocolGateId
+    && s.ownershipEpoch === p.ownershipEpoch, 'SCOPE_CHANGED')
   const active = s.activeBindings.find(row => row.kind === p.kind)
   check(same(active ? { name: active.name, versionIndex: active.version_index } : null, p.expectedActive), 'ACTIVE_CHANGED')
   const descriptor = s.kindDescriptors.find(row => row.kind === p.kind)

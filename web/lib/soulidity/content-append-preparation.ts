@@ -26,7 +26,7 @@ function keys(v: unknown, names: string[]): asserts v is Record<string, unknown>
  * This crypto layer binds its exact canonical bytes; a signature is evidence of
  * preparation, never permission to skip current chain authority or cost review. */
 export interface ContentAppendPreparationScope {
-  author: string; originalPackageId: string; callablePackageId: string
+  author: string; originalPackageId: string; callablePackageId: string; protocolGateId: string
   contentObjectId: string; kind: number; name: string; versionIndex: string
   intentJson: string
 }
@@ -51,7 +51,8 @@ export interface ContentAppendCryptoWallet {
 }
 function scope(input: ContentAppendPreparationScope) {
   const s = structuredClone(input)
-  keys(s, ['author', 'originalPackageId', 'callablePackageId', 'contentObjectId', 'kind', 'name', 'versionIndex', 'intentJson'])
+  keys(s, ['author', 'originalPackageId', 'callablePackageId', 'protocolGateId', 'contentObjectId', 'kind', 'name', 'versionIndex', 'intentJson'])
+  check(id(s.protocolGateId), 'protocolGateId_REQUIRED')
   check(id(s.author) && id(s.originalPackageId) && id(s.callablePackageId) && id(s.contentObjectId), 'SCOPE_ID_INVALID')
   check(Number.isInteger(s.kind) && s.kind >= 0 && s.kind <= 0xffffffff && /^[a-z0-9_-]{1,32}$/.test(s.name)
     && (s.kind !== 0 || s.name === 'soul') && (s.kind !== 1 || s.name === 'default')
@@ -218,7 +219,7 @@ export async function rewrapContentAppendPreparation(params: {
 }): Promise<ContentAppendPreparation> {
   const next = scope(params.nextScope), config = validateBrowserContentSealConfig(params.sealConfig), wallet = { ...params.wallet }
   const record = await verifyContentAppendPreparation(params.record, wallet.client)
-  check((['author', 'originalPackageId', 'callablePackageId', 'contentObjectId', 'kind', 'name'] as const)
+  check((['author', 'originalPackageId', 'callablePackageId', 'protocolGateId', 'contentObjectId', 'kind', 'name'] as const)
     .every(key => next[key] === record.scope[key]) && BigInt(next.versionIndex) >= BigInt(record.scope.versionIndex), 'REBASE_SCOPE_MISMATCH')
   check(contentAppendPreparationOperationHash(next) !== contentAppendPreparationOperationHash(record.scope), 'REBASE_ATTEMPT_UNCHANGED')
   const unlocked = await unlockContentAppendPreparation(record, wallet)
@@ -252,7 +253,7 @@ export async function unlockContentUploadMaterial(input: ContentUploadMaterial, 
     await step(() => seal.getKeyServers())
     const tx = new Transaction()
     tx.moveCall({ target: `${s.callablePackageId}::content::seal_approve_upload_recovery`,
-      arguments: [tx.pure.vector('u8', fromHex(record.recovery.documentId))] })
+      arguments: [tx.pure.vector('u8', fromHex(record.recovery.documentId)), tx.object(s.protocolGateId)] })
     const txBytes = await step(() => tx.build({ client: wallet.client, onlyTransactionKind: true }))
     const session = await step(() => SessionKey.create({ address: s.author, packageId: s.originalPackageId,
       ttlMin: record.sealConfig.ttlMin, suiClient: wallet.sealClient }))

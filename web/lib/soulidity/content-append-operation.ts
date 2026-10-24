@@ -80,21 +80,23 @@ export function parseContentAppendIntent(record: ContentAppendPreparation): Cont
 }
 function configured(record: ContentAppendPreparation, i: ContentAppendIntent, config: BrowserContentWriteConfig) {
   check(config.target.soulidityOriginalPackageId === record.scope.originalPackageId
-    && config.target.soulidityCallablePackageId === record.scope.callablePackageId && config.kindRegistryId === i.kindRegistryId,
+    && config.target.soulidityCallablePackageId === record.scope.callablePackageId && config.kindRegistryId === i.kindRegistryId
+    && config.protocolGateId === record.scope.protocolGateId,
   'RELEASE_CHANGED')
   check(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID') === record.scope.originalPackageId
     && getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID') === record.scope.callablePackageId
+    && getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID') === record.scope.protocolGateId
     && getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID') === i.kindRegistryId
     && getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID') === i.marketConfigId
     && json(getBrowserPrivateLoadoutUploadConfig(i.uploadConfig.storageEpochs)) === json(i.uploadConfig), 'CONFIGURATION_CHANGED')
 }
 export function contentAppendAttachment(record: ContentAppendPreparation) {
   const i = parseContentAppendIntent(record), s = record.scope
-  const sharedIds = [i.soulId, i.stateId, i.kindRegistryId, i.marketConfigId, s.contentObjectId, `0x${'0'.repeat(63)}6`]
+  const sharedIds = [i.soulId, i.stateId, i.kindRegistryId, i.marketConfigId, s.contentObjectId, s.protocolGateId, `0x${'0'.repeat(63)}6`]
   check(i.grantId === null || !sharedIds.includes(i.grantId), 'GRANT_OBJECT_ROLE_ALIAS')
   const operationScope = `content-append:${contentAppendPreparationOperationHash(s)}`
   return { scope: operationScope, historicalOwnedObjectIds: i.grantId ? [i.grantId] : [],
-    historicalSharedObjects: [{ objectId: s.contentObjectId, mutable: true }, { objectId: i.stateId, mutable: true },
+    historicalSharedObjects: [{ objectId: s.protocolGateId, mutable: false }, { objectId: s.contentObjectId, mutable: true }, { objectId: i.stateId, mutable: true },
       { objectId: i.kindRegistryId, mutable: false }, { objectId: `0x${'0'.repeat(63)}6`, mutable: false },
       ...(i.spriteConfigJson !== null || i.setActive ? [{ objectId: i.marketConfigId, mutable: false }] : [])],
     append: (tx: Transaction, blobObjectId: string) => {
@@ -103,7 +105,7 @@ export function contentAppendAttachment(record: ContentAppendPreparation) {
     check(blobObjectId !== i.grantId, 'GRANT_BLOB_ROLE_ALIAS')
     // Both write and historical templates bind the signed deployment explicitly.
     // Current write authority/configuration is checked separately before signing.
-    const deployment = { packageId: s.callablePackageId, marketConfigId: i.marketConfigId }
+    const deployment = { packageId: s.callablePackageId, protocolGateId: s.protocolGateId, marketConfigId: i.marketConfigId }
     const common = { contentObjectId: s.contentObjectId, stateObjectId: i.stateId, kindRegistryObjectId: i.kindRegistryId,
       kind: s.kind, name: s.name, slotReadModeMask: i.readModeMask, downloadPolicy: i.downloadPolicy,
       expectedVersionIndex: s.versionIndex, encryptedEnvelope: contentAppendPreparedEnvelope(record, blobObjectId), contentBlobObjectId: blobObjectId }

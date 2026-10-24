@@ -16,6 +16,7 @@ export type SoulidityPublicEnvName =
   | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'
   | 'NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID'
   | 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID'
+  | 'NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID'
   | 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID'
   | 'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID'
@@ -29,7 +30,11 @@ export class MissingSoulidityEnvError extends Error {
 }
 
 function readPublicEnv(name: SoulidityPublicEnvName): string | undefined {
-  const envValue = process.env[name]?.trim()
+  // Public browser builds inline only statically named env properties. The
+  // fresh gate has no manifest fallback until its new package is published.
+  const envValue = (name === 'NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID'
+    ? process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID
+    : process.env[name])?.trim()
   if (envValue && envValue.length > 0) {
     return envValue
   }
@@ -53,6 +58,8 @@ function readPublicEnv(name: SoulidityPublicEnvName): string | undefined {
       return getSoulidityMarketConfigV2PackageId()
     case 'NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID':
       return deployment.kioskRegistryId
+    case 'NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID':
+      return deployment.protocolGateId
     case 'NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID':
       return deployment.kindRegistryId
     case 'NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID':

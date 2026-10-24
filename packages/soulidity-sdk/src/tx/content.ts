@@ -9,7 +9,7 @@
  */
 import { Transaction, type TransactionArgument } from '@mysten/sui/transactions'
 import { normalizeSuiObjectId } from '@mysten/sui/utils'
-import { getRequiredSoulidityEnv } from '../env'
+import { getOptionalSoulidityEnv, getRequiredSoulidityEnv } from '../env'
 import { downloadPolicyToU8 } from '../kinds'
 import type { SoulDownloadPolicy } from '../types'
 import { validateInitialStateConfigEntries } from './shared'
@@ -42,7 +42,7 @@ export interface ContentMutationSnapshot {
   expectedOwnershipEpoch: ContentU64
   expectedActive: ContentExpectedActive
 }
-export interface ContentMutationDeployment { packageId: string; marketConfigId: string }
+export interface ContentMutationDeployment { packageId: string; marketConfigId: string; protocolGateId?: string }
 
 function contentObjectId(value: string): string {
   if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{1,64}$/.test(value)) throw new Error('Content object ID is invalid')
@@ -69,7 +69,7 @@ function expectedActive(value: ContentExpectedActive): { name: string; versionIn
 }
 function mutationDeployment(deployment?: ContentMutationDeployment): ContentMutationDeployment {
   const value = deployment ?? loadContentEnv()
-  return { packageId: contentObjectId(value.packageId), marketConfigId: contentObjectId(value.marketConfigId) }
+  return { packageId: contentObjectId(value.packageId), marketConfigId: contentObjectId(value.marketConfigId), protocolGateId: value.protocolGateId }
 }
 function mutationSnapshot<T extends ContentRoots & ContentMutationSnapshot & { kind: number }>(params: T) {
   return { ...params, contentObjectId: contentObjectId(params.contentObjectId), stateObjectId: contentObjectId(params.stateObjectId),
@@ -105,10 +105,17 @@ function addMutationPreconditions(tx: Transaction, params: ContentRoots & Conten
   addAssertContentActiveBindingCalls(tx, params, deployment)
 }
 
-function loadContentEnv(): ContentRoots & { packageId: string; marketConfigId: string } {
+function contentProtocolGateId(deployment?: { protocolGateId?: string }): string {
+  const value = deployment?.protocolGateId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID')
+  if (!value.trim()) throw new Error('Missing required Soulidity protocolGateId')
+  return contentObjectId(value)
+}
+
+function loadContentEnv(): ContentRoots & ContentMutationDeployment {
   return {
     packageId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'),
     marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+    protocolGateId: getOptionalSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID') ?? undefined,
     contentObjectId: '', // overridden by callers per-tx
     stateObjectId: '',
     kindRegistryObjectId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'),
@@ -149,13 +156,15 @@ function appendEnvelope(params: AppendContentVersionAsOwnerParams) {
 export function addAppendContentVersionAsOwnerCalls(
   tx: Transaction,
   params: AppendContentVersionAsOwnerParams,
-  deployment?: { packageId: string },
+  deployment?: { packageId: string; protocolGateId?: string },
 ): TransactionArgument {
   const envelope = appendEnvelope(params)
-  const { packageId } = deployment ?? loadContentEnv()
+  const resolved = deployment ?? loadContentEnv(), { packageId } = resolved
+  const protocolGateId = contentProtocolGateId(resolved)
   const result = tx.moveCall({
     target: `${packageId}::content::append_version_as_owner`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.contentObjectId),
       tx.object(params.stateObjectId),
       tx.object(params.kindRegistryObjectId),
@@ -194,13 +203,15 @@ export interface AppendContentVersionAsGrantedAgentParams extends AppendContentV
 export function addAppendContentVersionAsGrantedAgentCalls(
   tx: Transaction,
   params: AppendContentVersionAsGrantedAgentParams,
-  deployment?: { packageId: string },
+  deployment?: { packageId: string; protocolGateId?: string },
 ): TransactionArgument {
   const envelope = appendEnvelope(params)
-  const { packageId } = deployment ?? loadContentEnv()
+  const resolved = deployment ?? loadContentEnv(), { packageId } = resolved
+  const protocolGateId = contentProtocolGateId(resolved)
   const result = tx.moveCall({
     target: `${packageId}::content::append_version_as_granted_agent`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.contentObjectId),
       tx.object(params.stateObjectId),
       tx.object(params.kindRegistryObjectId),
@@ -240,11 +251,13 @@ export function buildDeleteContentVersionAsOwnerTx(
 ): Transaction {
   params = { ...mutationSnapshot(params), name: contentName(params.name), versionIndex: contentVersionIndex(params.versionIndex) }
   const resolved = mutationDeployment(deployment), { packageId } = resolved
+  const protocolGateId = contentProtocolGateId(resolved)
   const tx = new Transaction()
   addMutationPreconditions(tx, params, resolved)
   tx.moveCall({
     target: `${packageId}::content::delete_version_as_owner`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.contentObjectId),
       tx.object(params.stateObjectId),
       tx.object(params.kindRegistryObjectId),
@@ -267,11 +280,13 @@ export function buildDeleteContentVersionAsGrantedAgentTx(
   params = { ...mutationSnapshot(params), name: contentName(params.name), versionIndex: contentVersionIndex(params.versionIndex),
     soulGrantObjectId: contentObjectId(params.soulGrantObjectId) }
   const resolved = mutationDeployment(deployment), { packageId } = resolved
+  const protocolGateId = contentProtocolGateId(resolved)
   const tx = new Transaction()
   addMutationPreconditions(tx, params, resolved)
   tx.moveCall({
     target: `${packageId}::content::delete_version_as_granted_agent`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.contentObjectId),
       tx.object(params.stateObjectId),
       tx.object(params.kindRegistryObjectId),
@@ -299,11 +314,13 @@ export function buildPurgeContentVersionAsOwnerTx(
 ): Transaction {
   params = { ...mutationSnapshot(params), name: contentName(params.name), versionIndex: contentVersionIndex(params.versionIndex) }
   const resolved = mutationDeployment(deployment), { packageId } = resolved
+  const protocolGateId = contentProtocolGateId(resolved)
   const tx = new Transaction()
   addMutationPreconditions(tx, params, resolved)
   tx.moveCall({
     target: `${packageId}::content::purge_deleted_version_as_owner`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.contentObjectId),
       tx.object(params.stateObjectId),
       tx.object(params.kindRegistryObjectId),

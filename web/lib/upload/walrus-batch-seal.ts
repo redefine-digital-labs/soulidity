@@ -18,14 +18,15 @@ export interface WalrusBatchSealSlot { fileIndex: number; contentObjectId: strin
 export interface WalrusBatchSealContext {
   schema: 'soulidity.walrus-batch-seal.v1'
   scope: WalrusBatchScope
-  originalPackageId: string; callablePackageId: string; recoveryNonce: string
+  originalPackageId: string; callablePackageId: string; protocolGateId: string; recoveryNonce: string
   sealConfig: BrowserContentSealConfig
   slots: WalrusBatchSealSlot[]
 }
 export interface WalrusBatchInitialSidecar { fileIndex: number; sidecar: SealEnvelopeSidecar & { sealPackageId: string } }
 export function parseWalrusBatchSealContext(input: unknown): WalrusBatchSealContext {
   const c = structuredClone(input) as WalrusBatchSealContext
-  walrusBatchKeys(c, ['schema', 'scope', 'originalPackageId', 'callablePackageId', 'recoveryNonce', 'sealConfig', 'slots'])
+  walrusBatchKeys(c, ['schema', 'scope', 'originalPackageId', 'callablePackageId', 'protocolGateId', 'recoveryNonce', 'sealConfig', 'slots'])
+  check(walrusBatchAddress(c.protocolGateId), 'protocolGateId_REQUIRED')
   c.scope = parseWalrusBatchScope(c.scope); c.sealConfig = validateBrowserContentSealConfig(c.sealConfig)
   check(c.schema === 'soulidity.walrus-batch-seal.v1' && c.scope.network === 'mainnet'
     && walrusBatchAddress(c.originalPackageId) && walrusBatchAddress(c.callablePackageId)
@@ -199,7 +200,7 @@ export function createWalrusBatchSealProtector(params: {
       assertProtection(context, manifest, protection)
       const seal = await openSeal(input.signal), tx = new Transaction()
       tx.moveCall({ target: `${context.callablePackageId}::content::seal_approve_upload_recovery`,
-        arguments: [tx.pure.vector('u8', fromHex(recoveryId(context, manifest)))] })
+        arguments: [tx.pure.vector('u8', fromHex(recoveryId(context, manifest))), tx.object(context.protocolGateId)] })
       const txBytes = await step(input.signal, () => tx.build({ client: wallet.client, onlyTransactionKind: true }))
       const session = await step(input.signal, () => SessionKey.create({ address: context.scope.owner, packageId: context.originalPackageId,
         ttlMin: context.sealConfig.ttlMin, suiClient: wallet.sealClient }))

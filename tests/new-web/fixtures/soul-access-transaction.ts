@@ -10,6 +10,7 @@ import { buildSoulAccessTransaction, createSoulAccessAdapter, createSoulAccessPl
   type SoulAccessPlan, type SoulAccessRecord, type SoulAccessRequest } from '../../../web/lib/soulidity/soul-access-operation'
 
 export const accessId = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
+const ProtocolGateBcs = bcs.struct('ProtocolGate', { id: bcs.Address, version: bcs.u64(), paused: bcs.bool() })
 const priorDigest = toBase58(new Uint8Array(32).fill(7)), A = bcs.Address, N = bcs.u32()
 const shared = { Shared: { initialSharedVersion: '1' } }, fieldCodec = (key: any, value: any) => bcs.struct('Field', { id: A, name: key, value })
 type Owner = Parameters<typeof bcs.Owner.serialize>[0]
@@ -42,7 +43,7 @@ export function soulAccessFixtureState(options: { action?: SoulAccessAction; slo
   const market = { id: accessId(7000), version: '2', legacy_config_id: accessId(7002), fee_recipient: accessId(7003),
     platform_fee_bps: options.feeBps ?? 250, primary_enabled: true, secondary_enabled: true }
   const deployment = { chainIdentifier: '35834a8a', originalPackageId: accessId(7001), callablePackageId: accessId(7004),
-    marketConfigId: market.id, kindRegistryId: registry.id, paymentCoinType: SOUL_PUBLIC_USDC_TYPE }
+    protocolGateId: accessId(7990), marketConfigId: market.id, kindRegistryId: registry.id, paymentCoinType: SOUL_PUBLIC_USDC_TYPE }
   const observed = { deployment, soulId: state.soul_id, stateId: state.id, contentId: state.content_id, paidAccessListId: paid.id, author,
     stateBcs: SoulStatePublicBcs.serialize(state).toBase64(), paidBcs: D.Paid.serialize(paid).toBase64(), marketConfigBcs: SoulPublicMarketConfigBcs.serialize(market).toBase64(),
     buyerAddress: grantee, buyerTableBcs: table ? D.Table.serialize(table).toBase64() : null, kind: isGrant ? null : 3,
@@ -173,6 +174,8 @@ export async function soulAccessTransactionFixture(options: Parameters<typeof so
     }
     add('paid', paid.id, `${pkg}::paid_access::SoulPaidAccessList`, D.Paid, paid, nextPaid, shared)
   }
+  if (soulAccessIsGrant(action) || action === 'paid-revoke') add('gate', d.protocolGateId, `${pkg}::protocol_gate::ProtocolGate`, ProtocolGateBcs,
+    { id: d.protocolGateId, version: '1', paused: false }, null, shared, true)
   if (soulAccessIsGrant(action) || action === 'paid-purchase') add('clock', accessId(6), '0x2::clock::Clock', D.Clock,
     { id: accessId(6), timestamp_ms: '1100' }, null, shared, true)
   if (soulAccessUsesMarket(action)) add('market', f.market.id, `${pkg}::market::MarketConfigV2`, SoulPublicMarketConfigBcs, f.market, null, shared, true)

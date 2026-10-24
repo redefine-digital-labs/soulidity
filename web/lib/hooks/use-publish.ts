@@ -47,6 +47,7 @@ export type JoinedPublishParams = Omit<PublishParams, 'cover'> & {
 }
 export function getSoulAuthoringTarget() {
   return parseSoulAuthoringTarget({ ...getCollectionBuyTarget(),
+    protocolGateId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID'),
     kindRegistryId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID'),
     soulTransferPolicyId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID'),
     blobBaseUrl: (process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR_URL || 'https://aggregator.mainnet.walrus.mirai.cloud').replace(/\/$/, ''),
@@ -180,7 +181,8 @@ export function useSingleSoulAuthoring(approve: (record: SoulAuthoringPacketReco
         })
         if (draft.listOnPublish && !request.mints[0].listingPriceAtomic) throw new Error('Set a listing price before publishing.')
         if (request.bindCollectionId) await preflightCollectionBindTarget({ client, deployment: bindDeployment,
-          walletAddress: author, collectionId: request.bindCollectionId, signal })
+          walletAddress: author, collectionId: request.bindCollectionId, signal,
+          souls: request.mints.map(mint => ({ hasAnimacraftProvenance: false, creatorRoyaltyBps: mint.creatorRoyaltyBps })) })
         guard()
         preparation = await prepareSoulAuthoring({ request, files, client: walrus, lifetime, store,
           wallet: { client, sealClient: client, signal, getAddress: wallet.getWalletAddress, signPersonalMessage: wallet.signPersonalMessage },
@@ -257,7 +259,8 @@ export function useSingleSoulAuthoring(approve: (record: SoulAuthoringPacketReco
       }
       if (!head || head.plan.step.kind === 'REGISTER') {
         if (request.bindCollectionId) await preflightCollectionBindTarget({ client, deployment: bindDeployment,
-          walletAddress: author, collectionId: request.bindCollectionId, signal })
+          walletAddress: author, collectionId: request.bindCollectionId, signal,
+          souls: request.mints.map(mint => ({ hasAnimacraftProvenance: false, creatorRoyaltyBps: mint.creatorRoyaltyBps })) })
         guard()
         const kiosk = !retryPacket && head?.plan.step.kind === 'REGISTER' ? head.plan.step.kiosk
           : await resolveSoulAuthoringKiosk({ client, target, author, signal })

@@ -16,7 +16,7 @@ async function fixture() {
   const target = { chainIdentifier: '35834a8a', originalPackageId: id(1), callablePackageId: id(10),
     callableDigest: toBase58(new Uint8Array(32).fill(7)), marketConfigId: id(11), kioskRegistryId: id(12),
     personalKioskTypePackageId: id(13), paymentCoinType: SOUL_PUBLIC_USDC_TYPE, collectionTransferPolicyId: id(14),
-    kioskPackageId: id(15), kindRegistryId: id(16), soulTransferPolicyId: id(17), blobBaseUrl: 'https://aggregator.example.com' }
+    kioskPackageId: id(15), kindRegistryId: id(16), soulTransferPolicyId: id(17), protocolGateId: id(90), blobBaseUrl: 'https://aggregator.example.com' }
   const request: SoulAuthoringRequest = { schema: 'soulidity.soul-authoring-request.v1', target, author,
     operationId: '1'.repeat(32), storageEpochs: 5, collection: null, bindCollectionId: null, mints: [{ kind: 'ORDINARY', mintNonce,
       contentObjectId: deriveMintContentObjectId({ ...target, author, mintNonce: fromHex(mintNonce) }), name: 'Saved creation',

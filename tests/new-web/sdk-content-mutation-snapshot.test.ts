@@ -7,7 +7,7 @@ import { addAssertContentMutationScopeCalls, addAssertContentActiveBindingCalls,
   buildDeleteContentVersionAsGrantedAgentTx, buildPurgeContentVersionAsOwnerTx } from '../../packages/soulidity-sdk/src/tx/content'
 
 const id = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
-const deployment = { packageId: id(10), marketConfigId: id(11) }
+const deployment = { packageId: id(10), marketConfigId: id(11), protocolGateId: id(12) }
 const params = { contentObjectId: id(1), stateObjectId: id(2), kindRegistryObjectId: id(3), soulGrantObjectId: id(4),
   kind: 3, name: 'sprite', versionIndex: '9007199254740993', expectedOwnershipEpoch: '18446744073709551615',
   expectedActive: { name: 'prior', versionIndex: '9007199254740993' } }

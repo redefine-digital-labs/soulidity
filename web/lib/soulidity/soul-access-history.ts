@@ -13,6 +13,7 @@ import { SoulAccessCoinBcs, SOUL_ACCESS_CLOCK, soulAccessBcs, soulAccessDecode a
 type Effects = ReturnType<typeof bcs.TransactionEffects.parse>
 type Owner = ReturnType<typeof bcs.Owner.parse>
 const A = bcs.Address, N = bcs.u32()
+const ProtocolGateBcs = bcs.struct('ProtocolGate', { id: A, version: bcs.u64(), paused: bcs.bool() })
 const fieldCodec = (key: any, value: any) => bcs.struct('Field', { id: A, name: key, value })
 const ownerIs = (owner: Owner, kind: 'AddressOwner' | 'ObjectOwner', address: string) => owner[kind] === address
 
@@ -129,6 +130,10 @@ export async function proveSoulAccessHistory(params: {
     && state.value.content_id === p.contentId && state.value.access_list_id === p.paidAccessListId
     && state.value.active_grants.id === oldState.active_grants.id && state.value.active_grant_ids.id === oldState.active_grant_ids.id,
   'HISTORY_AUTHORITY')
+  if (grant || p.action === 'paid-revoke') {
+    const gate = await root(p.deployment.protocolGateId, `${pkg}::protocol_gate::ProtocolGate`, ProtocolGateBcs, 'readonly')
+    check(gate.value.id === p.deployment.protocolGateId && gate.value.version === '1' && !gate.value.paused, 'HISTORY_GATE')
+  }
   let now: string | null = null
   if (grant || p.action === 'paid-purchase') {
     const clock = await root(SOUL_ACCESS_CLOCK, '0x2::clock::Clock', D.Clock, 'readonly')

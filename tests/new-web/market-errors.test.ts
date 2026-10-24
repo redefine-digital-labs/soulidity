@@ -343,3 +343,31 @@ describe('collection error catalog + abort parser', () => {
     expect(enhanced.collectionAbort?.code).toBe(4)
   })
 })
+
+
+describe('fresh-release mutation and protocol gate aborts', () => {
+  it.each([
+    ['content', 37, 'ESoulListed', 'Cancel the active listing'],
+    ['market', 82, 'EStateConfigKeyReserved', 'reserved'],
+    ['market', 83, 'ESoulListedForMutation', 'Cancel the active listing'],
+    ['collection', 8, 'ENativeSoulNotCollectable', 'Animacraft'],
+    ['protocol_gate', 0, 'EGateVersionMismatch', 'Upgrade'],
+    ['protocol_gate', 1, 'EGatePaused', 'paused'],
+    ['protocol_gate', 2, 'EGateCapMismatch', 'capability'],
+    ['protocol_gate', 3, 'ENothingToMigrate', 'migration'],
+  ] as const)('translates %s abort %s with actionable recovery', (module, code, name, recovery) => {
+    const raw = new Error(`MoveAbort in 1st command, abort code: ${code}, in '0xab::${module}::fixture'`)
+    const enhanced = enhanceSoulidityError(raw) as Error
+    expect(enhanced).not.toBe(raw)
+    expect(enhanced.message).toContain(name)
+    expect(enhanced.message).toContain(recovery)
+    expect(enhanced.cause).toBe(raw)
+    const full = new Error(`MoveAbort(MoveLocation { module: ModuleId { address: 0xab, name: Identifier("${module}") }, function: 1, instruction: 7, function_name: Some("fixture") }, ${code})`)
+    expect((enhanceSoulidityError(full) as Error).message).toContain(name)
+  })
+  it('keeps the reserved state config code at 82 with its expanded semantics', () => {
+    expect(MARKET_ERROR_CATALOG[82]?.name).toBe('EStateConfigKeyReserved')
+    expect(MARKET_ERROR_CATALOG[82]?.summary).toMatch(/state config/i)
+    expect(COLLECTION_ERROR_CATALOG[8]?.httpStatus).toBe(400)
+  })
+})

@@ -16,11 +16,12 @@ beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', id(10))
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID', id(11))
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', id(3))
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', id(12))
 })
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 const builders = [
-  ['owner', buildAppendContentVersionAsOwnerTx, addAppendContentVersionAsOwnerCalls, 'append_version_as_owner', 7],
-  ['grantee', buildAppendContentVersionAsGrantedAgentTx, addAppendContentVersionAsGrantedAgentCalls, 'append_version_as_granted_agent', 8],
+  ['owner', buildAppendContentVersionAsOwnerTx, addAppendContentVersionAsOwnerCalls, 'append_version_as_owner', 8],
+  ['grantee', buildAppendContentVersionAsGrantedAgentTx, addAppendContentVersionAsGrantedAgentCalls, 'append_version_as_granted_agent', 9],
 ] as const
 function pure(tx: Transaction, position: number): Uint8Array {
   const data = tx.getData(), arg = data.commands[0].MoveCall!.arguments[position]
@@ -36,7 +37,7 @@ it.each(builders)('%s uses the sole current ABI, exact u64/envelope before Blob'
   expect(bcs.u64().parse(pure(tx, index))).toBe('9007199254740993')
   expect(bcs.vector(bcs.u8()).parse(pure(tx, index + 1))).toEqual([0, 128, 255])
   const data = tx.getData()
-  for (const [pos, objectId] of [[0, id(1)], [1, id(2)], [2, id(3)], [index + 2, id(5)], [index + 3, id(6)]] as const) {
+  for (const [pos, objectId] of [[0, id(12)], [1, id(1)], [2, id(2)], [3, id(3)], [index + 2, id(5)], [index + 3, id(6)]] as const) {
     const arg = call.arguments[pos]; if (arg.$kind !== 'Input') throw new Error('Expected object input')
     expect(data.inputs[arg.Input]).toMatchObject({ UnresolvedObject: { objectId } })
   }

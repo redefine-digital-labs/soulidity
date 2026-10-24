@@ -7,6 +7,7 @@ const SUI_CLOCK_OBJECT_ID = '0x6'
 export interface PaidAccessDeployment {
   packageId: string
   marketConfigId: string
+  protocolGateId?: string
   kindRegistryId?: string
   paymentCoinType?: string
 }
@@ -15,6 +16,9 @@ interface PaidAccessKindRoots extends PaidAccessRoots { kindRegistryObjectId: st
 function roots(params: PaidAccessRoots, deployment?: PaidAccessDeployment) {
   return { packageId: accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')),
     list: accessId(params.paidAccessListObjectId), state: accessId(params.stateObjectId) }
+}
+function protocolGate(deployment?: PaidAccessDeployment): string {
+  return accessId(deployment?.protocolGateId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID'), 'protocolGateId')
 }
 function market(deployment?: PaidAccessDeployment): string {
   return accessId(deployment?.marketConfigId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'))
@@ -91,7 +95,8 @@ export interface AddPaidAccessParams extends PaidAccessKindRoots {
 export function buildAddPaidAccessTx(params: AddPaidAccessParams, deployment?: PaidAccessDeployment, tx = new Transaction()): Transaction {
   const r = roots(params, deployment), registry = accessId(params.kindRegistryObjectId), grantee = accessId(params.granteeAddress, 'granteeAddress')
   const kind = accessKind(params.kind), scope = accessScope(params.scopeMask), expiry = optionalU64(params.expiresAtMs, 'expiresAtMs')
-  tx.moveCall({ target: `${r.packageId}::paid_access::add_access`, arguments: [tx.object(r.list), tx.object(r.state),
+  const protocolGateId = protocolGate(deployment)
+  tx.moveCall({ target: `${r.packageId}::paid_access::add_access`, arguments: [tx.object(protocolGateId), tx.object(r.list), tx.object(r.state),
     tx.object(registry), tx.pure.address(grantee), tx.pure.u32(kind), tx.pure.u64(scope),
     tx.pure.option('u64', expiry), tx.object(SUI_CLOCK_OBJECT_ID)] })
   return tx
@@ -99,7 +104,8 @@ export function buildAddPaidAccessTx(params: AddPaidAccessParams, deployment?: P
 export interface RevokePaidAccessParams extends PaidAccessRoots { granteeAddress: string; kind: number }
 export function buildRevokePaidAccessTx(params: RevokePaidAccessParams, deployment?: PaidAccessDeployment, tx = new Transaction()): Transaction {
   const r = roots(params, deployment), grantee = accessId(params.granteeAddress, 'granteeAddress'), kind = accessKind(params.kind)
-  tx.moveCall({ target: `${r.packageId}::paid_access::revoke_access`, arguments: [tx.object(r.list), tx.object(r.state),
+  const protocolGateId = protocolGate(deployment)
+  tx.moveCall({ target: `${r.packageId}::paid_access::revoke_access`, arguments: [tx.object(protocolGateId), tx.object(r.list), tx.object(r.state),
     tx.pure.address(grantee), tx.pure.u32(kind)] })
   return tx
 }
@@ -107,7 +113,8 @@ export interface CleanupStalePaidAccessParams extends PaidAccessRoots { addrs: s
 export function buildCleanupStalePaidAccessTx(params: CleanupStalePaidAccessParams, deployment?: PaidAccessDeployment, tx = new Transaction()): Transaction {
   if (params.addrs.length !== params.kinds.length) throw new Error('buildCleanupStalePaidAccessTx: addrs / kinds length mismatch')
   const r = roots(params, deployment), addrs = params.addrs.map(addr => accessId(addr, 'granteeAddress')), kinds = params.kinds.map(accessKind)
-  tx.moveCall({ target: `${r.packageId}::paid_access::cleanup_stale_entries`, arguments: [tx.object(r.list), tx.object(r.state),
+  const protocolGateId = protocolGate(deployment)
+  tx.moveCall({ target: `${r.packageId}::paid_access::cleanup_stale_entries`, arguments: [tx.object(protocolGateId), tx.object(r.list), tx.object(r.state),
     tx.pure.vector('address', addrs), tx.pure.vector('u32', kinds)] })
   return tx
 }

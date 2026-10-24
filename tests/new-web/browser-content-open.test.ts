@@ -27,7 +27,7 @@ async function fixture(kind: BrowserContentAccess['accessKind'] = 'owner', empty
   vi.spyOn(client.core, 'resolveTransactionPlugin').mockReturnValue(resolver.coreClientResolveTransactionPlugin)
   const ref = (type: string, module = 'content') => ({ body: { datatype: { package: id(1), module, type, typeParameters: [] } }, reference: 'immutable' })
   vi.spyOn(client.core, 'getMoveFunction').mockImplementation(async () => ({ function: { parameters: [
-    { body: { vector: 'u8' }, reference: null }, ref('SoulState', 'soul'),
+    { body: { vector: 'u8' }, reference: null }, ref('ProtocolGate', 'protocol_gate'), ref('SoulState', 'soul'),
     ...(kind === 'paid' ? [ref('SoulPaidAccessList', 'paid_access')] : []), ref('SoulContent'),
     ...(kind === 'granted-agent' ? [ref('SoulGrant', 'grant')] : []), { body: 'u32', reference: null },
     ref('String', 'string'), { body: 'u64', reference: null },
@@ -52,7 +52,7 @@ async function fixture(kind: BrowserContentAccess['accessKind'] = 'owner', empty
     kindName: 'skill', name: 'skill', versionIndex: '9007199254740993', owner: kind === 'owner' ? address : id(99), ownershipEpoch: '2',
     viewerAddress: address, accessKind: kind, slot: { readModeMask: '15', opMask: '0', grantScopeMask: '4', downloadPolicy: 'public' },
     artifact: { walrusBlobUrl: 'https://walrus.example.com/v1/blobs/blob', walrusBlobId: 'blob', blobObjectId: id(8), byteLength: String(ciphertext.length), endEpoch: 10 },
-    accessPolicy: { packageId: id(1), sealPackageId: id(1), callablePackageId: id(10), stateObjectId: id(3), contentObjectId: id(4),
+    accessPolicy: { packageId: id(1), sealPackageId: id(1), callablePackageId: id(10), protocolGateId: id(70), stateObjectId: id(3), contentObjectId: id(4),
       kind: 2, name: 'skill', versionIndex: '9007199254740993', moduleName: kind === 'paid' ? 'paid_access' : 'content',
       functionName: kind === 'owner' ? 'seal_approve_content_owner' : kind === 'paid' ? 'seal_approve_content_paid_access'
         : kind === 'public' ? 'seal_approve_content_public' : 'seal_approve_content_granted_agent',
@@ -87,6 +87,9 @@ it.each(['owner', 'granted-agent', 'paid', 'public'] as const)('opens %s with re
   expect(f.unwrapped()?.every(v => v === 0)).toBe(true)
   const tx = f.transaction().ProgrammableTransaction
   expect(tx.commands[0].MoveCall).toMatchObject({ package: id(10), module: f.access.accessPolicy.moduleName, function: f.access.accessPolicy.functionName })
+  const approval = tx.commands[0].MoveCall, gate = tx.inputs[approval.arguments[1].Input]
+  expect(tx.inputs[approval.arguments[0].Input].Pure.bytes).toBe(toBase64(bcs.vector(bcs.u8()).serialize(fromHex(f.access.accessPolicy.documentIdHex)).toBytes()))
+  expect(gate.Object.SharedObject).toMatchObject({ objectId: id(70), mutable: false })
   expect(tx.inputs.filter((v: any) => v.Pure).at(-1).Pure.bytes).toBe(toBase64(bcs.u64().serialize('9007199254740993').toBytes()))
   expect(f.fetcher).toHaveBeenCalledWith(f.access.artifact.walrusBlobUrl, expect.objectContaining({ credentials: 'omit', redirect: 'error' }))
 })
@@ -182,4 +185,9 @@ it.each(['length', 'oversize', 'truncated', 'status'])('bounds storage transport
 it('rejects mismatched approval objects rather than fabricating an owner call', async () => {
   const f = await fixture(); f.access.accessPolicy.contentObjectId = id(66)
   expect(() => buildBrowserContentApproval(f.access)).toThrow()
+})
+
+it('fails clearly when the content approval lacks protocolGateId', async () => {
+  const f = await fixture(); f.access.accessPolicy.protocolGateId = ''
+  expect(() => buildBrowserContentApproval(f.access)).toThrow('protocolGateId')
 })

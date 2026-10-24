@@ -36,6 +36,7 @@ import {
   READ_OWNER,
   READ_PAID,
   READ_PUBLIC,
+  getRequiredSoulidityEnv,
 } from '@soulidity/sdk'
 import {
   findActiveGrantSlotForViewer,
@@ -164,6 +165,7 @@ function buildSealedResponse(params: {
       packageId: route.sealPackageId,
       sealPackageId: route.sealPackageId,
       callablePackageId: route.callablePackageId,
+      protocolGateId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID'),
       stateObjectId: params.stateObjectId,
       contentObjectId: params.contentObjectId,
       kind: params.version.kind,

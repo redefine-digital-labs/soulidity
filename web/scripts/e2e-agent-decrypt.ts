@@ -10,10 +10,10 @@
  * 6. SHA-256 verify decrypted content
  *
  * Phase 2 unified content seal entry signatures:
- *   content::seal_approve_content_owner(id, state, content, kind, name, version_index, ctx)
- *   content::seal_approve_content_granted_agent(id, state, content, soul_grant, kind, name, version_index, clock, ctx)
- *   content::seal_approve_content_public(id, state, content, kind, name, version_index, ctx)
- *   paid_access::seal_approve_content_paid_access(id, state, paid_access_list, content, kind, name, version_index, clock, ctx)
+ *   content::seal_approve_content_owner(id, gate, state, content, kind, name, version_index, ctx)
+ *   content::seal_approve_content_granted_agent(id, gate, state, content, soul_grant, kind, name, version_index, clock, ctx)
+ *   content::seal_approve_content_public(id, gate, state, content, kind, name, version_index, ctx)
+ *   paid_access::seal_approve_content_paid_access(id, gate, state, paid_access_list, content, kind, name, version_index, clock, ctx)
  *
  * Usage:
  *   AGENT_MNEMONIC="..." AGENT_API_KEY="sk-..." SOUL_ID="..." \
@@ -116,6 +116,7 @@ interface AccessPolicy {
   packageId: string
   sealPackageId?: string
   callablePackageId?: string
+  protocolGateId: string
   stateObjectId: string
   contentObjectId: string
   kind: number
@@ -129,9 +130,11 @@ interface AccessPolicy {
 }
 
 function buildSealApprovalTx(accessPolicy: AccessPolicy, documentId: string): Transaction {
+  if (!accessPolicy.protocolGateId) throw new Error('Content approval requires protocolGateId')
   const tx = new Transaction()
   const target = `${accessPolicy.callablePackageId || accessPolicy.packageId}::${accessPolicy.moduleName}::${accessPolicy.functionName}`
   const docIdArg = tx.pure.vector('u8', Array.from(hexToBytes(documentId)))
+  const gateArg = tx.object(accessPolicy.protocolGateId)
   const stateArg = tx.object(accessPolicy.stateObjectId)
   const contentArg = tx.object(accessPolicy.contentObjectId)
   const kindArg = tx.pure.u32(accessPolicy.kind)
@@ -142,7 +145,7 @@ function buildSealApprovalTx(accessPolicy: AccessPolicy, documentId: string): Tr
     case 'seal_approve_content_owner':
       tx.moveCall({
         target,
-        arguments: [docIdArg, stateArg, contentArg, kindArg, nameArg, versionArg],
+        arguments: [docIdArg, gateArg, stateArg, contentArg, kindArg, nameArg, versionArg],
       })
       break
     case 'seal_approve_content_granted_agent':
@@ -153,6 +156,7 @@ function buildSealApprovalTx(accessPolicy: AccessPolicy, documentId: string): Tr
         target,
         arguments: [
           docIdArg,
+          gateArg,
           stateArg,
           contentArg,
           tx.object(accessPolicy.soulGrantObjectId),
@@ -166,7 +170,7 @@ function buildSealApprovalTx(accessPolicy: AccessPolicy, documentId: string): Tr
     case 'seal_approve_content_public':
       tx.moveCall({
         target,
-        arguments: [docIdArg, stateArg, contentArg, kindArg, nameArg, versionArg],
+        arguments: [docIdArg, gateArg, stateArg, contentArg, kindArg, nameArg, versionArg],
       })
       break
     case 'seal_approve_content_paid_access':
@@ -177,6 +181,7 @@ function buildSealApprovalTx(accessPolicy: AccessPolicy, documentId: string): Tr
         target,
         arguments: [
           docIdArg,
+          gateArg,
           stateArg,
           tx.object(accessPolicy.paidAccessListOnChainId),
           contentArg,

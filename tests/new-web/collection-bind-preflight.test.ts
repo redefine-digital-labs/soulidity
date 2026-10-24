@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { SuiGrpcClient } from '@mysten/sui/grpc'
 import { normalizeStructTag, toBase58 } from '@mysten/sui/utils'
 import { preflightCollectionBindTarget } from '../../packages/soulidity-sdk/src/collection-bind-preflight'
-import { SoulPublicCollectionBcs, SOUL_PUBLIC_USDC_TYPE } from '../../packages/soulidity-sdk/src/soul-public-listing'
+import { SoulPublicCollectionBcs, SoulPublicMarketConfigBcs, SOUL_PUBLIC_USDC_TYPE } from '../../packages/soulidity-sdk/src/soul-public-listing'
 
 const id = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
 const genesis = toBase58(new Uint8Array(32).fill(1)), digest = toBase58(new Uint8Array(32).fill(2))
@@ -14,21 +14,25 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 function fixture(options: { current?: string; max?: string | null; sold?: boolean; tradeable?: boolean } = {}) {
   const deployment = { originalPackageId: id(1), chainIdentifier: '01010101', marketConfigId: id(2),
     paymentCoinType: SOUL_PUBLIC_USDC_TYPE, kioskRegistryId: id(3), personalKioskTypePackageId: id(4) }
+  const market = { id: deployment.marketConfigId, version: '2', legacy_config_id: id(0), fee_recipient: id(90), platform_fee_bps: 250, primary_enabled: true, secondary_enabled: true }
   const walletAddress = id(10), collection = { id: id(20), version: '1', creator: walletAddress, extra_royalty_bps: 500,
     tradeable: options.tradeable ?? true, current_holder: options.sold ? id(11) : walletAddress,
     current_holder_kiosk_id: id(21), right_id: id(22), max_supply: options.max ?? null, current_supply: options.current ?? '0' }
   const raw = { objectId: collection.id, objectType: normalizeStructTag(`${deployment.originalPackageId}::collection::SoulCollection`),
     version: 2n, digest, owner: { kind: 3, version: 1n } as { kind: number; version?: bigint; address?: string },
     contents: { value: SoulPublicCollectionBcs.serialize(collection).toBytes() } }
+  const marketRaw = { objectId: market.id, objectType: normalizeStructTag(`${deployment.originalPackageId}::market::MarketConfigV2`),
+    version: 2n, digest, owner: { kind: 3, version: 1n }, contents: { value: SoulPublicMarketConfigBcs.serialize(market).toBytes() } }
   const client = new SuiGrpcClient({ network: 'mainnet', baseUrl: 'https://grpc.example.com' })
   const chain = vi.spyOn(client.core, 'getChainIdentifier').mockResolvedValue({ chainIdentifier: genesis })
   const batch = vi.spyOn(client.ledgerService, 'batchGetObjects').mockImplementation((async (args: { requests: Array<{ objectId: string }> }) => ({ response: {
     objects: args.requests.map(request => ({ result: request.objectId === collection.id
-      ? { oneofKind: 'object', object: structuredClone(raw) } : { oneofKind: 'error', error: { code: 5 } } })) } })) as any)
+      ? { oneofKind: 'object', object: structuredClone(raw) } : request.objectId === market.id
+      ? { oneofKind: 'object', object: structuredClone(marketRaw) } : { oneofKind: 'error', error: { code: 5 } } })) } })) as any)
   const fetcher = vi.fn(() => { throw new Error('HTTP business API must not be called') }); vi.stubGlobal('fetch', fetcher)
-  const abort = new AbortController(), params = { client, deployment, walletAddress, collectionId: collection.id, signal: abort.signal }
-  const put = () => { raw.contents.value = SoulPublicCollectionBcs.serialize(collection).toBytes() }
-  return { params, deployment, collection, raw, client, chain, batch, fetcher, abort, put }
+  const abort = new AbortController(), params = { client, deployment, walletAddress, collectionId: collection.id, signal: abort.signal, souls: [{ hasAnimacraftProvenance: false, creatorRoyaltyBps: 500 }]  }
+  const put = () => { raw.contents.value = SoulPublicCollectionBcs.serialize(collection).toBytes(); marketRaw.contents.value = SoulPublicMarketConfigBcs.serialize(market).toBytes() }
+  return { params, deployment, market, marketRaw, collection, raw, client, chain, batch, fetcher, abort, put }
 }
 
 it.each([{ sold: false, tradeable: true }, { sold: true, tradeable: true }, { sold: true, tradeable: false }])(
@@ -37,12 +41,12 @@ it.each([{ sold: false, tradeable: true }, { sold: true, tradeable: true }, { so
     expect(result).toEqual({ collectionId: f.collection.id, creatorAddress: f.collection.creator, walletAddress: f.params.walletAddress,
       currentSupply: '0', maxSupply: null, collectionVersion: '2', collectionDigest: digest, notTransactionAuthorization: true })
     expect(Object.isFrozen(result)).toBe(true); expect(f.fetcher).not.toHaveBeenCalled(); expect(f.chain).toHaveBeenCalledOnce()
-    expect(f.batch.mock.calls.map(([args]) => args.requests.map(request => request.objectId))).toEqual([[f.collection.id], [f.collection.id]])
+    expect(f.batch.mock.calls.map(([args]) => args.requests.map(request => request.objectId))).toEqual([[f.collection.id], [f.market.id], [f.collection.id], [f.market.id]])
   })
 it('an acquired Right holder is not the creator even when it owns the current holder Kiosk', async () => {
   const f = fixture({ sold: true }); f.params.walletAddress = f.collection.current_holder
   await expect(preflightCollectionBindTarget(f.params)).rejects.toThrow('Only the collection creator')
-  expect(f.batch).toHaveBeenCalledTimes(2)
+  expect(f.batch).toHaveBeenCalledTimes(4)
 })
 it.each([
   { current: '9007199254740992', max: '9007199254740993' },
@@ -101,7 +105,7 @@ it.each([5, 7, 13, 14])('gRPC code %s cannot be reported as a verified empty Col
 it.each(['contents', 'version', 'digest', 'owner'] as const)('a %s change on the final root read requires an explicit retry', async changed => {
   const f = fixture(), original = f.batch.getMockImplementation()!; let calls = 0
   f.batch.mockImplementation(((...args: any[]) => {
-    if (++calls === 2) {
+    if (++calls === 3) {
       if (changed === 'contents') { f.collection.current_supply = '1'; f.put() }
       if (changed === 'version') f.raw.version++
       if (changed === 'digest') f.raw.digest = toBase58(new Uint8Array(32).fill(3))
@@ -139,4 +143,49 @@ it('raw-reader deadline still bounds requests when the caller lifetime has no de
   const work = preflightCollectionBindTarget(f.params), failed = expect(work).rejects.toThrow('read timed out')
   await vi.waitFor(() => expect(f.batch).toHaveBeenCalledOnce()); deadline.abort(new Error('read timed out')); await failed
   expect(f.abort.signal.aborted).toBe(false)
+})
+
+
+it('rejects Animacraft native provenance before paid upload, while ordinary mint_native Souls remain eligible', async () => {
+  const f = fixture(); f.params.souls[0].hasAnimacraftProvenance = true
+  await expect(preflightCollectionBindTarget(f.params)).rejects.toThrow('Animacraft native Souls cannot be added')
+  expect(f.fetcher).not.toHaveBeenCalled()
+})
+it.each([false, true])('rejects platform + creator + collection royalties above 100%% (second candidate = %s)', async second => {
+  const f = fixture(); f.market.platform_fee_bps = 9000; f.put()
+  f.params.souls = second ? [{ hasAnimacraftProvenance: false, creatorRoyaltyBps: 0 }, { hasAnimacraftProvenance: false, creatorRoyaltyBps: 501 }]
+    : [{ hasAnimacraftProvenance: false, creatorRoyaltyBps: 501 }]
+  await expect(preflightCollectionBindTarget(f.params)).rejects.toThrow('Combined platform + creator + collection royalty exceeds 100%')
+})
+it('accepts the exact 100% combined royalty boundary', async () => {
+  const f = fixture(); f.market.platform_fee_bps = 9000; f.put()
+  await expect(preflightCollectionBindTarget(f.params)).resolves.toMatchObject({ collectionId: f.collection.id })
+})
+it('rejects primary-paused V2 configuration before payment', async () => {
+  const f = fixture(); f.market.primary_enabled = false; f.put()
+  await expect(preflightCollectionBindTarget(f.params)).rejects.toThrow('Primary Soul issuance is paused')
+})
+it('freezes candidate provenance and royalties before asynchronous reads', async () => {
+  const f = fixture(), pending = preflightCollectionBindTarget(f.params)
+  f.params.souls[0].hasAnimacraftProvenance = true; f.params.souls[0].creatorRoyaltyBps = 10000
+  await expect(pending).resolves.toMatchObject({ collectionId: f.collection.id })
+})
+it.each([undefined, [], [{ hasAnimacraftProvenance: false, creatorRoyaltyBps: -1 }], [{ hasAnimacraftProvenance: false, creatorRoyaltyBps: 0.5 }], [{ hasAnimacraftProvenance: false, creatorRoyaltyBps: 10001 }], [{ creatorRoyaltyBps: 0 }]])('requires complete valid Soul candidate information: %j', async souls => {
+  const f = fixture(); Object.assign(f.params, { souls })
+  await expect(preflightCollectionBindTarget(f.params)).rejects.toThrow('COLLECTION_BIND_SOULS_INVALID')
+  expect(f.chain).not.toHaveBeenCalled()
+})
+
+
+it.each([{ current: '9', max: '10' }, { current: '18446744073709551614', max: null }])('rejects a batch that exhausts remaining Collection capacity: %j', async options => {
+  const f = fixture(options); f.params.souls.push({ hasAnimacraftProvenance: false, creatorRoyaltyBps: 0 })
+  await expect(preflightCollectionBindTarget(f.params)).rejects.toThrow('Collection at maximum capacity')
+})
+it('rejects a market config that changes between its first and final raw read', async () => {
+  const f = fixture(), original = f.batch.getMockImplementation()!; let calls = 0
+  f.batch.mockImplementation(((...args: any[]) => {
+    if (++calls === 4) { f.market.platform_fee_bps++; f.put() }
+    return original(...args as Parameters<typeof original>)
+  }) as any)
+  await expect(preflightCollectionBindTarget(f.params)).rejects.toThrow('CHANGED_RETRY')
 })

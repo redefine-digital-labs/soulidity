@@ -163,8 +163,8 @@ function appendAddSoulToCollectionCall(
   state: ReturnType<Transaction['moveCall']>,
 ) {
   tx.moveCall({
-    target: `${env.packageId}::collection::add_soul`,
-    arguments: [tx.object(collectionId), state],
+    target: `${env.packageId}::market::add_soul_to_collection_v2`,
+    arguments: [tx.object(env.marketConfigId), tx.object(collectionId), state],
   })
 }
 

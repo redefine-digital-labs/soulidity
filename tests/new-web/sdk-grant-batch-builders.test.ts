@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Transaction } from '@mysten/sui/transactions'
 import {
@@ -16,6 +16,8 @@ import {
 const STATE_A = '0x' + 'a'.repeat(64)
 const STATE_B = '0x' + 'b'.repeat(64)
 const GRANTEE = '0x' + '1'.repeat(64)
+beforeEach(() => vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', '0x' + 'c'.repeat(64)))
+afterEach(() => vi.unstubAllEnvs())
 
 function countGrantMoveCalls(tx: ReturnType<typeof buildBatchIssueGrantsTx>, suffix: string) {
   const json = JSON.parse(JSON.stringify(tx.getData()))

@@ -14,7 +14,8 @@ export async function contentAppendPreparationFixture(empty = false) {
   vi.spyOn(client.core, 'getChainIdentifier').mockResolvedValue({ chainIdentifier: MAINNET_GENESIS_DIGEST })
   const resolver = await import('../../../web/node_modules/@mysten/sui/dist/client/core-resolver.mjs')
   vi.spyOn(client.core, 'resolveTransactionPlugin').mockReturnValue(resolver.coreClientResolveTransactionPlugin)
-  vi.spyOn(client.core, 'getMoveFunction').mockResolvedValue({ function: { parameters: [{ body: { vector: 'u8' }, reference: null }] } } as any)
+  vi.spyOn(client.core, 'getMoveFunction').mockResolvedValue({ function: { parameters: [{ body: { vector: 'u8' }, reference: null }, { body: { datatype: { package: id(1), module: 'protocol_gate', type: 'ProtocolGate', typeParameters: [] } }, reference: 'immutable' }] } } as any)
+  vi.spyOn(client.core, 'getObjects').mockImplementation(async args => ({ objects: args.objectIds.map(objectId => ({ objectId, version: '1', digest: '11111111111111111111111111111111', owner: { $kind: 'Shared', Shared: { initialSharedVersion: '1' } } })) }) as any)
   const paths = ['bls12381', 'utils', 'decrypt', 'kdf'].map(n => `../../../web/node_modules/@mysten/seal/dist/${n}.mjs`)
   const [bls, utils, decrypt, kdf] = await Promise.all(paths.map(p => import(p)))
   const servers = [{ objectId: id(50), weight: 1, aggregatorUrl: 'https://seal.example.com/' }]
@@ -33,7 +34,7 @@ export async function contentAppendPreparationFixture(empty = false) {
   })
   const sign = vi.fn(async (message: Uint8Array) => (await signer.signPersonalMessage(message)).signature)
   const plaintext = new TextEncoder().encode(empty ? '' : 'private memory: not in any public recovery journal')
-  const params = { scope: { author: signer.toSuiAddress(), originalPackageId: id(1), callablePackageId: id(10),
+  const params = { scope: { author: signer.toSuiAddress(), originalPackageId: id(1), callablePackageId: id(10), protocolGateId: id(70),
     contentObjectId: id(4), kind: 1, name: 'default', versionIndex: '9007199254740993', intentJson: '{"operation":"append"}' },
   sealConfig: { threshold: 1, ttlMin: 5, serverConfigs: servers }, plaintext, mimeType: 'text/plain', fileName: 'memory.md',
   wallet: { client, sealClient: client, signal: controller.signal, getAddress: () => address, signPersonalMessage: sign } }

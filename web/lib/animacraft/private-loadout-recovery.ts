@@ -86,7 +86,8 @@ export function parsePrivateLoadoutRecovery(value: unknown): PrivateLoadoutRecov
     const plan = validatePrivateLoadoutPublicPlan(r.transaction.plan)
     const packet = validatePrivateLoadoutTransactionPacket(plan, r.transaction.packet)
     check(eq(plan.scope, r.context.scope) && plan.deployment.originalPackageId === r.context.originalPackageId
-      && plan.deployment.callablePackageId === r.config.target.soulidityCallablePackageId && plan.deployment.chainIdentifier === '35834a8a'
+      && plan.deployment.callablePackageId === r.config.target.soulidityCallablePackageId
+      && plan.deployment.protocolGateId === r.config.protocolGateId && plan.deployment.chainIdentifier === '35834a8a'
       && plan.requestId === r.context.requestId && BigInt(plan.expectedRevision) + 1n === BigInt(r.context.revision)
       && eq(plan.ciphertext, r.storage.reference) && eq(plan.capture, r.capture) && plan.protocolId === r.config.target.protocolConfigId,
     'PRIVATE_LOADOUT_RECOVERY_PLAN_MISMATCH')

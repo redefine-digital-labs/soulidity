@@ -7,7 +7,7 @@ import { browserContentAccessFixture } from './fixtures/browser-content-access-r
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers() })
 function fixture() {
   const f = browserContentAccessFixture()
-  const config = { target: f.config.target, kindRegistryId: f.registry.id }
+  const config = { target: f.config.target, protocolGateId: f.config.protocolGateId, kindRegistryId: f.registry.id }
   const params = { soulId: f.soul.id, stateId: f.state.id, contentId: f.content.id, viewerAddress: f.state.current_owner as string | null, config }
   const read = (extra = {}) => readBrowserContentWriteState({ ...params, ...extra }, { client: () => f.client })
   return { ...f, config, params, read }
@@ -112,8 +112,10 @@ it('works without Buffer, uses only captured public config and needs no storage 
   vi.stubEnv('NEXT_PUBLIC_SUI_NETWORK', 'mainnet'); vi.stubEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', f.config.target.soulidityCallablePackageId)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID', f.config.target.soulidityOriginalPackageId)
   vi.stubEnv('NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON', JSON.stringify(f.config.target))
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', f.config.protocolGateId)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', f.registry.id); vi.stubEnv('NEXT_PUBLIC_WALRUS_AGGREGATOR_URL', undefined)
   expect(getBrowserContentWriteConfig()).toEqual(f.config); expect((await f.read()).snapshot.contentId).toBe(f.content.id)
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', f.config.protocolGateId)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', undefined); vi.stubEnv('SOULIDITY_KIND_REGISTRY_ID', f.registry.id)
   expect(() => getBrowserContentWriteConfig()).toThrow()
 })

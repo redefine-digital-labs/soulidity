@@ -6,6 +6,7 @@ import { deriveDynamicFieldID, fromBase64, fromHex, toBase64 } from '@mysten/sui
 export interface PrivateNamedLoadoutDeployment {
   originalPackageId: string
   callablePackageId: string
+  protocolGateId: string
   chainIdentifier: string
 }
 
@@ -95,9 +96,11 @@ function exact(value: unknown, fields: readonly string[]) {
 
 export function assertPrivateNamedLoadoutDeployment(input: PrivateNamedLoadoutDeployment): Readonly<PrivateNamedLoadoutDeployment> {
   const value = structuredClone(input)
-  exact(value, ['originalPackageId', 'callablePackageId', 'chainIdentifier'])
+  privateNamedLoadoutCheck(typeof value.protocolGateId === 'string' && value.protocolGateId.trim().length > 0, 'PROTOCOL_GATE_ID_REQUIRED')
+  exact(value, ['originalPackageId', 'callablePackageId', 'protocolGateId', 'chainIdentifier'])
   assertPrivateNamedLoadoutId(value.originalPackageId)
   assertPrivateNamedLoadoutId(value.callablePackageId)
+  assertPrivateNamedLoadoutId(value.protocolGateId)
   privateNamedLoadoutCheck(typeof value.chainIdentifier === 'string' && /^[0-9a-f]{8}$/.test(value.chainIdentifier), 'INVALID_CHAIN')
   return Object.freeze(value)
 }
@@ -176,7 +179,7 @@ function mutation(input: PrivateNamedLoadoutMutationParams) {
 /** A separate head CAS after paid certification. It does not upload or sign. */
 export function buildUpdatePrivateNamedLoadoutTx(input: PrivateNamedLoadoutMutationParams): Transaction {
   const { deployment, scope, tx, args } = mutation(input)
-  tx.moveCall({ target: `${deployment.callablePackageId}::named_loadout_v1::update`, arguments: [tx.object(scope.stateId), ...args] })
+  tx.moveCall({ target: `${deployment.callablePackageId}::named_loadout_v1::update`, arguments: [tx.object(deployment.protocolGateId), tx.object(scope.stateId), ...args] })
   return tx
 }
 
@@ -188,7 +191,7 @@ export function buildSavePrivateNamedLoadoutTx(input: PrivateNamedLoadoutMutatio
   const { deployment, scope, tx, args } = mutation(p)
   privateNamedLoadoutCheck(new Set([scope.stateId, scope.soulId, p.protocolId, capture.equipmentId]).size === 4, 'CAPTURE_ALIAS')
   tx.moveCall({ target: `${deployment.callablePackageId}::named_loadout_v1::save`, arguments: [
-    tx.object(scope.stateId), tx.object(capture.equipmentId), tx.object(p.protocolId), ...args,
+    tx.object(deployment.protocolGateId), tx.object(scope.stateId), tx.object(capture.equipmentId), tx.object(p.protocolId), ...args,
     tx.pure.u64(capture.revision), tx.pure.vector('u8', [...fromHex(capture.commitment)]),
   ] })
   return tx
@@ -202,7 +205,7 @@ export async function buildPrivateNamedLoadoutSealApproval(input: {
   const sealId = await derivePrivateNamedLoadoutSealId(scope)
   const tx = new Transaction(); tx.setSender(scope.owner)
   tx.moveCall({ target: `${deployment.callablePackageId}::named_loadout_v1::seal_approve`, arguments: [
-    tx.pure.vector('u8', [...sealId]), tx.object(scope.stateId), tx.pure.u64(scope.ownershipEpoch),
+    tx.pure.vector('u8', [...sealId]), tx.object(deployment.protocolGateId), tx.object(scope.stateId), tx.pure.u64(scope.ownershipEpoch),
   ] })
   return tx
 }

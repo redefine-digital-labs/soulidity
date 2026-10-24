@@ -179,7 +179,12 @@ it('commits the manifest once with create/list/finalize and reuses the one perso
   expect(bcs.option(bcs.u128()).parse(pure(register, create.arguments[11]))).toBe('99999999999999999999')
   const tx = new Transaction()
   composer.prepareMintBusiness(f.preparation, [id(90), id(91)], { ...defaultChunk(), collectionObjectId: id(82) }).append(tx)
-  expect(calls(tx).slice(-4).map(c => c.function)).toEqual(['add_soul', 'list_soul_fixed_price_with_collection_v2', 'finalize_soul_listing', 'finalize_soul_state'])
+  expect(calls(tx).slice(-4).map(c => c.function)).toEqual(['add_soul_to_collection_v2', 'list_soul_fixed_price_with_collection_v2', 'finalize_soul_listing', 'finalize_soul_state'])
+  const bind = calls(tx).find(c => c.function === 'add_soul_to_collection_v2')!
+  expect(bind.module).toBe('market')
+  expect(bind.arguments).toHaveLength(3)
+  expect(tx.getData().inputs[(bind.arguments[0] as { Input: number }).Input].UnresolvedObject?.objectId).toBe(f.request.target.marketConfigId)
+  expect(tx.getData().inputs[(bind.arguments[1] as { Input: number }).Input].UnresolvedObject?.objectId).toBe(id(82))
 })
 it.each(['duplicate', 'missing', 'out-of-order', 'wrong-bind', 'bad-kiosk', 'empty'] as const)('rejects invalid %s chunk before touching a transaction', async variant => {
   const f = await fixture(), composer = createSoulAuthoringTransactionComposer(f.manifest, f.preparation), chunk = defaultChunk()

@@ -35,6 +35,8 @@ export interface SoulidityDeployment {
    * primary and secondary flows. Builders fail closed when it is missing.
    */
   marketConfigV2Id?: string
+  /** Shared ProtocolGate from the fresh publish; empty until deployed. */
+  protocolGateId?: string
   /**
    * Fresh address-owned admin capability bound to marketConfigV2Id.
    * It is not wrapped in a predecessor/retirement capability.

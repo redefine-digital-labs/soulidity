@@ -12,7 +12,7 @@ import {
   getSoulidityMarketConfigV2PackageId,
   getSoulidityOriginalPackageId,
 } from '@soulidity/sdk'
-import { getRequiredSoulidityEnv } from '@soulidity/sdk'
+import { getOptionalSoulidityEnv, getRequiredSoulidityEnv } from '@soulidity/sdk'
 
 const ORIGINAL_NETWORK = process.env.NEXT_PUBLIC_SUI_NETWORK
 const ORIGINAL_PACKAGE_ID = process.env.NEXT_PUBLIC_SOULIDITY_PACKAGE_ID
@@ -24,6 +24,7 @@ const ORIGINAL_MARKET_CONFIG_V2_ID =
   process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID
 const ORIGINAL_MARKET_CONFIG_V2_PACKAGE_ID =
   process.env.NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_PACKAGE_ID
+const ORIGINAL_PROTOCOL_GATE_ID = process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID
 
 function restoreEnv(name: string, value: string | undefined) {
   if (value === undefined) {
@@ -35,6 +36,7 @@ function restoreEnv(name: string, value: string | undefined) {
 
 describe('Soulidity deployment manifest', () => {
   afterEach(() => {
+    restoreEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', ORIGINAL_PROTOCOL_GATE_ID)
     restoreEnv('NEXT_PUBLIC_SUI_NETWORK', ORIGINAL_NETWORK)
     restoreEnv('NEXT_PUBLIC_SOULIDITY_PACKAGE_ID', ORIGINAL_PACKAGE_ID)
     restoreEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', ORIGINAL_CALLABLE_PACKAGE_ID)
@@ -173,5 +175,30 @@ describe('Soulidity deployment manifest', () => {
 
     expect(() => getSoulidityDeployment()).toThrow(MissingSoulidityDeploymentError)
     expect(() => getSoulidityDeployment()).toThrow('Missing Soulidity deployment manifest entry for network: devnet')
+  })
+
+  it.each(['testnet', 'mainnet'] as const)('keeps the unpublished %s protocol gate unavailable', network => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = network
+    delete process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID
+    expect(getSoulidityDeployment().protocolGateId).toBe('')
+    expect(getOptionalSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID')).toBeNull()
+    expect(() => getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID'))
+      .toThrow('Missing required Soulidity env: NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID')
+  })
+
+  it('resolves the published gate from the selected deployment and honors trimmed overrides', () => {
+    process.env.NEXT_PUBLIC_SUI_NETWORK = 'testnet'
+    const deployment = getSoulidityDeployment(), prior = deployment.protocolGateId
+    try {
+      deployment.protocolGateId = '0x1234'
+      delete process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID
+      expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID')).toBe('0x1234')
+      process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID = '  0xabcd  '
+      expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID')).toBe('0xabcd')
+      process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID = '   '
+      expect(getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID')).toBe('0x1234')
+    } finally {
+      deployment.protocolGateId = prior
+    }
   })
 })

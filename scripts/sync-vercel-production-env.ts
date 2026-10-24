@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { fromBase58, toBase58 } from '@mysten/sui/utils'
 
 export const PRODUCTION_ENV_ALLOWLIST = [
+  'NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID',
   'NEXT_PUBLIC_SUI_NETWORK',
   'NEXT_PUBLIC_KIOSK_PACKAGE_ID',
   'NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID',
@@ -92,6 +93,7 @@ export const PRODUCTION_VERCEL_PROJECT_ID = 'prj_TkRy8sVX44TBPB71sDfN03vF1A7S'
 /** Exact public chain projection produced by Animacraft export-config
  * --format soulidity-env. Service credentials never belong in this file. */
 export const PRODUCTION_CHAIN_ENV_KEYS = [
+  'NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID',
   'NEXT_PUBLIC_SOULIDITY_PROFILE_REGISTRY_ID',
   'NEXT_PUBLIC_SOULIDITY_SOCIAL_REGISTRY_ID',
   'NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID',
@@ -129,6 +131,7 @@ export function mergeProductionChainEnv(base: Record<string, string>, source: st
   return { ...base, ...chain }
 }
 const REQUIRED_ID_KEYS = [
+  'NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID',
   'NEXT_PUBLIC_SOULIDITY_PROFILE_REGISTRY_ID',
   'NEXT_PUBLIC_SOULIDITY_SOCIAL_REGISTRY_ID',
   'NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID',

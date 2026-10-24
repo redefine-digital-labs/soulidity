@@ -76,7 +76,7 @@ async function fixture() {
       expect(active?.ciphertext).toEqual(r.ciphertext); events.push('quote'); await verify(false)
       const reference = { blobObjectId: id(160), blobId: toBase64(new Uint8Array(32).fill(8)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, ''),
         sha256: r.cipherSha256, byteLength: String(r.ciphertext.length) }
-      const p = await packet({ deployment: { originalPackageId: config.target.soulidityOriginalPackageId, callablePackageId: config.target.soulidityCallablePackageId,
+      const p = await packet({ deployment: { originalPackageId: config.target.soulidityOriginalPackageId, callablePackageId: config.target.soulidityCallablePackageId, protocolGateId: config.protocolGateId,
         chainIdentifier: '35834a8a' }, scope, expectedRevision: String(BigInt(r.context.revision) - 1n), requestId: r.context.requestId, ciphertext: reference,
         capture: null, protocolId: config.target.protocolConfigId })
       const walrus: WalrusSingleRecord = { schema: 'soulidity.walrus-single.v1', intent: { network: 'mainnet', owner: scope.owner, recipient: scope.owner,

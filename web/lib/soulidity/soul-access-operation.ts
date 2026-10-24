@@ -24,7 +24,7 @@ export * from './soul-access-state'
 export function buildSoulAccessTransaction(input: SoulAccessPlan): Transaction {
   const p = parseSoulAccessPlan(input), s = soulAccessBcs(SoulStatePublicBcs, p.expected.stateBcs), e = p.expected
   const d = { packageId: p.deployment.callablePackageId, marketConfigId: p.deployment.marketConfigId,
-    kindRegistryId: p.deployment.kindRegistryId, paymentCoinType: p.deployment.paymentCoinType }
+    kindRegistryId: p.deployment.kindRegistryId, protocolGateId: p.deployment.protocolGateId, paymentCoinType: p.deployment.paymentCoinType }
   const tx = new Transaction()
   for (const coin of p.input.paymentCoins) tx.objectRef({ objectId: coin.objectId, version: coin.version, digest: coin.digest })
   if (soulAccessIsGrant(p.action)) {
@@ -83,7 +83,7 @@ export function parseSoulAccessRecord(input: unknown): SoulAccessRecord {
   })
   check(same(commands(data.commands), commands(expected.commands)) && data.inputs.length === expected.inputs.length, 'TEMPLATE_MISMATCH')
   const objects = new Set<string>([p.soulId, p.stateId, p.contentId, p.paidAccessListId, p.deployment.originalPackageId,
-    p.deployment.callablePackageId, p.deployment.marketConfigId, p.deployment.kindRegistryId, SOUL_ACCESS_CLOCK])
+    p.deployment.callablePackageId, p.deployment.marketConfigId, p.deployment.kindRegistryId, p.deployment.protocolGateId, SOUL_ACCESS_CLOCK])
   expected.inputs.forEach((wanted, index) => {
     const actual = data.inputs[index]
     if (wanted.Pure) { check(actual?.Pure?.bytes === wanted.Pure.bytes, 'PURE_ARGUMENT_MISMATCH'); return }

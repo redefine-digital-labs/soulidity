@@ -61,7 +61,7 @@ export default function SmartContractsPage() {
                 ['paid_access', 'SoulPaidAccessList per Soul (1:1). KindPaidConfig per kind + KindPaidEntry per (buyer, kind). Owner-revocable, no refund.'],
                 ['grant', 'SoulGrant delegation. Issue, supersede (replace scope), revoke, expire, ownership-epoch invalidation, destroy_invalidated_grant for storage rebate.'],
                 ['market', 'Personal-kiosk marketplace. Mint variants (native / imported / personal-join), fixed-price listing, buy + fee split, set_state_config.'],
-                ['collection', 'SoulCollection shared object + SoulCollectionRight tradeable. On-chain max_supply cap, extra royalty, mutually exclusive with active listing.'],
+                ['collection', 'SoulCollection shared object + SoulCollectionRight tradeable. Wallet binding uses market::add_soul_to_collection_v2; capped supply, combined royalty checks and no Animacraft native provenance.'],
               ].map(([mod, desc]) => (
                 <tr key={mod} className="border-b border-border/30">
                   <td className="py-2 pr-4 font-mono text-xs align-top">{mod}</td>
@@ -246,7 +246,7 @@ public struct SoulCollection has key {
 public struct SoulCollectionRight has key, store { ... }`}</code>
         </pre>
         <p className="text-xs text-muted">
-          <code>max_supply</code> is locked at create time. <code>collection::add_soul</code> aborts with <code>ESoulCurrentlyListed</code> while the Soul has an active listing — solo listings must be cancelled first. <code>current_supply</code> is monotonically increasing and is the source of truth mirrored 1:1 into <code>SoulCollectionAsset.soulCount</code>.
+          Content, state config and active content binding writes are frozen while a Soul is listed; cancel the listing before editing. Seal reads remain available. <code>max_supply</code> is locked at create time. <code>market::add_soul_to_collection_v2</code> is the wallet entry and receives the V2 market config, collection and Soul state. It enforces the primary issuance gate, rejects Animacraft native provenance and requires platform + creator + collection royalties to total at most 100%. A Soul with an active listing must have that listing cancelled before binding. <code>current_supply</code> is monotonically increasing and is the source of truth mirrored 1:1 into <code>SoulCollectionAsset.soulCount</code>.
         </p>
       </div>
 

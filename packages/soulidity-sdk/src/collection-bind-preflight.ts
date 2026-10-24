@@ -1,4 +1,4 @@
-import { assertCollectionPublicDeployment, readCollectionPublicRoot,
+import { assertCollectionPublicDeployment, readCollectionBindSnapshot,
   type CollectionPublicDeployment, type CollectionPublicReadClient } from './collection-public-read'
 
 export interface CollectionBindPreflight {
@@ -17,23 +17,39 @@ function id(value: unknown): asserts value is string {
  * Right's listing, holder, tradeability or member floor, so no Listing scan is
  * needed. The raw reader verifies chain/type/shared custody/canonical BCS and a
  * stable second read. Move still checks creator, Soul owner, unlisted state and
- * remaining capacity atomically when the mint+bind transaction executes. */
+ * remaining capacity, primary gate, provenance and combined royalties atomically
+ * when the mint+bind transaction executes. */
 export async function preflightCollectionBindTarget(params: {
   client: CollectionPublicReadClient; deployment: CollectionPublicDeployment
   walletAddress: string; collectionId: string; signal: AbortSignal
+  souls: ReadonlyArray<{ hasAnimacraftProvenance: boolean; creatorRoyaltyBps: number }>
 }): Promise<CollectionBindPreflight> {
   const { walletAddress, collectionId } = params, client = params.client, signal = params.signal
   id(walletAddress); id(collectionId); signal.throwIfAborted()
+  const souls = structuredClone(params.souls)
+  if (!Array.isArray(souls) || souls.length === 0 || souls.some(soul => !soul
+    || typeof soul.hasAnimacraftProvenance !== 'boolean' || !Number.isSafeInteger(soul.creatorRoyaltyBps)
+    || soul.creatorRoyaltyBps < 0 || soul.creatorRoyaltyBps > 10000)) {
+    throw new Error('COLLECTION_BIND_SOULS_INVALID')
+  }
+  if (souls.some(soul => soul.hasAnimacraftProvenance)) {
+    throw new Error('Animacraft native Souls cannot be added to a collection.')
+  }
   const deployment = assertCollectionPublicDeployment(params.deployment)
-  const root = await readCollectionPublicRoot({ client, deployment, collectionId, signal })
+  const root = await readCollectionBindSnapshot({ client, deployment, collectionId, signal })
   signal.throwIfAborted()
   const collection = root.collection
   if (collection.creator !== walletAddress) {
     throw new Error('Only the collection creator can add Souls to this collection.')
   }
+  if (!root.market.primary_enabled) throw new Error('Primary Soul issuance is paused in the successor market.')
+  if (souls.some(soul => root.market.platform_fee_bps + soul.creatorRoyaltyBps + collection.extra_royalty_bps > 10000)) {
+    throw new Error('Combined platform + creator + collection royalty exceeds 100%.')
+  }
   const current = BigInt(collection.current_supply)
   // Unbounded product supply still increments an on-chain u64 counter.
-  if (current === MAX_SUPPLY || collection.max_supply !== null && current >= BigInt(collection.max_supply)) {
+  const nextSupply = current + BigInt(souls.length)
+  if (nextSupply > MAX_SUPPLY || collection.max_supply !== null && nextSupply > BigInt(collection.max_supply)) {
     throw new Error('Collection at maximum capacity')
   }
   return Object.freeze({ collectionId, creatorAddress: collection.creator, walletAddress,

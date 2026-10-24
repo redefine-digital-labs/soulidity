@@ -162,3 +162,16 @@ it('reserves only initial envelope namespace and leaves ordinary config availabl
   }
   expect(() => validateInitialStateConfigEntries([{ key: 'sprite_config_json', valueUtf8: '{}' }, { key: 'content_seal_envelope_v1', valueUtf8: 'not a reserved key' }])).not.toThrow()
 })
+
+
+it.each(['bind', 'collectionList', 'collectionBatch'] as const)('%s binds with the public market wrapper and exact config/collection/state order', async variant => {
+  const tx = await variants[variant](mint()), data = tx.getData()
+  const bind = data.commands.flatMap(c => c.MoveCall ? [c.MoveCall] : []).find(c => c.function === 'add_soul_to_collection_v2')!
+  expect(bind).toBeDefined()
+  expect(bind.module).toBe('market')
+  expect(bind.arguments).toHaveLength(3)
+  const object = (index: number) => data.inputs[(bind.arguments[index] as { Input: number }).Input].UnresolvedObject?.objectId
+  expect(object(0)).toBe(id(2)); expect(object(1)).toBe(id(30))
+  expect(bind.arguments[2].$kind).toBe('Result')
+  expect(data.commands.some(c => c.MoveCall?.module === 'collection' && c.MoveCall.function === 'add_soul')).toBe(false)
+})

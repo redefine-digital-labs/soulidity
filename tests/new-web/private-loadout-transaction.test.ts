@@ -54,8 +54,7 @@ const mutatePacket: Array<[string, (raw: any) => void]> = [
   ['gas argument', raw => { raw.V1.kind.ProgrammableTransaction.commands[0].MoveCall.arguments[0] = { GasCoin: true } }],
   ['argument alias', raw => { raw.V1.kind.ProgrammableTransaction.commands[0].MoveCall.arguments[1] = raw.V1.kind.ProgrammableTransaction.commands[0].MoveCall.arguments[2] }],
   ['pure bytes', raw => { raw.V1.kind.ProgrammableTransaction.inputs[0].Pure.bytes = toBase64(new Uint8Array(8).fill(99)) }],
-  ['immutable state', raw => { raw.V1.kind.ProgrammableTransaction.inputs.find((i: any) => i.Object)?.Object.SharedObject &&
-    (raw.V1.kind.ProgrammableTransaction.inputs.find((i: any) => i.Object).Object.SharedObject.mutable = false) }],
+  ['immutable state', raw => { raw.V1.kind.ProgrammableTransaction.inputs[raw.V1.kind.ProgrammableTransaction.commands[0].MoveCall.arguments[1].Input].Object.SharedObject.mutable = false }],
 ]
 it.each(mutatePacket)('rejects canonical transaction with changed %s', async (_name, change) => {
   const f = await fixture(); expect(() => validatePrivateLoadoutTransactionPacket(f.plan, rewrite(f.packet, change))).toThrow()
@@ -63,7 +62,7 @@ it.each(mutatePacket)('rejects canonical transaction with changed %s', async (_n
 it.each([1, 2])('requires save equipment/protocol input %s to remain read-only shared', async index => {
   const f = await fixture(true)
   const changed = rewrite(f.packet, raw => { const pt = raw.V1.kind.ProgrammableTransaction
-    pt.inputs[pt.commands[0].MoveCall.arguments[index].Input].Object.SharedObject.mutable = true })
+    pt.inputs[pt.commands[0].MoveCall.arguments[index + 1].Input].Object.SharedObject.mutable = true })
   expect(() => validatePrivateLoadoutTransactionPacket(f.plan, changed)).toThrow('SHARED_ARGUMENT_MISMATCH')
 })
 it('signs exact bytes with a real local key and broadcasts only the verified packet', async () => {

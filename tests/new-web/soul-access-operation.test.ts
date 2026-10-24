@@ -20,6 +20,29 @@ describe('Soul access exact packet and historical transitions', () => {
     expect(f.read).not.toHaveBeenCalled(); expect(f.getAddress).not.toHaveBeenCalled()
     expect(f.client.ledgerService.getObject.mock.calls.every(([request]) => request.version !== undefined)).toBe(true)
   })
+  it.each(['grant-issue', 'grant-revoke', 'grant-revoke-scope', 'paid-revoke'] as const)('%s verifies its historical readonly ProtocolGate root', async action => {
+    const f = await soulAccessTransactionFixture({ action })
+    const root = f.effects.V2!.unchangedConsensusObjects.find(([id]) => id === f.deployment.protocolGateId)!
+    expect(root[1].$kind).toBe('ReadOnlyRoot')
+    expect(f.effects.V2!.changedObjects.some(([id]) => id === f.deployment.protocolGateId)).toBe(false)
+    expect((await f.adapter.query(f.record)).status).toBe('SUCCEEDED')
+    expect(f.client.ledgerService.getObject.mock.calls.some(([request]) => request.objectId === f.deployment.protocolGateId && request.version === 11n)).toBe(true)
+    f.effects.V2!.unchangedConsensusObjects = f.effects.V2!.unchangedConsensusObjects.filter(([id]) => id !== f.deployment.protocolGateId)
+    await expect(f.adapter.query(f.record)).rejects.toThrow('HISTORY_READONLY_MISSING')
+  })
+  it.each([
+    ['id', (gate: any) => { gate.id = accessId(99999) }],
+    ['version', (gate: any) => { gate.version = '2' }],
+    ['paused', (gate: any) => { gate.paused = true }],
+  ] as const)('rejects a validly rehashed wrong historical ProtocolGate %s', async (_field, mutate) => {
+    const f = await soulAccessTransactionFixture(); f.rewrite('gate', mutate, '11')
+    await expect(f.adapter.query(f.record)).rejects.toThrow(_field === 'id' ? 'HISTORY_OBJECT' : 'HISTORY_GATE')
+  })
+  it('rejects forged historical gate bytes with the copied digest', async () => {
+    const f = await soulAccessTransactionFixture()
+    f.rows.get(`${f.deployment.protocolGateId}:11`).bcs.value[40] ^= 1
+    await expect(f.adapter.query(f.record)).rejects.toThrow('HISTORY_OBJECT_DIGEST')
+  })
   it.each(['absent', 'expired', 'stale'] as const)('grant issue replaces %s slot with correct count', async slot => {
     const f = await soulAccessTransactionFixture({ slot })
     expect((await f.adapter.query(f.record)).status).toBe('SUCCEEDED')

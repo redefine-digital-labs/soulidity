@@ -62,6 +62,8 @@ export function browserContentAccessFixture() {
   const putGrant = (owner = { kind: 1, address: id(51) }) => put(grant.id, `${pkg}::grant::SoulGrant`, D.Grant.serialize(grant).toBytes(), owner)
   const putPaidConfig = () => field(paid.kind_configs.id, 'u32', N, 3, `${pkg}::paid_access::KindPaidConfig`, D.PaidConfig, paidConfig)
   const putEntry = (tableId = id(62)) => field(tableId, 'u32', N, 3, `${pkg}::paid_access::KindPaidEntry`, D.PaidEntry, entry)
+  put(id(70), `${pkg}::protocol_gate::ProtocolGate`, bcs.struct('ProtocolGate', { id: A, version: U, paused: bcs.bool() })
+    .serialize({ id: id(70), version: '1', paused: false }).toBytes())
   putState(); putContent(); putRegistry(); putPaid(); putSlots(); putActive(); putDescriptor(); putGrantSlot(); putGrant(); putPaidConfig()
   put(soul.id, `${pkg}::soul::Soul`, SoulPublicBcs.serialize(soul).toBytes(), { kind: 2, address: state.current_kiosk_id })
   fixtureKioskItem(rows, state.current_kiosk_id, soul.id)
@@ -112,7 +114,7 @@ export function browserContentAccessFixture() {
   const reset = vi.spyOn(WalrusClient.prototype, 'reset')
   vi.spyOn(WalrusClient.prototype, 'getBlobType').mockReturnValue(storage.blobType)
   const system = vi.spyOn(WalrusClient.prototype, 'systemState').mockResolvedValue({ committee: { epoch: 3 } } as any)
-  const config = { target: base.target, kindRegistryId: registry.id, storage }
+  const config = { target: base.target, protocolGateId: id(70), kindRegistryId: registry.id, storage }
   const params = { soulId: soul.id, stateId: state.id, contentId: content.id, kind: 3, name: 'main', versionIndex: '0',
     viewerAddress: state.current_owner as string | null, config }
   const read = (extra = {}) => readBrowserContentAccess({ ...params, ...extra }, { client: () => client })

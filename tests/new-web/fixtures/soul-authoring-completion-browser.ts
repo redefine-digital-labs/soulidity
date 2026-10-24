@@ -18,7 +18,7 @@ async function setup(operation: number) {
     schema: 'soulidity.soul-authoring-request.v1', author, operationId: operation.toString(16).padStart(32, '0'), storageEpochs: 1,
     target: { chainIdentifier: '35834a8a', originalPackageId: id(1), callablePackageId: id(2), callableDigest: toBase58(new Uint8Array(32).fill(7)),
       marketConfigId: id(3), kioskRegistryId: id(4), personalKioskTypePackageId: id(5), paymentCoinType: SOUL_PUBLIC_USDC_TYPE,
-      collectionTransferPolicyId: id(6), kioskPackageId: id(7), kindRegistryId: id(8), soulTransferPolicyId: id(9), blobBaseUrl: 'https://aggregator.example' },
+      collectionTransferPolicyId: id(6), kioskPackageId: id(7), kindRegistryId: id(8), soulTransferPolicyId: id(9), protocolGateId: id(90), blobBaseUrl: 'https://aggregator.example' },
     collection: { name: 'Storage fixture', description: 'Not a real chain receipt', image: { kind: 'URL', url: 'https://example.com/cover.png' },
       extraRoyaltyBps: 0, tradeable: true, maxSupply: null, floorPriceAtomic: null, listingPriceAtomic: null }, bindCollectionId: null, mints: [],
   }

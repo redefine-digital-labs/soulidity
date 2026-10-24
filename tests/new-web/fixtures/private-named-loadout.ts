@@ -13,7 +13,7 @@ import { readPrivateNamedLoadoutHead, readPrivateNamedLoadoutCiphertext,
 export const privateId = (value: number) => `0x${value.toString(16).padStart(64, '0')}`
 export const privateDigest = toBase58(new Uint8Array(32).fill(1))
 export function privateNamedLoadoutFixture() {
-  const deployment = { originalPackageId: privateId(1), callablePackageId: privateId(20), chainIdentifier: '01010101' }
+  const deployment = { originalPackageId: privateId(1), callablePackageId: privateId(20), protocolGateId: privateId(22), chainIdentifier: '01010101' }
   const scope = { soulId: privateId(3), stateId: privateId(2), owner: privateId(5), ownershipEpoch: '2' }
   const pkg = deployment.originalPackageId
   const state = { id: scope.stateId, version: '1', soul_id: scope.soulId, creator: privateId(4), creator_royalty_bps: 500,

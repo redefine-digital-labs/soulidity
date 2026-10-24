@@ -12,12 +12,13 @@ beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', id(10))
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID', id(11))
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID', id(3))
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', id(12))
 })
 afterEach(() => { vi.unstubAllEnvs() })
 const builders = [
-  ['delete-owner', buildDeleteContentVersionAsOwnerTx, 'content', 'delete_version_as_owner', 5],
-  ['delete-grantee', buildDeleteContentVersionAsGrantedAgentTx, 'content', 'delete_version_as_granted_agent', 6],
-  ['purge-owner', buildPurgeContentVersionAsOwnerTx, 'content', 'purge_deleted_version_as_owner', 5],
+  ['delete-owner', buildDeleteContentVersionAsOwnerTx, 'content', 'delete_version_as_owner', 6],
+  ['delete-grantee', buildDeleteContentVersionAsGrantedAgentTx, 'content', 'delete_version_as_granted_agent', 7],
+  ['purge-owner', buildPurgeContentVersionAsOwnerTx, 'content', 'purge_deleted_version_as_owner', 6],
   ['set-active', buildSetActiveContentTx, 'market', 'set_active_content_v2', 6],
 ] as const
 

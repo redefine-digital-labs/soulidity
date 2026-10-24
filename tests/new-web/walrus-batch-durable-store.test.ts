@@ -58,7 +58,7 @@ beforeAll(async () => {
     target: { chainIdentifier: '35834a8a', originalPackageId: oid(1), callablePackageId: oid(10),
       callableDigest: toBase58(new Uint8Array(32).fill(7)), marketConfigId: oid(11), kioskRegistryId: oid(12),
       personalKioskTypePackageId: oid(13), paymentCoinType: SOUL_PUBLIC_USDC_TYPE, collectionTransferPolicyId: oid(14),
-      kioskPackageId: oid(15), kindRegistryId: oid(16), soulTransferPolicyId: oid(17), blobBaseUrl: 'https://aggregator.example.com' },
+      kioskPackageId: oid(15), kindRegistryId: oid(16), soulTransferPolicyId: oid(17), protocolGateId: oid(90), blobBaseUrl: 'https://aggregator.example.com' },
     collection: { name: 'Empty collection', description: 'Creation recovery fixture',
       image: { kind: 'URL', url: 'https://images.example.com/cover.png' }, extraRoyaltyBps: 0,
       tradeable: true, maxSupply: null, floorPriceAtomic: null, listingPriceAtomic: null }, bindCollectionId: null, mints: [] }

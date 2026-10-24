@@ -19,6 +19,7 @@ import { assertPrivateLoadoutHeadDocument, emptyPrivateLoadoutLibrary, privateLo
 
 export interface BrowserPrivateLoadoutConfig {
   target: NativeReceiveTarget
+  protocolGateId: string
   aggregators: [string, string][]
   storage: { blobType: string; aggregatorUrl: string }
 }
@@ -41,7 +42,8 @@ const exact = (v: unknown, keys: string[]) => !!v && typeof v === 'object' && !A
 /** A detached, public-only tuple safe to retain with a pending ciphertext. */
 export function validateBrowserPrivateLoadoutConfig(input: BrowserPrivateLoadoutConfig): BrowserPrivateLoadoutConfig {
   const v = structuredClone(input)
-  check(exact(v, ['target', 'aggregators', 'storage']), 'PRIVATE_LOADOUT_CONFIG_INVALID')
+  check(exact(v, ['target', 'protocolGateId', 'aggregators', 'storage']), 'PRIVATE_LOADOUT_CONFIG_INVALID')
+  check(typeof v.protocolGateId === 'string' && /^0x[0-9a-f]{64}$/.test(v.protocolGateId) && !/^0x0+$/.test(v.protocolGateId), 'PRIVATE_LOADOUT_protocolGateId_REQUIRED')
   const pin = v.target
   const target = readNativeReceiveTarget({ NEXT_PUBLIC_SUI_NETWORK: 'mainnet',
     NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: pin?.soulidityCallablePackageId,
@@ -59,13 +61,13 @@ export function validateBrowserPrivateLoadoutConfig(input: BrowserPrivateLoadout
   check(url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
     && url.hostname !== 'localhost' && !/^\d+(?:\.\d+){3}$/.test(url.hostname) && !url.hostname.includes(':'),
   'PRIVATE_LOADOUT_STORAGE_URL_INVALID')
-  return freeze({ target, aggregators: [...aggregators], storage: { blobType: v.storage.blobType, aggregatorUrl: url.href.replace(/\/$/, '') } })
+  return freeze({ target, protocolGateId: v.protocolGateId, aggregators: [...aggregators], storage: { blobType: v.storage.blobType, aggregatorUrl: url.href.replace(/\/$/, '') } })
 }
 export function getBrowserPrivateLoadoutConfig(): BrowserPrivateLoadoutConfig {
   const target = getBrowserNativeReceiveTarget()
   const aggregators = completeReadAggregatorUrls({ NEXT_PUBLIC_SUI_NETWORK: process.env.NEXT_PUBLIC_SUI_NETWORK,
     NEXT_PUBLIC_SEAL_SERVER_CONFIGS: process.env.NEXT_PUBLIC_SEAL_SERVER_CONFIGS })
-  return validateBrowserPrivateLoadoutConfig({ target, aggregators: [...aggregators], storage: {
+  return validateBrowserPrivateLoadoutConfig({ target, protocolGateId: process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID!, aggregators: [...aggregators], storage: {
     blobType: process.env.NEXT_PUBLIC_WALRUS_BLOB_TYPE!, aggregatorUrl: process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR_URL! } })
 }
 function capture(params: ReadParams) {
@@ -73,7 +75,7 @@ function capture(params: ReadParams) {
   const signal = params.signal ? AbortSignal.any([params.signal, AbortSignal.timeout(25000)]) : AbortSignal.timeout(25000)
   signal.throwIfAborted()
   const deployment = { originalPackageId: config.target.soulidityOriginalPackageId,
-    callablePackageId: config.target.soulidityCallablePackageId, chainIdentifier: toHex(fromBase58(MAINNET_GENESIS_DIGEST).subarray(0, 4)) }
+    callablePackageId: config.target.soulidityCallablePackageId, protocolGateId: config.protocolGateId, chainIdentifier: toHex(fromBase58(MAINNET_GENESIS_DIGEST).subarray(0, 4)) }
   return { config, scope, signal, deployment }
 }
 type Captured = ReturnType<typeof capture>

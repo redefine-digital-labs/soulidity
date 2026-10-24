@@ -26,7 +26,7 @@ function text(value: unknown, maximum: number, nonempty = true): asserts value i
 }
 const fingerprint = (value: unknown) => walrusBatchHash(utf8.encode(canonical(value)))
 export interface SoulAuthoringTarget extends CollectionBuyTarget {
-  kindRegistryId: string; soulTransferPolicyId: string; blobBaseUrl: string
+  kindRegistryId: string; soulTransferPolicyId: string; protocolGateId: string; blobBaseUrl: string
 }
 export type SoulAuthoringImage = { kind: 'FILE'; fileIndex: number } | { kind: 'URL'; url: string }
 export interface SoulAuthoringSlot {
@@ -63,11 +63,12 @@ export function parseSoulAuthoringTarget(input: unknown): SoulAuthoringTarget {
   const t = structuredClone(input) as SoulAuthoringTarget
   walrusBatchKeys(t, ['chainIdentifier', 'originalPackageId', 'callablePackageId', 'callableDigest', 'marketConfigId',
     'kioskRegistryId', 'personalKioskTypePackageId', 'paymentCoinType', 'collectionTransferPolicyId', 'kioskPackageId',
-    'kindRegistryId', 'soulTransferPolicyId', 'blobBaseUrl'])
-  const { kindRegistryId, soulTransferPolicyId, blobBaseUrl, ...base } = t
+    'kindRegistryId', 'soulTransferPolicyId', 'protocolGateId', 'blobBaseUrl'])
+  const { kindRegistryId, soulTransferPolicyId, protocolGateId, blobBaseUrl, ...base } = t
   parseCollectionBuyTarget(base)
   check(t.chainIdentifier === toHex(fromBase58(MAINNET_GENESIS_DIGEST).subarray(0, 4)), 'TARGET_NETWORK_MISMATCH')
-  check(walrusBatchAddress(kindRegistryId) && walrusBatchAddress(soulTransferPolicyId), 'TARGET_ID_INVALID')
+  check(walrusBatchAddress(kindRegistryId) && walrusBatchAddress(soulTransferPolicyId)
+    && walrusBatchAddress(protocolGateId), 'TARGET_ID_INVALID')
   text(blobBaseUrl, 900)
   const url = new URL(blobBaseUrl)
   check(url.protocol === 'https:' && !url.search && !url.hash && !url.username && !url.password && !blobBaseUrl.endsWith('/'), 'BLOB_BASE_INVALID')
@@ -177,7 +178,8 @@ export function soulAuthoringUploadScope(input: SoulAuthoringRequest): WalrusBat
 export function soulAuthoringSealContext(input: SoulAuthoringRequest, sealConfig: BrowserContentSealConfig, recoveryNonce: string) {
   const request = parseSoulAuthoringRequest(input)
   return parseWalrusBatchSealContext({ schema: 'soulidity.walrus-batch-seal.v1', scope: soulAuthoringUploadScope(request),
-    originalPackageId: request.target.originalPackageId, callablePackageId: request.target.callablePackageId, sealConfig, recoveryNonce,
+    originalPackageId: request.target.originalPackageId, callablePackageId: request.target.callablePackageId,
+    protocolGateId: request.target.protocolGateId, sealConfig, recoveryNonce,
     slots: request.mints.flatMap(mint => mint.slots.map(slot => ({ fileIndex: slot.fileIndex, contentObjectId: mint.contentObjectId,
       kind: slot.kind, name: slot.name, versionIndex: slot.versionIndex }))).sort((a, b) => a.fileIndex - b.fileIndex) })
 }

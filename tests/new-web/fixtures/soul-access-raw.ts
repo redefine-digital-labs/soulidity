@@ -9,7 +9,7 @@ import { accessId } from './soul-access-transaction'
 export function soulAccessRawFixture() {
   const raw = browserContentAccessFixture(), oldPkg = raw.deployment.originalPackageId, pkg = accessId(7001)
   const deployment = { ...raw.deployment, originalPackageId: pkg, callablePackageId: accessId(7004),
-    marketConfigId: accessId(7000), paymentCoinType: SOUL_PUBLIC_USDC_TYPE }
+    protocolGateId: raw.config.protocolGateId, marketConfigId: accessId(7000), paymentCoinType: SOUL_PUBLIC_USDC_TYPE }
   const market = { id: deployment.marketConfigId, version: '2', legacy_config_id: accessId(7002), fee_recipient: accessId(7003),
     platform_fee_bps: 250, primary_enabled: true, secondary_enabled: true }
   const origins = [['soul', 'Soul'], ['soul', 'SoulState'], ['soul', 'ActiveGrantSlot'], ['grant', 'SoulGrant'],

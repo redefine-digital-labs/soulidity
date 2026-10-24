@@ -76,6 +76,31 @@ describe('Soulidity client deployment session', () => {
     })).toBe(false)
   })
 
+  it('invalidates a persisted deployment when the protocol gate changes', () => {
+    const deployment = getSoulidityDeployment(), previous = deployment.protocolGateId
+    try {
+      deployment.protocolGateId = `0x${'a'.repeat(64)}`
+      const record = attachSoulidityDeploymentSignature({ txDigest: 'unresolved' })
+      deployment.protocolGateId = `0x${'b'.repeat(64)}`
+      expect(hasCurrentSoulidityDeploymentSignature(record)).toBe(false)
+    } finally {
+      deployment.protocolGateId = previous
+    }
+  })
+
+  it('invalidates a persisted deployment when the effective env gate changes', () => {
+    const previous = process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID
+    try {
+      process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID = `0x${'c'.repeat(64)}`
+      const record = attachSoulidityDeploymentSignature({ txDigest: 'unresolved' })
+      process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID = `0x${'d'.repeat(64)}`
+      expect(hasCurrentSoulidityDeploymentSignature(record)).toBe(false)
+    } finally {
+      if (previous === undefined) delete process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID
+      else process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID = previous
+    }
+  })
+
   it('clears all known Soulidity session keys when the deployment signature changes', () => {
     const staleSignature = 'testnet|0xstale'
     const storage = createStorage({

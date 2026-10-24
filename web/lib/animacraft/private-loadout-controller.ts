@@ -73,7 +73,7 @@ export function createPrivateLoadoutController(params: {
   function planFor(record: PrivateLoadoutRecovery) {
     check(record.storage, 'PRIVATE_LOADOUT_STORAGE_NOT_CERTIFIED')
     return validatePrivateLoadoutPublicPlan({ deployment: { originalPackageId: config.target.soulidityOriginalPackageId,
-      callablePackageId: config.target.soulidityCallablePackageId, chainIdentifier: '35834a8a' }, scope,
+      callablePackageId: config.target.soulidityCallablePackageId, protocolGateId: config.protocolGateId, chainIdentifier: '35834a8a' }, scope,
       expectedRevision: String(BigInt(record.context.revision) - 1n), requestId: record.context.requestId,
       ciphertext: record.storage.reference, capture: record.capture, protocolId: config.target.protocolConfigId })
   }
@@ -91,6 +91,7 @@ export function createPrivateLoadoutController(params: {
     const checked = validatePrivateLoadoutPublicPlan(plan)
     check(same(checked.scope, scope) && checked.deployment.originalPackageId === config.target.soulidityOriginalPackageId
       && checked.deployment.callablePackageId === config.target.soulidityCallablePackageId
+      && checked.deployment.protocolGateId === config.protocolGateId
       && checked.protocolId === config.target.protocolConfigId, 'PRIVATE_LOADOUT_TRANSACTION_SCOPE_CHANGED')
     const current = await head()
     check(!current.head?.receipts.some(row => row.requestId === checked.requestId), 'PRIVATE_LOADOUT_ALREADY_COMMITTED_QUERY_ONLY')

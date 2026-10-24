@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { bcs } from '@mysten/sui/bcs'
 import { fromBase64, toBase64 } from '@mysten/sui/utils'
 import { blobIdFromInt } from '../../web/node_modules/@mysten/walrus/dist/index.mjs'
 import { prepareWalrusBatch, unlockWalrusBatchMaterials, walrusBatchHash } from '../../web/lib/upload/walrus-batch-preparation'
@@ -13,7 +14,7 @@ async function fixture() {
   const lifetime = { signal: f.controller.signal, getAddress: f.params.wallet.getAddress, isCurrent: () => current }
   const scope = { network: 'mainnet' as const, owner: f.signer.toSuiAddress(), releaseHash: '1'.repeat(64),
     operationId: 'batch-prepared-operation', intentHash: '2'.repeat(64) }
-  const context = { schema: 'soulidity.walrus-batch-seal.v1' as const, scope, originalPackageId: id(1), callablePackageId: id(10),
+  const context = { schema: 'soulidity.walrus-batch-seal.v1' as const, scope, originalPackageId: id(1), callablePackageId: id(10), protocolGateId: id(70),
     recoveryNonce: '3'.repeat(32), sealConfig: f.params.sealConfig,
     slots: [{ fileIndex: 0, contentObjectId: id(4), kind: 0, name: 'soul', versionIndex: '0' },
       { fileIndex: 1, contentObjectId: id(4), kind: 1, name: 'default', versionIndex: '0' }] }
@@ -37,6 +38,9 @@ it('runs actual batch AES + Seal preparation with zero prompts and cold unlocks 
   const materials = await unlockWalrusBatchMaterials({ preparation: structuredClone(p), lifetime: f.lifetime,
     unlock: input => cold.unlock(input, commitment) })
   expect(f.sign).toHaveBeenCalledOnce(); expect(f.decryptCall).toHaveBeenCalledOnce()
+  const pt = bcs.TransactionKind.parse(f.decryptCall.mock.calls[0][0].txBytes).ProgrammableTransaction!
+  expect(pt.commands[0].MoveCall?.arguments).toHaveLength(2)
+  expect(pt.inputs[pt.commands[0].MoveCall!.arguments[1].Input!].Object?.SharedObject).toMatchObject({ objectId: id(70), mutable: false })
   expect(materials.map(m => m.index)).toEqual([0, 1])
   materials.forEach(row => { expect(fromBase64(row.material.dek)).toHaveLength(32); row.material.dek = ''; row.material.iv = '' })
   expect(f.unwrapped.every(bytes => bytes.every(byte => byte === 0))).toBe(true)

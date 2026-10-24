@@ -31,7 +31,7 @@ const render = () => act(async () => { root.render(<Probe />) })
 const invoke = async (fn: () => Promise<unknown>) => act(async () => { await fn() })
 function record(plan?: any) {
   return { schema: 'soulidity.content-mutation.v1', plan: plan ?? {
-    deployment: { chainIdentifier: '35834a8a', originalPackageId: id(10), callablePackageId: id(11), marketConfigId: id(12), kindRegistryId: id(13) },
+    deployment: { chainIdentifier: '35834a8a', originalPackageId: id(10), callablePackageId: id(11), marketConfigId: id(12), protocolGateId: id(99), kindRegistryId: id(13) },
     soulId: id(1), stateId: id(2), contentId: id(3), author: id(4), ownershipEpoch: '2', kind: 3, action: 'delete',
     target: { name: 'sprite', versionIndex: '0' }, expectedActive: null, grantId: null,
     expectedSlot: SoulContentSlotPublicBcs.serialize(h.proof.snapshot.contentVersions[0].slot).toBase64(),
@@ -40,9 +40,9 @@ function record(plan?: any) {
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks(); blocked = false
   h.account = { address: id(4) }; h.wallet = {}; h.client = { grpc: {} }; h.market = id(12)
-  h.config = { target: { soulidityOriginalPackageId: id(10), soulidityCallablePackageId: id(11) }, kindRegistryId: id(13) }
+  h.config = { target: { soulidityOriginalPackageId: id(10), soulidityCallablePackageId: id(11) }, protocolGateId: id(99), kindRegistryId: id(13) }
   soul = { originalPackageId: id(10), onChainId: id(1), stateOnChainId: id(2), contentOnChainId: id(3) }
-  h.proof = { soulId: id(1), stateId: id(2), contentId: id(3), originalPackageId: id(10), callablePackageId: id(11), kindRegistryId: id(13), snapshot: {
+  h.proof = { soulId: id(1), stateId: id(2), contentId: id(3), originalPackageId: id(10), callablePackageId: id(11), protocolGateId: id(99), kindRegistryId: id(13), snapshot: {
     currentOwner: id(4), ownershipEpoch: '2', activeBindings: [], grants: [],
     kindDescriptors: [{ kind: 3, has_active_binding: true, op_mask: '15', deprecated: true }], contentVersions: [{ kind: 3, name: 'sprite', versionIndex: '0',
       slot: { version: '1', kind: 3, blob_object_id: id(21), is_public: false, deleted: false, purged: false, download_policy: 1,

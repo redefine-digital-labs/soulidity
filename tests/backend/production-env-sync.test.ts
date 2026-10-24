@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mergeProductionChainEnv, parseCliOptions, PRODUCTION_CHAIN_ENV_KEYS } from '../../scripts/sync-vercel-production-env'
+import { mergeProductionChainEnv, parseCliOptions, PRODUCTION_CHAIN_ENV_KEYS, PRODUCTION_ENV_ALLOWLIST } from '../../scripts/sync-vercel-production-env'
 
 const SCRIPT = 'scripts/sync-vercel-production-env.ts'
 const VALID_PUBLIC_SEAL_CONFIG = JSON.stringify([{
@@ -21,6 +21,9 @@ const ACTIVE_SOULIDITY_PACKAGE_ID =
   '0xa43cc9a94caa904a97316d97c08804369ee8fbe3335d2ddae154022d7d6e5d5d'
 
 const tempDirs: string[] = []
+it('permits the fresh-release public protocol gate in production configuration', () => {
+  expect(PRODUCTION_ENV_ALLOWLIST).toContain('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID')
+})
 const productionSupportEnv = {
   NEXT_PUBLIC_SUI_CHAIN_IDENTIFIER: '35834a8a', NEXT_PUBLIC_WALRUS_AGGREGATOR_URL: 'https://aggregator.example',
   NEXT_PUBLIC_SOULIDITY_PROFILE_WRITES_ENABLED: 'false', NEXT_PUBLIC_SOULIDITY_SOCIAL_WRITES_ENABLED: 'false',
@@ -38,6 +41,7 @@ function nativeConfig() {
     NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID: id(33), NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTE_REGISTRY_ID: id(34),
     NEXT_PUBLIC_WALRUS_BLOB_TYPE: '0xfdc88f7d7cf30afab2f82e8380d11ee8f70efb90e863d1de8616fae1bb09ea77::blob::Blob',
     NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID: id(20),
+    NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID: id(25),
     NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID: id(21),
     NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID: id(22),
     NEXT_PUBLIC_SOULIDITY_SOUL_TRANSFER_POLICY_ID: id(23),
@@ -128,9 +132,10 @@ afterEach(() => {
   }
 })
 
-// Independent literal17 projection matching export-config --format soulidity-env.
+// Independent public chain projection including the fresh-release gate.
 // Valid local configuration is not an attestation of a real deployment/WAL.
 const CHAIN_KEYS = [
+  'NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID',
   'NEXT_PUBLIC_SOULIDITY_PROFILE_REGISTRY_ID', 'NEXT_PUBLIC_SOULIDITY_SOCIAL_REGISTRY_ID',
   'NEXT_PUBLIC_SOULIDITY_COMMUNITY_REGISTRY_ID', 'NEXT_PUBLIC_SOULIDITY_COMMUNITY_VOTE_REGISTRY_ID',
   'NEXT_PUBLIC_WALRUS_BLOB_TYPE',
@@ -165,7 +170,7 @@ describe('explicit native chain env overlay', () => {
       expect(() => parseCliOptions(args)).toThrow()
     }
   })
-  it('overlays all17 chain keys, retains static configuration and preserves actual single-quoted JSON', () => {
+  it('overlays every chain key, retains static configuration and preserves actual single-quoted JSON', () => {
     expect([...PRODUCTION_CHAIN_ENV_KEYS].sort()).toEqual([...CHAIN_KEYS].sort())
     const base = { ...Object.fromEntries(CHAIN_KEYS.map(k => [k, 'OLD_CHAIN_VALUE'])),
       NEXT_PUBLIC_BASE_URL: 'https://unchanged.example' }

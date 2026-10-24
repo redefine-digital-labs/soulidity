@@ -3,6 +3,13 @@ import { getRequiredSoulidityEnv } from '../env'
 import { accessU64, accessId, accessScope, accessCapacity, type AccessU64 } from './access-snapshot'
 
 const SUI_CLOCK_OBJECT_ID = '0x6'
+type GrantDeployment = { packageId: string; protocolGateId?: string }
+function grantDeployment(deployment?: GrantDeployment) {
+  return {
+    packageId: accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')),
+    protocolGateId: accessId(deployment?.protocolGateId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID'), 'protocolGateId'),
+  }
+}
 
 /**
  * Cap on the number of `grant::issue_to_grantee` / `grant::revoke` calls a
@@ -26,7 +33,7 @@ export interface BatchIssueGrantItem {
   scopeMask: number
   expiresAtMs?: AccessU64 | null
   /**
-   * When provided, splice `grant::set_grant_capacity(state, setCapacityTo)`
+   * When provided, splice `grant::set_grant_capacity(gate, state, setCapacityTo)`
    * into the PTB immediately before this item's `issue_to_grantee` call.
    * Used to honor `/api/souls/grant-merge-masks`'s `requiredCapacity`
    * contract: any item where `requiredCapacity > currentCapacity` must
@@ -87,16 +94,17 @@ export interface AddIssueGrantParams {
  * state before writing; an explicit deployment also supports exact read-only
  * reconstruction of an already executed transaction.
  */
-export function addIssueGrantCalls(tx: Transaction, params: AddIssueGrantParams, deployment?: { packageId: string }): void {
+export function addIssueGrantCalls(tx: Transaction, params: AddIssueGrantParams, deployment?: GrantDeployment): void {
   assertGranteeAddress(params.granteeAddress)
   assertScopeMask(params.scopeMask)
   assertExpiry(params.expiresAtMs)
   accessId(params.stateObjectId)
 
-  const packageId = accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'))
+  const { packageId, protocolGateId } = grantDeployment(deployment)
   tx.moveCall({
     target: `${packageId}::grant::issue_to_grantee`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.stateObjectId),
       tx.pure.address(params.granteeAddress),
       tx.pure.u64(params.scopeMask),
@@ -106,7 +114,7 @@ export function addIssueGrantCalls(tx: Transaction, params: AddIssueGrantParams,
   })
 }
 
-export function buildIssueGrantTx(params: AddIssueGrantParams, deployment?: { packageId: string }, tx = new Transaction()) {
+export function buildIssueGrantTx(params: AddIssueGrantParams, deployment?: GrantDeployment, tx = new Transaction()) {
   addIssueGrantCalls(tx, params, deployment)
   return tx
 }
@@ -133,7 +141,7 @@ export function buildBatchIssueGrantsTx(params: {
     assertCapacityBump(item.setCapacityTo)
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const { packageId, protocolGateId } = grantDeployment()
   const tx = new Transaction()
   for (const item of params.items) {
     // Splice the capacity bump in the same PTB BEFORE the issue. The chain
@@ -144,6 +152,7 @@ export function buildBatchIssueGrantsTx(params: {
       tx.moveCall({
         target: `${packageId}::grant::set_grant_capacity`,
         arguments: [
+          tx.object(protocolGateId),
           tx.object(item.stateObjectId),
           tx.pure.u64(item.setCapacityTo),
           tx.object(SUI_CLOCK_OBJECT_ID),
@@ -153,6 +162,7 @@ export function buildBatchIssueGrantsTx(params: {
     tx.moveCall({
       target: `${packageId}::grant::issue_to_grantee`,
       arguments: [
+        tx.object(protocolGateId),
         tx.object(item.stateObjectId),
         tx.pure.address(item.granteeAddress),
         tx.pure.u64(item.scopeMask),
@@ -167,13 +177,14 @@ export function buildBatchIssueGrantsTx(params: {
 export function buildRevokeGrantTx(params: {
   stateObjectId: string
   granteeAddress: string
-}, deployment?: { packageId: string }, tx = new Transaction()) {
+}, deployment?: GrantDeployment, tx = new Transaction()) {
   assertGranteeAddress(params.granteeAddress)
   accessId(params.stateObjectId)
-  const packageId = accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'))
+  const { packageId, protocolGateId } = grantDeployment(deployment)
   tx.moveCall({
     target: `${packageId}::grant::revoke`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.stateObjectId),
       tx.pure.address(params.granteeAddress),
       tx.object(SUI_CLOCK_OBJECT_ID),
@@ -194,12 +205,13 @@ export function buildBatchRevokeGrantsTx(params: {
     assertGranteeAddress(item.granteeAddress)
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const { packageId, protocolGateId } = grantDeployment()
   const tx = new Transaction()
   for (const item of params.items) {
     tx.moveCall({
       target: `${packageId}::grant::revoke`,
       arguments: [
+        tx.object(protocolGateId),
         tx.object(item.stateObjectId),
         tx.pure.address(item.granteeAddress),
         tx.object(SUI_CLOCK_OBJECT_ID),
@@ -213,11 +225,12 @@ export function buildDestroyInvalidatedGrantTx(params: {
   stateObjectId: string
   grantObjectId: string
 }) {
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const { packageId, protocolGateId } = grantDeployment()
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::grant::destroy_invalidated_grant`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.grantObjectId),
       tx.object(params.stateObjectId),
       tx.object(SUI_CLOCK_OBJECT_ID),
@@ -239,11 +252,12 @@ export function buildCleanupInactiveGrantsTx(params: {
     }
   }
 
-  const packageId = getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
+  const { packageId, protocolGateId } = grantDeployment()
   const tx = new Transaction()
   tx.moveCall({
     target: `${packageId}::grant::cleanup_inactive_grants`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.stateObjectId),
       tx.pure.vector('address', params.granteeAddresses),
       tx.object(SUI_CLOCK_OBJECT_ID),
@@ -265,14 +279,15 @@ export interface AddSetGrantCapacityParams {
 export function addSetGrantCapacityCalls(
   tx: Transaction,
   params: AddSetGrantCapacityParams,
-  deployment?: { packageId: string },
+  deployment?: GrantDeployment,
 ): void {
   const capacity = accessCapacity(params.capacity)
   accessId(params.stateObjectId)
-  const packageId = accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'))
+  const { packageId, protocolGateId } = grantDeployment(deployment)
   tx.moveCall({
     target: `${packageId}::grant::set_grant_capacity`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.stateObjectId),
       tx.pure.u64(capacity),
       tx.object(SUI_CLOCK_OBJECT_ID),
@@ -280,7 +295,7 @@ export function addSetGrantCapacityCalls(
   })
 }
 
-export function buildSetGrantCapacityTx(params: AddSetGrantCapacityParams, deployment?: { packageId: string }, tx = new Transaction()) {
+export function buildSetGrantCapacityTx(params: AddSetGrantCapacityParams, deployment?: GrantDeployment, tx = new Transaction()) {
   addSetGrantCapacityCalls(tx, params, deployment)
   return tx
 }
@@ -289,14 +304,15 @@ export function buildRevokeGrantScopeTx(params: {
   stateObjectId: string
   granteeAddress: string
   revokedScopeMask: number
-}, deployment?: { packageId: string }, tx = new Transaction()) {
+}, deployment?: GrantDeployment, tx = new Transaction()) {
   assertGranteeAddress(params.granteeAddress)
   accessId(params.stateObjectId)
   accessScope(params.revokedScopeMask, 'revokedScopeMask')
-  const packageId = accessId(deployment?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID'))
+  const { packageId, protocolGateId } = grantDeployment(deployment)
   tx.moveCall({
     target: `${packageId}::grant::revoke_scope_to_grantee`,
     arguments: [
+      tx.object(protocolGateId),
       tx.object(params.stateObjectId),
       tx.pure.address(params.granteeAddress),
       tx.pure.u64(params.revokedScopeMask),

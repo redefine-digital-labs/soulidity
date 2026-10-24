@@ -9,7 +9,7 @@ export type SoulAccessAction = 'grant-issue' | 'grant-revoke' | 'grant-revoke-sc
   | 'paid-configure' | 'paid-update' | 'paid-delete' | 'paid-purchase' | 'paid-revoke'
 export interface SoulAccessDeployment {
   chainIdentifier: string; originalPackageId: string; callablePackageId: string
-  kindRegistryId: string; marketConfigId: string; paymentCoinType: string
+  kindRegistryId: string; marketConfigId: string; protocolGateId: string; paymentCoinType: string
 }
 export interface SoulAccessPaymentCoin { objectId: string; version: string; digest: string; balance: string }
 /** User input, before raw observations have fixed the scope, price and recipients. */
@@ -99,10 +99,10 @@ const id: typeof soulAccessAddress = soulAccessAddress
 const exact: typeof soulAccessExact = soulAccessExact
 export function parseSoulAccessDeployment(input: unknown): SoulAccessDeployment {
   const d = structuredClone(input) as SoulAccessDeployment
-  exact(d, ['chainIdentifier', 'originalPackageId', 'callablePackageId', 'kindRegistryId', 'marketConfigId', 'paymentCoinType'])
+  exact(d, ['chainIdentifier', 'originalPackageId', 'callablePackageId', 'kindRegistryId', 'marketConfigId', 'protocolGateId', 'paymentCoinType'])
   check(typeof d.chainIdentifier === 'string' && /^[0-9a-f]{8}$/.test(d.chainIdentifier)
     && d.paymentCoinType === SOUL_PUBLIC_USDC_TYPE, 'DEPLOYMENT_INVALID')
-  ;[d.originalPackageId, d.callablePackageId, d.kindRegistryId, d.marketConfigId].forEach(value => id(value))
+  ;[d.originalPackageId, d.callablePackageId, d.kindRegistryId, d.marketConfigId, d.protocolGateId].forEach(value => id(value))
   return d
 }
 export function soulAccessIsGrant(action: SoulAccessAction) { return action.startsWith('grant-') }
@@ -124,7 +124,7 @@ function deriveQuote(p: SoulAccessPlan, requireCoins: boolean): SoulAccessQuote 
     && s.ownership_epoch === p.ownershipEpoch && s.content_id === p.contentId && s.access_list_id === p.paidAccessListId
     && paid.version === '1' && paid.id === p.paidAccessListId && paid.soul_id === p.soulId && paid.creator === s.creator, 'ROOT_MISMATCH')
   const roots = [p.soulId, p.stateId, p.contentId, p.paidAccessListId, p.deployment.kindRegistryId,
-    p.deployment.marketConfigId, SOUL_ACCESS_CLOCK, s.active_grants.id, s.active_grant_ids.id, s.config_ext.id,
+    p.deployment.marketConfigId, p.deployment.protocolGateId, SOUL_ACCESS_CLOCK, s.active_grants.id, s.active_grant_ids.id, s.config_ext.id,
     paid.entries.id, paid.kind_configs.id]
   roots.forEach(value => id(value))
   check(new Set(roots).size === roots.length && !roots.includes(p.deployment.originalPackageId)

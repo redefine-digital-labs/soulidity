@@ -19,6 +19,7 @@ import { artId as id } from './fixtures/browser-native-artwork'
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers() })
 function environment(f: ReturnType<typeof browserPrivateLoadoutFixture>) {
   vi.stubEnv('NEXT_PUBLIC_SUI_NETWORK', 'mainnet'); vi.stubEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID', f.target.soulidityCallablePackageId)
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID', f.config.protocolGateId)
   vi.stubEnv('NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID', f.target.soulidityOriginalPackageId)
   vi.stubEnv('NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON', JSON.stringify(f.target))
   vi.stubEnv('NEXT_PUBLIC_SEAL_SERVER_CONFIGS', JSON.stringify(f.config.aggregators.map(([objectId, aggregatorUrl]) => ({ objectId, aggregatorUrl }))))
@@ -143,7 +144,7 @@ async function cryptoFixture() {
     expect(args.objectId).toBe(f.target.soulidityOriginalPackageId)
     return { object: { version: '1' } } as any
   })
-  // Use SDK's local resolver against exact three-parameter approval ABI and
+  // Use SDK's local resolver against exact four-parameter approval ABI and
   // the actual fixture's shared State reference, not a fabricated tx byte blob.
   const path = '../../web/node_modules/@mysten/sui/dist/client/core-resolver.mjs'
   const resolver = await import(path)
@@ -151,13 +152,14 @@ async function cryptoFixture() {
   vi.spyOn(f.client.core, 'getMoveFunction').mockImplementation(async args => {
     expect(args).toEqual({ packageId: f.target.soulidityCallablePackageId, moduleName: 'named_loadout_v1', name: 'seal_approve' })
     return { function: { parameters: [ { body: { vector: 'u8' }, reference: null },
+      { body: { datatype: { package: f.target.soulidityOriginalPackageId, module: 'protocol_gate', type: 'ProtocolGate', typeParameters: [] } }, reference: 'immutable' },
       { body: { datatype: { package: f.target.soulidityOriginalPackageId, module: 'soul', type: 'SoulState', typeParameters: [] } }, reference: 'immutable' },
       { body: 'u64', reference: null }] } } as any
   })
   vi.spyOn(f.client.core, 'getObjects').mockImplementation(async args => {
-    expect(args.objectIds).toEqual([f.scope.stateId]); const raw = f.objects.get(f.scope.stateId)
-    return { objects: [{ objectId: raw.objectId, version: String(raw.version), digest: raw.digest,
-      owner: { $kind: 'Shared', Shared: { initialSharedVersion: String(raw.owner.version) } } }] } as any
+    expect(args.objectIds).toEqual([f.config.protocolGateId, f.scope.stateId]); const raw = f.objects.get(f.scope.stateId)
+    return { objects: args.objectIds.map(objectId => ({ objectId, version: String(raw.version), digest: raw.digest,
+      owner: { $kind: 'Shared', Shared: { initialSharedVersion: String(raw.owner.version) } } })) } as any
   })
   const content = captureNamedLoadout(await nativeEquipmentSourceFixture().readBase())
   content.capturedOwner = f.scope.owner; content.capturedOwnershipEpoch = f.scope.ownershipEpoch
@@ -181,7 +183,8 @@ it('encrypts with chain policy then explicitly unlocks a paid orphan via actual 
   expect(f.unwrapped()?.every(x => x === 0)).toBe(true)
   expect(f.kind().ProgrammableTransaction.commands).toMatchObject([{ MoveCall: {
     package: f.target.soulidityCallablePackageId, module: 'named_loadout_v1', function: 'seal_approve' } }])
-  expect(f.kind().ProgrammableTransaction.inputs[1].Object.SharedObject.mutable).toBe(false)
+  expect(f.kind().ProgrammableTransaction.inputs[1].Object.SharedObject).toMatchObject({ objectId: f.config.protocolGateId, mutable: false })
+  expect(f.kind().ProgrammableTransaction.inputs[2].Object.SharedObject).toMatchObject({ objectId: f.scope.stateId, mutable: false })
   expect(f.execute).not.toHaveBeenCalled()
 })
 it('reads and unlocks the exact committed ciphertext without equipment or protected original', async () => {
@@ -327,4 +330,9 @@ it.each(['equipment','revision','commitment','missing'])('rejects decoded Save c
     sealClient: f.client, signPersonalMessage: f.sign }, f.dependencies)).rejects.toThrow()
   expect(f.decryptSpy).toHaveBeenCalledTimes(1)
   expect(f.unwrapped()?.every(v => v === 0)).toBe(true)
+})
+
+it('rejects missing protocolGateId in the private named loadout config', () => {
+  const f = browserPrivateLoadoutFixture(); f.config.protocolGateId = ''
+  expect(() => validateBrowserPrivateLoadoutConfig(f.config)).toThrow('protocolGateId')
 })

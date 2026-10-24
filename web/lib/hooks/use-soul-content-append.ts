@@ -246,7 +246,7 @@ export function useSoulContentAppend(soul: ChainSoulDetail, role: 'owner' | 'gra
         autoGrantPlan, contentHash: await sha256Hex(plaintext), plaintextByteLength: plaintext.length, fileName: normalized.name,
         mimeType: contentType, uploadConfig: getBrowserPrivateLoadoutUploadConfig(), rebase: null }
       const preparationScope: ContentAppendPreparationScope = { author: account!.address, originalPackageId: observed.originalPackageId,
-        callablePackageId: observed.callablePackageId, contentObjectId: soul.contentOnChainId, kind: params.kind, name,
+        callablePackageId: observed.callablePackageId, protocolGateId: observed.protocolGateId, contentObjectId: soul.contentOnChainId, kind: params.kind, name,
         versionIndex: expectedVersionIndex, intentJson: JSON.stringify(intent) }
       guard(); const store = browserContentAppendStore(grpc), key = contentAppendStoreKey(preparationScope)
       return await store.exclusive(key, async () => {

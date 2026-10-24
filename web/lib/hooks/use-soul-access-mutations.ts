@@ -25,7 +25,8 @@ function configuration() {
   const deployment = parseSoulAccessDeployment({
     chainIdentifier: toHex(fromBase58(MAINNET_GENESIS_DIGEST).subarray(0, 4)),
     originalPackageId: config.target.soulidityOriginalPackageId, callablePackageId: config.target.soulidityCallablePackageId,
-    kindRegistryId: config.kindRegistryId, marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
+    kindRegistryId: config.kindRegistryId, protocolGateId: config.protocolGateId,
+    marketConfigId: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID'),
     paymentCoinType: getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_PAYMENT_COIN_TYPE'),
   })
   return { config, deployment }

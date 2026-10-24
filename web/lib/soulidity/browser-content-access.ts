@@ -12,7 +12,7 @@ import { contentEnvelopeKey, decodeContentEnvelope } from './content-envelope'
 
 export const BROWSER_CONTENT_MAX_BYTES = 64 * 1024 * 1024
 export interface BrowserContentAccessConfig {
-  target: NativeReceiveTarget; kindRegistryId: string
+  target: NativeReceiveTarget; kindRegistryId: string; protocolGateId: string
   storage: { blobType: string; aggregatorUrl: string }
 }
 export interface BrowserContentAccess {
@@ -21,7 +21,7 @@ export interface BrowserContentAccess {
   accessKind: 'owner' | 'granted-agent' | 'paid' | 'public'
   slot: { readModeMask: string; opMask: string; grantScopeMask: string; downloadPolicy: 'public' | 'owner_only' | 'allowlist' }
   artifact: { walrusBlobUrl: string; walrusBlobId: string; blobObjectId: string; byteLength: string; endEpoch: number }
-  accessPolicy: { packageId: string; sealPackageId: string; callablePackageId: string; stateObjectId: string; contentObjectId: string
+  accessPolicy: { packageId: string; sealPackageId: string; callablePackageId: string; protocolGateId: string; stateObjectId: string; contentObjectId: string
     kind: number; name: string; versionIndex: string; moduleName: 'content' | 'paid_access'
     functionName: 'seal_approve_content_owner' | 'seal_approve_content_granted_agent' | 'seal_approve_content_paid_access' | 'seal_approve_content_public'
     soulGrantObjectId: string | null; paidAccessListOnChainId: string | null; documentIdHex: string }
@@ -33,10 +33,12 @@ function freeze<T>(value: T): T { if (value && typeof value === 'object') { Obje
 function exact(value: unknown, keys: string[]) { check(value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(k => Object.hasOwn(value, k)), 'INVALID_FIELDS') }
 function configOf(input: BrowserContentAccessConfig): BrowserContentAccessConfig {
-  const value = structuredClone(input); exact(value, ['target', 'kindRegistryId', 'storage']); exact(value.storage, ['blobType', 'aggregatorUrl'])
+  const value = structuredClone(input); exact(value, ['target', 'kindRegistryId', 'protocolGateId', 'storage']); exact(value.storage, ['blobType', 'aggregatorUrl'])
   const pin = value.target, target = readNativeReceiveTarget({ NEXT_PUBLIC_SUI_NETWORK: 'mainnet',
     NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID: pin?.soulidityCallablePackageId, NEXT_PUBLIC_SOULIDITY_ORIGINAL_PACKAGE_ID: pin?.soulidityOriginalPackageId,
     NEXT_PUBLIC_ANIMACRAFT_V8_RECEIVE_TARGET_JSON: JSON.stringify(pin) })
+  check(typeof value.protocolGateId === 'string' && !!value.protocolGateId.trim(), 'protocolGateId_REQUIRED')
+  receiveId(value.protocolGateId)
   receiveId(value.kindRegistryId)
   check(typeof value.storage.blobType === 'string' && /^0x[0-9a-f]{64}::blob::Blob$/.test(value.storage.blobType), 'BLOB_TYPE_INVALID')
   receiveId(value.storage.blobType.split('::')[0])
@@ -45,10 +47,11 @@ function configOf(input: BrowserContentAccessConfig): BrowserContentAccessConfig
   check(url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
     && url.hostname !== 'localhost' && !url.hostname.endsWith('.localhost') && !url.hostname.endsWith('.')
     && !/^\d+(?:\.\d+){3}$/.test(url.hostname) && !url.hostname.includes(':'), 'STORAGE_URL_INVALID')
-  return freeze({ target, kindRegistryId: value.kindRegistryId, storage: { blobType: value.storage.blobType, aggregatorUrl: url.href.replace(/\/+$/, '') } })
+  return freeze({ target, kindRegistryId: value.kindRegistryId, protocolGateId: value.protocolGateId, storage: { blobType: value.storage.blobType, aggregatorUrl: url.href.replace(/\/+$/, '') } })
 }
 export function getBrowserContentAccessConfig(): BrowserContentAccessConfig {
   return configOf({ target: getBrowserNativeReceiveTarget(), kindRegistryId: process.env.NEXT_PUBLIC_SOULIDITY_KIND_REGISTRY_ID!,
+    protocolGateId: process.env.NEXT_PUBLIC_SOULIDITY_PROTOCOL_GATE_ID!,
     storage: { blobType: process.env.NEXT_PUBLIC_WALRUS_BLOB_TYPE!, aggregatorUrl: process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR_URL! } })
 }
 const BlobKey = bcs.struct('ContentBlobKey', { kind: bcs.u32(), name: bcs.string(), version_index: bcs.u64() })
@@ -170,7 +173,7 @@ export async function readBrowserContentAccess(params: {
     slot: { readModeMask: chosen.slot.read_mode_mask, opMask: chosen.slot.op_mask, grantScopeMask: chosen.slot.grant_scope_mask,
       downloadPolicy: (['public', 'owner_only', 'allowlist'] as const)[chosen.slot.download_policy] }, artifact,
     accessPolicy: { packageId: pkg, sealPackageId: pkg, callablePackageId: config.target.soulidityCallablePackageId,
-      stateObjectId: p.stateId, contentObjectId: p.contentId, kind: p.kind, name: p.name, versionIndex: p.versionIndex,
+      protocolGateId: config.protocolGateId, stateObjectId: p.stateId, contentObjectId: p.contentId, kind: p.kind, name: p.name, versionIndex: p.versionIndex,
       moduleName: chosen.accessKind === 'paid' ? 'paid_access' : 'content', functionName: functionName[chosen.accessKind],
       soulGrantObjectId: chosen.grantId, paidAccessListOnChainId: chosen.accessKind === 'paid' ? state.paidAccessListId : null,
       documentIdHex: chosen.sidecar.documentId }, sealSidecar: chosen.sidecar }

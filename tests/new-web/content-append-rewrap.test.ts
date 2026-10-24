@@ -21,7 +21,8 @@ async function fixture() {
   vi.spyOn(client.core, 'getChainIdentifier').mockResolvedValue({ chainIdentifier: MAINNET_GENESIS_DIGEST })
   const resolver = await import('../../web/node_modules/@mysten/sui/dist/client/core-resolver.mjs')
   vi.spyOn(client.core, 'resolveTransactionPlugin').mockReturnValue(resolver.coreClientResolveTransactionPlugin)
-  vi.spyOn(client.core, 'getMoveFunction').mockResolvedValue({ function: { parameters: [{ body: { vector: 'u8' }, reference: null }] } } as any)
+  vi.spyOn(client.core, 'getMoveFunction').mockResolvedValue({ function: { parameters: [{ body: { vector: 'u8' }, reference: null }, { body: { datatype: { package: id(1), module: 'protocol_gate', type: 'ProtocolGate', typeParameters: [] } }, reference: 'immutable' }] } } as any)
+  vi.spyOn(client.core, 'getObjects').mockImplementation(async args => ({ objects: args.objectIds.map(objectId => ({ objectId, version: '1', digest: '11111111111111111111111111111111', owner: { $kind: 'Shared', Shared: { initialSharedVersion: '1' } } })) }) as any)
   const paths = ['bls12381', 'utils', 'decrypt', 'kdf'].map(n => `../../web/node_modules/@mysten/seal/dist/${n}.mjs`)
   const [bls, utils, decrypt, kdf] = await Promise.all(paths.map(p => import(p)))
   const servers = [{ objectId: id(50), weight: 1, aggregatorUrl: 'https://seal.example.com/' }]
@@ -43,7 +44,7 @@ async function fixture() {
   const encryptCall = vi.spyOn(SealClient.prototype, 'encrypt')
   const sign = vi.fn(async (message: Uint8Array) => (await signer.signPersonalMessage(message)).signature)
   const plaintext = new TextEncoder().encode('Original paid ciphertext must remain exactly unchanged on rewrap.')
-  const scope: ContentAppendPreparationScope = { author: signer.toSuiAddress(), originalPackageId: id(1), callablePackageId: id(10),
+  const scope: ContentAppendPreparationScope = { author: signer.toSuiAddress(), originalPackageId: id(1), callablePackageId: id(10), protocolGateId: id(70),
     contentObjectId: id(4), kind: 3, name: 'sprite', versionIndex: '9007199254740993', intentJson: '{"attempt":"original"}' }
   const sealConfig = { threshold: 1, ttlMin: 5, serverConfigs: servers }
   const wallet = { client, sealClient: client, signal: controller.signal, getAddress: () => address, signPersonalMessage: sign }
@@ -88,10 +89,10 @@ it('allows a same-version retry only when the canonical intent changes, with a n
   expect(next.recovery.nonce).not.toBe(f.record.recovery.nonce); expect(next.authorSignature).not.toBe(f.record.authorSignature)
   expect(f.sign).toHaveBeenCalledTimes(2); expect(f.decrypted.every(bytes => bytes.every(v => v === 0))).toBe(true)
 })
-it.each(['author', 'originalPackageId', 'callablePackageId', 'contentObjectId', 'kind', 'name', 'rollback', 'unchanged'])(
+it.each(['author', 'originalPackageId', 'callablePackageId', 'protocolGateId', 'contentObjectId', 'kind', 'name', 'rollback', 'unchanged'])(
   'rejects rewrap %s scope changes before requesting unlock or another author signature', async field => {
     const f = await fixture(), nextScope = { ...f.nextScope }
-    if (['author', 'originalPackageId', 'callablePackageId', 'contentObjectId'].includes(field)) (nextScope as any)[field] = id(99)
+    if (['author', 'originalPackageId', 'callablePackageId', 'protocolGateId', 'contentObjectId'].includes(field)) (nextScope as any)[field] = id(99)
     if (field === 'kind') nextScope.kind = 2
     if (field === 'name') nextScope.name = 'other'
     if (field === 'rollback') nextScope.versionIndex = '9007199254740992'

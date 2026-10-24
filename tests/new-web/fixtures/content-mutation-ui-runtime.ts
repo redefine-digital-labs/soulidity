@@ -29,12 +29,12 @@ export async function createMutationUiRuntime(input?: any) {
       listOwnedObjects: async ({owner,objectType}:any) => ({response:{objects:[...rows.values()].filter(row=>row.owner?.kind===1 && row.owner.address===owner && row.objectType===normalizeStructTag(objectType)).map(row=>({objectId:row.objectId}))}}),
       listDynamicFields: async ({parent}: any) => ({ response: { dynamicFields: structuredClone(tables.get(parent) ?? []) } }) } }
   client.grpc = client
-  const config = { target: { soulidityOriginalPackageId: plan.deployment.originalPackageId, soulidityCallablePackageId: plan.deployment.callablePackageId }, kindRegistryId: plan.deployment.kindRegistryId }
+  const config = { target: { soulidityOriginalPackageId: plan.deployment.originalPackageId, soulidityCallablePackageId: plan.deployment.callablePackageId }, kindRegistryId: plan.deployment.kindRegistryId, protocolGateId: plan.deployment.protocolGateId }
   async function read(params: any = {}) {
     return { snapshot: await readSoulDetailState({ client, deployment: {...data.deployment, kindRegistryId: plan.deployment.kindRegistryId},
       stateId: plan.stateId, expectedState: {version:String(rows.get(plan.stateId).version),digest:rows.get(plan.stateId).digest},
       viewerAddresses: [plan.author], ...((params.kind ?? plan.kind) == null ? {} : {kindIds:[params.kind ?? plan.kind]}) }), soulId:plan.soulId,stateId:plan.stateId,contentId:plan.contentId,
-      originalPackageId:plan.deployment.originalPackageId,callablePackageId:plan.deployment.callablePackageId,kindRegistryId:plan.deployment.kindRegistryId }
+      originalPackageId:plan.deployment.originalPackageId,callablePackageId:plan.deployment.callablePackageId,kindRegistryId:plan.deployment.kindRegistryId,protocolGateId:plan.deployment.protocolGateId }
   }
   async function detail() {
     const asset = await readSoulPublicSnapshotBySoulId({client, deployment:data.deployment, soulId:plan.soulId})

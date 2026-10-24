@@ -33,7 +33,7 @@ export async function createContentBrowserCrypto(options: { emptyMemory?: boolea
   client.core.resolveTransactionPlugin = () => coreClientResolveTransactionPlugin
   const ref = (type: string, module: string) => ({ body: { datatype: { package: id(1), module, type, typeParameters: [] } }, reference: 'immutable' })
   client.core.getMoveFunction = async () => ({ function: { parameters: [
-    { body: { vector: 'u8' }, reference: null }, ref('SoulState', 'soul'), ref('SoulContent', 'content'),
+    { body: { vector: 'u8' }, reference: null }, ref('ProtocolGate', 'protocol_gate'), ref('SoulState', 'soul'), ref('SoulContent', 'content'),
     { body: 'u32', reference: null }, ref('String', 'string'), { body: 'u64', reference: null },
   ] } }) as any
   client.core.getObjects = async args => ({ objects: args.objectIds.map(objectId => ({ objectId,
@@ -42,7 +42,7 @@ export async function createContentBrowserCrypto(options: { emptyMemory?: boolea
   const sealConfig: BrowserContentSealConfig = { threshold: 1, ttlMin: 10,
     serverConfigs: [{ objectId: id(50), weight: 1, aggregatorUrl: 'https://controlled-seal.example.com/' }] }
   const config = { target: { soulidityOriginalPackageId: id(1), soulidityCallablePackageId: id(84) },
-    kindRegistryId: id(30), storage: { blobType: `${id(90)}::blob::Blob`, aggregatorUrl: 'https://controlled-walrus.example.com' },
+    kindRegistryId: id(30), protocolGateId: id(70), storage: { blobType: `${id(90)}::blob::Blob`, aggregatorUrl: 'https://controlled-walrus.example.com' },
   } as BrowserContentAccessConfig
   const keys = sealConfig.serverConfigs.map(s => ({ objectId: s.objectId, name: 'controlled-local', url: s.aggregatorUrl,
     keyType: 0, serverType: 'Independent', pk: G2Element.generator().toBytes() }))
@@ -90,7 +90,7 @@ export async function createContentBrowserCrypto(options: { emptyMemory?: boolea
         slot: { readModeMask: '3', opMask: kind === 0 ? '0' : '7', grantScopeMask: kind === 0 ? '1' : '2', downloadPolicy: 'public' },
         artifact: { walrusBlobUrl: `https://controlled-walrus.example.com/v1/blobs/content-${kind}`, walrusBlobId: `content-${kind}`,
           blobObjectId: id(22 + kind), byteLength: String(ciphertext.length), endEpoch: 10 },
-        accessPolicy: { packageId: id(1), sealPackageId: id(1), callablePackageId: id(84), stateObjectId: id(2), contentObjectId: id(17),
+        accessPolicy: { packageId: id(1), sealPackageId: id(1), callablePackageId: id(84), protocolGateId: id(70), stateObjectId: id(2), contentObjectId: id(17),
           kind, name, versionIndex: '0', moduleName: 'content', functionName: 'seal_approve_content_owner',
           soulGrantObjectId: null, paidAccessListOnChainId: null, documentIdHex: documentId },
         sealSidecar: { version: 1, mode: 'seal-envelope', cipher: 'AES-GCM-256', sealPackageId: id(1), documentId,

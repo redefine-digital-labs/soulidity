@@ -12,7 +12,7 @@ let head: PrivateLoadoutRecovery
 beforeAll(async () => {
   base = await privateLoadoutRecoveryFixture()
   const r = base.paid, plan = { deployment: { originalPackageId: r.context.originalPackageId,
-    callablePackageId: r.config.target.soulidityCallablePackageId, chainIdentifier: '35834a8a' },
+    callablePackageId: r.config.target.soulidityCallablePackageId, protocolGateId: r.config.protocolGateId, chainIdentifier: '35834a8a' },
     scope: r.context.scope, expectedRevision: '0', requestId: r.context.requestId, ciphertext: r.storage!.reference,
     capture: r.capture!, protocolId: r.config.target.protocolConfigId }
   const data = buildSavePrivateNamedLoadoutTx(plan).getData()
