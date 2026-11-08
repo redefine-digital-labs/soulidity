@@ -4,15 +4,17 @@ import {createRoot,type Root} from 'react-dom/client'
 import {beforeEach,afterEach,expect,it,vi} from 'vitest'
 import {EquipmentMarketBrowser} from '../../web/components/souls/equipment-market-browser'
 import {equipmentMarketOperationFixture,emid} from './fixtures/equipment-market-operation'
+import {createEquipmentListingOriginal} from '../../web/lib/animacraft/equipment-market-listing-original'
 import {createEquipmentPurchaseOriginal} from '../../web/lib/animacraft/equipment-market-purchase-original'
 import {readEquipmentMarketListingSnapshot} from '../../web/lib/animacraft/native-equipment-market-read'
-const m=vi.hoisted(()=>({source:null as any,selected:null as any,client:vi.fn(),query:vi.fn()}))
+const m=vi.hoisted(()=>({source:null as any,selected:null as any,client:vi.fn(),query:vi.fn(),sellerQuery:vi.fn()}))
 vi.mock('../../web/lib/animacraft/native-receive',async importOriginal=>({
   ...await importOriginal<typeof import('../../web/lib/animacraft/native-receive')>(),createNativeReceiveClient:m.client,
 }))
 vi.mock('../../web/lib/animacraft/equipment-market-purchase-original',async importOriginal=>({
   ...await importOriginal<typeof import('../../web/lib/animacraft/equipment-market-purchase-original')>(),queryEquipmentPurchaseOriginal:m.query,
 }))
+vi.mock('../../web/lib/animacraft/equipment-market-seller-settlement',()=>({queryEquipmentSellerSettlement:m.sellerQuery}))
 vi.mock('../../web/lib/hooks/use-public-market',()=>({usePublicEquipmentMarketSource:()=>m.source}))
 vi.mock('../../web/components/souls/equipment-market-panel',()=>({EquipmentMarketPanel:(props:any)=>{m.selected=props;return <p>Selected transaction review</p>}}))
 vi.mock('../../web/components/souls/equipment-market-recovery',()=>({EquipmentMarketRecovery:()=>null}))
@@ -24,7 +26,7 @@ beforeEach(async()=>{
   const listing=await readEquipmentMarketListingSnapshot(f.client,f.target,f.marketPin,{rootId:f.rootId,listingId:f.listingId,actor:f.actor})
   m.source={page:{listings:[listing],verifiedCandidates:1},coverage:'COMPLETE',viewerAddress:f.actor,identityKey:'scope',
     progress:{busy:false,pages:1},error:null,pause:vi.fn(),resume:vi.fn(),refresh:vi.fn()}
-  m.query.mockReset();m.client.mockReset().mockReturnValue(f.client)
+  m.query.mockReset();m.sellerQuery.mockReset();m.client.mockReset().mockReturnValue(f.client)
   host=document.createElement('div');document.body.appendChild(host);root=createRoot(host)
 })
 afterEach(async()=>{await act(async()=>root.unmount());host.remove()})
@@ -138,4 +140,25 @@ it('shows the verified original purchase and delivery while current custody is u
   expect(host.textContent).toContain(`Original buyer ${f.actor}`)
   expect(host.textContent).toContain('Current custody could not be verified.')
   expect(host.textContent).not.toContain('Current holder')
+})
+
+
+it('reads a seller export without a wallet and shows the sale separately from the original listing',async()=>{
+  const seller=await equipmentMarketOperationFixture({action:'list'})
+  const original=createEquipmentListingOriginal(seller.record)
+  const sale=componentProof()
+  m.sellerQuery.mockResolvedValue({status:'SOLD',transactionDigest:seller.record.digest,listingId:f.listingId,openingCheckpoint:'19',sale})
+  m.source.viewerAddress=null;m.source.page.listings=[]
+  await render();await selectOriginal(original)
+  expect(host.textContent).toContain(`seller in file ${seller.owner}`)
+  expect(m.client).not.toHaveBeenCalled()
+  await act(async()=>button('Verify imported component listing').click())
+  expect(m.sellerQuery).toHaveBeenCalledExactlyOnceWith(original,f.client,expect.any(AbortSignal))
+  expect(m.query).not.toHaveBeenCalled()
+  expect(host.textContent).toContain(`Original listing ${f.listingId} verified at checkpoint 19`)
+  expect(host.textContent).toContain(`Component sale transaction ${f.record.digest}`)
+  expect(host.textContent).toContain(`Original buyer ${f.actor}`)
+  expect(host.textContent).toContain(`Current holder ${emid(998)}`)
+  expect(host.textContent).toContain('Seller received')
+  expect(m.selected).toBeNull()
 })

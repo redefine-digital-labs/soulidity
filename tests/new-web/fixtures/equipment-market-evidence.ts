@@ -67,6 +67,7 @@ export async function linkEquipmentOriginalCheckpoint(f:Awaited<ReturnType<typeo
   }
   checkpoint.rehashContents()
   f.client.ledgerService.getCheckpoint=checkpoint.client.ledgerService.getCheckpoint
+  return checkpoint.checkpoint
 }
 
 export async function equipAddressGasEvidence(f:Awaited<ReturnType<typeof equipmentMarketEvidenceFixture>>){

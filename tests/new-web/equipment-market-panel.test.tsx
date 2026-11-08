@@ -66,8 +66,9 @@ it('checks original purchase funds separately from current component readback', 
   expect(host.textContent).toContain('readback: SUPERSEDED')
 })
 
-it('downloads the exact purchase packet without its local signature or sync state', async () => {
-  f = await equipmentMarketOperationFixture({ action: 'buy', kind: 'external' })
+it.each(['buy','list','reprice'] as const)('downloads the exact %s packet without its local signature or sync state', async action => {
+  f = await equipmentMarketOperationFixture({ action, kind: 'external' })
+  const kind = action === 'buy' ? 'purchase' : 'listing'
   m.state.record = { ...f.record, phase: 'SIGNED', signature: 'never exported' }
   const create = vi.fn((_blob: Blob) => 'blob:equipment-original'), revoke = vi.fn()
   const oldCreate = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
@@ -78,8 +79,8 @@ it('downloads the exact purchase packet without its local signature or sync stat
   const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloaded = this.download })
   try {
     await render()
-    await act(async () => button('Download original component purchase').click())
-    expect(downloaded).toBe(`component-purchase-${f.record.digest}.json`)
+    await act(async () => button(`Download original component ${kind}`).click())
+    expect(downloaded).toBe(`component-${kind}-${f.record.digest}.json`)
     const blob = create.mock.calls[0]?.[0] as Blob
     const encoded = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
@@ -87,6 +88,7 @@ it('downloads the exact purchase packet without its local signature or sync stat
     })
     const parsed = JSON.parse(encoded)
     expect(parsed.packet).toEqual({ bytes: f.record.bytes, digest: f.record.digest, expirationEpoch: f.record.expirationEpoch })
+    if (action !== 'buy') expect(parsed.action).toBe(action)
     expect(encoded).not.toContain('never exported')
     expect(m.state.start).not.toHaveBeenCalled()
   } finally {

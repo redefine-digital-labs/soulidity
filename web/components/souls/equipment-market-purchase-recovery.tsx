@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatEquipmentMarketAmount } from '@/lib/animacraft/equipment-market-amount'
 import { parseEquipmentPurchaseOriginal, queryEquipmentPurchaseOriginal } from '@/lib/animacraft/equipment-market-purchase-original'
+import { EQUIPMENT_LISTING_ORIGINAL, parseEquipmentListingOriginal } from '@/lib/animacraft/equipment-market-listing-original'
+import { queryEquipmentSellerSettlement } from '@/lib/animacraft/equipment-market-seller-settlement'
 import type { EquipmentMarketPurchaseFunds } from '@/lib/animacraft/equipment-market-purchase-funds'
 import { createNativeReceiveClient, receiveId } from '@/lib/animacraft/native-receive'
 
 const maxOriginalBytes = 500_000
-type Selected = { original: unknown; record: ReturnType<typeof parseEquipmentPurchaseOriginal> }
+type Selected = { kind: 'purchase' | 'listing'; original: unknown; record: ReturnType<typeof parseEquipmentPurchaseOriginal> }
+type SellerProof = Awaited<ReturnType<typeof queryEquipmentSellerSettlement>>
 
 export function EquipmentPurchaseEvidence({ proof }: { proof: EquipmentMarketPurchaseFunds }) {
   if (proof.status === 'LEGACY_EFFECTS') {
@@ -43,13 +46,33 @@ export function EquipmentPurchaseEvidence({ proof }: { proof: EquipmentMarketPur
   </article>
 }
 
+function EquipmentSellerEvidence({ proof }: { proof: SellerProof }) {
+  if (proof.status === 'MISSING') return <p role="status">The seller transaction has not been found. Check the original digest again.</p>
+  if (proof.status === 'PENDING') return <p role="status">The seller transaction is awaiting a checkpoint.</p>
+  if (proof.status === 'FAILED') return <p role="status">The original listing command failed.</p>
+  if (!('listingId' in proof)) return null
+  return <article aria-label="Verified component listing outcome" className="space-y-2 break-all">
+    <p>Original listing {proof.listingId} verified at checkpoint {proof.openingCheckpoint}.</p>
+    {proof.status === 'OPEN' && <p>The listing was open at revision {proof.revision} when checked.</p>}
+    {proof.status === 'SOLD' && <>
+      <p>Component sale transaction {proof.sale.transactionDigest}.</p>
+      <EquipmentPurchaseEvidence proof={proof.sale}/>
+    </>}
+    {'closingCheckpoint' in proof && <>
+      <p>{proof.status === 'CANCELLED' ? 'Cancellation' : 'Recovery'} verified at checkpoint {proof.closingCheckpoint}.</p>
+      <p>Closing transaction {proof.closingDigest}. The component returned to {proof.holder}.</p>
+    </>}
+  </article>
+}
+
 /** Portable files stay in the active page. The selected digest is queried
  * explicitly, independently of wallet state or the current market selection.
  */
 export function EquipmentMarketPurchaseRecovery() {
   const active = useRef<AbortController | null>(null)
   const [selected, setSelected] = useState<Selected | null>(null)
-  const [proof, setProof] = useState<EquipmentMarketPurchaseFunds | null>(null)
+  const [proof, setProof] = useState<{ kind: 'purchase'; result: EquipmentMarketPurchaseFunds } |
+    { kind: 'listing'; result: SellerProof } | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [stopped, setStopped] = useState(false)
@@ -74,13 +97,14 @@ export function EquipmentMarketPurchaseRecovery() {
     setSelected(null)
     try {
       if (!file) return
-      if (!file.size || file.size > maxOriginalBytes) throw Error('Select a component purchase JSON file under 500 KB.')
+      if (!file.size || file.size > maxOriginalBytes) throw Error('Select a component transaction JSON file under 500 KB.')
       const original: unknown = JSON.parse(await file.text())
       if (!operation.current()) return
-      const selection = original as { snapshot?: { asset?: { itemId?: unknown } } } | null
+      const selection = original as { schema?: unknown; snapshot?: { asset?: { itemId?: unknown } } } | null
       const itemId = receiveId(selection?.snapshot?.asset?.itemId)
-      const record = parseEquipmentPurchaseOriginal(original, itemId)
-      setSelected({ original, record })
+      const kind = selection?.schema === EQUIPMENT_LISTING_ORIGINAL ? 'listing' : 'purchase'
+      const record = kind === 'listing' ? parseEquipmentListingOriginal(original) : parseEquipmentPurchaseOriginal(original, itemId)
+      setSelected({ kind, original, record })
     } catch (cause) {
       if (operation.current()) setError(cause instanceof Error ? cause.message : 'The original file could not be read.')
     } finally { operation.finish() }
@@ -88,16 +112,19 @@ export function EquipmentMarketPurchaseRecovery() {
 
   async function verify() {
     if (!selected || active.current) return
-    const { original, record } = selected
+    const { kind, original, record } = selected
     const operation = begin()
     try {
       const signal = operation.request.signal
-      const result = await queryEquipmentPurchaseOriginal(original, record.snapshot.asset.itemId, createNativeReceiveClient(signal), signal)
+      const client = createNativeReceiveClient(signal)
+      const result = kind === 'listing'
+        ? { kind, result: await queryEquipmentSellerSettlement(original, client, signal) } as const
+        : { kind, result: await queryEquipmentPurchaseOriginal(original, record.snapshot.asset.itemId, client, signal) } as const
       if (!operation.current()) return
-      if (result.transactionDigest !== record.digest) throw Error('The evidence does not match the selected original digest.')
+      if (result.result.transactionDigest !== record.digest) throw Error('The evidence does not match the selected original digest.')
       setProof(result)
     } catch (cause) {
-      if (operation.current()) setError(cause instanceof Error ? cause.message : 'The original purchase could not be verified.')
+      if (operation.current()) setError(cause instanceof Error ? cause.message : 'The original component transaction could not be verified.')
     } finally { operation.finish() }
   }
 
@@ -108,10 +135,10 @@ export function EquipmentMarketPurchaseRecovery() {
     setStopped(true)
   }
 
-  return <section aria-label="Import original component purchase" className="space-y-2 text-sm">
-    <h3>Recover an original component purchase</h3>
-    <p>Use the exported JSON to verify this original purchase and custody from public chain data.</p>
-    <label>Original component purchase JSON <input type="file" accept="application/json,.json"
+  return <section aria-label="Import original component purchase or listing" className="space-y-2 text-sm">
+    <h3>Recover an original component purchase or listing</h3>
+    <p>Choose an exported purchase, listing or price change JSON to verify settlement and delivery from public chain data.</p>
+    <label>Original component transaction JSON <input type="file" accept="application/json,.json"
       onChange={event => {
         const file = event.currentTarget.files?.[0]
         event.currentTarget.value = ''
@@ -119,13 +146,14 @@ export function EquipmentMarketPurchaseRecovery() {
       }}/></label>
     {selected && <div className="space-y-2 break-all">
       <p>Selected {selected.record.snapshot.asset.kind === 'base' ? 'Base' : 'External'} component {selected.record.snapshot.asset.itemId}</p>
-      <p>Maker {selected.record.snapshot.target.rootId} · buyer in file {selected.record.snapshot.actor}</p>
+      <p>Maker {selected.record.snapshot.target.rootId} · {selected.kind === 'purchase' ? 'buyer' : 'seller'} in file {selected.record.snapshot.actor}</p>
       <p>Original digest {selected.record.digest}</p>
-      <button type="button" disabled={pending} onClick={() => void verify()}>Verify imported component purchase</button>
+      <button type="button" disabled={pending} onClick={() => void verify()}>{selected.kind === 'purchase' ? 'Verify imported component purchase' : 'Verify imported component listing'}</button>
     </div>}
     {pending && <><p role="status">Reading component evidence…</p><button type="button" onClick={stop}>Stop component recovery</button></>}
     {stopped && <p role="status">Stopped component recovery. The original digest can be checked again.</p>}
     {error && <p role="alert">{error}</p>}
-    {proof && <EquipmentPurchaseEvidence proof={proof}/>}
+    {proof?.kind === 'purchase' && <EquipmentPurchaseEvidence proof={proof.result}/>}
+    {proof?.kind === 'listing' && <EquipmentSellerEvidence proof={proof.result}/>}
   </section>
 }

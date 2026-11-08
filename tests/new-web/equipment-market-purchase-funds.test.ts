@@ -2,11 +2,15 @@ import { bcs, TypeTagSerializer } from '@mysten/sui/bcs'
 import { Inputs, Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
 import { fromHex, normalizeStructTag, toBase64 } from '@mysten/sui/utils'
 import { expect, it, vi } from 'vitest'
+import { UnaryCall } from '@protobuf-ts/runtime-rpc'
+import { createEquipmentListingOriginal } from '../../web/lib/animacraft/equipment-market-listing-original'
+import { queryEquipmentSellerSettlement } from '../../web/lib/animacraft/equipment-market-seller-settlement'
+import { EquipmentBaseItemBcs, EquipmentExternalItemBcs } from '../../web/lib/animacraft/native-equipment'
 import { queryEquipmentMarketPurchaseFunds } from '../../web/lib/animacraft/equipment-market-purchase-funds'
 import * as readback from '../../web/lib/animacraft/browser-equipment-market-readback'
 import { createEquipmentPurchaseOriginal, queryEquipmentPurchaseOriginal } from '../../web/lib/animacraft/equipment-market-purchase-original'
 import { buildEquipmentMarketOperationTransaction, equipmentMarketInputRoles, equipmentOperationQuote } from '../../web/lib/animacraft/equipment-market-operation'
-import { EquipmentMarketProtocolTreasuryBcs, EquipmentMarketTreasuryBcs } from '../../web/lib/animacraft/native-equipment-market-bcs'
+import { EquipmentMarketListingBcs, EquipmentMarketProtocolTreasuryBcs, EquipmentMarketTreasuryBcs } from '../../web/lib/animacraft/native-equipment-market-bcs'
 import { activityHash, adigest } from './fixtures/activity-transaction-evidence'
 import { equipmentAddressGasEffect, equipmentAddressGasWindow, equipmentMarketEvidenceFixture, linkEquipmentOriginalCheckpoint } from './fixtures/equipment-market-evidence'
 import { emid } from './fixtures/equipment-market-operation'
@@ -16,15 +20,17 @@ type Owner = Parameters<typeof bcs.Owner.serialize>[0]
 const shared = { Shared: { initialSharedVersion: '1' } }
 const sender = (address: string) => ({ AddressOwner: address })
 
-async function fixture(kind: 'base' | 'external' = 'base', variant = '', addressGas = false) {
-  const f = await equipmentMarketEvidenceFixture('buy', kind)
+async function fixture(kind: 'base' | 'external' = 'base', variant = '', addressGas = false,
+  opening?: 'list' | 'reprice', action: 'buy' | 'cancel' | 'recover' = 'buy') {
+  const f = await equipmentMarketEvidenceFixture(action, kind)
   const r = f.record, s = r.snapshot
   const rows = new Map<string, any>(), changes: any[] = []
+  const beforeVersion = opening ? 5 : 2, afterVersion = beforeVersion + 1
+  const seller = opening ? await equipmentMarketEvidenceFixture(opening, kind) : null
   const protocolId = s.protocolTreasuryId!, payoutId = emid(951)
   const paymentType = `0x2::coin::Coin<${s.target.paymentCoinType}>`
   const gasType = '0x2::coin::Coin<0x2::sui::SUI>'
-  function object(id: string, type: string, contents: Uint8Array, owner: Owner, version: number) {
-    const previousTransaction = version === 3 ? r.digest : adigest(8)
+  function object(id: string, type: string, contents: Uint8Array, owner: Owner, version: number, previousTransaction = version === afterVersion ? r.digest : adigest(8)) {
     const tag = TypeTagSerializer.parseFromStr(type).struct!
     const raw = bcs.Object.serialize({ data: { Move: { type: { Other: tag }, hasPublicTransfer: true, version, contents } },
       owner, previousTransaction, storageRebate: 0 }).toBytes()
@@ -47,18 +53,46 @@ async function fixture(kind: 'base' | 'external' = 'base', variant = '', address
     const bytes = bcs.Object.serialize({ data: { Package: { id, version: '2', moduleMap: new Map([[module, Uint8Array.of(1)]]),
       linkageTable: links, typeOriginTable } }, owner: { Immutable: true }, previousTransaction: adigest(8), storageRebate: 0 }).toBytes()
     return { objectId: id, digest: activityHash('Object', bytes), owner: { kind: 4 }, version: 2n, bcs: { value: bytes },
-      package: { originalId, storageId: id, version: 2n, typeOrigins: typeOriginTable.map(row => ({ ...row, packageId: row.package })) } }
+      package: { originalId, storageId: id, version: 2n, modules: [], linkage: [], typeOrigins: typeOriginTable.map(row => ({ ...row, packageId: row.package })) } }
   }
   const market = s.release.equipmentMarket!, coreId = s.release.coreOriginalPackageId
   const corePackage = pkg(emid(952), coreId, 'protocol_config_v8', ['ProtocolTreasuryV8'])
-  const marketPackage = pkg(market.callablePackageId, market.originalPackageId, 'market_v8', ['MarketTreasuryV8','MarketListingSettledV8'],
+  const marketTypes = ['MarketTreasuryV8','MarketListingSettledV8']
+  if (seller) marketTypes.push('MarketListingOpenedV8', 'MarketListingRepricedV8', 'MarketListingClosedV8', 'EquipmentListingV8')
+  const marketPackage = pkg(market.callablePackageId, market.originalPackageId, 'market_v8', marketTypes,
     new Map([[coreId, { upgradedId: corePackage.objectId, upgradedVersion: variant === 'core version' ? '3' : '2' }]]))
   market.callableDigest = marketPackage.digest
+  const runtimePin = s.release.runtime!
+  const itemName = kind === 'base' ? 'OwnedBaseItemV8' : 'OwnedExternalItemV8'
+  const runtimePackage = seller ? pkg(runtimePin.callablePackageId, runtimePin.originalPackageId, 'runtime_v8', ['EquipmentMarketCustodyTransitionV8', itemName]) : f.packages[1]
+  const listingId = s.listing!.id, itemType = `${runtimePin.originalPackageId}::runtime_v8::${itemName}`
+  const bornVersion = opening === 'list' ? '3' : '1'
+  if (opening === 'reprice') {
+    r.priceAtomic = seller!.record.priceAtomic
+    const quote = equipmentOperationQuote(s, r.priceAtomic)
+    s.listing = { ...s.listing!, revision: '8', priceAtomic: r.priceAtomic, quoteCommitment: quote.commitment }
+    f.changeMarket(event => Object.assign(event, {
+      gross_atomic: quote.grossAtomic, protocol_atomic: quote.protocolAtomic, seller_atomic: quote.sellerAtomic,
+    }))
+  }
+  const rawItem = f.objects.get(s.asset.itemId)!
+  const originalItem = seller ? object(s.asset.itemId, itemType, rawItem.contents.value, sender(listingId), beforeVersion) : null
+  if (originalItem && seller) {
+    runtimePin.callableDigest = runtimePackage.digest
+    s.reference = { objectId: s.asset.itemId, version: String(beforeVersion), digest: originalItem.row.digest }
+    seller.record.snapshot.release.equipmentMarket!.callableDigest = marketPackage.digest
+    seller.record.snapshot.release.runtime!.callableDigest = runtimePackage.digest
+    seller.changeMarket(event => { event.listing_id = listingId })
+    if (opening === 'list') seller.changeCustody(event => { event.listing_id = listingId })
+  }
   const [primaryId, mergeId, gasId] = [emid(901), emid(903), emid(902)]
-  const primary = coin(primaryId, paymentType, 10000, s.actor, 2)
-  const merge = coin(mergeId, paymentType, 10000, s.actor, 2)
-  const gas = coin(gasId, gasType, 200000, s.actor, 2)
-  r.paymentCoins = [primary, merge].map(({ row }) => ({ objectId: row.objectId, version: '2', digest: row.digest, balanceAtomic: '10000' }))
+  const primary = coin(primaryId, paymentType, 10000, s.actor, beforeVersion)
+  const mergeBalance = opening === 'reprice' ? 20000 : 10000
+  const merge = coin(mergeId, paymentType, mergeBalance, s.actor, beforeVersion)
+  const gas = coin(gasId, gasType, 200000, s.actor, beforeVersion)
+  if (action === 'buy') r.paymentCoins = [primary, merge].map(({ row }, i) => ({
+    objectId: row.objectId, version: String(beforeVersion), digest: row.digest, balanceAtomic: String(i === 0 ? 10000 : mergeBalance),
+  }))
   const roles = equipmentMarketInputRoles(r)
   const draft = buildEquipmentMarketOperationTransaction(r).getData()
   draft.inputs = draft.inputs.map(input => {
@@ -67,11 +101,11 @@ async function fixture(kind: 'base' | 'external' = 'base', variant = '', address
     const ref = r.paymentCoins.find(coin => coin.objectId === id)
       ?? f.tx.getData().inputs.find(row => row.Object?.ImmOrOwnedObject?.objectId === id)?.Object?.ImmOrOwnedObject
     return roles.owned.has(id) ? Inputs.ObjectRef(ref!)
-      : Inputs.SharedObjectRef({ objectId: id, initialSharedVersion: '1', mutable: roles.mutable.has(id) })
+      : Inputs.SharedObjectRef({ objectId: id, initialSharedVersion: id === listingId ? bornVersion : '1', mutable: roles.mutable.has(id) })
   })
   const tx = Transaction.from(JSON.stringify(draft))
   tx.setSender(s.actor); tx.setGasOwner(s.actor); tx.setGasBudget(100000); tx.setGasPrice(1)
-  tx.setGasPayment(addressGas ? [] : [{ objectId: gasId, version: '2', digest: gas.row.digest }])
+  tx.setGasPayment(addressGas ? [] : [{ objectId: gasId, version: String(beforeVersion), digest: gas.row.digest }])
   tx.setExpiration(addressGas ? { ValidDuring: equipmentAddressGasWindow } : { Epoch: 9 })
   const bytes = await tx.build()
   r.bytes = toBase64(bytes); r.digest = TransactionDataBuilder.getDigestFromBytes(bytes)
@@ -79,43 +113,102 @@ async function fixture(kind: 'base' | 'external' = 'base', variant = '', address
   f.ledger.effects.transactionDigest = r.digest
 
   const quote = equipmentOperationQuote(s, r.priceAtomic)
-  effect(primaryId, primary, coin(primaryId, paymentType, variant === 'buyer debit' ? 10000 : 9999, s.actor, 3))
-  effect(mergeId, merge, variant === 'surviving merge' ? coin(mergeId, paymentType, 0, s.actor, 3) : null)
+  if (action === 'buy') {
+    effect(primaryId, primary, coin(primaryId, paymentType, variant === 'buyer debit' ? 10000 : 9999, s.actor, afterVersion))
+    effect(mergeId, merge, variant === 'surviving merge' ? coin(mergeId, paymentType, 0, s.actor, afterVersion) : null)
+  }
   if (addressGas) {
     const delta = variant === 'address gas rebate' ? 2n : variant === 'address gas amount' ? -2n : -1n
     changes.push(equipmentAddressGasEffect(variant === 'address gas owner' ? s.seller : s.actor, delta))
     if (variant === 'address gas rebate') f.effects.V2.gasUsed.storageRebate = '3'
     if (variant === 'address gas extra') changes.push(equipmentAddressGasEffect(s.seller, 1n))
-  } else effect(gasId, gas, coin(gasId, gasType, variant === 'gas' ? 200000 : 199999, s.actor, 3))
-  effect(payoutId, null, coin(payoutId, paymentType, Number(quote.sellerAtomic) - (variant === 'seller amount' ? 1 : 0),
-    variant === 'seller owner' ? s.actor : s.seller, 3))
-  const marketType = `${market.originalPackageId}::market_v8::MarketTreasuryV8<${s.target.paymentCoinType}>`
-  const escrow = { id: s.target.treasuryId, version: '8', catalog_id: s.target.catalogId, package_config_id: s.target.packageConfigId,
-    root_id: s.target.rootId, maker_version: s.quoteContext.makerVersion,
-    root_content_commitment: fromHex(s.quoteContext.rootContentCommitment), escrow: { value: '0' },
-    gross_escrowed_atomic: '30', gross_released_atomic: '30' }
-  effect(escrow.id, object(escrow.id, marketType, EquipmentMarketTreasuryBcs.serialize(escrow).toBytes(), shared, 2),
-    object(escrow.id, marketType, EquipmentMarketTreasuryBcs.serialize({ ...escrow, gross_escrowed_atomic: '10031',
-      gross_released_atomic: variant === 'escrow' ? '10030' : '10031' }).toBytes(), shared, 3))
-  const protocolType = `${coreId}::protocol_config_v8::ProtocolTreasuryV8<${s.target.paymentCoinType}>`
-  const protocol = { id: protocolId, version: '8', config_id: s.target.protocolConfigId,
-    revenue: { value: '100' }, total_collected: '110', total_withdrawn: '10' }
-  effect(protocolId, object(protocolId, protocolType, EquipmentMarketProtocolTreasuryBcs.serialize(protocol).toBytes(), shared, 2),
-    object(protocolId, protocolType, EquipmentMarketProtocolTreasuryBcs.serialize({ ...protocol, revenue: { value: '350' },
-      total_collected: variant === 'platform credit' ? '361' : '360' }).toBytes(), shared, 3))
-  Object.assign(f.effects.V2, { transactionDigest: r.digest, changedObjects: changes, gasObjectIndex: addressGas ? null : 2 })
+  } else effect(gasId, gas, coin(gasId, gasType, variant === 'gas' ? 200000 : 199999, s.actor, afterVersion))
+  if (action === 'buy') {
+    effect(payoutId, null, coin(payoutId, paymentType, Number(quote.sellerAtomic) - (variant === 'seller amount' ? 1 : 0),
+      variant === 'seller owner' ? s.actor : s.seller, afterVersion))
+    const marketType = `${market.originalPackageId}::market_v8::MarketTreasuryV8<${s.target.paymentCoinType}>`
+    const escrow = { id: s.target.treasuryId, version: '8', catalog_id: s.target.catalogId, package_config_id: s.target.packageConfigId,
+      root_id: s.target.rootId, maker_version: s.quoteContext.makerVersion,
+      root_content_commitment: fromHex(s.quoteContext.rootContentCommitment), escrow: { value: '0' },
+      gross_escrowed_atomic: '30', gross_released_atomic: '30' }
+    effect(escrow.id, object(escrow.id, marketType, EquipmentMarketTreasuryBcs.serialize(escrow).toBytes(), shared, beforeVersion),
+      object(escrow.id, marketType, EquipmentMarketTreasuryBcs.serialize({ ...escrow, gross_escrowed_atomic: String(30n + BigInt(quote.grossAtomic)),
+        gross_released_atomic: String((variant === 'escrow' ? 29n : 30n) + BigInt(quote.grossAtomic)) }).toBytes(), shared, afterVersion))
+    const protocolType = `${coreId}::protocol_config_v8::ProtocolTreasuryV8<${s.target.paymentCoinType}>`
+    const protocol = { id: protocolId, version: '8', config_id: s.target.protocolConfigId,
+      revenue: { value: '100' }, total_collected: '110', total_withdrawn: '10' }
+    effect(protocolId, object(protocolId, protocolType, EquipmentMarketProtocolTreasuryBcs.serialize(protocol).toBytes(), shared, beforeVersion),
+      object(protocolId, protocolType, EquipmentMarketProtocolTreasuryBcs.serialize({ ...protocol, revenue: { value: String(100n + BigInt(quote.protocolAtomic)) },
+        total_collected: String((variant === 'platform credit' ? 111n : 110n) + BigInt(quote.protocolAtomic)) }).toBytes(), shared, afterVersion))
+  }
+  let closingListing: ReturnType<typeof object> | null = null
+  let openingCheckpoint: Awaited<ReturnType<typeof linkEquipmentOriginalCheckpoint>> | null = null
+  if (seller && originalItem) {
+    const listingType = `${market.originalPackageId}::market_v8::EquipmentListingV8<${s.target.paymentCoinType}>`
+    const rawListing = f.objects.get(listingId)!
+    const previousListing = EquipmentMarketListingBcs.parse(rawListing.contents.value)
+    const listing = { ...previousListing, revision: s.listing!.revision, gross_atomic: quote.grossAtomic,
+      protocol_atomic: quote.protocolAtomic, seller_atomic: quote.sellerAtomic, quote_commitment: fromHex(quote.commitment) }
+    const born = { Shared: { initialSharedVersion: bornVersion } }
+    const initial = object(listingId, listingType, EquipmentMarketListingBcs.serialize({
+      ...listing, revision: opening === 'list' ? '0' : listing.revision,
+    }).toBytes(), born, 3, seller.record.digest)
+    const input = object(listingId, listingType, EquipmentMarketListingBcs.serialize(listing).toBytes(), born, beforeVersion)
+    const recipient = action === 'buy' ? s.actor : s.seller
+    const status = { buy: 1, cancel: 2, recover: 3 }[action]
+    closingListing = object(listingId, listingType, EquipmentMarketListingBcs.serialize({
+      ...listing, status, revision: String(BigInt(listing.revision) + 1n), terminal_recipient: recipient,
+    }).toBytes(), born, afterVersion)
+    const itemCodec = (kind === 'base' ? EquipmentBaseItemBcs : EquipmentExternalItemBcs) as typeof EquipmentBaseItemBcs
+    const item = itemCodec.parse(rawItem.contents.value)
+    const delivered = object(s.asset.itemId, itemType, itemCodec.serialize({ ...item, holder: recipient, ownership_epoch: action === 'buy' ? '1' : '0' }).toBytes(),
+      sender(recipient), afterVersion)
+    effect(listingId, input, closingListing)
+    effect(s.asset.itemId, originalItem, delivered)
+    seller.ledger.checkpoint = 19n
+    const predecessor = opening === 'reprice' ? object(listingId, listingType, rawListing.contents.value, born, 2) : null
+    seller.effects.V2.changedObjects = [[listingId, {
+      inputState: predecessor ? { Exist: [['2', predecessor.row.digest], born] } : { NotExist: true },
+      idOperation: predecessor ? { None: true } : { Created: true },
+      outputState: { ObjectWrite: [initial.row.digest, born] },
+    }]]
+    seller.refresh()
+    openingCheckpoint = await linkEquipmentOriginalCheckpoint(seller)
+  }
+  Object.assign(f.effects.V2, { transactionDigest: r.digest, lamportVersion: String(afterVersion), changedObjects: changes, gasObjectIndex: addressGas ? null : action === 'buy' ? 2 : 0 })
   f.refresh()
-  await linkEquipmentOriginalCheckpoint(f, variant === 'checkpoint')
+  const checkoutCheckpoint = await linkEquipmentOriginalCheckpoint(f, variant === 'checkpoint')
   if (variant === 'direct package wire') {
     const identity = { storageId: marketPackage.objectId, originalId: market.originalPackageId, version: marketPackage.version }
     Object.assign(marketPackage.package, { storageId: undefined, originalId: undefined, version: undefined })
     f.client.movePackageService = { getPackage: vi.fn(async () => ({ response: { package: identity } })) }
   }
-  const packages = new Map([marketPackage, corePackage, f.packages[1]].map(row => [row.objectId, row]))
-  f.client.ledgerService.getObject = vi.fn(async ({ objectId, version }) => ({
-    response: { object: version === undefined ? packages.get(objectId) : rows.get(`${objectId}:${version}`) },
-  }))
-  return { ...f, rows, payoutId, confirm: () => queryEquipmentMarketPurchaseFunds(r, f.client, new AbortController().signal) }
+  const packages = new Map([marketPackage, corePackage, runtimePackage].map(row => [row.objectId, row]))
+  const getObject = ({ objectId, version }: { objectId: string; version?: bigint }) => ({
+    object: version === undefined
+      ? objectId === listingId && closingListing ? closingListing.row : packages.get(objectId) : rows.get(`${objectId}:${version}`),
+  })
+  f.client.ledgerService.getObject = vi.fn(async request => ({ response: getObject(request) }))
+  if (seller && openingCheckpoint) {
+    f.client.ledgerService.getObject = vi.fn(request => new UnaryCall({ name: 'Fixture' } as never, {}, request,
+      Promise.resolve({}), Promise.resolve(getObject(request)), Promise.resolve({ code: 'OK', detail: '' }), Promise.resolve({})))
+    f.client.movePackageService = { getPackage: vi.fn(async ({ packageId }) => ({ response: {
+      package: packages.get(packageId)?.package,
+    } })) }
+    const result = f.ledger
+    result.timestamp = checkoutCheckpoint.summary.timestamp
+    result.transaction.sender = s.actor
+    Object.assign(result.effects, { version: 2, epoch: 9n, digest: activityHash('TransactionEffects', result.effects.bcs.value),
+      eventsDigest: result.events.digest })
+    f.client.core = f.rawClient.core
+    f.client.ledgerService.getCheckpoint = vi.fn(async ({ checkpointId }) => ({ response: {
+      checkpoint: checkpointId.sequenceNumber === 19n ? openingCheckpoint : checkoutCheckpoint,
+    } }))
+    f.client.ledgerService.getTransaction = vi.fn(async ({ digest }) => ({ response: {
+      transaction: digest === seller.record.digest ? seller.ledger : digest === r.digest ? result : undefined,
+    } }))
+  }
+  return { ...f, rows, payoutId, seller, confirm: () => queryEquipmentMarketPurchaseFunds(r, f.client, new AbortController().signal) }
 }
 
 it.each(['base', 'external'] as const)('verifies original %s purchase debit, seller Coin, platform credit and independent gas', async kind => {
@@ -196,4 +289,43 @@ it.each(['COMPLETE', 'CURRENT_UNAVAILABLE'] as const)('feeds custody the same ch
     expect(bcs.TransactionEffects.serialize(proof.effects).toBytes()).toEqual(f.ledger.effects.bcs.value)
     expect(f.client.ledgerService.getCheckpoint).toHaveBeenCalledTimes(1)
   } finally { read.mockRestore() }
+})
+
+
+it.each(['base','external'] as const)('reconstructs a %s purchase from the seller listing and verifies actual settlement and delivery', async kind => {
+  const f = await fixture(kind, '', kind === 'external', 'list')
+  const opening = createEquipmentListingOriginal(f.seller!.record)
+  const result = await queryEquipmentSellerSettlement(opening, f.client, new AbortController().signal)
+  const snapshot = f.record.snapshot
+  expect(result).toMatchObject({ status: 'SOLD', transactionDigest: f.seller!.record.digest, listingId: f.listingId,
+    openingCheckpoint: '19', sale: { status: 'FUNDS_VERIFIED', transactionDigest: f.record.digest, checkpoint: '20',
+      sellerPayoutId: f.payoutId, protocolTreasuryId: snapshot.protocolTreasuryId,
+      receipt: { assetId: snapshot.asset.itemId, grossAtomic: '10001', sellerAtomic: '9751', protocolAtomic: '250', recipient: snapshot.actor },
+      custody: { status: 'CURRENT_UNAVAILABLE', itemType: expect.stringContaining(kind === 'base' ? 'OwnedBaseItemV8' : 'OwnedExternalItemV8'),
+        originalHolder: snapshot.actor, originalOwnershipEpoch: '1',
+        sourceId: snapshot.asset.kind === 'base' ? snapshot.asset.baseRegistryId : snapshot.asset.productId } } })
+})
+
+it('rejects the wrong seller payout even from a valid opening listing and committed close', async () => {
+  const f = await fixture('external', 'seller owner', false, 'list')
+  await expect(queryEquipmentSellerSettlement(createEquipmentListingOriginal(f.seller!.record), f.client, new AbortController().signal))
+    .rejects.toThrow('seller payout mismatch')
+})
+
+it('reads settlement at the committed new price after a seller reprices', async () => {
+  const f = await fixture('external', '', true, 'reprice')
+  const result = await queryEquipmentSellerSettlement(createEquipmentListingOriginal(f.seller!.record), f.client, new AbortController().signal)
+  expect(result).toMatchObject({ status: 'SOLD', transactionDigest: f.seller!.record.digest,
+    sale: { transactionDigest: f.record.digest, buyerChangeAtomic: '9999',
+      receipt: { grossAtomic: '20001', protocolAtomic: '500', sellerAtomic: '19501' } } })
+})
+
+it.each([
+  ['base', 'cancel', 'CANCELLED'],
+  ['external', 'recover', 'RECOVERED'],
+] as const)('proves %s original custody return after %s', async (kind, action, status) => {
+  const f = await fixture(kind, '', false, 'list', action)
+  const result = await queryEquipmentSellerSettlement(createEquipmentListingOriginal(f.seller!.record), f.client, new AbortController().signal)
+  expect(result).toEqual({ status, transactionDigest: f.seller!.record.digest, listingId: f.listingId,
+    openingCheckpoint: '19', closingDigest: f.record.digest, closingCheckpoint: '20', holder: f.record.snapshot.seller })
 })
