@@ -2,16 +2,19 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { Transaction } from '@mysten/sui/transactions'
+import { Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
 import { toBase64, toHex } from '@mysten/sui/utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import NativeSoulSellPage from '../../web/app/souls/[id]/list/native/page'
 import { bcs } from '@mysten/sui/bcs'
 import { NativeOfferBcs } from '../../web/lib/soulidity/commerce/economics-bcs'
+import { buildNativeSaleGraph } from '../../web/lib/soulidity/commerce/native-sale-graph'
+import { decodeNativeSaleClosingPurchase, readNativeSaleClosingPacket } from '../../web/lib/soulidity/commerce/native-sale-original-graph'
 import { readNativeSaleListingHistory } from '../../web/lib/soulidity/commerce/native-sale-relist'
 import { readNativeSellerReview, type NativeSellerIntent } from '../../web/lib/soulidity/commerce/native-sale-seller-plan'
 import { nativeSaleCheckoutFixture } from './fixtures/native-sale-checkout'
-import { nativeSaleLifecycleWireFixture } from './fixtures/commerce-native-sale-lifecycle-wire'
+import { nativeSaleCancellationFixture } from './fixtures/commerce-sale-cancellation'
+import { nativeSaleLifecycleWireFixture, objectRow } from './fixtures/commerce-native-sale-lifecycle-wire'
 import { aid } from './fixtures/activity-transaction-evidence'
 import type { NativeSaleCheckoutRelease } from '../../web/lib/soulidity/native-sale-checkout-config'
 import { browserNativeSellerJournal, nativeSellerKey, type NativeSellerRecord } from '../../web/lib/soulidity/native-sale-seller-journal'
@@ -235,8 +238,8 @@ async function settledListingFixture(withCollection = false, variant = '') {
     packet: { bytes: toBase64(bytes), digest: review.relistDigest, expirationEpoch: '6', phase: 'PREPARED', signature: null },
   }
   client.ledgerService.getTransaction.mockClear()
-  return { ...f, listing, verify: () => verifyNativeSaleSellerSettlement({ soulId: review.soulId,
-    listingText: exportNativeSaleListing(listing), purchaseText: f.purchaseText, client: client as never, signal: signal() }) }
+  const verifyInput = { soulId: review.soulId, listingText: exportNativeSaleListing(listing), client: client as never, signal: signal() }
+  return { ...f, listingObject: f.listing, listing, verifyInput, verify: () => verifyNativeSaleSellerSettlement({ ...verifyInput, purchaseText: f.purchaseText }) }
 }
 
 it.each([false, true])('verifies seller proceeds and new buyer custody with the exact original Offer and reservation (Collection %s)', async withCollection => {
@@ -271,6 +274,7 @@ async function choose(label: string, content: string) {
 it('links the verified Offer and reopens settlement without either wallet or browser storage on the real seller route', async () => {
   const f = await settledListingFixture(true), { review, listing } = f
   wallet.client = f.client
+  showLatestOffer(f, f.purchaseRows.get(`${review.purchasedOfferId}:10`))
   const key = nativeSellerKey({ chainIdentifier: '35834a8a', soulId: review.soulId, author: review.seller }), journal = browserNativeSellerJournal()
   await journal.exclusive(key, () => journal.write(key, listing))
   const route = Promise.resolve({ id: review.soulId })
@@ -290,6 +294,8 @@ it('links the verified Offer and reopens settlement without either wallet or bro
   localStorage.clear()
   await render()
   await choose('原挂牌 JSON ', original)
+  await click('核对原挂牌与成交')
+  await text('已核对原挂牌、成交分账和买方托管交接。')
   await choose('买方原购买 JSON ', f.purchaseText)
   await click('核对原挂牌与成交')
   await text('已核对原挂牌、成交分账和买方托管交接。')
@@ -297,4 +303,109 @@ it('links the verified Offer and reopens settlement without either wallet or bro
   await text('总价 113')
   expect(wallet.signTransaction).not.toHaveBeenCalled()
   expect(localStorage.length).toBe(0)
+})
+
+type SettledFixture = Awaited<ReturnType<typeof settledListingFixture>>
+function showLatestOffer(f: SettledFixture, row: SettledFixture['offer'] | undefined) {
+  const read = f.client.ledgerService.getObject.getMockImplementation()!
+  f.client.ledgerService.getObject.mockImplementation(async request => {
+    if (request.version === undefined && request.objectId === f.plan.offerId) {
+      if (!row) throw { code: 'NOT_FOUND' }
+      return { response: { object: row } }
+    }
+    return read(request)
+  })
+}
+
+it.each([false, true])('locates the closing transaction from Offer BCS and proves the full purchase without a buyer file (Collection %s)', async withCollection => {
+  const f = await settledListingFixture(withCollection)
+  const { review, plan } = f
+  showLatestOffer(f, f.purchaseRows.get(`${plan.offerId}:10`))
+  await expect(verifyNativeSaleSellerSettlement(f.verifyInput)).resolves.toMatchObject({ status: 'SETTLEMENT_CONFIRMED',
+    listingDigest: review.relistDigest, purchaseDigest: review.purchaseDigest, buyer: plan.buyer, offerId: plan.offerId,
+    total: withCollection ? '113' : '107', collectionRoyalty: withCollection ? '6' : '0', sellerReceived: '101' })
+})
+
+it('accepts an exact closing digest after the current Offer is unavailable and refuses a different listing', async () => {
+  const f = await settledListingFixture()
+  showLatestOffer(f, undefined)
+  await expect(verifyNativeSaleSellerSettlement(f.verifyInput)).resolves.toEqual({ status: 'OFFER_UNAVAILABLE', offerId: f.plan.offerId })
+  await expect(verifyNativeSaleSellerSettlement({ ...f.verifyInput, closingDigest: f.review.purchaseDigest }))
+    .resolves.toMatchObject({ status: 'SETTLEMENT_CONFIRMED', purchaseDigest: f.review.purchaseDigest })
+  await expect(verifyNativeSaleSellerSettlement({ ...f.verifyInput, closingDigest: f.review.cancelDigest }))
+    .rejects.toThrow('CANCEL_GRAPH')
+})
+
+it('reports the original Offer as active without treating it as a completed purchase', async () => {
+  const f = await settledListingFixture()
+  showLatestOffer(f, f.offer)
+  await expect(verifyNativeSaleSellerSettlement(f.verifyInput)).resolves.toEqual({ status: 'OFFER_ACTIVE', offerId: f.plan.offerId })
+  expect(f.client.ledgerService.getTransaction.mock.calls.every(([request]) => request.digest === f.review.relistDigest)).toBe(true)
+})
+
+it('authenticates the cancellation of the same listing from its Offer writer and full reservation evidence', async () => {
+  const f = await settledListingFixture(), { review, plan, client } = f
+  const terms = NativeOfferBcs.parse(f.offer.contents.value)
+  const closure = await nativeSaleCancellationFixture(plan.configId, {
+    terms, registryId: plan.registryId, native: review.target.native, custody: review.target.custody,
+    checkpoint: '110', outputVersion: Number(f.offer.version) + 1,
+    intent: { soulId: plan.soulId, offerId: plan.offerId, seller: review.seller, kioskId: plan.sellerKioskId, accountId: f.listing.plan.intent.accountId },
+    priorListing: { digest: review.relistDigest, offerBirth: Number(f.offer.version), purchaseCapId: terms.purchase!.id },
+  })
+  const digest = closure.f.ledger.digest
+  const active = closure.rows.get(`${plan.offerId}:${closure.inputVersion}`)
+  expect(active.digest).toBe(f.offer.digest)
+  expect(closure.rows.get(`${closure.listingId}:${closure.inputVersion}`).digest).toBe(f.listingObject.digest)
+
+  const getTransaction = client.ledgerService.getTransaction.getMockImplementation()!
+  client.ledgerService.getTransaction.mockImplementation(request => request.digest === digest
+    ? Promise.resolve({ response: { transaction: closure.f.ledger } }) : getTransaction(request))
+  const getCheckpoint = client.ledgerService.getCheckpoint.getMockImplementation()!
+  client.ledgerService.getCheckpoint.mockImplementation(request => request.checkpointId.sequenceNumber === 110n
+    ? Promise.resolve({ response: { checkpoint: closure.f.checkpoint } }) : getCheckpoint(request))
+  const getObject = client.ledgerService.getObject.getMockImplementation()!
+  client.ledgerService.getObject.mockImplementation(async request => {
+    const { objectId, version } = request
+    const row = version === undefined ? undefined : closure.rows.get(`${objectId}:${version}`)
+    return row ? { response: { object: row } } : getObject(request)
+  })
+  showLatestOffer(f, closure.rows.get(`${plan.offerId}:${closure.outputVersion}`))
+  await expect(verifyNativeSaleSellerSettlement(f.verifyInput)).resolves.toEqual({
+    status: 'CANCELLATION_CONFIRMED', offerId: plan.offerId, digest, checkpoint: '110',
+  })
+  expect(client.ledgerService.getTransaction.mock.calls.map(([request]) => request.digest)).not.toContain(review.purchaseDigest)
+})
+
+it('requires an Offer writer to prove the exact terminal object returned by automatic discovery', async () => {
+  const f = await settledListingFixture()
+  const actual = f.purchaseRows.get(`${f.plan.offerId}:10`)!
+  const raw = bcs.Object.parse(actual.bcs.value)
+  raw.data.Move!.version = '11'
+  showLatestOffer(f, objectRow(actual.objectId, actual.objectType, raw))
+  await expect(verifyNativeSaleSellerSettlement(f.verifyInput)).rejects.toThrow('NATIVE_CLOSURE_OFFER_OUTPUT')
+  await expect(verifyNativeSaleSellerSettlement({ ...f.verifyInput, closingDigest: f.review.purchaseDigest }))
+    .resolves.toMatchObject({ status: 'SETTLEMENT_CONFIRMED' })
+})
+
+it('extracts ordered merged payment refs and rejects an extra call in a recovered transaction', async () => {
+  const f = await settledListingFixture(true), { plan, client } = f
+  const merged = structuredClone(plan)
+  const second = { objectId: aid(989), version: '1', digest: merged.paymentCoins[0].digest, balance: '10' }
+  merged.paymentCoins.push(second)
+  const { soulId, offerId, callablePackageId, coinType, registryId, configId, policyId, sellerKioskId, collectionId } = plan
+  const expected = { soulId, offerId, callablePackageId, coinType, registryId, configId, policyId, sellerKioskId, collectionId }
+  async function observe(transaction: Transaction) {
+    const value = await transaction.build(), digest = TransactionDataBuilder.getDigestFromBytes(value)
+    client.ledgerService.getTransaction.mockResolvedValueOnce({ response: { transaction: {
+      digest, transaction: { digest, bcs: { value } },
+    } } } as never)
+    return readNativeSaleClosingPacket(client as never, digest, signal())
+  }
+  const original = await observe(buildNativeSaleGraph(merged))
+  expect(decodeNativeSaleClosingPurchase(original!, expected).shape.paymentCoins)
+    .toEqual(merged.paymentCoins.map(row => ({ ...row, balance: '1' })))
+  const extra = buildNativeSaleGraph(merged)
+  extra.moveCall({ target: `${plan.callablePackageId}::market::total` })
+  const changed = await observe(extra)
+  expect(() => decodeNativeSaleClosingPurchase(changed!, expected)).toThrow('NATIVE_CLOSURE_BUY_GRAPH')
 })

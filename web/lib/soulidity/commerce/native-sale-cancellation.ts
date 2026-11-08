@@ -166,7 +166,9 @@ export async function readNativeSaleCancellationHistory(input: { client: SuiGrpc
         && e.changedObjects.every(([id]) => claimedEffectIds.includes(id))
         && new Set(e.unchangedConsensusObjects.map(([id]) => id)).size === e.unchangedConsensusObjects.length
         && e.unchangedConsensusObjects.every(([id, kind]) => !claimedEffectIds.includes(id) && kind.$kind === 'PerEpochConfig'), 'CANCEL_EFFECTS_COVERAGE')
-      return { proof: 'native-cancel-finalized-listing-transition' as const, receipt, gas, accountId: intent.accountId,
+      const historicalRef = (row: typeof before) => ({ version: String(row.reference.version), digest: row.reference.digest, writer: row.object.previousTransaction })
+      return { listingExit: { offerId: intent.offerId, listingId, purchaseCapId: capId, offerInput: historicalRef(before),
+          listingInput: historicalRef(listingObject), offerOutput: historicalRef(after) }, proof: 'native-cancel-finalized-listing-transition' as const, receipt, gas, accountId: intent.accountId,
         offerContext: { configId: a.config, registryId: a.registry },
         sellerKioskOutput: { objectId: intent.kioskId, version: String(kioskAfter.reference.version),
           digest: kioskAfter.reference.digest, initialSharedVersion: kioskAfter.object.owner.Shared!.initialSharedVersion },

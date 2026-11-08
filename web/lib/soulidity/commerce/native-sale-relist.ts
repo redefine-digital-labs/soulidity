@@ -163,7 +163,7 @@ export async function readNativeSaleListingHistory(input: {
 
 export function assertNativeSaleListingConsumed(
   listing: Extract<Awaited<ReturnType<typeof readNativeSaleListingHistory>>, { status: 'RELIST_CONFIRMED' }>['receipt'],
-  exit: Awaited<ReturnType<typeof proveNativeSaleListingExit>>,
+  exit: Pick<Awaited<ReturnType<typeof proveNativeSaleListingExit>>, 'offerId' | 'listingId' | 'purchaseCapId' | 'offerInput' | 'listingInput'>,
   error: string,
 ) {
   commerceCheck(exit.offerId === listing.offerId && exit.listingId === listing.listingId

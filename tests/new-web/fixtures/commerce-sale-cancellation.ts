@@ -11,8 +11,9 @@ import type { PinnedMovePackage } from '../../../web/lib/sui/pinned-move-package
 export async function nativeSaleCancellationFixture(configId = aid(72), overrides: {
   intent?: NativeSaleCancelIntent; registryId?: string; native?: PinnedMovePackage; custody?: PinnedMovePackage
   outputVersion?: number; checkpoint?: string; terms?: ReturnType<typeof NativeOfferBcs.parse>
+  priorListing?: { digest: string; offerBirth: number; purchaseCapId: string }
 } = {}) {
-  const outputVersion = overrides.outputVersion ?? 10, inputVersion = outputVersion - 1
+  const outputVersion = overrides.outputVersion ?? 10, inputVersion = outputVersion - 1, prior = overrides.priorListing
   const f = await activityEvidenceFixture(), c = await activityEvidenceFixture()
   const p = f.packageData.data.Package!, cp = c.packageData.data.Package!
   Object.assign(f.deployment, overrides.native); p.id = f.deployment.callablePackageId
@@ -26,12 +27,12 @@ export async function nativeSaleCancellationFixture(configId = aid(72), override
   const intent = overrides.intent ?? { offerId: aid(60), soulId: aid(61), seller: f.sender, kioskId: aid(62), accountId: aid(63) }
   const rows = new Map<string, any>(), changes: any[] = []
   function object(id: string, type: string, contents: Uint8Array, owner: any, version: number) {
-    const previousTransaction = version === outputVersion ? f.ledger.digest : adigest(9)
+    const previousTransaction = version === outputVersion ? f.ledger.digest : version === inputVersion && prior ? prior.digest : adigest(9)
     const bytes = bcs.Object.serialize({ data: { Move: { type: { Other: TypeTagSerializer.parseFromStr(type).struct! }, hasPublicTransfer: true,
       version, contents } }, owner, previousTransaction, storageRebate: 0 }).toBytes()
     const row = { objectId: id, objectType: normalizeStructTag(type), version: BigInt(version), digest: activityHash('Object', bytes),
       bcs: { value: bytes }, contents: { value: contents }, previousTransaction,
-      owner: owner.AddressOwner ? { kind: 1, address: owner.AddressOwner } : owner.ObjectOwner ? { kind: 2, address: owner.ObjectOwner } : { kind: 3, version: 1n } }
+      owner: owner.AddressOwner ? { kind: 1, address: owner.AddressOwner } : owner.ObjectOwner ? { kind: 2, address: owner.ObjectOwner } : { kind: 3, version: BigInt(owner.Shared.initialSharedVersion) } }
     rows.set(`${id}:${version}`, row); return { row, owner: bcs.Object.parse(bytes).owner }
   }
   function effect(id: string, a: ReturnType<typeof object>, b: ReturnType<typeof object> | null) {
@@ -46,7 +47,7 @@ export async function nativeSaleCancellationFixture(configId = aid(72), override
   const tx = new Transaction(); tx.setSender(intent.seller); tx.setGasOwner(intent.seller); tx.setGasBudget(1000); tx.setGasPrice(1)
   tx.setGasPayment([{ objectId: gasId, version: 2, digest: gasBefore.row.digest }]); tx.setExpiration({ Epoch: 6 })
   tx.moveCall({ target: `${f.deployment.callablePackageId}::market::cancel`, arguments: [
-    tx.sharedObjectRef({ objectId: intent.offerId, initialSharedVersion: 1, mutable: true }),
+    tx.sharedObjectRef({ objectId: intent.offerId, initialSharedVersion: prior?.offerBirth ?? 1, mutable: true }),
     tx.sharedObjectRef({ objectId: intent.kioskId, initialSharedVersion: 1, mutable: true }),
     tx.objectRef({ objectId: intent.accountId, version: inputVersion, digest: accountObject.row.digest }),
   ] })
@@ -56,10 +57,11 @@ export async function nativeSaleCancellationFixture(configId = aid(72), override
     root_revision: 1, manifest: new Uint8Array(32).fill(1), collection: null, ask: 101, ...overrides.terms,
     id: intent.offerId, root: intent.soulId, registry: overrides.registryId ?? aid(71), config: configId,
     seller: intent.seller, kiosk: intent.kioskId, active: true,
-    purchase: { id: aid(75), kiosk_id: intent.kioskId, item_id: intent.soulId, min_price: 0 } }
+    purchase: { id: prior?.purchaseCapId ?? aid(75), kiosk_id: intent.kioskId, item_id: intent.soulId, min_price: 0 } }
   const offerType = `${f.deployment.originalPackageId}::market::Offer`
-  effect(intent.offerId, object(intent.offerId, offerType, NativeOfferBcs.serialize(offer).toBytes(), { Shared: { initialSharedVersion: 1 } }, inputVersion),
-    object(intent.offerId, offerType, NativeOfferBcs.serialize({ ...offer, active: false, purchase: null }).toBytes(), { Shared: { initialSharedVersion: 1 } }, outputVersion))
+  const offerOwner = { Shared: { initialSharedVersion: prior?.offerBirth ?? 1 } }
+  effect(intent.offerId, object(intent.offerId, offerType, NativeOfferBcs.serialize(offer).toBytes(), offerOwner, inputVersion),
+    object(intent.offerId, offerType, NativeOfferBcs.serialize({ ...offer, active: false, purchase: null }).toBytes(), offerOwner, outputVersion))
   const kioskBytes = SoulPublicKioskBcs.serialize({ id: intent.kioskId, profits: 0, owner: intent.seller, item_count: 1, allow_extensions: false }).toBytes()
   effect(intent.kioskId, object(intent.kioskId, '0x2::kiosk::Kiosk', kioskBytes, { Shared: { initialSharedVersion: 1 } }, inputVersion),
     object(intent.kioskId, '0x2::kiosk::Kiosk', kioskBytes, { Shared: { initialSharedVersion: 1 } }, outputVersion))

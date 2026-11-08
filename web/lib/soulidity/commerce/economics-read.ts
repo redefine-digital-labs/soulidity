@@ -22,7 +22,7 @@ export async function readCommerceObject(client: SuiGrpcClient, objectId: string
   const raw = collectionCommandRaw({ objectId, version: String(row.version), digest: row.digest, bcs: toBase64(row.bcs.value) })
   const move = raw.data.Move
   commerceCheck(move && historicalMoveObjectType(move.type) === normalizeStructTag(type), 'OBJECT_TYPE')
-  return { objectId, version: String(row.version), digest: row.digest, owner: raw.owner, contents: move.contents }
+  return { objectId, version: String(row.version), digest: row.digest, owner: raw.owner, contents: move.contents, previousTransaction: raw.previousTransaction }
 }
 
 export function decodeCommerce<C extends { parse(bytes: Uint8Array): any; serialize(value: any): { toBytes(): Uint8Array } }>(codec: C, bytes: Uint8Array): ReturnType<C['parse']> {

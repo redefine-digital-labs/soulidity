@@ -54,6 +54,7 @@ export async function proveNativeSaleListingExit(input: { client: SuiGrpcClient;
   return { proof: 'native-sale-original-offer-and-exclusive-listing-exit-only' as const, transactionDigest,
     offerId: plan.offerId, listingId, purchaseCapId: capId, claimedEffectIds: [plan.offerId, listingId, capId],
     offerInput: { version: String(before.reference.version), digest: before.reference.digest, writer: before.object.previousTransaction },
+    offerOutput: { version: String(after.reference.version), digest: after.reference.digest, writer: after.object.previousTransaction },
     listingInput: { version: String(original.reference.version), digest: original.reference.digest, writer: original.object.previousTransaction },
     notRecursiveSourceCleanup: true as const, notCompleteSaleProof: true as const, notCurrentAuthority: true as const }
 }
