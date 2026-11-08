@@ -6,12 +6,13 @@ import {useEquipmentMarketActions} from '../../web/lib/hooks/use-equipment-marke
 import {equipmentMarketOperationFixture,emid} from './fixtures/equipment-market-operation'
 
 const m=vi.hoisted(()=>({account:null as any,wallet:{} as any,client:{} as any,run:vi.fn(),read:vi.fn(),history:vi.fn(),
-  queryHistory:vi.fn(),sign:vi.fn(),chainRead:vi.fn(),confirm:vi.fn(),config:vi.fn(),invalidate:vi.fn(),adapter:null as any}))
+  queryHistory:vi.fn(),sign:vi.fn(),chainRead:vi.fn(),confirm:vi.fn(),funds:vi.fn(),config:vi.fn(),invalidate:vi.fn(),adapter:null as any}))
 vi.mock('@mysten/dapp-kit',()=>({useCurrentAccount:()=>m.account,useCurrentWallet:()=>({currentWallet:m.wallet}),
   useSuiClient:()=>m.client,useSignTransaction:()=>({mutateAsync:m.sign})}))
 vi.mock('@tanstack/react-query',()=>({useQueryClient:()=>({invalidateQueries:m.invalidate})}))
 vi.mock('../../web/lib/animacraft/browser-native-equipment-market-read',()=>({getBrowserNativeEquipmentMarketConfig:m.config,readBrowserEquipmentMarketOperation:m.chainRead}))
 vi.mock('../../web/lib/animacraft/browser-equipment-market-readback',()=>({confirmBrowserEquipmentMarketOperation:m.confirm}))
+vi.mock('../../web/lib/animacraft/equipment-market-purchase-funds',()=>({queryEquipmentMarketPurchaseFunds:m.funds}))
 vi.mock('../../web/lib/animacraft/equipment-market-operation-store',()=>({browserEquipmentMarketOperationStore:()=>({read:m.read,history:m.history}),
   runEquipmentMarketOperation:m.run,queryEquipmentMarketHistory:m.queryHistory}))
 vi.mock('../../web/lib/animacraft/equipment-market-operation-adapter',async original=>({
@@ -25,10 +26,11 @@ const render=()=>act(async()=>root.render(<Probe/>))
 beforeEach(async()=>{
   Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});vi.clearAllMocks()
   f=await equipmentMarketOperationFixture();params={request:f.request,identityKey:'item:1',action:'list',priceAtomic:'10001'}
-  m.account={address:f.actor};m.wallet={name:'a'};m.client={grpc:{}}
+  m.account={address:f.actor};m.wallet={name:'a'};m.client={grpc:{ledgerService:{getObject:vi.fn()}}}
   m.read.mockReset().mockReturnValue(null);m.history.mockReset().mockReturnValue([]);m.queryHistory.mockReset().mockResolvedValue('MISSING')
   m.run.mockReset().mockResolvedValue({...f.record,phase:'SIGNING'});m.chainRead.mockReset().mockResolvedValue(f.snapshot)
   m.config.mockReset().mockReturnValue({target:f.target});m.confirm.mockReset().mockResolvedValue('COMPLETE')
+  m.funds.mockReset()
   host=document.createElement('div');document.body.appendChild(host);root=createRoot(host)
 })
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks()})
@@ -46,6 +48,26 @@ it('does not read or act as another wallet',async()=>{
   m.account={address:emid(999)};await render();expect(state.canStart).toBe(false);expect(m.chainRead).not.toHaveBeenCalled()
   await act(async()=>{await state.check()});expect(m.run).not.toHaveBeenCalled()
 })
+it('reads only the saved purchase and discards a late funds proof after changing wallets', async () => {
+  f=await equipmentMarketOperationFixture({action:'buy'})
+  params={request:f.request,identityKey:'buy-item',action:'buy'}
+  m.account={address:f.actor}
+  m.chainRead.mockResolvedValue(f.snapshot)
+  const saved={...f.record,phase:'SUCCEEDED',syncStatus:'PENDING'}
+  m.read.mockReturnValue(saved)
+  let resolve!: (value: unknown) => void
+  m.funds.mockImplementation(()=>new Promise(done=>{resolve=done}))
+  await render()
+  let work!: Promise<void>
+  await act(async()=>{work=state.checkFunds()})
+  expect(m.funds).toHaveBeenCalledExactlyOnceWith(saved,m.client.grpc,expect.any(AbortSignal))
+  m.account={address:emid(999)}
+  await render()
+  expect(m.funds.mock.calls[0][2].aborted).toBe(true)
+  await act(async()=>{resolve({status:'FUNDS_VERIFIED',transactionDigest:saved.digest});await work})
+  expect(state.funds).toBeNull()
+  expect(m.sign).not.toHaveBeenCalled()
+})
 it('rejects a different selected item',async()=>{
   params.request={...f.request,itemId:emid(999)};await render();expect(state.snapshot).toBeNull();expect(state.error).toContain('selected item')
 })
@@ -55,7 +77,9 @@ it('recovers and synchronizes the saved release without current configuration',a
   await act(async()=>{await state.check()});expect(m.run).toHaveBeenCalledWith(expect.objectContaining({queryOnly:true,start:false}))
   expect(m.adapter.observed).toBeUndefined()
   await expect(m.adapter.sync({...f.record,phase:'SUCCEEDED'})).resolves.toBe('COMPLETE')
-  expect(m.confirm).toHaveBeenCalledWith(expect.objectContaining({snapshot:f.snapshot}),expect.objectContaining({signal:expect.any(AbortSignal)}),{client:m.client.grpc})
+  expect(m.confirm).toHaveBeenCalledWith(expect.objectContaining({snapshot:f.snapshot}),expect.objectContaining({signal:expect.any(AbortSignal)}),
+    {client:expect.objectContaining({ledgerService:expect.objectContaining({getObject:expect.any(Function)})})})
+  expect(m.confirm.mock.calls[0][2].client).not.toBe(m.client.grpc)
 })
 it.each(['wallet','account','client','identity','price'])('revokes a stale signer after %s ABA',async kind=>{
   await render();await act(async()=>{await state.start()});const old=m.adapter

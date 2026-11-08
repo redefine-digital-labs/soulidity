@@ -7,6 +7,9 @@ import { parse } from 'yaml'
 
 const workflow = parse(readFileSync('.github/workflows/soulidity-fast-path-smoke.yml', 'utf8'))
 const job = workflow.jobs['pr-gates'], steps = job.steps
+const commerceRef = 'refs/heads/codex/commerce-paid-checkout'
+const commercePeer = '5fb13fa3a45a013c53f05de7da8f9749b0108568'
+const peerSelection = '$' + `{{ inputs.animacraft_commit_sha || (github.ref == '${commerceRef}' && '${commercePeer}') || vars.ANIMACRAFT_COMMIT_SHA }}`
 const step = (name: string) => {
   const value = steps.find((candidate: { name?: string }) => candidate.name === name)
   expect(value, name).toBeDefined()
@@ -14,12 +17,13 @@ const step = (name: string) => {
 }
 it('accepts a required per-run exact peer input without changing repository variables', () => {
   expect(workflow.on.workflow_dispatch?.inputs?.animacraft_commit_sha).toMatchObject({ required: true, type: 'string' })
-  expect(job.env.ANIMACRAFT_COMMIT_SHA).toBe('${{ inputs.animacraft_commit_sha || vars.ANIMACRAFT_COMMIT_SHA }}')
+  expect(job.env.ANIMACRAFT_COMMIT_SHA).toBe(peerSelection)
+  expect(workflow.on.push.branches).toEqual(['master', commerceRef.slice('refs/heads/'.length)])
 })
-it('emits actual paired source identity only for explicit release runs and scopes it to the attempt', () => {
+it('emits actual paired source identity for explicit release and isolated Commerce runs and scopes it to the attempt', () => {
   const bind = step('Bind checked paired sources to this CI attempt')
   const retain = step('Retain paired source identity')
-  expect(bind.if).toBe("github.event_name == 'workflow_dispatch'")
+  expect(bind.if).toBe(`github.event_name == 'workflow_dispatch' || github.ref == '${commerceRef}'`)
   expect(retain.if).toBe(bind.if)
   expect(steps.indexOf(bind)).toBeGreaterThan(steps.indexOf(step('Run paired eight-package Move and joint gates')))
   expect(bind.run).toContain('write-pair-receipt.mjs so "$ANIMACRAFT_WORKSPACE" "$GITHUB_WORKSPACE"')
@@ -44,7 +48,7 @@ it('requires an exact public peer commit and proves the checkout before source e
   expect(steps.indexOf(checkout)).toBeLessThan(steps.indexOf(verify))
   expect(checkout.with).toMatchObject({ repository: 'redefine-digital-labs/animacraft',
     ref: '${{ env.ANIMACRAFT_COMMIT_SHA }}', path: '_paired/animacraft', 'persist-credentials': false })
-  expect(job.env.ANIMACRAFT_COMMIT_SHA).toBe('${{ inputs.animacraft_commit_sha || vars.ANIMACRAFT_COMMIT_SHA }}')
+  expect(job.env.ANIMACRAFT_COMMIT_SHA).toBe(peerSelection)
   expect(verify.run).toContain('test "$(git -C _paired/animacraft rev-parse HEAD)" = "$ANIMACRAFT_COMMIT_SHA"')
   expect(verify.run.indexOf('rev-parse HEAD')).toBeLessThan(verify.run.indexOf('node --test'))
   expect(job.permissions).toEqual({ contents: 'read' })

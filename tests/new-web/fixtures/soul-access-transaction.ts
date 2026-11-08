@@ -1,4 +1,5 @@
 import { vi } from 'vitest'
+import {activityEvidenceFixture,activityHash,activityGenesis} from './activity-transaction-evidence'
 import { bcs, TypeTagSerializer } from '@mysten/sui/bcs'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { Inputs, Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
@@ -15,11 +16,11 @@ const shared = { Shared: { initialSharedVersion: '1' } }, fieldCodec = (key: any
 type Owner = Parameters<typeof bcs.Owner.serialize>[0]
 type Codec = { parse(bytes: Uint8Array): any; serialize(value: any): { toBytes(): Uint8Array } }
 
-export function soulAccessFixtureState(options: { action?: SoulAccessAction; slot?: 'absent' | 'expired' | 'stale';
+export function soulAccessFixtureState(options: { soulId?:string; action?: SoulAccessAction; slot?: 'absent' | 'expired' | 'stale';
   entry?: 'absent' | 'expired' | 'stale' | 'lifetime'; buyerSize?: string; duration?: string | null; price?: string; feeBps?: number; paymentBalances?: string[] } = {}) {
   const signer = Ed25519Keypair.fromSecretKey(new Uint8Array(32).fill(41)), author = signer.toSuiAddress()
   const action = options.action ?? 'grant-issue', isPurchase = action === 'paid-purchase', isGrant = soulAccessIsGrant(action)
-  const state = { id: accessId(1002), version: '1', soul_id: accessId(1003), creator: accessId(1004), creator_royalty_bps: 500,
+  const state = { id: accessId(1002), version: '1', soul_id: options.soulId??accessId(1003), creator: accessId(1004), creator_royalty_bps: 500,
     current_owner: isPurchase ? accessId(1005) : author, current_kiosk_id: accessId(1007), ownership_epoch: '2', grant_capacity: '3',
     active_grants: { id: accessId(1008), size: options.slot === 'absent' ? '0' : '1' },
     active_grant_ids: { id: accessId(1009), size: options.slot === 'absent' ? '0' : '1' },
@@ -101,7 +102,8 @@ export async function soulAccessTransactionFixture(options: Parameters<typeof so
     executeTransaction: vi.fn(async () => ({})) }, ledgerService: { getObject: vi.fn(async ({ objectId, version }: any) => {
       const row = rows.get(key(objectId, version ?? '11')); if (!row) throw new Error('Exact historical object unavailable')
       return { response: { object: structuredClone(row) } }
-    }), getEpoch: vi.fn(async () => ({ response: { epoch: { epoch: 9n } } })), getTransaction: vi.fn() },
+    }), getEpoch: vi.fn(async () => ({ response: { epoch: { epoch: 9n } } })), getTransaction: vi.fn(),
+    getServiceInfo:vi.fn(async()=>({response:{chainId:activityGenesis}})),getCheckpoint:vi.fn() },
     transactionExecutionService: { simulateTransaction: vi.fn(async (input: any) => ({ response: { transaction: {
       transaction: { bcs: { value: new Uint8Array(input.transaction.bcs.value) } }, effects: { status: { success: true } } } } })) } }
   async function packet(input = plan, mutate?: (data: TransactionDataBuilder) => void): Promise<SoulAccessRecord> {
@@ -199,6 +201,13 @@ export async function soulAccessTransactionFixture(options: Parameters<typeof so
     mutate(value); object.data.Move.contents = codec.serialize(value).toBytes(); rehash(label, version)
   }
   let checkpoint: bigint | undefined = 42n, address: string | null = author
+  const checkpointFixture=await activityEvidenceFixture()
+  client.ledgerService.getCheckpoint.mockImplementation(async()=>{
+    if(checkpoint===undefined)throw Error('UNEXPECTED_CHECKPOINT_QUERY')
+    checkpointFixture.summaryData.sequence_number=String(checkpoint);checkpointFixture.summaryData.epoch=effects.V2!.executedEpoch
+    checkpointFixture.contentsData.V2!.transactions[1].digest={transaction:record.packet.digest,effects:activityHash('TransactionEffects',bcs.TransactionEffects.serialize(effects).toBytes())}
+    checkpointFixture.rehashContents();return {response:{checkpoint:structuredClone(checkpointFixture.checkpoint)}}
+  })
   client.ledgerService.getTransaction.mockImplementation(async () => ({ response: { transaction: {
     digest: record.packet.digest, transaction: { digest: record.packet.digest, bcs: { value: fromBase64(record.packet.bytes) } },
     effects: { transactionDigest: record.packet.digest, status: { success: effects.V2!.status.$kind === 'Success' }, bcs: { value: bcs.TransactionEffects.serialize(effects).toBytes() } },

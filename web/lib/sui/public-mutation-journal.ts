@@ -23,6 +23,8 @@ export interface PublicMutationStore<P extends PublicMutationPlan, R extends Pub
   read(key: string): R | null; write(key: string, record: R): void
   list(scope: PublicMutationListScope<P>): R[]
   discover(scope: { soulId: string; originalPackageId: string }): R[]
+  /** Strict head discovery across original/callable/config namespaces. */
+  discoverAsset(scope: {chainIdentifier:string;soulId:string;author:string}): R[]
   history(key: string): R[]
 }
 export interface PublicMutationAdapter<P, R extends PublicMutationRecord<P>, Q extends PublicMutationQuery> {
@@ -134,6 +136,22 @@ export function createPublicMutationStore<P extends PublicMutationPlan, R extend
       return discover(parts => parts[5] === scope.soulId && parts[1] === scope.originalPackageId,
         plan => plan.soulId === scope.soulId && plan.deployment.originalPackageId === scope.originalPackageId)
     },
+    discoverAsset: input => {
+      const scope=structuredClone(input),records:R[]=[]
+      for(let index=0;index<storage.length;index++){
+        const name=storage.key(index);if(!name?.startsWith(prefix))continue
+        const parts=name.slice(prefix.length).split(':')
+        // Only exact known archive names are skipped. An unclassifiable head
+        // must not disappear merely because discovery previously assumed7.
+        if(parts.length===10&&parts[7]==='history'&&['SUCCEEDED','FAILED','CANCELLED','RETIRED'].includes(parts[9])&&parts.every(Boolean))continue
+        check(parts.length===7&&parts.every(Boolean),'OPAQUE_HEAD_KEY')
+        if(parts[0]!==scope.chainIdentifier||parts[5]!==scope.soulId||parts[6]!==scope.author)continue
+        const record=readAt(name,name);check(record,'RECORD_DISAPPEARED')
+        check(record.plan.deployment.chainIdentifier===scope.chainIdentifier&&record.plan.soulId===scope.soulId&&record.plan.author===scope.author,'SCOPE_MISMATCH')
+        records.push(record);check(records.length<=maxRecords,'LIST_LIMIT')
+      }
+      return records.sort((a,b)=>keyOf(a.plan).localeCompare(keyOf(b.plan)))
+    },
     history: key => {
       const start = `${key}:history:`, records: R[] = []
       for (let index = 0; index < storage.length; index++) {
@@ -226,4 +244,55 @@ export async function runPublicMutation<P, R extends PublicMutationRecord<P>, Q 
     await adapter.broadcast(structuredClone(record!))
     const observed = await query(); await reconcile(observed); return { ...observed, record: record! }
   })
+}
+
+/** Async domain parser for canonical formats whose original packet assertion
+ * awaits SDK construction. It shares the public frozen/transition rules above,
+ * without inventing legacy deployment/kindRegistry fields. */
+export interface AsyncPublicMutationStore<P,R extends PublicMutationRecord<P>> extends PublicMutationJournal<R>{
+ read(key:string):Promise<R|null>;write(key:string,record:R):Promise<void>
+ heads(select?:(key:string)=>boolean):Promise<R[]>;history(key:string):Promise<R[]>
+}
+export interface AsyncPublicMutationStorage {
+ readonly length:number;key(index:number):string|null
+ getItem(key:string):string|null|Promise<string|null>
+ setItem(key:string,value:string):void|Promise<void>
+}
+export function createAsyncPublicMutationStore<P,R extends PublicMutationRecord<P>>(domain:{
+ prefix:string;changedEvent:string;errorPrefix:string;key:(plan:P)=>string;parse:(input:unknown)=>Promise<R>
+ classify:(storageName:string)=>{headKey:string;archived:boolean}
+ storage?:AsyncPublicMutationStorage;maxRecordBytes?:number
+ /** Original read/export remains available without mutation facilities. */
+ readOnly?:boolean
+}):AsyncPublicMutationStore<P,R>{
+ function check(v:unknown,code:string):asserts v{if(!v)throw Error(`${domain.errorPrefix}_${code}`)}
+ const readOnly=domain.readOnly===true
+ check(readOnly?(domain.storage||typeof window!=='undefined'):
+  typeof window!=='undefined'&&typeof navigator!=='undefined'&&navigator.locks?.request,'REQUIRES_STORAGE_AND_LOCKS')
+ const storage=domain.storage??window.localStorage,held=new Set<string>(),limit=domain.maxRecordBytes??1200000
+ function classify(name:string){check(name.startsWith(domain.prefix),'KEY_PREFIX');const value=domain.classify(name);check(value.headKey.startsWith(domain.prefix),'KEY_PREFIX');return value}
+ function headKey(key:string){const value=classify(key);check(!value.archived&&value.headKey===key,'HEAD_KEY_REQUIRED')}
+ async function readAt(name:string,key:string){
+  const raw=await storage.getItem(name);if(raw===null)return null
+  check(raw.length>0&&raw.length<=limit&&new TextEncoder().encode(raw).byteLength<=limit,'RECORD_SIZE')
+  const record=await domain.parse(JSON.parse(raw));check(domain.key(record.plan)===key,'SCOPE_MISMATCH')
+  check(await storage.getItem(name)===raw,'RECORD_CHANGED_DURING_PARSE');return record
+ }
+ async function persist(name:string,record:R){const encoded=publicMutationCanonical(record);check(new TextEncoder().encode(encoded).byteLength<=limit,'RECORD_SIZE');await storage.setItem(name,encoded);check(await storage.getItem(name)===encoded,'PERSISTENCE_FAILED')}
+ async function archive(key:string,record:R){check(terminal(record),'ARCHIVE_NOT_TERMINAL');const name=`${key}:history:${record.packet.digest}:${record.packet.phase}`,previous=await readAt(name,key);check(!previous||publicMutationCanonical(previous)===publicMutationCanonical(record),'ARCHIVE_CONFLICT');if(!previous)await persist(name,record)}
+ function names(){const result:string[]=[];for(let i=0;i<storage.length;i++){const name=storage.key(i);if(name?.startsWith(domain.prefix))result.push(name)}return result.sort()}
+ return {
+  exclusive:async(key,work)=>{check(!readOnly,'READ_ONLY');return navigator.locks.request(key,{mode:'exclusive',ifAvailable:true},async lock=>{headKey(key);check(lock&&!held.has(key),'BUSY');held.add(key);try{return await work()}finally{held.delete(key)}})},
+  read:async key=>{headKey(key);return readAt(key,key)},
+  write:async(key,input)=>{
+   check(!readOnly,'READ_ONLY');headKey(key);check(held.has(key),'LOCK_REQUIRED');const record=await domain.parse(input);check(domain.key(record.plan)===key,'SCOPE_MISMATCH')
+   const before=await readAt(key,key)
+   if(!before)check(record.packet.phase==='PREPARED'&&record.packet.signature===null,'FIRST_RECORD_NOT_PREPARED')
+   else if(frozen(before)===frozen(record)&&!(before.packet.phase==='CANCELLED'&&record.packet.phase==='PREPARED'))assertPublicMutationTransition(before,record,domain.errorPrefix)
+   else{check(terminal(before)&&record.packet.phase==='PREPARED'&&record.packet.signature===null,'RECOVERY_REQUIRED');await archive(key,before)}
+   await persist(key,record);window.dispatchEvent(new window.Event(domain.changedEvent))
+  },
+  heads:async(select=()=>true)=>{const result:R[]=[];for(const name of names()){const c=classify(name);if(c.archived||!select(c.headKey))continue;const record=await readAt(name,c.headKey);check(record,'RECORD_DISAPPEARED');result.push(record);check(result.length<=256,'LIST_LIMIT')}return result},
+  history:async key=>{headKey(key);const result:R[]=[];for(const name of names()){const c=classify(name);if(!c.archived||c.headKey!==key)continue;const record=await readAt(name,key);check(record&&terminal(record)&&name===`${key}:history:${record.packet.digest}:${record.packet.phase}`,'ARCHIVE_INVALID');result.push(record);check(result.length<=256,'LIST_LIMIT')}return result},
+ }
 }

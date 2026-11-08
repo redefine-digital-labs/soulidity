@@ -1,3 +1,4 @@
+import { readPinnedMovePackageOrigins, PinnedMovePackageError } from '../sui/pinned-move-package'
 import { bcs, TypeTagSerializer } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { TransactionDataBuilder } from '@mysten/sui/transactions'
@@ -62,7 +63,7 @@ function check(value: unknown, code: ActivityEvidenceErrorCode, detail: string):
 const TIMEOUT_MS = 25_000
 const U64_MAX = 18446744073709551615n
 const MAX_TX_BYTES = 256 * 1024, MAX_EFFECTS_BYTES = 1024 * 1024, MAX_EVENTS_BYTES = 1024 * 1024
-const MAX_CONTENTS_BYTES = 8 * 1024 * 1024, MAX_PACKAGE_BYTES = 4 * 1024 * 1024, MAX_SUMMARY_BYTES = 128 * 1024
+const MAX_CONTENTS_BYTES = 8 * 1024 * 1024, MAX_SUMMARY_BYTES = 128 * 1024
 const MAX_EVENTS = 1024, MAX_CHECKPOINT_TRANSACTIONS = 10_000
 const TRUST = Object.freeze({ trust: 'TRUSTED_LEDGER_CANONICAL_EVIDENCE' as const, notAuthorization: true as const })
 const id = (v: unknown): v is string => typeof v === 'string' && /^0x[0-9a-f]{64}$/.test(v) && !/^0x0+$/.test(v)
@@ -219,47 +220,11 @@ function deployment(value: ActivityDeployment): ActivityDeployment {
     callableDigest: captured.callableDigest, chainIdentifier: captured.chainIdentifier })
 }
 async function packageOrigins(client: SuiGrpcClient, release: ActivityDeployment, signal: AbortSignal) {
-  const { response } = await profileReadStep(signal, () => client.ledgerService.getObject({ objectId: release.callablePackageId,
-    readMask: { paths: ['object_id', 'version', 'digest', 'owner', 'bcs', 'package.storage_id', 'package.original_id', 'package.version'] },
-  }, { abort: signal, timeout: TIMEOUT_MS }))
-  const row = response.object
-  check(row?.objectId === release.callablePackageId && row.digest === release.callableDigest && row.owner?.kind === 4
-    && uint(row.version) && row.version > 0n, 'EVIDENCE_MISMATCH', 'Release package reference mismatch')
-  const raw = bytes(row.bcs?.value, MAX_PACKAGE_BYTES, 'Release package')
-  const parsed = canonical(bcs.Object, raw, 'release package object'), pkg = parsed.data.Package
-  check(typedDigest('Object', raw) === release.callableDigest && parsed.owner.$kind === 'Immutable'
-    && pkg?.id === release.callablePackageId && pkg.version === String(row.version),
-  'EVIDENCE_MISMATCH', 'Release package BCS mismatch')
-  // Ledger implementations may omit these redundant Package projections even
-  // when requested. The configured Object digest, canonical full Object BCS,
-  // Immutable owner and raw type origins remain the authority. A projection
-  // that is supplied must agree; its absence does not weaken those checks.
-  check((row.package?.storageId === undefined || row.package.storageId === pkg.id)
-    && (row.package?.originalId === undefined || row.package.originalId === release.originalPackageId)
-    && (row.package?.version === undefined || row.package.version === row.version),
-  'EVIDENCE_MISMATCH', 'Release package projection mismatch')
-  check(pkg.moduleMap.size > 0 && pkg.moduleMap.size <= 512 && pkg.typeOriginTable.length <= 4096 && pkg.linkageTable.size <= 1024,
-    'BOUNDS_EXCEEDED', 'Release package table bound exceeded')
-  // bcs.map canonical ordering is serialized-key byte order (including the
-  // string length prefix), not JavaScript lexical ordering. Roundtrip above
-  // already verifies ordering and duplicate keys with the installed SDK codec.
-  for (const [name, module] of pkg.moduleMap) {
-    check(identifier(name) && module.length > 0, 'BCS_INVALID', 'Invalid package module map')
+  try { return await readPinnedMovePackageOrigins(client, release, signal) }
+  catch (error) {
+    if (error instanceof PinnedMovePackageError) throw new ActivityEvidenceError(error.code, error.message)
+    throw error
   }
-  for (const [name, link] of pkg.linkageTable) {
-    // System packages legitimately commit zero linkage versions (Sui 722
-    // move_package.rs::new_system). This reader checks structure, not linking.
-    check(id(name) && id(link.upgradedId) && decimal(link.upgradedVersion),
-      'BCS_INVALID', 'Invalid package linkage map')
-  }
-  const origins = new Map<string, string>()
-  for (const origin of pkg.typeOriginTable) {
-    const key = `${origin.moduleName}::${origin.datatypeName}`
-    check(identifier(origin.moduleName) && identifier(origin.datatypeName) && id(origin.package)
-      && pkg.moduleMap.has(origin.moduleName) && !origins.has(key), 'BCS_INVALID', 'Invalid or duplicate package type origin')
-    origins.set(key, origin.package)
-  }
-  return origins
 }
 
 /** Read-only event history, NOT exact signed-operation certification. The

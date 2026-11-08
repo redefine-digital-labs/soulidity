@@ -2,6 +2,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { collectionCommandTestDom, type CollectionCommandTestDom } from './fixtures/collection-command-dom'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
+import { fromBase64 } from '@mysten/sui/utils'
 import { useCollectionCommands, type CollectionCommandSubject } from '../../web/lib/hooks/use-collection-commands'
 import { browserCollectionCommandStore, collectionCommandKey } from '../../web/lib/collections/collection-command-journal'
 import { collectionCommandFixture, cid } from './fixtures/collection-command'
@@ -102,9 +103,10 @@ it('late wallet result survives account ABA in the actual WAL without broadcasti
   let work!: Promise<unknown>
   await act(async () => { work = current.run(prepared, 'resume'); void work.catch(() => {}); await started })
   const account = h.account; h.account = { address: cid(777) }; await render(); h.account = account; await render()
-  await act(async () => { release({ bytes: prepared.packet.bytes, signature: f.record.packet.signature! }); await expect(work).rejects.toThrow() })
+  const signed = await f.signer.signTransaction(fromBase64(prepared.packet.bytes))
+  await act(async () => { release(signed); await expect(work).rejects.toThrow() })
   const stored = browserCollectionCommandStore().read(collectionCommandKey(f.plan))!
-  expect(stored.packet.phase).toBe('SIGNED'); expect(stored.packet.signature).toBe(f.record.packet.signature)
+  expect(stored.packet.phase).toBe('SIGNED'); expect(stored.packet.signature).toBe(signed.signature)
   expect(stored.packet.bytes).toBe(prepared.packet.bytes); expect(h.sign).toHaveBeenCalledTimes(1)
   expect(f.client.core.executeTransaction).not.toHaveBeenCalled(); expect(onSuccess).not.toHaveBeenCalled()
 })

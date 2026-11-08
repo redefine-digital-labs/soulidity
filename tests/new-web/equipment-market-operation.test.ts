@@ -2,6 +2,7 @@ import {expect,it} from 'vitest'
 import {Inputs,Transaction} from '@mysten/sui/transactions'
 import {equipmentMarketOperationFixture,equipmentRecordWithTransaction,emid} from './fixtures/equipment-market-operation'
 import {validateEquipmentMarketOperationRecord,validateEquipmentMarketSnapshot} from '../../web/lib/animacraft/equipment-market-operation'
+import {equipmentAddressGasWindow} from './fixtures/equipment-market-evidence'
 
 it.each(['list','buy','reprice','cancel','recover'] as const)('validates %s exact production SDK bytes for Base/External',async action=>{
   for(const kind of ['base','external'] as const){
@@ -9,6 +10,19 @@ it.each(['list','buy','reprice','cancel','recover'] as const)('validates %s exac
     expect(validateEquipmentMarketOperationRecord(f.record)).toEqual(f.record)
   }
 })
+it.each(['no-window','foreign-chain','reversed-epoch','timestamp','owner','saved-ceiling'])(
+  'rejects rehashed address-gas packets with changed %s',async variant=>{
+    const f=await equipmentMarketOperationFixture({action:'buy'})
+    const window={...equipmentAddressGasWindow}
+    if(variant==='foreign-chain')window.chain=f.record.digest
+    if(variant==='reversed-epoch')window.minEpoch='10'
+    if(variant==='owner')f.tx.setGasOwner(f.owner)
+    f.tx.setGasPayment([])
+    if(variant!=='no-window')f.tx.setExpiration({ValidDuring:{...window,minTimestamp:variant==='timestamp'?'0':null}})
+    const record=await equipmentRecordWithTransaction(f.record,f.tx)
+    if(variant==='saved-ceiling')record.expirationEpoch='10'
+    expect(()=>validateEquipmentMarketOperationRecord(record)).toThrow('gas/expiration mismatch')
+  })
 it('lists an explicitly selected equipped Base with partial removal and no binding close',async()=>{
   const f=await equipmentMarketOperationFixture({equipped:true})
   const calls=f.tx.getData().commands.flatMap(c=>c.MoveCall?[c.MoveCall.function]:[])

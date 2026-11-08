@@ -1,26 +1,42 @@
 import { Transaction } from '@mysten/sui/transactions'
+import { isValidSuiObjectId, normalizeSuiObjectId } from '@mysten/sui/utils'
 import { getRequiredSoulidityEnv } from '../env'
 import { buildBuyerKioskArgs, finishBuyerKioskArgs } from './shared'
 
-export function buildExactPaymentCoin(
-  tx: Transaction,
-  paymentCoinObjectIds: string[],
-  totalAtomic: bigint,
-) {
-  if (totalAtomic <= 0n) {
-    throw new Error('totalAtomic must be positive')
+const MAX_U64 = (1n << 64n) - 1n
+
+function validateExactPayment(paymentCoinObjectIds: string[], totalAtomic: bigint) {
+  if (typeof totalAtomic !== 'bigint' || totalAtomic <= 0n || totalAtomic > MAX_U64) {
+    throw new Error('totalAtomic must be a positive u64 bigint')
   }
-  if (paymentCoinObjectIds.length === 0) {
+  if (!Array.isArray(paymentCoinObjectIds) || paymentCoinObjectIds.length === 0) {
     throw new Error('paymentCoinObjectIds must contain at least one object id')
   }
+  const coinIds = Array.from(paymentCoinObjectIds, value => {
+    const id = typeof value === 'string' ? normalizeSuiObjectId(value) : ''
+    if (!isValidSuiObjectId(id) || /^0x0+$/.test(id)) {
+      throw new Error('Invalid payment coin object ID')
+    }
+    return id
+  })
+  if (new Set(coinIds).size !== coinIds.length) {
+    throw new Error('Duplicate payment coin object IDs')
+  }
+  return { coinIds, totalAtomic }
+}
 
-  const [primaryCoinId, ...remainingCoinIds] = paymentCoinObjectIds
+function appendExactPayment(tx: Transaction, { coinIds, totalAtomic }: ReturnType<typeof validateExactPayment>) {
+  const [primaryCoinId, ...remainingCoinIds] = coinIds
   const primaryCoin = tx.object(primaryCoinId!)
   if (remainingCoinIds.length > 0) {
     tx.mergeCoins(primaryCoin, remainingCoinIds.map((coinId) => tx.object(coinId)))
   }
   const [paymentCoin] = tx.splitCoins(primaryCoin, [tx.pure.u64(totalAtomic)])
   return paymentCoin
+}
+
+export function buildExactPaymentCoin(tx: Transaction, paymentCoinObjectIds: string[], totalAtomic: bigint) {
+  return appendExactPayment(tx, validateExactPayment(paymentCoinObjectIds, totalAtomic))
 }
 
 export function buildBuySoulTx(params: {
@@ -92,6 +108,8 @@ export function buildBuyCollectionTx(params: {
   buyerKioskId?: string | null
   buyerKioskCapOnChainId?: string | null
 }, target?: { packageId: string; marketConfigId: string; kioskRegistryId: string; collectionPolicyId: string; kioskPackageId: string }, tx = new Transaction()) {
+  // The caller can already have snapshot guards in this transaction.
+  const exactPayment = validateExactPayment(params.paymentCoinObjectIds, params.totalAtomic)
   const packageId = target?.packageId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_CALLABLE_PACKAGE_ID')
   const marketConfigId = target?.marketConfigId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_MARKET_CONFIG_V2_ID')
   const kioskRegistryId = target?.kioskRegistryId ?? getRequiredSoulidityEnv('NEXT_PUBLIC_SOULIDITY_KIOSK_REGISTRY_ID')
@@ -101,7 +119,7 @@ export function buildBuyCollectionTx(params: {
     buyerKioskCapOnChainId: params.buyerKioskCapOnChainId,
     runtime: target,
   })
-  const paymentCoin = buildExactPaymentCoin(tx, params.paymentCoinObjectIds, params.totalAtomic)
+  const paymentCoin = appendExactPayment(tx, exactPayment)
 
   tx.moveCall({
     target: `${packageId}::market::buy_collection_right_fixed_price_v2`,

@@ -5,7 +5,7 @@ import { CollectionFloorFieldBcs, CollectionFloorKeyBcs } from '../../packages/s
 import { deriveKioskItemFieldId, KioskItemFieldBcs, KIOSK_ITEM_FIELD_TYPE } from '../../packages/soulidity-sdk/src/kiosk-item-custody'
 import { CollectionPublicListingBcs, CollectionKioskListingKeyBcs, CollectionKioskListingFieldBcs,
   CollectionKioskRegistryBcs, CollectionKioskOwnerKeyBcs, CollectionKioskRegistrationFieldBcs, CollectionPersonalKioskCapBcs,
-  readCollectionPublicSnapshot, readCollectionPublicRoot, readCollectionListingCandidate, readCollectionRightCandidate,
+  readCollectionPublicSnapshot, readCollectionPublicRoot, readCollectionListingCandidate, readCollectionRightCandidate, readCollectionRightCustody,
   type CollectionListingCandidateScan, type CollectionPublicReadClient } from '../../packages/soulidity-sdk/src/collection-public-read'
 
 const id = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
@@ -81,6 +81,35 @@ it.each([false, true])('anonymous listed=%s reads retain raw custody but never r
 it('anonymous reads still reject forged Right custody', async () => {
   const f = fixture(); f.objects.get(f.r.id).owner.address = f.c.current_holder_kiosk_id
   await expect(readCollectionPublicSnapshot({ ...f.params, viewerAddress: null })).rejects.toThrow('CUSTODY_MISMATCH')
+})
+it.each([false, true])('observes current custody after purchase (later transfer: %s) with just the four custody objects', async sold => {
+  const f = fixture({ acquired: true, sold })
+  const objectIds = [f.c.id, f.wrapperId, f.r.id, f.c.current_holder_kiosk_id]
+  for (const objectId of f.objects.keys()) if (!objectIds.includes(objectId)) f.objects.delete(objectId)
+
+  expect(await readCollectionRightCustody({ ...f.params, rightId: f.r.id })).toEqual({
+    holderAddress: sold ? id(93) : f.viewer, holderKioskId: f.c.current_holder_kiosk_id,
+  })
+  expect(f.batchGetObjects.mock.calls.map(([args]) => args.requests[0].objectId)).toEqual([...objectIds, ...objectIds])
+})
+it('rejects a different Right from the one bought', async () => {
+  const f = fixture()
+  await expect(readCollectionRightCustody({ ...f.params, rightId: id(101) })).rejects.toThrow('RIGHT_MISMATCH')
+})
+it('rejects a matching root when the Right is not held by its Kiosk Item field', async () => {
+  const f = fixture()
+  f.objects.get(f.r.id).owner.address = f.c.current_holder_kiosk_id
+  await expect(readCollectionRightCustody({ ...f.params, rightId: f.r.id })).rejects.toThrow('CUSTODY_MISMATCH')
+})
+it('rejects custody drift during the final readset check', async () => {
+  const f = fixture(), original = f.batchGetObjects.getMockImplementation()!; let count = 0
+  f.batchGetObjects.mockImplementation(async args => {
+    if (args.requests[0].objectId === f.c.current_holder_kiosk_id && ++count === 2) {
+      f.edit(f.c.current_holder_kiosk_id, SoulPublicKioskBcs, kiosk => { kiosk.owner = id(101) })
+    }
+    return original(args)
+  })
+  await expect(readCollectionRightCustody({ ...f.params, rightId: f.r.id })).rejects.toThrow('CHANGED_RETRY')
 })
 it.each([undefined, '', '0x1', id(0), 1, false])('does not confuse invalid viewer %s with anonymous null', async viewerAddress => {
   const f = fixture()

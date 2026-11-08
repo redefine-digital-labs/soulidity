@@ -5,6 +5,7 @@ import {beforeEach,afterEach,expect,it,vi} from 'vitest'
 import {useNativeMarketListActions} from '../../web/lib/hooks/use-native-market-list-actions'
 import {marketListFixture,lid as bid} from './fixtures/market-list-operation'
 import type {NativeMarketListSnapshot} from '../../web/lib/animacraft/market-list-types'
+import {MAINNET_GENESIS_DIGEST} from '../../web/lib/animacraft/mainnet-chain'
 const m=vi.hoisted(()=>({account:null as any,wallet:{} as any,client:{} as any,run:vi.fn(),read:vi.fn(),history:vi.fn(),
   queryHistory:vi.fn(),sign:vi.fn(),headers:vi.fn(),chainRead:vi.fn(),confirm:vi.fn(),config:vi.fn(),targetConfig:vi.fn(),fetch:vi.fn(),invalidate:vi.fn(),adapter:null as any}))
 vi.mock('../../web/lib/animacraft/browser-native-market-read',()=>({getBrowserNativeMarketConfig:m.config,getBrowserNativeMarketCancelConfig:m.targetConfig,readBrowserNativeMarketList:m.chainRead}))
@@ -35,7 +36,9 @@ beforeEach(async()=>{
   // validation has separate SDK tests. This fixture exercises hook journal/session UI.
   record=f.record
   scope={soulId:snapshot.soulId,stateId:snapshot.stateId,listingId:null}
-  m.account={address:snapshot.owner};m.wallet={name:'wallet-a'};m.client={grpc:{}}
+  m.account={address:snapshot.owner};m.wallet={name:'wallet-a'};m.adapter=null
+  m.client={grpc:{core:{getChainIdentifier:async()=>({chainIdentifier:MAINNET_GENESIS_DIGEST})},ledgerService:{getObject:vi.fn()}}}
+  vi.stubGlobal('navigator',{locks:{request:async(_key:string,_options:unknown,work:(lock:object)=>Promise<unknown>)=>work({})}})
   m.read.mockReset().mockReturnValue(null);m.history.mockReset().mockReturnValue([]);m.queryHistory.mockReset().mockResolvedValue('MISSING')
   m.run.mockReset().mockResolvedValue({...record,phase:'SIGNING'});m.headers.mockReset().mockResolvedValue({Authorization:'fixture-auth'})
   m.chainRead.mockReset().mockImplementation(async()=>structuredClone(snapshot));m.fetch.mockReset().mockImplementation(()=>{throw new Error('Retired owned API')});vi.stubGlobal('fetch',m.fetch)
@@ -48,7 +51,7 @@ afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAl
 it('reads held LIST readiness without signing and starts only with explicit price and intent',async()=>{
   await render();expect(state.canList).toBe(true);expect(state.canReprice).toBe(false);expect(m.run).not.toHaveBeenCalled()
   expect(m.chainRead).toHaveBeenCalledWith(expect.objectContaining({soulId:snapshot.soulId,stateId:snapshot.stateId,
-    config:m.config(),signal:expect.any(AbortSignal)}))
+    config:m.config(),signal:expect.any(AbortSignal)}),{})
   expect(m.fetch).not.toHaveBeenCalled();expect(m.headers).not.toHaveBeenCalled()
   await act(async()=>{await state.start(10001n,'list')})
   expect(m.run).toHaveBeenCalledWith(expect.objectContaining({start:true,owner:snapshot.owner,soulId:snapshot.soulId}))
@@ -124,7 +127,7 @@ it('missing current market policy fields do not block finalized readback with an
   expect(state.canList).toBe(false);expect(m.chainRead).not.toHaveBeenCalled()
   await act(async()=>{await state.check()})
   await expect(m.adapter.sync({...record,phase:'SUCCEEDED',syncStatus:'PENDING'})).resolves.toBe('COMPLETE')
-  expect(m.confirm).toHaveBeenCalledWith(expect.objectContaining({digest:record.digest}),expect.objectContaining({target}),{client:m.client.grpc})
+  expect(m.confirm).toHaveBeenCalledWith(expect.objectContaining({digest:record.digest}),expect.objectContaining({target}),{client:expect.objectContaining({ledgerService:expect.objectContaining({getObject:expect.any(Function)})})})
   expect(m.sign).not.toHaveBeenCalled();expect(m.fetch).not.toHaveBeenCalled()
 })
 it('recovers the original owner journal despite a later owner, pause and disabled new writes',async()=>{
@@ -227,7 +230,7 @@ it('rejects a signature that resolves after its captured lease is revoked',async
 it('confirms the exact saved operation through browser proof with no auth or owned API',async()=>{
   await render();await act(async()=>{await state.start(10001n,'list')})
   await expect(m.adapter.sync(record)).resolves.toBe('COMPLETE')
-  expect(m.confirm).toHaveBeenCalledWith(record,expect.objectContaining({target:m.config().target,signal:expect.any(AbortSignal)}),{client:m.client.grpc})
+  expect(m.confirm).toHaveBeenCalledWith(record,expect.objectContaining({target:m.config().target,signal:expect.any(AbortSignal)}),{client:expect.objectContaining({ledgerService:expect.objectContaining({getObject:expect.any(Function)})})})
   expect(m.fetch).not.toHaveBeenCalled();expect(m.headers).not.toHaveBeenCalled()
   const invalid=new Error('Exact receipt mismatch');m.confirm.mockRejectedValueOnce(invalid)
   await expect(m.adapter.sync(record)).rejects.toBe(invalid)

@@ -1,5 +1,7 @@
 'use client'
 
+import { createBrowserSameSoulMutation } from '../soulidity/browser-same-soul-mutation'
+import { sameSoulMarketReadPort } from '../soulidity/same-soul-mutation-client'
 import {useEffect} from 'react'
 import {useCommittedSession,useSessionState,type SessionLease} from './use-committed-session'
 import { useCurrentAccount, useCurrentWallet, useSignTransaction, useSuiClient } from '@mysten/dapp-kit'
@@ -9,11 +11,14 @@ import { profileReadStep } from '@soulidity/sdk'
 import { getBrowserNativeMarketConfig, getBrowserNativeMarketCancelConfig, readBrowserNativeMarketBuy,
   type BrowserNativeMarketConfig, type BrowserNativeMarketCancelConfig } from '@/lib/animacraft/browser-native-market-read'
 import { confirmBrowserNativeMarketBuy } from '@/lib/animacraft/browser-native-market-readback'
+import { withPackageObjectIdentity } from '@/lib/sui/package-object-client'
 import { browserMarketBuyOperationStore, marketBuyOperationKey, runMarketBuyOperation, queryMarketBuyHistory,
   terminalMarketBuyOperation, validateMarketBuySnapshot,
   type MarketBuyOperationRecord, type MarketBuySnapshot } from '@/lib/animacraft/market-buy-operation'
 import { createMarketBuyOperationAdapter } from '@/lib/animacraft/market-buy-operation-adapter'
+import { queryMarketBuyPurchaseFunds, type MarketBuyPurchaseFunds } from '@/lib/animacraft/market-buy-purchase-funds'
 
+type FundsView = { proof?: MarketBuyPurchaseFunds; error?: string }
 type HistoryResult = 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'
 type Scope = { soulId: string; stateId: string; listingId: string | null } | null
 
@@ -36,6 +41,7 @@ export function useNativeMarketBuyActions(scope: Scope) {
   const [confirmedResult, setConfirmedResult] = useSessionState<MarketBuyOperationRecord | null>(session,null)
   const [history, setHistory] = useSessionState<MarketBuyOperationRecord[]>(session,[])
   const [historyResults, setHistoryResults] = useSessionState<Record<string, HistoryResult>>(session,{})
+  const [fundsByDigest, setFundsByDigest] = useSessionState<Record<string, FundsView>>(session,{})
   const [error, setError] = useSessionState<string | null>(session,null)
   const [loading,setLoading]=useSessionState(session,Boolean(scope&&address)), [busy, setBusy] = useSessionState(session,false)
   const [refreshIndex, setRefreshIndex] = useSessionState(session,0)
@@ -59,7 +65,7 @@ export function useNativeMarketBuyActions(scope: Scope) {
     }
   }, [session])
 
-  async function read(listingId = scope?.listingId ?? undefined,lease:SessionLease|null=session.capture()) {
+  async function read(listingId = scope?.listingId ?? undefined,lease:SessionLease|null=session.capture(), operationClient?:SuiGrpcClient) {
     const matches=()=>lease?.matches()===true
     if (!scope || !address || !matches()) throw new Error('Soul or wallet changed; reopen checkout')
     if (!releaseConfig) throw configError ?? new Error('Native market configuration unavailable')
@@ -67,7 +73,8 @@ export function useNativeMarketBuyActions(scope: Scope) {
     try {
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(25000)])
       const value = await profileReadStep(signal, () => readBrowserNativeMarketBuy({ soulId: scope.soulId,
-        stateId: scope.stateId, buyer: address, listingId, config: releaseConfig!, signal }))
+        stateId: scope.stateId, buyer: address, listingId, config: releaseConfig!, signal },
+      operationClient?{client:()=>withPackageObjectIdentity(sameSoulMarketReadPort(operationClient),signal)}:{}))
       const verified = validateMarketBuySnapshot(value)
       if (!matches() || verified.soulId !== scope.soulId || verified.stateId !== scope.stateId || verified.buyer !== address) {
         throw new Error('Purchase quote does not match this Soul and wallet')
@@ -93,18 +100,17 @@ export function useNativeMarketBuyActions(scope: Scope) {
     && (!visibleConfirmed || visibleRecord.syncStatus === 'PENDING')
   const canStart = Boolean(scope && account && currentWallet && visibleSnapshot?.buyer === address
     && visibleSnapshot.seller !== address && visibleSnapshot.purchaseAvailable && visibleSnapshot.release.writesEnabled && !busy && !loading && !pending)
-  function createAdapter(start = false,lease:SessionLease) {
+  function createAdapter(start = false,lease:SessionLease,operationClient?:SuiGrpcClient) {
     const matches=lease.matches
-    const grpc = (client as unknown as { grpc?: SuiGrpcClient }).grpc
+    const grpc = operationClient??(client as unknown as { grpc?: SuiGrpcClient }).grpc
     if (!grpc) throw new Error('The verified gRPC wallet client is required')
-    return createMarketBuyOperationAdapter({ client:grpc,read:listingId=>read(listingId,lease), observed: start ? visibleSnapshot ?? undefined : undefined,
+    return createMarketBuyOperationAdapter({ client:grpc,read:listingId=>read(listingId,lease,operationClient), observed: start ? visibleSnapshot ?? undefined : undefined,
       getAddress: () => matches() ? address : null,
       sign: transaction => {
         if (!matches() || !account) throw new Error('Wallet or network client changed before signature')
-        return Promise.resolve(signTransaction({transaction,account,chain:'sui:mainnet'})).then(result=>{
-          if(!matches())throw new Error('Wallet or network client changed during signature')
-          return result
-        })
+        // The journal must verify and save an exact late signature before
+        // preflight rejects the revoked session and blocks broadcast.
+        return signTransaction({transaction,account,chain:'sui:mainnet'})
       },
       sync: async value => {
         if (!matches()) throw new Error('Wallet changed; check the saved purchase after reconnecting')
@@ -112,8 +118,9 @@ export function useNativeMarketBuyActions(scope: Scope) {
         const controller = new AbortController(); lease!.requests.add(controller)
         try {
           const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(25000)])
+          const readClient=withPackageObjectIdentity(operationClient?sameSoulMarketReadPort(operationClient):grpc,signal)
           const result = await profileReadStep(signal, () => confirmBrowserNativeMarketBuy(value,
-            { target: readbackConfig!.target, signal }, { client: grpc }))
+            { target: readbackConfig!.target, signal }, { client: readClient }))
           if (!matches()) throw new Error('Wallet changed during purchase readback')
           return result
         } finally { lease!.requests.delete(controller) }
@@ -125,10 +132,15 @@ export function useNativeMarketBuyActions(scope: Scope) {
     if (!scope || !address || !account || !matches() || lease!.isRunning() || (start && !canStart)) return null
     lease!.setRunning(true); setBusy(true); setError(null)
     setConfirmedResult(null)
+    let coordinateAbort:AbortController|undefined
     try {
-      const result = await runMarketBuyOperation({ soulId: scope.soulId, owner: address, start, queryOnly, cancelUnsigned, retireExpired,
-        store: browserMarketBuyOperationStore(), adapter: createAdapter(start,lease!), onRecord: value => { if (matches()) setRecord(value) },
-      })
+      coordinateAbort=new AbortController();lease!.requests.add(coordinateAbort)
+      const grpc=(client as unknown as {grpc?:SuiGrpcClient}).grpc;if(!grpc)throw Error('Verified gRPC client required')
+      const coordinate=createBrowserSameSoulMutation({client:grpc,scopes:[{chainIdentifier:'35834a8a',soulId:scope.soulId,author:address}],ownKeys:[marketBuyOperationKey(scope.soulId,address)],signal:coordinateAbort.signal,guard:()=>{if(!matches())throw Error('Market wallet/session changed')},recoveryOnly:queryOnly||cancelUnsigned||retireExpired})
+      const operationAdapter=createAdapter(start,lease!,coordinate.client)
+      const result = await coordinate.run(()=>runMarketBuyOperation({ soulId: scope.soulId, owner: address, start, queryOnly, cancelUnsigned, retireExpired,
+        store: browserMarketBuyOperationStore(), adapter: operationAdapter, onRecord: value => { if (matches()) setRecord(value) },
+      })).finally(()=>lease!.requests.delete(coordinateAbort!))
       if (!matches()) return null
       readRecovery(); setRecord(result)
       if (result.phase === 'RETIRED' && retireExpired) { setSnapshot(null);setLoading(Boolean(scope&&address)); setRefreshIndex(value => value + 1) }
@@ -144,7 +156,7 @@ export function useNativeMarketBuyActions(scope: Scope) {
         try { readRecovery() } catch { /* Preserve the original failure and unknown packet. */ }
       }
       return null
-    } finally { lease!.setRunning(false); if (matches()) setBusy(false) }
+    } finally {if(coordinateAbort)lease!.requests.delete(coordinateAbort); lease!.setRunning(false); if (matches()) setBusy(false) }
   }
   async function checkHistory(digest: string): Promise<HistoryResult | null> {
     const lease=session.capture(),matches=()=>lease?.matches()===true
@@ -158,8 +170,39 @@ export function useNativeMarketBuyActions(scope: Scope) {
     } catch (cause) { if (matches()) setError(message(cause)); return null }
     finally { lease!.setRunning(false); if (matches()) setBusy(false) }
   }
+  async function checkFunds(digest: string) {
+    const lease = session.capture()
+    if (!lease?.matches() || lease.isRunning()) return
+    const selected = visibleRecord?.digest === digest ? visibleRecord : visibleHistory.find(row => row.digest === digest)
+    if (!selected || selected.phase === 'PREPARED' || selected.phase === 'CANCELLED') return
+    const controller = new AbortController()
+    lease.requests.add(controller)
+    lease.setRunning(true)
+    setBusy(true)
+    setFundsByDigest(previous => ({ ...previous, [digest]: { proof: previous[digest]?.proof } }))
+    try {
+      const grpc = (client as unknown as { grpc?: SuiGrpcClient }).grpc
+      if (!grpc) throw new Error('The verified gRPC wallet client is required')
+      const proof = await queryMarketBuyPurchaseFunds(selected, grpc, controller.signal)
+      if (lease.matches()) setFundsByDigest(previous => {
+        const saved = previous[digest]?.proof
+        const view = saved?.status === 'VERIFIED' && proof.status !== 'VERIFIED'
+          ? { proof: saved, error: `Latest query reported ${proof.status}. Earlier verified funds are shown below.` }
+          : { proof }
+        return { ...previous, [digest]: view }
+      })
+    } catch (cause) {
+      if (lease.matches()) setFundsByDigest(previous => ({
+        ...previous, [digest]: { proof: previous[digest]?.proof, error: message(cause) },
+      }))
+    } finally {
+      lease.requests.delete(controller)
+      lease.setRunning(false)
+      if (lease.matches()) setBusy(false)
+    }
+  }
   return { snapshot: visibleSnapshot, record: visibleRecord, confirmedResult: visibleConfirmed, history: visibleHistory,
-    historyResults, error, loading, busy, pending, needsRecovery, canStart,
+    historyResults, fundsByDigest, checkFunds, error, loading, busy, pending, needsRecovery, canStart,
     wallet: account ? { address: account.address } : null,
     refresh: () => { setError(null);setSnapshot(null);setLoading(Boolean(scope&&address)); setRefreshIndex(value => value + 1) }, checkHistory,
     start: () => run(true), resume: () => run(), check: () => run(false, true), cancelUnsigned: () => run(false, false, true),

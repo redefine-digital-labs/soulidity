@@ -1,7 +1,8 @@
 import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
-import { fromBase58, fromBase64, toBase64, toHex } from '@mysten/sui/utils'
+import { fromBase58, fromBase64, toBase58, toBase64, toHex } from '@mysten/sui/utils'
+import {blake2b} from '@noble/hashes/blake2.js'
 import { verifyTransactionSignature } from '@mysten/sui/verify'
 import { profileReadStep, SoulStatePublicBcs, addAssertGrantMutationSnapshotCalls,
   addAssertPaidMutationSnapshotCalls, addAssertPaidMarketSnapshotCalls, addIssueGrantCalls, addSetGrantCapacityCalls,
@@ -14,6 +15,8 @@ import { SOUL_ACCESS_MAX, SOUL_ACCESS_CLOCK, parseSoulAccessPlan, assertSoulAcce
   type SoulAccessQuery, type SoulAccessState } from './soul-access-plan'
 import { readSoulAccessState, readSoulAccessPaymentCoin, soulAccessSignal } from './soul-access-state'
 import { proveSoulAccessHistory } from './soul-access-history'
+import {queryNativePublicReadPaidRecordV2,type NativePublicReadPaidRecordV2} from './native-public-read-paid-journal-v2'
+import {readActivityCheckpointEvidence} from './activity-transaction-evidence'
 
 export * from './soul-access-plan'
 export * from './soul-access-state'
@@ -115,6 +118,9 @@ export interface SoulAccessAdapterParams {
 }
 export function createSoulAccessAdapter(params: SoulAccessAdapterParams) {
   const { client, getAddress, sign } = params
+  const ledger=client.ledgerService
+  const v2Client={ledgerService:{getServiceInfo:ledger.getServiceInfo?.bind(ledger),getTransaction:ledger.getTransaction?.bind(ledger),
+    getCheckpoint:ledger.getCheckpoint?.bind(ledger),getObject:ledger.getObject?.bind(ledger)}} as unknown as SuiGrpcClient
   async function chain(p: SoulAccessPlan, signal: AbortSignal) {
     const { chainIdentifier } = await profileReadStep(signal, () => client.core.getChainIdentifier()); digest(chainIdentifier)
     check(toHex(fromBase58(chainIdentifier).subarray(0, 4)) === p.deployment.chainIdentifier, 'WRONG_CHAIN')
@@ -162,6 +168,9 @@ export function createSoulAccessAdapter(params: SoulAccessAdapterParams) {
     await profileReadStep(soulAccessSignal(), () => verifyTransactionSignature(fromBase64(r.packet.bytes), r.packet.signature!, { address: r.plan.author, client }))
   }
   return {
+    async queryNativePublicReadPaid(input:NativePublicReadPaidRecordV2){
+      return queryNativePublicReadPaidRecordV2(input,v2Client,soulAccessSignal())
+    },
     async prepare(input: SoulAccessPlan): Promise<SoulAccessRecord> {
       const plan = parseSoulAccessPlan(input); await ready(plan, null, true)
       const signal = soulAccessSignal(), expirationEpoch = String(await epoch(signal) + 1n), tx = buildSoulAccessTransaction(plan)
@@ -194,7 +203,7 @@ export function createSoulAccessAdapter(params: SoulAccessAdapterParams) {
         readMask: { paths: ['digest', 'transaction.digest', 'transaction.bcs', 'effects.bcs', 'effects.transaction_digest', 'effects.status', 'checkpoint'] },
       }, { abort: signal }))).response }
       catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'NOT_FOUND') return { status: 'MISSING' }; throw error }
-      const value = response.transaction
+      const value = structuredClone(response.transaction)
       check(value?.digest === r.packet.digest && value.transaction?.digest === r.packet.digest && value.transaction.bcs?.value
         && toBase64(value.transaction.bcs.value) === r.packet.bytes && value.effects?.transactionDigest === r.packet.digest
         && value.effects.bcs?.value && value.effects.bcs.value.length > 0 && value.effects.bcs.value.length <= 256 * 1024, 'EVIDENCE_MISMATCH')
@@ -204,6 +213,13 @@ export function createSoulAccessAdapter(params: SoulAccessAdapterParams) {
       if (value.checkpoint === undefined) return { status: 'PENDING' }
       check(typeof value.checkpoint === 'bigint' && value.checkpoint >= 0n && value.checkpoint <= SOUL_ACCESS_MAX, 'CHECKPOINT_INVALID')
       const checkpoint = String(value.checkpoint)
+      // Terminal observations release cross-format payment exclusion. An RPC
+      // scalar alone cannot establish finality: authenticate original effects
+      // membership in the canonical checkpoint contents before either result.
+      const finality=await readActivityCheckpointEvidence({client,chainIdentifier:r.plan.deployment.chainIdentifier,checkpoint,signal})
+      const effectsDigest=toBase58(blake2b(new Uint8Array([...new TextEncoder().encode('TransactionEffects::'),...value.effects.bcs.value]),{dkLen:32}))
+      const members=finality.transactions.filter(row=>row.transactionDigest===r.packet.digest)
+      check(members.length===1&&members[0].effectsDigest===effectsDigest&&finality.epoch===e.executedEpoch,'CHECKPOINT_MEMBERSHIP')
       if (e.status.$kind === 'Failure') return { status: 'FAILED', checkpoint }
       const proof = await proveSoulAccessHistory({ record: r, effects, client, signal })
       signal.throwIfAborted(); return { status: 'SUCCEEDED', checkpoint, ...proof }

@@ -52,7 +52,7 @@ export function useWalletSign() {
 
   /** Signing-only path for durable operation controllers: never broadcast before
    * they have verified and persisted the exact wallet-returned signature. */
-  const signTransaction = useCallback(async (tx: Transaction) => {
+  const signTransaction = useCallback(async (tx: Transaction, options?: { retainReturnedSignature?: true }) => {
     const lease = session.capture()
     const guard = () => { if (!lease?.matches()) throw new Error('Wallet signing session changed') }
     guard()
@@ -61,7 +61,10 @@ export function useWalletSign() {
     if (tx.getData().sender && tx.getData().sender !== account.address) throw new Error('Prepared transaction belongs to another wallet')
     tx.setSenderIfNotSet(account.address)
     const result = await signTransactionMutation({ transaction: tx, account })
-    guard(); return result
+    // A durable operation can retain a late signature under its own lock.
+    // Its final lease check still governs dispatch.
+    if (!options?.retainReturnedSignature) guard()
+    return result
   }, [session, currentAccount, signTransactionMutation])
 
   const signAndExecute = useCallback(async (tx: Transaction): Promise<SuiTxResultWithEffects> => {

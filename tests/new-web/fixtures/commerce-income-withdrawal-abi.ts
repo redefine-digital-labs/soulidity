@@ -1,0 +1,4 @@
+export function incomeWithdrawalAbiFixture(callable:string,configOrigin:string,adminOrigin=configOrigin){
+ const t0={$kind:'typeParameter',index:0},data=(typeName:string,reference:'mutable'|'immutable'|null=null,typeParameters:any[]=[])=>({reference,body:{$kind:'datatype',datatype:{typeName,typeParameters}}}),primitive=($kind:string)=>({reference:null,body:{$kind}})
+ return {packageId:callable,moduleName:'economics',name:'withdraw_income',visibility:'public',isEntry:false,typeParameters:[{constraints:[],isPhantom:false}],returns:[],parameters:[data(`${configOrigin}::economics::Config`,'mutable',[t0]),data(`${adminOrigin}::economics::Admin`,'mutable'),primitive('u64'),primitive('u64'),primitive('address'),{reference:null,body:{$kind:'vector',vector:{$kind:'u8'}}},data('0x2::tx_context::TxContext','mutable')]} as any
+}

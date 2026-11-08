@@ -117,6 +117,14 @@ async function initialize(session: string, landed: string[] = [], index = 0) {
     g.unknownBroadcast = false; g.holdPreflight = false; g.preflightEntered = false; g.stopPreflight = false; g.epoch = 9n
     g.address = g.record.plan.author
     const sample = () => g.samples[g.selected]
+    g.randomValues ??= globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+    globalThis.crypto.getRandomValues = array => {
+      if (array instanceof Uint32Array && array.length === 1) {
+        array[0] = sample().nonce
+        return array
+      }
+      return g.randomValues(array)
+    }
     g.client = {
       core: {
         getChainIdentifier: async () => ({ chainIdentifier: input.genesis }),
@@ -198,15 +206,17 @@ async function initialize(session: string, landed: string[] = [], index = 0) {
 
 beforeAll(async () => {
   const samples: any[] = []
-  for (const options of [{ price: '1000001' }, { price: '1000002' }, { newKiosk: true, price: '1000001' }]) {
-    const f = await collectionBuyFixture(options), prepared = await f.adapter.prepare(f.plan)
-  await checkSetup()
-    expect(prepared.packet.bytes).toBe(f.record.packet.bytes); parseCollectionBuyRecord(f.record)
+  for (const options of [{ price: '1000001' }, { price: '1000002' }, { newKiosk: true, price: '1000001', addressGas: true }]) {
+    const f = await collectionBuyFixture({ ...options, boundedGas: true })
+    await checkSetup()
+    const { packet } = parseCollectionBuyRecord(f.record)
+    const prepared = { ...f.record, packet: { ...packet, phase: 'PREPARED', signature: null } }
+    const nonce = bcs.TransactionData.parse(fromBase64(packet.bytes)).V1!.expiration.ValidDuring!.nonce
     const current = f.plan.objects.map(row => {
       const value = f.rows.get(`${row.objectId}:${row.version}`)
       expect(value, 'Fixture must retain every exact prepared object version').toBeTruthy(); return value
     })
-    samples.push({ prepared, signed: f.record, ledger: await f.client.ledgerService.getTransaction(), checkpoint: f.evidence.checkpoint,
+    samples.push({ prepared, signed: f.record, nonce, ledger: await f.client.ledgerService.getTransaction(), checkpoint: f.evidence.checkpoint,
       rows: [...f.rows.values()], current })
   }
   payload = wire({ samples, genesis: MAINNET_GENESIS_DIGEST,

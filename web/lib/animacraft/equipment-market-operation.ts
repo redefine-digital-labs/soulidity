@@ -10,6 +10,7 @@ import {readNativeReceiveTarget} from './native-receive'
 import {validateListingTransactionBytes} from './listing-transaction-validation'
 import {validateMarketCancelCheckpoint} from './market-cancel-checkpoint'
 import {EquipmentMarketQuoteCommitmentBcs} from './native-equipment-market-bcs'
+import {MAINNET_GENESIS_DIGEST} from './mainnet-chain'
 import type {EquipmentMarketOperationSnapshot,EquipmentMarketOperationRecord} from './equipment-market-operation-types'
 export type {EquipmentMarketOperationSnapshot,EquipmentMarketOperationRecord,EquipmentMarketAction} from './equipment-market-operation-types'
 
@@ -223,7 +224,7 @@ export function validateEquipmentMarketOperationRecord(value:unknown):EquipmentM
     check(balance>=BigInt(r.priceAtomic)&&balance<=18446744073709551615n,'Equipment payment balance outside exact bounds')
   }
   const expected=buildEquipmentMarketOperationTransaction(r),roles=equipmentMarketInputRoles(r)
-  validateListingTransactionBytes(r,{owner:s.actor,expected,...roles,forbidden})
+  validateListingTransactionBytes(r,{owner:s.actor,expected,...roles,forbidden,gasGenesis:MAINNET_GENESIS_DIGEST})
   // Unlike a mutable shared object's initial version, selected owned/payment
   // versions and digests must be exactly those authenticated before preparation.
   const inputs=Transaction.from(fromBase64(r.bytes)).getData().inputs

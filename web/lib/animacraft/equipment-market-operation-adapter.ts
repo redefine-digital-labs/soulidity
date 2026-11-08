@@ -11,6 +11,8 @@ import {validateEquipmentMarketSnapshot,validateEquipmentMarketOperationRecord,b
 import {queryEquipmentMarketOperationEvidence} from './equipment-market-operation-evidence'
 import type {EquipmentMarketReadRequest} from './equipment-market-operation-snapshot'
 import type {EquipmentMarketOperationAdapter} from './equipment-market-operation-store'
+import {setTransactionGasWindow,simulateExactAddressGas} from '../sui/transaction-gas-window'
+import {equipmentMarketGasPacket} from './equipment-market-gas'
 
 const TIMEOUT_MS=25_000
 async function bounded<T>(work:(signal:AbortSignal)=>PromiseLike<T>,timeoutMs=TIMEOUT_MS):Promise<T>{
@@ -59,6 +61,11 @@ export function createEquipmentMarketOperationAdapter(params:{client:SuiGrpcClie
   function writable(s:EquipmentMarketOperationSnapshot,intent:EquipmentMarketAction){
     check(equipmentMarketWritable(s,intent,getAddress()),'Equipment action unavailable, signing disabled or wallet changed')
   }
+  async function simulateAddressGas(r:EquipmentMarketOperationRecord){
+    const {window}=equipmentMarketGasPacket(r)
+    if(!window.addressGas)return
+    check(await bounded(signal=>simulateExactAddressGas(client,r.bytes,signal)),'Exact equipment address-gas simulation failed')
+  }
   return {
     async prepare(){
       check(observed&&action&&['list','buy','reprice','cancel','recover'].includes(action),'Review the exact equipment action first')
@@ -67,7 +74,6 @@ export function createEquipmentMarketOperationAdapter(params:{client:SuiGrpcClie
       check(typeof exactPrice==='string'&&/^(0|[1-9][0-9]{0,19})$/.test(exactPrice)
         &&BigInt(exactPrice)>=40n&&BigInt(exactPrice)<=18446744073709551615n,'Exact equipment price required')
       const paymentCoins=action==='buy'?await selectMarketPaymentCoins(client,{...paymentScope(current),priceAtomic:exactPrice}):[]
-      const expirationEpoch=String(await epoch()+1n)
       const draft={schema:1 as const,kind:'equipment-market' as const,action,snapshot:current,priceAtomic:exactPrice,paymentCoins}
       const data=buildEquipmentMarketOperationTransaction(draft).getData()
       const refs=[...paymentCoins,...(action==='list'?[current.reference]:[])]
@@ -75,11 +81,13 @@ export function createEquipmentMarketOperationAdapter(params:{client:SuiGrpcClie
         const ref=refs.find(r=>r.objectId===input.UnresolvedObject?.objectId)
         return ref?Inputs.ObjectRef({objectId:ref.objectId,version:ref.version,digest:ref.digest}):input
       })
-      const tx=Transaction.from(JSON.stringify(data));tx.setSender(current.actor);tx.setExpiration({Epoch:expirationEpoch})
+      const tx=Transaction.from(JSON.stringify(data));tx.setSender(current.actor)
+      const expirationEpoch=setTransactionGasWindow(tx,MAINNET_GENESIS_DIGEST,await epoch())
       const bytes=await bounded(()=>tx.build({client}))
       const record=validateEquipmentMarketOperationRecord({...draft,bytes:toBase64(bytes),digest:TransactionDataBuilder.getDigestFromBytes(bytes),
         expirationEpoch,phase:'PREPARED',signature:null})
       if(action==='buy')await recheckMarketPaymentCoins(client,paymentScope(current),paymentCoins)
+      await simulateAddressGas(record)
       check(getAddress()===current.actor,'Wallet changed while preparing equipment action')
       return record
     },
@@ -88,7 +96,9 @@ export function createEquipmentMarketOperationAdapter(params:{client:SuiGrpcClie
       check(['PREPARED','SIGNING','SIGNED'].includes(r.phase),'Terminal equipment operation cannot sign or rebroadcast')
       const current=await fresh(r.snapshot);same(current,r.snapshot,r.action);writable(current,r.action)
       if(r.action==='buy')await recheckMarketPaymentCoins(client,paymentScope(current),r.paymentCoins)
-      check(await epoch()<=BigInt(r.expirationEpoch),'Saved equipment operation expired; query or retire without rebuilding it')
+      const {window}=equipmentMarketGasPacket(r),now=await epoch()
+      check(now>=BigInt(window.min)&&now<=BigInt(window.max),'Saved equipment operation outside its epoch window or expired; query the original')
+      await simulateAddressGas(r)
       check(getAddress()===r.snapshot.actor,'Wallet changed during equipment preflight')
     },
     async sign(value){

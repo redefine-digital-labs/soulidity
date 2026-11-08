@@ -1,6 +1,7 @@
 import {bcs} from '@mysten/sui/bcs'
 import {Transaction,TransactionDataBuilder} from '@mysten/sui/transactions'
 import {fromBase58,toBase58,fromBase64,toBase64} from '@mysten/sui/utils'
+import {readTransactionGasWindow} from '../sui/transaction-gas-window'
 
 function check(value:unknown,message:string):asserts value {if(!value)throw new Error(message)}
 const positive=(v:unknown)=>typeof v==='string'&&/^[1-9][0-9]{0,19}$/.test(v)&&BigInt(v)<=18446744073709551615n
@@ -10,15 +11,18 @@ const digest=(v:unknown)=>{try{return typeof v==='string'&&v.length<=44&&fromBas
 /** The entire PTB must equal the authenticated plan. Shared objects are deduped
  * by the SDK; no extra commands, pure values, object inputs or asset gas allowed. */
 export function validateListingTransactionBytes(value:{bytes:string;digest:string;expirationEpoch:string},params:{
-  owner:string;expected:Transaction;owned:Set<string>;mutable:Set<string>;forbidden:Iterable<string>
+  owner:string;expected:Transaction;owned:Set<string>;mutable:Set<string>;forbidden:Iterable<string>;gasGenesis?:string
 }) {
   check(typeof value.bytes==='string'&&value.bytes.length>0&&value.bytes.length<=180000&&digest(value.digest),'Invalid native listing bytes')
   const bytes=fromBase64(value.bytes),data=bcs.TransactionData.parse(bytes)
   check(toBase64(bytes)===value.bytes&&toBase64(bcs.TransactionData.serialize(data).toBytes())===value.bytes
     &&TransactionDataBuilder.getDigestFromBytes(bytes)===value.digest,'Listing bytes/digest mismatch')
   const tx=Transaction.from(bytes).getData(),expected=params.expected.getData()
+  const window=params.gasGenesis===undefined
+    ?tx.gasData.payment?.length&&String(data.V1?.expiration.Epoch)===value.expirationEpoch
+    :readTransactionGasWindow(tx,params.gasGenesis,value.expirationEpoch)
   check(tx.sender===params.owner&&tx.gasData.owner===params.owner&&positive(tx.gasData.budget)&&positive(tx.gasData.price)
-    &&tx.gasData.payment?.length&&String(data.V1?.expiration.Epoch)===value.expirationEpoch,'Listing sender/gas/expiration mismatch')
+    &&window,'Listing sender/gas/expiration mismatch')
   const commandBytes=(commands:typeof tx.commands)=>toBase64(bcs.vector(bcs.Command).serialize(commands.map(command=>{
     check(command.$kind!=='$Intent','Unresolved listing command is forbidden');return command
   })).toBytes())

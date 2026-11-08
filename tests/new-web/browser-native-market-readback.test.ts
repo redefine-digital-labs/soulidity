@@ -19,6 +19,16 @@ it('confirms a newly created buyer Kiosk without any backend or wallet', async (
   f.effects.V2.changedObjects = f.effects.V2.changedObjects.filter(([id]: any) => id !== f.kioskId)
   f.refreshEffects(); await expect(f.confirm()).rejects.toThrow()
 })
+it('confirms an address-funded original Soul reached the buyer Kiosk after a cold restart',async()=>{
+  const {marketBuyPurchaseFundsFixture}=await import('./fixtures/market-buy-purchase-funds')
+  const {readBrowserNativeMarketBuyHandoff}=await import('../../web/lib/animacraft/browser-native-market-readback')
+  const f=await marketBuyPurchaseFundsFixture({handoff:true,addressGas:true}),settlement=await f.run()
+  expect(settlement.status).toBe('VERIFIED')
+  if(settlement.status!=='VERIFIED')throw Error('Controlled settlement unavailable')
+  const result=await readBrowserNativeMarketBuyHandoff({file:settlement.portableOriginal,soulId:f.s.soulId,
+    settlement:settlement.checkpointProof,target:f.handoff!.target,client:f.client,signal:new AbortController().signal})
+  expect(result).toMatchObject({soulId:f.s.soulId,originalBuyer:f.s.buyer,checkpoint:'100',status:'COMPLETE'})
+})
 it.each(['missing-effect', 'effect-parent', 'not-created', 'missing-history', 'history-digest', 'history-parent', 'history-key', 'history-value', 'direct-kiosk'] as const)(
   'rejects purchase wrapper %s even with valid current custody', async problem => {
     const f = await fixture('buy'), fieldId = deriveKioskItemFieldId(f.kioskId, lid(12)), row = f.history.get(fieldId)
@@ -300,4 +310,33 @@ it('rejects final immutable binding same-reference byte drift', async () => {
     return implementation(request, options)
   }) as any)
   await expect(f.confirm()).rejects.toThrow('changed during readback')
+})
+
+it.each(['checkpoint', 'checkpoint-digest', 'effects', 'object', 'release'] as const)('cold handoff rejects mismatched %s independently of funds', async mode => {
+  const { marketBuyPurchaseFundsFixture } = await import('./fixtures/market-buy-purchase-funds')
+  const { createMarketBuyFundsOriginal } = await import('../../web/lib/animacraft/market-buy-funds-original')
+  const { readBrowserNativeMarketBuyHandoff } = await import('../../web/lib/animacraft/browser-native-market-readback')
+  const x = await marketBuyPurchaseFundsFixture({ handoff: true })
+  const settlement = await x.run()
+  expect(settlement.status).toBe('VERIFIED')
+  if (settlement.status !== 'VERIFIED') throw Error('Controlled settlement unavailable')
+  const target = structuredClone(x.handoff!.target), previous = structuredClone(settlement.checkpointProof)
+  if (mode === 'checkpoint') previous.checkpoint = '101'
+  if (mode === 'checkpoint-digest') {
+    x.chain.summaryData.timestamp_ms = '1789464703687'
+    x.chain.rehashSummary()
+  }
+  if (mode === 'effects') {
+    const entry = x.chain.contentsData.V2!.transactions[1].digest
+    entry.effects = x.handoff!.digest()
+    x.chain.rehashContents()
+  }
+  if (mode === 'object') x.latest.get(x.s.stateId)!.contents = { value: new Uint8Array([1]) }
+  if (mode === 'release') target.protocolConfigId = lid(99)
+  const check = readBrowserNativeMarketBuyHandoff({ file: createMarketBuyFundsOriginal(x.record), soulId: x.s.soulId,
+    settlement: previous, target, client: x.client, signal: new AbortController().signal })
+  await expect(check).rejects.toThrow({
+    checkpoint: 'Original checkout checkpoint changed', 'checkpoint-digest': 'Original checkout checkpoint proof changed', effects: 'Native purchase effects missing from original checkpoint',
+    object: 'Soul custody object projection mismatch', release: 'Captured release mismatch',
+  }[mode])
 })

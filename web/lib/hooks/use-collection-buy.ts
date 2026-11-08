@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useCommittedSession, useSessionState } from './use-committed-session'
 import { useCurrentAccount, useCurrentWallet, useSignTransaction, useSuiClient } from '@mysten/dapp-kit'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
-import { getKioskPackageAddress, getRequiredSoulidityEnv, readCollectionPublicRoot } from '@soulidity/sdk'
+import { getKioskPackageAddress, getRequiredSoulidityEnv, readCollectionRightCustody } from '@soulidity/sdk'
 import { getCollectionCommandTarget, type CollectionCommandSubject } from './use-collection-commands'
 import { same } from '../collections/collection-command-plan'
 import { publicMutationCanonical } from '../sui/public-mutation-journal'
@@ -61,11 +61,12 @@ export function useCollectionBuy(subject: CollectionCommandSubject, onSuccess: (
     const p = record.plan
     try {
       const d = p.target
-      const c = await readCollectionPublicRoot({ client: grpc!, deployment: { originalPackageId: d.originalPackageId,
+      const custody = await readCollectionRightCustody({ client: grpc!, deployment: { originalPackageId: d.originalPackageId,
         chainIdentifier: d.chainIdentifier, marketConfigId: d.marketConfigId, paymentCoinType: d.paymentCoinType,
-        kioskRegistryId: d.kioskRegistryId, personalKioskTypePackageId: d.personalKioskTypePackageId }, collectionId: p.request.collectionId, signal })
-      guard(); publish({ currentObservation: c.collection.current_holder === p.author
-        ? 'Current Collection holder is the purchasing wallet.' : 'Current custody has changed since the confirmed purchase.' })
+        kioskRegistryId: d.kioskRegistryId, personalKioskTypePackageId: d.personalKioskTypePackageId },
+        collectionId: p.request.collectionId, rightId: p.rightId, signal })
+      guard(); publish({ currentObservation: custody.holderAddress === p.author
+        ? 'The purchasing wallet currently holds the Collection Right.' : 'Current custody has changed since the confirmed purchase.' })
     } catch { if (matches() && !signal.aborted) publish({ currentObservation: 'Current custody could not be refreshed. Historical purchase confirmation is unchanged.' }) }
   }
   async function exclusive<T>(work: (signal: AbortSignal, guard: () => void) => Promise<T>, requiresWallet = true, announce = true) {

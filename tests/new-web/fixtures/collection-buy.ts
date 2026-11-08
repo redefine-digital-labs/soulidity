@@ -14,7 +14,7 @@ import { prepareCollectionBuyPlan } from '../../../web/lib/collections/collectio
 import { buildCollectionBuyTransaction, createCollectionBuyAdapter } from '../../../web/lib/collections/collection-buy-operation'
 import { CollectionBuyPurchasedBcs, CollectionBuyRegistrationEventBcs } from '../../../web/lib/collections/collection-buy-history'
 import { ActivityFixtureEventsBcs } from './activity-transaction-evidence'
-import { collectionCommandFixture, cid } from './collection-command'
+import { addressGasEffect, addressGasWindow, collectionCommandFixture, cid } from './collection-command'
 
 export { cid }
 type Codec = { parse(bytes: Uint8Array): any; serialize(value: any): { toBytes(): Uint8Array } }
@@ -24,7 +24,7 @@ const shared = { Shared: { initialSharedVersion: '1' } }
 /** Controlled ledger with real full Object/transaction/effects/checkpoint BCS,
  * real SDK-built PTBs and signatures. This fixture does not execute the VM. */
 export async function collectionBuyFixture(options: { newKiosk?: boolean; feeBps?: number; price?: string;
-  paymentBalances?: string[]; gasBalances?: string[]; sellerLocked?: boolean; feeRecipientSeller?: boolean } = {}) {
+  paymentBalances?: string[]; gasBalances?: string[]; addressGas?: boolean; boundedGas?: boolean; sellerLocked?: boolean; feeRecipientSeller?: boolean } = {}) {
   const f = await collectionCommandFixture('delist'), { current, rows, objects } = f
   const signer = Ed25519Keypair.fromSecretKey(new Uint8Array(32).fill(53)), author = signer.toSuiAddress()
   const target = { ...f.target, kioskPackageId: cid(1001), collectionTransferPolicyId: cid(1002) }, types = collectionBuyTypes(target)
@@ -78,7 +78,7 @@ export async function collectionBuyFixture(options: { newKiosk?: boolean; feeBps
   })
   const balances = options.paymentBalances ?? ['900000', '200000'], paymentCoinObjectIds = balances.map((_, index) => cid(1300 + index))
   balances.forEach((balance, index) => full(paymentCoinObjectIds[index], types.coin, Coin, { id: paymentCoinObjectIds[index], balance }, { AddressOwner: author }))
-  const gasBalances = options.gasBalances ?? ['10000000'], gasRows = gasBalances.map((balance, index) => {
+  const gasBalances = options.addressGas ? [] : options.gasBalances ?? ['10000000'], gasRows = gasBalances.map((balance, index) => {
     const objectId = cid(900 + index)
     return full(objectId, '0x2::coin::Coin<0x2::sui::SUI>', Coin, { id: objectId, balance }, { AddressOwner: author })
   })
@@ -92,7 +92,8 @@ export async function collectionBuyFixture(options: { newKiosk?: boolean; feeBps
   const params = { client: client as never, target, author, request: { collectionId: c.id, listingId: listing.id }, paymentCoinObjectIds }
   const plan = await prepareCollectionBuyPlan(params)
   async function packet(mutate?: (data: TransactionDataBuilder) => void): Promise<CollectionBuyRecord> {
-    const tx = buildCollectionBuyTransaction(plan); tx.setSender(author); tx.setExpiration({ Epoch: '10' })
+    const tx = buildCollectionBuyTransaction(plan); tx.setSender(author)
+    tx.setExpiration(options.addressGas || options.boundedGas ? { ValidDuring: addressGasWindow } : { Epoch: '10' })
     const bytes = await tx.build({ client: client as never }), data = new TransactionDataBuilder(Transaction.from(bytes).getData()); mutate?.(data)
     const exact = data.build(), signed = await signer.signTransaction(exact)
     return { schema: 'soulidity.collection-buy.v1', plan: structuredClone(plan), packet: { bytes: toBase64(exact), digest: TransactionDataBuilder.getDigestFromBytes(exact), expirationEpoch: '10', phase: 'SIGNED', signature: signed.signature } }
@@ -101,7 +102,7 @@ export async function collectionBuyFixture(options: { newKiosk?: boolean; feeBps
   evidence.transactionData.V1 = bcs.TransactionData.parse(fromBase64(record.packet.bytes)).V1
   const effects = bcs.TransactionEffects.parse(bcs.TransactionEffects.serialize({ V2: { status: { Success: true }, executedEpoch: '9',
     gasUsed: { computationCost: '1', storageCost: '0', storageRebate: '0', nonRefundableStorageFee: '0' }, transactionDigest: record.packet.digest,
-    gasObjectIndex: 0, eventsDigest: null, dependencies: [], lamportVersion: '12', changedObjects: [], unchangedConsensusObjects: [], auxDataDigest: null } }).toBytes())
+    gasObjectIndex: options.addressGas ? null : 0, eventsDigest: null, dependencies: [], lamportVersion: '12', changedObjects: [], unchangedConsensusObjects: [], auxDataDigest: null } }).toBytes())
   function transition(objectId: string, type: string, codec: Codec, before: any | null, after: any | null, owner: Owner, readonly = false, afterOwner?: Owner) {
     const input = before === null ? null : full(objectId, type, codec, before, owner)
     if (readonly) { effects.V2!.unchangedConsensusObjects.push([objectId, { $kind: 'ReadOnlyRoot', ReadOnlyRoot: ['11', input!.digest] }]); return }
@@ -112,6 +113,7 @@ export async function collectionBuyFixture(options: { newKiosk?: boolean; feeBps
       outputState: output ? { $kind: 'ObjectWrite', ObjectWrite: [output.digest, ownerOf(output)] } : { $kind: 'NotExist', NotExist: true },
       idOperation: !output ? { $kind: 'Deleted', Deleted: true } : !input ? { $kind: 'Created', Created: true } : { $kind: 'None', None: true } }])
   }
+  if (options.addressGas) effects.V2!.changedObjects.push(addressGasEffect(author))
   const totalGas = gasBalances.reduce((sum, balance) => sum + BigInt(balance), 0n)
   gasRows.forEach((row, index) => transition(row.objectId, '0x2::coin::Coin<0x2::sui::SUI>', Coin, { id: row.objectId, balance: gasBalances[index] },
     index === 0 ? { id: row.objectId, balance: String(totalGas - 1n) } : null, { AddressOwner: author }))

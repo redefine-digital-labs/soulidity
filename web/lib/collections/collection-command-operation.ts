@@ -9,6 +9,7 @@ import { check, id, uint, digest, exact, same, decode, freeze, parseCollectionCo
   collectionCommandHash, COLLECTION_COMMAND_MAX, type CollectionCommandPlan, type CollectionCommandRecord, type CollectionCommandQuery } from './collection-command-plan'
 import { assertCollectionCommandCurrent, collectionCommandSignal, collectionCommandChain } from './collection-command-state'
 import { proveCollectionCommandHistory } from './collection-command-history'
+import { readCollectionGasWindow, setCollectionGasWindow } from './collection-command-gas'
 
 export function buildCollectionCommandTransaction(input: CollectionCommandPlan) {
   const p = parseCollectionCommandPlan(input), tx = new Transaction(), pkg = p.target.callablePackageId
@@ -39,8 +40,9 @@ export function parseCollectionCommandRecord(input: unknown): CollectionCommandR
   check(typeof packet.bytes === 'string' && packet.bytes.length > 0 && packet.bytes.length <= 180000, 'PACKET_BUDGET')
   const bytes = fromBase64(packet.bytes), raw = decode(bcs.TransactionData, bytes), data = Transaction.from(bytes).getData()
   check(toBase64(bytes) === packet.bytes && TransactionDataBuilder.getDigestFromBytes(bytes) === packet.digest, 'PACKET_DIGEST')
-  check(raw.V1 && data.sender === p.author && data.gasData.owner === p.author && String(raw.V1.expiration.Epoch) === packet.expirationEpoch, 'PACKET_AUTHORITY')
+  check(raw.V1 && data.sender === p.author && data.gasData.owner === p.author, 'PACKET_AUTHORITY')
   uint(data.gasData.price, true); uint(data.gasData.budget, true)
+  readCollectionGasWindow(data, packet.expirationEpoch, p.target.chainIdentifier)
   const template = buildCollectionCommandTransaction(p).getData()
   const commands = (rows: typeof data.commands) => rows.map(row => {
     check(row.$kind === 'MoveCall', 'UNEXPECTED_COMMAND')
@@ -59,7 +61,7 @@ export function parseCollectionCommandRecord(input: unknown): CollectionCommandR
     check(birth && same(actual.Object?.SharedObject, { objectId, initialSharedVersion: birth, mutable }), 'SHARED_REFERENCE_CHANGED')
   })
   const gas = data.gasData.payment
-  check(gas && gas.length > 0 && gas.length <= 256 && new Set(gas.map(row => row.objectId)).size === gas.length, 'GAS_REQUIRED')
+  check(gas && new Set(gas.map(row => row.objectId)).size === gas.length, 'GAS_REQUIRED')
   gas.forEach(row => { id(row.objectId); uint(row.version, true); digest(row.digest); check(!objectIds.has(row.objectId) && !p.absentIds.includes(row.objectId), 'GAS_ALIAS') })
   return freeze(r)
 }
@@ -83,13 +85,18 @@ export function createCollectionCommandAdapter(params: {
     check(typeof value === 'bigint' && value >= 0n && value < COLLECTION_COMMAND_MAX, 'EPOCH_UNAVAILABLE'); return value
   }
   async function ready(p: CollectionCommandPlan, packet: CollectionCommandRecord['packet'] | null, signing: boolean) {
-    const signal = collectionCommandSignal(); wallet(p); await collectionCommandChain(client, p.target, signal)
+    const signal = collectionCommandSignal(); wallet(p)
+    const genesis = await collectionCommandChain(client, p.target, signal)
     if (params.preflight) await profileReadStep(signal, () => params.preflight!(p, signing))
     if (params.read) await profileReadStep(signal, () => params.read!(p, signal))
     else await assertCollectionCommandCurrent({ client, plan: p, signal })
-    if (packet) { const now = await epoch(signal), expires = BigInt(packet.expirationEpoch)
-      check(now <= expires && expires <= now + 1n, 'EXPIRED_QUERY_ONLY') }
+    if (packet) {
+      const now = await epoch(signal), data = Transaction.from(fromBase64(packet.bytes)).getData()
+      const { min, max } = readCollectionGasWindow(data, packet.expirationEpoch, p.target.chainIdentifier, genesis)
+      check(min <= now && now <= max && max <= now + 1n, 'EXPIRED_QUERY_ONLY')
+    }
     wallet(p)
+    return genesis
   }
   async function simulate(r: CollectionCommandRecord) {
     const signal = collectionCommandSignal(), bytes = fromBase64(r.packet.bytes), tx = Transaction.from(bytes).getData()
@@ -108,9 +115,10 @@ export function createCollectionCommandAdapter(params: {
   }
   return {
     async prepare(input) {
-      const plan = parseCollectionCommandPlan(input); await ready(plan, null, true)
-      const signal = collectionCommandSignal(), expirationEpoch = String(await epoch(signal) + 1n), tx = buildCollectionCommandTransaction(plan)
-      tx.setSender(plan.author); tx.setExpiration({ Epoch: expirationEpoch })
+      const plan = parseCollectionCommandPlan(input), genesis = await ready(plan, null, true)
+      const signal = collectionCommandSignal(), tx = buildCollectionCommandTransaction(plan)
+      tx.setSender(plan.author)
+      const expirationEpoch = setCollectionGasWindow(tx, genesis, await epoch(signal))
       const bytes = await profileReadStep(signal, () => tx.build({ client })); wallet(plan)
       const record = parseCollectionCommandRecord({ schema: 'soulidity.collection-command.v1', plan,
         packet: { bytes: toBase64(bytes), digest: TransactionDataBuilder.getDigestFromBytes(bytes), expirationEpoch, phase: 'PREPARED', signature: null } })
@@ -133,7 +141,10 @@ export function createCollectionCommandAdapter(params: {
       await profileReadStep(collectionCommandSignal(), () => client.core.executeTransaction({ transaction: fromBase64(r.packet.bytes), signatures: [r.packet.signature!] }))
     },
     async query(input) {
-      const r = parseCollectionCommandRecord(input), signal = collectionCommandSignal(); await collectionCommandChain(client, r.plan.target, signal)
+      const r = parseCollectionCommandRecord(input), signal = collectionCommandSignal()
+      const genesis = await collectionCommandChain(client, r.plan.target, signal)
+      const data = Transaction.from(fromBase64(r.packet.bytes)).getData()
+      const { min, max } = readCollectionGasWindow(data, r.packet.expirationEpoch, r.plan.target.chainIdentifier, genesis)
       let response
       try { response = (await profileReadStep(signal, () => client.ledgerService.getTransaction({ digest: r.packet.digest,
         readMask: { paths: ['digest', 'transaction.digest', 'transaction.bcs', 'effects.bcs', 'effects.transaction_digest', 'effects.status', 'events.bcs', 'checkpoint'] },
@@ -147,7 +158,7 @@ export function createCollectionCommandAdapter(params: {
         && value.effects.bcs?.value && value.effects.bcs.value.length > 0 && value.effects.bcs.value.length <= 1024 * 1024, 'TRANSACTION_EVIDENCE')
       const effects = decode(bcs.TransactionEffects, value.effects.bcs.value), e = effects.V2
       check(e && e.transactionDigest === r.packet.digest && ['Success', 'Failure'].includes(e.status.$kind)
-        && value.effects.status?.success === (e.status.$kind === 'Success') && BigInt(e.executedEpoch) <= BigInt(r.packet.expirationEpoch), 'EFFECTS_STATUS')
+        && value.effects.status?.success === (e.status.$kind === 'Success') && BigInt(e.executedEpoch) >= min && BigInt(e.executedEpoch) <= max, 'EFFECTS_STATUS')
       if (value.checkpoint === undefined) return { status: 'PENDING' }
       uint(String(value.checkpoint)); const checkpoint = String(value.checkpoint)
       const evidence = await readActivityCheckpointEvidence({ client, chainIdentifier: r.plan.target.chainIdentifier, checkpoint, signal })

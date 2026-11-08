@@ -23,7 +23,7 @@ beforeEach(()=>{
     quote:{priceAtomic:'9000000',totalAtomic:'9900000'},listedPriceAtomic:'9000000',collectionOnChainId:null}
   const snapshot={soulId:id(12),stateId:id(14),seller:id(51),buyer:id(52),priceAtomic:'1000000',
     soulCreatorRoyaltyBps:500,makerSourceRoyaltyBps:200,purchaseAvailable:true,release:{writesEnabled:true}}
-  m.purchase={status:'idle',error:null,txDigest:null,purchase:vi.fn(),native:{snapshot,record:null,history:[],historyResults:{},
+  m.purchase={status:'idle',error:null,txDigest:null,purchase:vi.fn(),native:{snapshot,record:null,history:[],historyResults:{},fundsByDigest:{},checkFunds:vi.fn(),
     error:null,loading:false,busy:false,pending:false,needsRecovery:false,canStart:true,refresh:vi.fn(),
     check:vi.fn(),resume:vi.fn(),cancelUnsigned:vi.fn(),retireExpired:vi.fn(),checkHistory:vi.fn()}}
   host=document.createElement('div');document.body.appendChild(host);root=createRoot(host)
@@ -108,4 +108,42 @@ it.each(['unavailable','missing-listing','missing-quote'])('ordinary checkout re
 })
 it('does not open a purchase before the authenticated checkout gate',async()=>{
   m.user=null;await render();expect(host.textContent).toContain('Sign in to purchase');expect(buyButton()).toBeUndefined()
+})
+
+
+it('offers read-only original funds verification after a later ownership change',async()=>{
+  const n=m.purchase.native
+  m.purchase.status='superseded'
+  n.record={phase:'SUCCEEDED',digest:'original-checkout',syncStatus:'SUPERSEDED',snapshot:{priceAtomic:'1000000'}}
+  n.fundsByDigest['original-checkout']={proof:{status:'VERIFIED',checkpoint:'100',buyerDebit:'1000000',
+    buyerChangeCoinId:id(50),shares:[{role:'service',amount:'25000',owner:id(73)}],
+    payouts:[{roles:['service'],amount:'25000',coinIds:[id(213)]}],gas:{netGasCharge:'3'}}}
+  await render()
+  const settlement=host.querySelector('[aria-label="Verified original USDC settlement"]')!
+  expect(settlement.textContent).toContain('Original buyer debit 1000000 USDC atomic units')
+  expect(settlement.textContent).toContain('Service fee')
+  expect(settlement.textContent).toContain('Original SUI Gas 3 MIST')
+  await act(async()=>button('Verify original purchase funds').click())
+  expect(n.checkFunds).toHaveBeenCalledWith('original-checkout')
+  expect(n.resume).not.toHaveBeenCalled()
+  expect(m.purchase.purchase).not.toHaveBeenCalled()
+  expect(host.textContent).toContain('Its current state was preserved')
+})
+
+it('downloads only public checkout evidence for a recipient to import after verification',async()=>{
+  const {marketBuyFixture}=await import('./fixtures/market-buy-operation')
+  const {createMarketBuyFundsOriginal}=await import('../../web/lib/animacraft/market-buy-funds-original')
+  const x=await marketBuyFixture()
+  const saved={...x.record,phase:'SUCCEEDED' as const,syncStatus:'COMPLETE' as const,signature:'private-signed-state'}
+  const n=m.purchase.native
+  n.record=saved;m.purchase.status='done'
+  n.fundsByDigest[saved.digest]={proof:{status:'VERIFIED',transactionDigest:saved.digest,checkpoint:'100',
+    buyerDebit:'1000000',buyerChangeCoinId:id(50),shares:[],payouts:[],gas:null,portableOriginal:createMarketBuyFundsOriginal(saved)}}
+  await render()
+  const download=host.querySelector('a[download]')!
+  expect(download.getAttribute('download')).toBe(`soul-payout-${saved.digest}.json`)
+  const text=decodeURIComponent(download.getAttribute('href')!.split(',')[1])
+  expect(JSON.parse(text).packet).toMatchObject({bytes:saved.bytes,digest:saved.digest})
+  expect(text).not.toMatch(/private-signed-state|signature|phase|syncStatus/)
+  expect(host.querySelector(`a[href="/souls/${x.snapshot.soulId}/purchase/recovery"]`)).not.toBeNull()
 })

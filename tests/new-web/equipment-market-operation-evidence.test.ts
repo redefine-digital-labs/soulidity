@@ -1,8 +1,37 @@
 import {expect,it} from 'vitest'
+import {bcs} from '@mysten/sui/bcs'
 import {queryEquipmentMarketOperationEvidence} from '../../web/lib/animacraft/equipment-market-operation-evidence'
-import {equipmentMarketEvidenceFixture as fixture} from './fixtures/equipment-market-evidence'
+import {equipAddressGasEvidence,equipmentMarketEvidenceFixture as fixture,linkEquipmentOriginalCheckpoint} from './fixtures/equipment-market-evidence'
 
 const id=(n:number)=>`0x${n.toString(16).padStart(64,'0')}`
+it.each(['list','reprice','buy','cancel','recover'] as const)('proves exact address gas and checkpoint on original %s',async action=>{
+  const f=await equipAddressGasEvidence(await fixture(action,'external'))
+  await expect(queryEquipmentMarketOperationEvidence(f.record,f.client)).resolves.toMatchObject({
+    status:'SUCCEEDED',checkpoint:'20',receipt:{action,assetId:f.record.snapshot.asset.itemId},
+    addressGas:{owner:f.record.snapshot.actor,netGasCharge:'1'},
+  })
+  expect(f.client.ledgerService.getCheckpoint).toHaveBeenCalledTimes(1)
+})
+it('leaves original address gas pending until its checkpoint and rejects a bad epoch',async()=>{
+  const f=await equipAddressGasEvidence(await fixture('cancel'))
+  delete f.ledger.checkpoint
+  await expect(queryEquipmentMarketOperationEvidence(f.record,f.client)).resolves.toEqual({status:'PENDING'})
+  expect(f.client.ledgerService.getCheckpoint).not.toHaveBeenCalled()
+  f.effects.V2.executedEpoch='7';f.refresh()
+  await expect(queryEquipmentMarketOperationEvidence(f.record,f.client)).rejects.toThrow('outside its gas epoch window')
+})
+it('requires checkpoint effects membership before declaring an address-funded operation failed',async()=>{
+  const f=await equipAddressGasEvidence(await fixture('list'))
+  f.effects.V2.status={Failure:{error:{InsufficientGas:true},command:null}}
+  f.effects.V2.eventsDigest=null
+  f.ledger.effects.status.success=false
+  delete f.ledger.events
+  f.ledger.effects.bcs.value=bcs.TransactionEffects.serialize(f.effects).toBytes()
+  await linkEquipmentOriginalCheckpoint(f,true)
+  await expect(queryEquipmentMarketOperationEvidence(f.record,f.client)).rejects.toThrow('missing from original checkpoint')
+  await linkEquipmentOriginalCheckpoint(f)
+  await expect(queryEquipmentMarketOperationEvidence(f.record,f.client)).resolves.toEqual({status:'FAILED'})
+})
 for(const kind of ['base','external'] as const)for(const action of ['list','reprice','buy','cancel','recover'] as const){
   it(`authenticates ${kind} ${action} and returns the exact normalized listing receipt`,async()=>{
     const f=await fixture(action,kind),proof=await queryEquipmentMarketOperationEvidence(f.record,f.client)

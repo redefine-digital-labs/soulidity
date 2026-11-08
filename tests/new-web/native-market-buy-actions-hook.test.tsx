@@ -3,9 +3,14 @@ import React,{act} from 'react'
 import {createRoot,type Root} from 'react-dom/client'
 import {beforeEach,afterEach,expect,it,vi} from 'vitest'
 import {useNativeMarketBuyActions} from '../../web/lib/hooks/use-native-market-buy-actions'
-import {marketBuyFixture,bid} from './fixtures/market-buy-operation'
+import {NativePurchaseRecovery} from '../../web/components/souls/native-purchase-recovery'
+import {MAINNET_GENESIS_DIGEST} from '../../web/lib/animacraft/mainnet-chain'
+import {marketBuyFixture,buySigner,bid} from './fixtures/market-buy-operation'
+import {verifyTransactionSignature} from '@mysten/sui/verify'
+import {fromBase64} from '@mysten/sui/utils'
+import type {MarketBuyOperationRecord} from '../../web/lib/animacraft/market-buy-operation'
 const m=vi.hoisted(()=>({account:null as any,wallet:{} as any,client:{} as any,run:vi.fn(),read:vi.fn(),history:vi.fn(),
-  queryHistory:vi.fn(),sign:vi.fn(),headers:vi.fn(),chainRead:vi.fn(),confirm:vi.fn(),config:vi.fn(),targetConfig:vi.fn(),fetch:vi.fn(),invalidate:vi.fn(),adapter:null as any}))
+  queryHistory:vi.fn(),queryFunds:vi.fn(),sign:vi.fn(),headers:vi.fn(),chainRead:vi.fn(),confirm:vi.fn(),config:vi.fn(),targetConfig:vi.fn(),fetch:vi.fn(),invalidate:vi.fn(),adapter:null as any}))
 vi.mock('../../web/lib/animacraft/browser-native-market-read',()=>({getBrowserNativeMarketConfig:m.config,getBrowserNativeMarketCancelConfig:m.targetConfig,readBrowserNativeMarketBuy:m.chainRead}))
 vi.mock('../../web/lib/animacraft/browser-native-market-readback',()=>({confirmBrowserNativeMarketBuy:m.confirm}))
 vi.mock('@mysten/dapp-kit',()=>({useCurrentAccount:()=>m.account,useCurrentWallet:()=>({currentWallet:m.wallet}),
@@ -16,13 +21,16 @@ vi.mock('../../web/lib/animacraft/market-buy-operation',async original=>({
   ...await original<typeof import('../../web/lib/animacraft/market-buy-operation')>(),
   browserMarketBuyOperationStore:()=>({read:m.read,history:m.history}),runMarketBuyOperation:m.run,queryMarketBuyHistory:m.queryHistory,
 }))
+vi.mock('../../web/lib/animacraft/market-buy-purchase-funds',()=>({queryMarketBuyPurchaseFunds:m.queryFunds}))
 vi.mock('../../web/lib/animacraft/market-buy-operation-adapter',()=>({createMarketBuyOperationAdapter:(params:any)=>{m.adapter=params;return params}}))
-let host:HTMLDivElement,root:Root,state:ReturnType<typeof useNativeMarketBuyActions>,f:Awaited<ReturnType<typeof marketBuyFixture>>,enabled=true
-function Probe(){state=useNativeMarketBuyActions(enabled?{soulId:f.snapshot.soulId,stateId:f.snapshot.stateId,listingId:f.snapshot.listingId}:null);return <span>{String(state.canStart)}</span>}
+let host:HTMLDivElement,root:Root,state:ReturnType<typeof useNativeMarketBuyActions>,f:Awaited<ReturnType<typeof marketBuyFixture>>,enabled=true,showRecovery=false
+function Probe(){state=useNativeMarketBuyActions(enabled?{soulId:f.snapshot.soulId,stateId:f.snapshot.stateId,listingId:f.snapshot.listingId}:null);return showRecovery?<NativePurchaseRecovery actions={state}/>:<span>{String(state.canStart)}</span>}
 const render=()=>act(async()=>root.render(<Probe/>))
 beforeEach(async()=>{
-  Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});vi.clearAllMocks();f=await marketBuyFixture();enabled=true
-  m.account={address:f.snapshot.buyer};m.wallet={name:'wallet-a'};m.client={grpc:{}}
+  Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});vi.clearAllMocks();f=await marketBuyFixture();enabled=true;showRecovery=false;m.queryFunds.mockReset();vi.stubGlobal('React',React)
+  m.account={address:f.snapshot.buyer};m.wallet={name:'wallet-a'};m.adapter=null
+  m.client={grpc:{core:{getChainIdentifier:async()=>({chainIdentifier:MAINNET_GENESIS_DIGEST})},ledgerService:{getObject:vi.fn()}}}
+  vi.stubGlobal('navigator',{locks:{request:async(_key:string,_options:unknown,work:(lock:object)=>Promise<unknown>)=>work({})}})
   m.read.mockReset().mockReturnValue(null);m.history.mockReset().mockReturnValue([]);m.queryHistory.mockReset().mockResolvedValue('MISSING')
   m.run.mockReset().mockResolvedValue({...f.record,phase:'SIGNING'});m.headers.mockReset().mockResolvedValue({Authorization:'fixture-auth'})
   m.chainRead.mockReset().mockImplementation(async()=>structuredClone(f.snapshot));m.fetch.mockReset().mockImplementation(()=>{throw new Error('Retired owned API')});vi.stubGlobal('fetch',m.fetch)
@@ -35,7 +43,7 @@ afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAl
 it('reads exact buyer/soul quote without signing and starts only on explicit action',async()=>{
   await render();expect(state.canStart).toBe(true);expect(m.run).not.toHaveBeenCalled();expect(m.sign).not.toHaveBeenCalled()
   expect(m.chainRead).toHaveBeenCalledWith(expect.objectContaining({soulId:f.snapshot.soulId,stateId:f.snapshot.stateId,
-    buyer:f.snapshot.buyer,listingId:f.snapshot.listingId,config:m.config(),signal:expect.any(AbortSignal)}))
+    buyer:f.snapshot.buyer,listingId:f.snapshot.listingId,config:m.config(),signal:expect.any(AbortSignal)}),{})
   expect(m.fetch).not.toHaveBeenCalled();expect(m.headers).not.toHaveBeenCalled()
   await act(async()=>{await state.start()});expect(m.run).toHaveBeenCalledWith(expect.objectContaining({start:true,owner:f.snapshot.buyer,soulId:f.snapshot.soulId}))
 })
@@ -85,7 +93,7 @@ it('missing current buying policy fields do not block finalized readback with an
   expect(state.canStart).toBe(false);expect(m.chainRead).not.toHaveBeenCalled()
   await act(async()=>{await state.check()})
   await expect(m.adapter.sync({...f.record,phase:'SUCCEEDED',syncStatus:'PENDING'})).resolves.toBe('COMPLETE')
-  expect(m.confirm).toHaveBeenCalledWith(expect.objectContaining({digest:f.record.digest}),expect.objectContaining({target}),{client:m.client.grpc})
+  expect(m.confirm).toHaveBeenCalledWith(expect.objectContaining({digest:f.record.digest}),expect.objectContaining({target}),{client:expect.objectContaining({ledgerService:expect.objectContaining({getObject:expect.any(Function)})})})
   expect(m.sign).not.toHaveBeenCalled();expect(m.fetch).not.toHaveBeenCalled()
 })
 it('restored successful records do not claim current ownership until an explicit current-state check',async()=>{
@@ -123,10 +131,37 @@ it('keeps old wallet closures invalid after switching away and back',async()=>{
   m.account={address:bid(99)};await render();m.account=account;await render()
   expect(adapter.getAddress()).toBeNull();expect(()=>adapter.sign({})).toThrow()
 })
+it('preserves a verified late signature in the original journal without broadcasting from the stale wallet',async()=>{
+  const {runMarketBuyOperation}=await vi.importActual<typeof import('../../web/lib/animacraft/market-buy-operation')>(
+    '../../web/lib/animacraft/market-buy-operation')
+  let saved:MarketBuyOperationRecord|null=null
+  const broadcast=vi.fn(),entered=Promise.withResolvers<void>()
+  const walletResult=Promise.withResolvers<{bytes:string;signature:string}>()
+  m.sign.mockImplementationOnce(()=>{entered.resolve();return walletResult.promise})
+  m.run.mockImplementationOnce(input=>runMarketBuyOperation({...input,
+    store:{exclusive:async(_key:string,work:()=>Promise<unknown>)=>work(),read:()=>saved,history:()=>[],
+      write:(_key:string,row:MarketBuyOperationRecord)=>{saved=row},archive:vi.fn()},
+    adapter:{...input.adapter,prepare:async()=>f.record,query:async()=> 'MISSING',
+      preflight:async()=>{if(!input.adapter.getAddress())throw Error('Wallet changed')},
+      verifySignature:async(row:MarketBuyOperationRecord)=>{
+        await verifyTransactionSignature(fromBase64(row.bytes),row.signature!,{address:f.snapshot.buyer})
+      },broadcast},
+  }))
+  await render()
+  let pending!:Promise<unknown>
+  await act(async()=>{pending=state.start();await entered.promise})
+  expect(saved).toMatchObject({phase:'SIGNING'})
+  m.wallet={name:'wallet-b'};await render()
+  const signed=await buySigner.signTransaction(f.bytes)
+  await act(async()=>{walletResult.resolve(signed);expect(await pending).toBeNull()})
+  expect(saved).toMatchObject({phase:'SIGNED',bytes:f.record.bytes,signature:signed.signature})
+  expect(broadcast).not.toHaveBeenCalled()
+  expect(m.confirm).not.toHaveBeenCalled()
+})
 it('confirms the exact saved operation through browser proof with no auth or owned API',async()=>{
   await render();await act(async()=>{await state.start()})
   await expect(m.adapter.sync(f.record)).resolves.toBe('COMPLETE')
-  expect(m.confirm).toHaveBeenCalledWith(f.record,expect.objectContaining({target:m.config().target,signal:expect.any(AbortSignal)}),{client:m.client.grpc})
+  expect(m.confirm).toHaveBeenCalledWith(f.record,expect.objectContaining({target:m.config().target,signal:expect.any(AbortSignal)}),{client:expect.objectContaining({ledgerService:expect.objectContaining({getObject:expect.any(Function)})})})
   expect(m.fetch).not.toHaveBeenCalled();expect(m.headers).not.toHaveBeenCalled()
   const invalid=new Error('Exact receipt mismatch');m.confirm.mockRejectedValueOnce(invalid)
   await expect(m.adapter.sync(f.record)).rejects.toBe(invalid)
@@ -186,4 +221,49 @@ it('reloads only matching cross-tab archive notices and reports damaged storage'
   m.history.mockImplementation(()=>{throw new Error('Archive damaged')})
   await act(async()=>window.dispatchEvent(new StorageEvent('storage',{key})));expect(state.error).toBe('Archive damaged')
   expect(state.history).toHaveLength(1);expect(m.run).not.toHaveBeenCalled()
+})
+
+
+it('queries the archived digest from the visible recovery panel without reusing the active purchase or signing',async()=>{
+  showRecovery=true
+  const active={...f.record,digest:'active-digest',phase:'SUCCEEDED',syncStatus:'COMPLETE'}
+  const archived={...f.record,phase:'RETIRED'}
+  m.read.mockReturnValue(active);m.history.mockReturnValue([archived]);m.chainRead.mockRejectedValue(new Error('Listing has changed'))
+  m.queryFunds.mockResolvedValue({status:'VERIFIED',transactionDigest:archived.digest,checkpoint:'9',buyerDebit:'1000000',
+    shares:[{role:'service',amount:'25000',owner:f.snapshot.protocolFeeRecipient}],
+    payouts:[{roles:['service'],amount:'25000',coinIds:[bid(51)]}],gas:{netGasCharge:'3'}})
+  await render()
+  const archive=host.querySelector('details')!
+  const check=[...archive.querySelectorAll('button')].find(button=>button.textContent==='Verify original purchase funds')!
+  await act(async()=>check.click())
+  expect(m.queryFunds).toHaveBeenCalledWith(archived,m.client.grpc,expect.any(AbortSignal))
+  expect(archive.querySelector('[aria-label="Verified original USDC settlement"]')?.textContent).toContain('Original SUI Gas 3 MIST')
+  expect(state.record).toEqual(active)
+  expect(m.run).not.toHaveBeenCalled();expect(m.sign).not.toHaveBeenCalled();expect(m.invalidate).not.toHaveBeenCalled()
+})
+
+it('clears historical funds when the wallet changes and discards a late proof',async()=>{
+  const saved={...f.record,phase:'SUCCEEDED',syncStatus:'SUPERSEDED'}
+  m.read.mockReturnValue(saved)
+  let finish!:(value:any)=>void,signal!:AbortSignal
+  m.queryFunds.mockImplementation((_value,_client,abort)=>{signal=abort;return new Promise(resolve=>{finish=resolve})})
+  await render()
+  let first!:Promise<void>;await act(async()=>{first=state.checkFunds(f.record.digest)})
+  m.account={address:bid(99)};m.read.mockReturnValue(null);await render()
+  expect(signal.aborted).toBe(true)
+  await act(async()=>{finish({status:'VERIFIED',transactionDigest:f.record.digest});await first})
+  expect(state.fundsByDigest).toEqual({});expect(state.record).toBeNull()
+})
+
+
+it('retains verified funds when a retry cannot find the same checkpointed purchase',async()=>{
+  const saved={...f.record,phase:'SUCCEEDED',syncStatus:'SUPERSEDED'}
+  const proof={status:'VERIFIED',transactionDigest:f.record.digest}
+  m.read.mockReturnValue(saved)
+  m.queryFunds.mockResolvedValueOnce(proof).mockResolvedValueOnce({status:'MISSING',transactionDigest:f.record.digest})
+  await render()
+  await act(async()=>{await state.checkFunds(f.record.digest)})
+  await act(async()=>{await state.checkFunds(f.record.digest)})
+  expect(state.fundsByDigest[f.record.digest]).toEqual({proof,error:expect.stringContaining('MISSING')})
+  expect(state.record).toEqual(saved)
 })

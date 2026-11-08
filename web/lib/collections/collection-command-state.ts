@@ -31,6 +31,7 @@ export function collectionCommandProjection(row: Raw | undefined): CollectionCom
 export async function collectionCommandChain(client: SuiGrpcClient, d: CollectionCommandTarget, signal: AbortSignal) {
   const chain = (await profileReadStep(signal, () => client.core.getChainIdentifier())).chainIdentifier
   digest(chain); check(toHex(fromBase58(chain).subarray(0, 4)) === d.chainIdentifier, 'WRONG_CHAIN')
+  return chain
 }
 /** The candidate listing ID is only a lookup hint. An inactive or mismatching
  * candidate fails; this reader never silently selects a different listing. */

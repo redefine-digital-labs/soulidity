@@ -10,6 +10,7 @@ import {buildMarketBatchListTransaction} from '../../web/lib/animacraft/market-b
 import type {NativeMarketBatchListSnapshot,BatchMarketListOperationRecord,MarketBatchListSelection} from '../../web/lib/animacraft/market-batch-list-types'
 import {selectedMarketSaleEvidenceFixture} from './fixtures/selected-market-sale-evidence'
 import {batchListingSelection} from '../../web/lib/animacraft/market-batch-list-operation-adapter'
+import {MAINNET_GENESIS_DIGEST} from '../../web/lib/animacraft/mainnet-chain'
 
 const m=vi.hoisted(()=>({account:null as any,wallet:{} as any,client:{} as any,run:vi.fn(),read:vi.fn(),history:vi.fn(),
   queryHistory:vi.fn(),sign:vi.fn(),chainRead:vi.fn(),confirm:vi.fn(),config:vi.fn(),targetConfig:vi.fn(),invalidate:vi.fn(),
@@ -57,7 +58,11 @@ beforeEach(async()=>{
   record={schema:1,kind:'batch-list',owner:snapshot.owner,rows:structuredClone(snapshot.rows),bytes:toBase64(bytes),
     digest:TransactionDataBuilder.getDigestFromBytes(bytes),expirationEpoch:'10',phase:'PREPARED',signature:null}
   owner=snapshot.owner;identityKey='owner:1';selection=batchListingSelection(snapshot)
-  m.account={address:owner};m.wallet={name:'wallet-a'};m.client={grpc:{core:{executeTransaction:m.broadcast}}}
+  m.account={address:owner};m.wallet={name:'wallet-a'};m.client={grpc:{
+    core:{executeTransaction:m.broadcast,getChainIdentifier:async()=>({chainIdentifier:MAINNET_GENESIS_DIGEST})},
+    ledgerService:{getObject:vi.fn()},movePackageService:{getPackage:vi.fn()},
+  }}
+  vi.stubGlobal('navigator',{locks:{request:async(_key:string,_options:unknown,work:(lock:object)=>Promise<unknown>)=>work({})}})
   m.read.mockReset().mockReturnValue(null);m.history.mockReset().mockReturnValue([]);m.queryHistory.mockReset().mockResolvedValue('MISSING')
   m.run.mockReset().mockResolvedValue({...record,phase:'SIGNING'});m.sign.mockReset().mockResolvedValue({bytes:record.bytes,signature:'signature'})
   m.chainRead.mockReset().mockImplementation(async()=>structuredClone(snapshot));m.confirm.mockReset().mockResolvedValue('COMPLETE')
@@ -66,11 +71,11 @@ beforeEach(async()=>{
   m.targetConfig.mockReset().mockReturnValue({target:{protocolConfigId:'release-a'}})
   host=document.createElement('div');document.body.appendChild(host);root=createRoot(host)
 })
-afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();vi.useRealTimers()})
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();vi.restoreAllMocks();vi.useRealTimers()})
 
 it('pins exactly the ordered selected identities and prices before explicit start',async()=>{
   await render();expect(state.canStart).toBe(true);expect(m.run).not.toHaveBeenCalled()
-  expect(m.chainRead).toHaveBeenCalledWith(expect.objectContaining({owner,selection,config:m.config(),signal:expect.any(AbortSignal)}))
+  expect(m.chainRead).toHaveBeenCalledWith(expect.objectContaining({owner,selection,config:m.config(),signal:expect.any(AbortSignal)}),{})
   await act(async()=>{await state.start()})
   expect(m.run).toHaveBeenCalledWith(expect.objectContaining({owner,start:true}));expect(m.adapter.observed).toEqual(snapshot)
   expect(m.sign).not.toHaveBeenCalled()
@@ -90,7 +95,9 @@ it('routes saved grouped mixed recovery through the unified readback with the fu
   const pending=m.adapter.sync(saved),assertion=expect(pending).resolves.toBe('COMPLETE')
   await vi.advanceTimersByTimeAsync(30_001);await assertion
   expect(m.mixedConfirm).toHaveBeenCalledWith({...f.record,phase:'SUCCEEDED',syncStatus:'PENDING'},
-    expect.objectContaining({signal:expect.any(AbortSignal)}),expect.objectContaining({client:m.client.grpc}))
+    expect.objectContaining({signal:expect.any(AbortSignal)}),
+    {client:expect.objectContaining({ledgerService:expect.objectContaining({getObject:expect.any(Function)}),
+      movePackageService:expect.objectContaining({getPackage:expect.any(Function)})})})
   expect(m.confirm).not.toHaveBeenCalled();expect(m.sign).not.toHaveBeenCalled()
 })
 it.each(['order','price','owner','state','extra'])('rejects readback %s drift rather than silently revising selection',async kind=>{

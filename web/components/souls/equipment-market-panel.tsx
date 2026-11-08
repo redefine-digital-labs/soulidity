@@ -57,6 +57,14 @@ export function EquipmentMarketPanel({request,identityKey,action='list',blocked=
         <p>Saved gross price: {formatEquipmentMarketAmount(r.priceAtomic,r.snapshot.target.paymentCoinType)}. Recovery uses the saved transaction, not the current price field.</p>
         {r.phase==='SUCCEEDED'&&<p>Transaction recorded; readback: {r.syncStatus??'PENDING'}. Historical success does not prove current ownership.</p>}
         <button type="button" disabled={actions.busy} onClick={()=>act(actions.check)}>Check saved component transaction</button>
+        {r.action==='buy'&&r.phase==='SUCCEEDED'&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.checkFunds)}>Verify original purchase funds</button>}
+        {actions.funds?.status==='FUNDS_VERIFIED'&&<div aria-label="Verified original component settlement">
+          <p>Buyer paid {formatEquipmentMarketAmount(actions.funds.receipt.grossAtomic,actions.funds.coinType)}.</p>
+          <p>Seller received {formatEquipmentMarketAmount(actions.funds.receipt.sellerAtomic,actions.funds.coinType)} · platform treasury credited {formatEquipmentMarketAmount(actions.funds.receipt.protocolAtomic,actions.funds.coinType)}.</p>
+          <p>Original checkpoint {actions.funds.checkpoint} · net gas {actions.funds.gas.netGasCharge} MIST.</p>
+        </div>}
+        {actions.funds?.status==='LEGACY_EFFECTS'&&<p>Funds verification requires Effects V2. The saved transaction can still be queried.</p>}
+        {actions.funds&&['MISSING','PENDING','FAILED'].includes(actions.funds.status)&&<p>Original funds verification: {actions.funds.status}.</p>}
         {['PREPARED','SIGNING','SIGNED'].includes(r.phase)&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.resume)}>Resume saved component transaction</button>}
         {r.phase==='PREPARED'&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.cancelUnsigned)}>Discard unsigned component transaction</button>}
         {['SIGNING','SIGNED'].includes(r.phase)&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.retireExpired)}>Check expiry and archive component transaction</button>}

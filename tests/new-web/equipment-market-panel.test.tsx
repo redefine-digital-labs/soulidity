@@ -49,3 +49,19 @@ it('does not label pending current-state readback as ownership success',async()=
   m.state.record={...f.record,phase:'SUCCEEDED',syncStatus:'PENDING'};await render()
   expect(host.textContent).toContain('readback: PENDING');expect(host.textContent).toContain('Historical success does not prove current ownership')
 })
+it('checks original purchase funds separately from current component readback', async () => {
+  f = await equipmentMarketOperationFixture({action:'buy',kind:'external'})
+  m.state.record = {...f.record,phase:'SUCCEEDED',syncStatus:'SUPERSEDED'}
+  m.state.checkFunds = vi.fn().mockResolvedValue(null)
+  await render()
+  await act(async () => button('Verify original purchase funds').click())
+  expect(m.state.checkFunds).toHaveBeenCalledOnce()
+  expect(m.state.start).not.toHaveBeenCalled()
+  m.state.funds = {status:'FUNDS_VERIFIED',coinType:f.snapshot.target.paymentCoinType,checkpoint:'20',gas:{netGasCharge:'1'},
+    receipt:{grossAtomic:'10001',sellerAtomic:'9751',protocolAtomic:'250'}}
+  await render()
+  const settlement = host.querySelector('[aria-label="Verified original component settlement"]')!
+  expect(settlement.textContent).toContain('Seller received')
+  expect(settlement.textContent).toContain('Original checkpoint 20')
+  expect(host.textContent).toContain('readback: SUPERSEDED')
+})

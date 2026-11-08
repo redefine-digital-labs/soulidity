@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bcs } from '@mysten/sui/bcs'
-import { fromBase64, toBase64 } from '@mysten/sui/utils'
+import { fromBase58, fromBase64, toBase58, toBase64 } from '@mysten/sui/utils'
 import { SoulPublicCollectionBcs, SoulPublicCollectionRightBcs, SoulPublicMarketConfigBcs, SoulPublicKioskBcs,
   CollectionPersonalKioskCapBcs, CollectionKioskRegistrationFieldBcs, CollectionPublicListingBcs } from '@soulidity/sdk'
 import { collectionCommandHash } from '../../web/lib/collections/collection-command-plan'
@@ -10,6 +10,7 @@ import { prepareCollectionBuyPlan, assertCollectionBuyCurrent } from '../../web/
 import { parseCollectionBuyRecord, buildCollectionBuyTransaction, createCollectionBuyAdapter } from '../../web/lib/collections/collection-buy-operation'
 import { proveCollectionBuyHistory } from '../../web/lib/collections/collection-buy-history'
 import { collectionBuyFixture, cid } from './fixtures/collection-buy'
+import { addressGasWindow } from './fixtures/collection-command'
 
 afterEach(() => vi.restoreAllMocks())
 type Fixture = Awaited<ReturnType<typeof collectionBuyFixture>>
@@ -24,6 +25,58 @@ function historicalEdit(f: Fixture, objectId: string, version: string, codec: { 
   f.evidence.rehashEffects()
 }
 describe('Collection buy exact raw plan and canonical history', () => {
+  it.each([false, true])('prepares and recovers address gas purchase with new Kiosk=%s', async newKiosk => {
+    const f = await collectionBuyFixture({ addressGas: true, newKiosk })
+    vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => {
+      const nonce = array as Uint32Array
+      nonce[0] = addressGasWindow.nonce
+      return array
+    })
+    const prepared = await f.adapter.prepare(f.plan)
+    expect(prepared.packet.bytes).toBe(f.record.packet.bytes)
+    const tx = bcs.TransactionData.parse(fromBase64(prepared.packet.bytes)).V1!
+    expect(tx.gasData.payment).toEqual([])
+    expect(tx.expiration.ValidDuring).toMatchObject({ minEpoch: '9', maxEpoch: '10' })
+    const signed = await f.adapter.sign(prepared)
+    expect(signed.bytes).toBe(prepared.packet.bytes)
+    f.setAddress(null)
+    await expect(f.adapter.query({ ...prepared, packet: { ...prepared.packet, phase: 'SIGNED', signature: signed.signature } })).resolves.toMatchObject({
+      status: 'SUCCEEDED', checkpoint: '42', receipt: {
+        rightId: f.right.id, buyerKioskId: f.buyerKiosk.id, totalPaymentAtomic: '1005002',
+      },
+    })
+  })
+  it('rejects original SUI gas evidence with the wrong debit even when USDC payout reconciles', async () => {
+    const f = await collectionBuyFixture({ addressGas: true })
+    const change = f.effects.V2!.changedObjects.find(([, change]) => change.outputState.AccumulatorWriteV1)![1]
+    change.outputState.AccumulatorWriteV1!.value.Integer = '2'
+    f.evidence.rehashEffects()
+    await expect(f.adapter.query(f.record)).rejects.toThrow('ADDRESS_BALANCE_EFFECTS_WRITE_MISMATCH')
+  })
+  it('rejects an original address-gas result outside its committed lower epoch bound', async () => {
+    const f = await collectionBuyFixture({ addressGas: true })
+    f.effects.V2!.executedEpoch = '8'
+    f.evidence.rehashEffects()
+    await expect(f.adapter.query(f.record)).rejects.toThrow('EFFECTS_STATUS')
+  })
+  it('binds address-gas recovery to the full genesis even when a foreign packet shares its four-byte prefix', async () => {
+    const f = await collectionBuyFixture({ addressGas: true })
+    const record = await f.packet(data => {
+      const chain = fromBase58(addressGasWindow.chain)
+      chain[31] ^= 1
+      data.expiration!.ValidDuring!.chain = toBase58(chain)
+    })
+    await expect(f.adapter.query(record)).rejects.toThrow('PACKET_AUTHORITY')
+    expect(f.client.ledgerService.getTransaction).not.toHaveBeenCalled()
+  })
+  it('keeps a prepared address-gas packet queryable after its window without signing it again', async () => {
+    const f = await collectionBuyFixture({ addressGas: true })
+    const prepared = { ...f.record, packet: { ...f.record.packet, phase: 'PREPARED' as const, signature: null } }
+    f.client.ledgerService.getEpoch.mockResolvedValue({ response: { epoch: { epoch: 11n } } })
+    await expect(f.adapter.sign(prepared)).rejects.toThrow('EXPIRED_QUERY_ONLY')
+    expect(f.sign).not.toHaveBeenCalled()
+    await expect(f.adapter.query(prepared)).resolves.toMatchObject({ status: 'SUCCEEDED', checkpoint: '42' })
+  })
   it.each([false, true])('proves complete purchase with new personal Kiosk=%s', async newKiosk => {
     const f = await collectionBuyFixture({ newKiosk, sellerLocked: true })
     expect(parseCollectionBuyRecord(f.record).packet.digest).toBe(f.record.packet.digest)

@@ -121,7 +121,31 @@ export async function readCollectionPublicRoot(params: Common & { collectionId: 
   const collection = decode(SoulPublicCollectionBcs, raw.contents!.value!); rootValid(collection, collectionId)
   await s.verify(); return freeze({ collection, objectVersion: String(raw.version), objectDigest: raw.digest! })
 }
-/** A held Right is a candidate back-pointer only; the complete snapshot proves custody. */
+async function readHolderCustody(s: Awaited<ReturnType<typeof session>>, c: Root) {
+  const fieldId = deriveKioskItemFieldId(c.current_holder_kiosk_id, c.right_id)
+  assertKioskItemField((await s.read(fieldId, KIOSK_ITEM_FIELD_TYPE, 2, c.current_holder_kiosk_id, false, KIOSK_ITEM_FIELD_BYTES))!.contents!.value!, c.current_holder_kiosk_id, c.right_id)
+  const r = decode(SoulPublicCollectionRightBcs, (await s.read(c.right_id, `${s.d.originalPackageId}::collection::SoulCollectionRight`, 2, fieldId, false, 262144))!.contents!.value!)
+  check(r.id === c.right_id && r.version === '1' && r.collection_id === c.id && r.creator === c.creator, 'RIGHT_MISMATCH')
+  const k = decode(SoulPublicKioskBcs, (await s.read(c.current_holder_kiosk_id, '0x2::kiosk::Kiosk', 3))!.contents!.value!)
+  check(k.id === c.current_holder_kiosk_id && k.owner === c.current_holder && k.item_count > 0, 'KIOSK_MISMATCH')
+  return { r, k }
+}
+
+/** Observe current custody of a known Right using a stable read of the root, field, Right and Kiosk. */
+export async function readCollectionRightCustody(params: Common & { collectionId: string; rightId: string }): Promise<Readonly<{
+  holderAddress: string; holderKioskId: string
+}>> {
+  const { collectionId, rightId } = params
+  const s = await session(params)
+  const raw = (await s.read(collectionId, `${s.d.originalPackageId}::collection::SoulCollection`, 3))!
+  const collection = decode(SoulPublicCollectionBcs, raw.contents!.value!); rootValid(collection, collectionId)
+  check(collection.right_id === rightId, 'RIGHT_MISMATCH')
+  const { k } = await readHolderCustody(s, collection)
+  await s.verify()
+  return Object.freeze({ holderAddress: k.owner, holderKioskId: k.id })
+}
+
+/** A held Right is a candidate back-pointer only. Custody requires the containing Kiosk. */
 export async function readCollectionRightCandidate(params: Common & { rightId: string }): Promise<string> {
   const rightId = params.rightId, s = await session(params)
   const raw = (await s.read(rightId, `${s.d.originalPackageId}::collection::SoulCollectionRight`, 2, undefined, false, 262144))!
@@ -156,12 +180,7 @@ export async function readCollectionPublicSnapshot(params: Common & { collection
   const raw = (await s.read(collectionId, `${pkg}::collection::SoulCollection`, 3))!
   if (expectedRoot) check(String(raw.version) === expectedRoot.objectVersion && raw.digest === expectedRoot.objectDigest, 'STALE_METADATA')
   const c = decode(SoulPublicCollectionBcs, raw.contents!.value!); rootValid(c, collectionId)
-  const fieldId = deriveKioskItemFieldId(c.current_holder_kiosk_id, c.right_id)
-  assertKioskItemField((await s.read(fieldId, KIOSK_ITEM_FIELD_TYPE, 2, c.current_holder_kiosk_id, false, KIOSK_ITEM_FIELD_BYTES))!.contents!.value!, c.current_holder_kiosk_id, c.right_id)
-  const r = decode(SoulPublicCollectionRightBcs, (await s.read(c.right_id, `${pkg}::collection::SoulCollectionRight`, 2, fieldId, false, 262144))!.contents!.value!)
-  check(r.id === c.right_id && r.version === '1' && r.collection_id === c.id && r.creator === c.creator, 'RIGHT_MISMATCH')
-  const k = decode(SoulPublicKioskBcs, (await s.read(c.current_holder_kiosk_id, '0x2::kiosk::Kiosk', 3))!.contents!.value!)
-  check(k.id === c.current_holder_kiosk_id && k.owner === c.current_holder && k.item_count > 0, 'KIOSK_MISMATCH')
+  const { r, k } = await readHolderCustody(s, c)
   const floorType = `${pkg}::collection::FloorPolicyKeyV1`
   const floorId = deriveDynamicFieldID(c.id, floorType, CollectionFloorKeyBcs.serialize({ version: 1 }).toBytes())
   const floor = decode(CollectionFloorFieldBcs, (await s.read(floorId, `0x2::dynamic_field::Field<${floorType},0x1::option::Option<u128>>`, 2, c.id))!.contents!.value!)

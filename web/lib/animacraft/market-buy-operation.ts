@@ -4,6 +4,8 @@ import { fromBase58, toBase58, fromBase64, toBase64 } from '@mysten/sui/utils'
 import { buildBuyAnimacraftV8SoulTx } from '@soulidity/sdk'
 import { validateMarketCancelCheckpoint as validateMarketBuyCheckpoint, type MarketCancelCheckpoint as MarketBuyCheckpoint } from './market-cancel-checkpoint'
 import { NATIVE_MARKET_PAYMENT_COIN_TYPE, type MarketBuySnapshot, type MarketBuyOperationRecord } from './market-buy-types'
+import { readTransactionGasWindow } from '../sui/transaction-gas-window'
+import { MAINNET_GENESIS_DIGEST } from './mainnet-chain'
 export type { MarketBuySnapshot, MarketBuyOperationRecord, MarketBuyPaymentCoin } from './market-buy-types'
 
 export function marketBuyCheck(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
@@ -72,7 +74,7 @@ export function validateMarketBuyOperationRecord(value: unknown): MarketBuyOpera
     && TransactionDataBuilder.getDigestFromBytes(bytes)===r.digest,'Purchase bytes/digest mismatch')
   const tx=Transaction.from(bytes).getData()
   marketBuyCheck(tx.sender===s.buyer && tx.gasData.owner===s.buyer && positive(tx.gasData.budget)&&positive(tx.gasData.price)
-    && tx.gasData.payment?.length && String(data.V1?.expiration.Epoch)===r.expirationEpoch,'Purchase sender/gas/expiration mismatch')
+    && tx.gasData.payment && readTransactionGasWindow(tx,MAINNET_GENESIS_DIGEST,r.expirationEpoch),'Purchase sender/gas/expiration mismatch')
   marketBuyCheck(r.phase!=='RETIRED'||r.retirement,'Retired purchase evidence missing')
   if(r.retirement!==undefined){
     marketBuyCheck(['RETIRED','SUCCEEDED','FAILED'].includes(r.phase)&&['SIGNING','SIGNED'].includes(r.retirement?.priorPhase)

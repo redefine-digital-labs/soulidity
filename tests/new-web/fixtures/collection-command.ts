@@ -2,7 +2,7 @@ import { vi } from 'vitest'
 import { bcs, TypeTagSerializer } from '@mysten/sui/bcs'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { Inputs, Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
-import { normalizeStructTag, toBase64, toBase58, fromBase64 } from '@mysten/sui/utils'
+import { deriveDynamicFieldID, normalizeStructTag, toBase64, toBase58, fromBase64 } from '@mysten/sui/utils'
 import { SoulPublicCollectionBcs, SoulPublicCollectionRightBcs, SoulPublicKioskBcs, SoulPublicMarketConfigBcs, SOUL_PUBLIC_USDC_TYPE,
   CollectionPublicListingBcs, CollectionKioskRegistryBcs, CollectionKioskRegistrationFieldBcs, CollectionPersonalKioskCapBcs,
   CollectionKioskListingFieldBcs, deriveKioskItemFieldId, KioskItemFieldBcs, KIOSK_ITEM_FIELD_TYPE } from '@soulidity/sdk'
@@ -16,11 +16,23 @@ export const cid = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
 const previous = toBase58(new Uint8Array(32).fill(7)), shared = { Shared: { initialSharedVersion: '1' } }
 type Codec = { parse(bytes: Uint8Array): any; serialize(value: any): { toBytes(): Uint8Array } }
 type Owner = Parameters<typeof bcs.Owner.serialize>[0]
+export const addressGasWindow = { chain: activityGenesis, minEpoch: '9', maxEpoch: '10',
+  minTimestamp: null, maxTimestamp: null, nonce: 88 }
+
+export function addressGasEffect(owner: string): NonNullable<ReturnType<typeof bcs.TransactionEffects.parse>['V2']>['changedObjects'][number] {
+  const type = normalizeStructTag('0x2::balance::Balance<0x2::sui::SUI>')
+  const id = deriveDynamicFieldID('0xacc', `0x2::accumulator::Key<${type}>`, bcs.Address.serialize(owner).toBytes())
+  return [id, { inputState: { $kind: 'NotExist', NotExist: true }, idOperation: { $kind: 'None', None: true },
+    outputState: { $kind: 'AccumulatorWriteV1', AccumulatorWriteV1: {
+      address: { address: owner, ty: type }, operation: { $kind: 'Split', Split: true }, value: { $kind: 'Integer', Integer: '1' },
+    } } }]
+}
+
 
 /** Controlled ledger, not Move execution or a validator certificate. Full
  * canonical Objects, SDK-built PTBs, Ed25519 signatures and checkpoint hash
  * membership are real; Move behavior is independently tested in Move tests. */
-export async function collectionCommandFixture(action: CollectionCommandRequest['action'] = 'list', options: { feeBps?: number; price?: string; paused?: boolean; markerOptimized?: boolean } = {}) {
+export async function collectionCommandFixture(action: CollectionCommandRequest['action'] = 'list', options: { feeBps?: number; price?: string; paused?: boolean; markerOptimized?: boolean; addressGas?: boolean } = {}) {
   const signer = Ed25519Keypair.fromSecretKey(new Uint8Array(32).fill(52)), author = signer.toSuiAddress()
   const target = { originalPackageId: cid(90), callablePackageId: cid(91), callableDigest: '', chainIdentifier: '35834a8a',
     marketConfigId: cid(94), kioskRegistryId: cid(95), personalKioskTypePackageId: cid(96), paymentCoinType: SOUL_PUBLIC_USDC_TYPE }
@@ -78,7 +90,7 @@ export async function collectionCommandFixture(action: CollectionCommandRequest[
   const resolve = vi.fn(async (data: TransactionDataBuilder, _options: unknown, next: () => Promise<void>) => {
     data.inputs = data.inputs.map(input => input.UnresolvedObject ? Inputs.SharedObjectRef({ objectId: input.UnresolvedObject.objectId,
       initialSharedVersion: '1', mutable: [kiosk.id, registry.id, listing.id].includes(input.UnresolvedObject.objectId) }) : input)
-    data.gasData = { owner: author, budget: '1000000', price: '1', payment: [{ objectId: gasId, version: '11', digest: gas.digest }] }; await next()
+    data.gasData = { owner: author, budget: '1000000', price: '1', payment: options.addressGas ? [] : [{ objectId: gasId, version: '11', digest: gas.digest }] }; await next()
   })
   const client = { core: { resolveTransactionPlugin: () => resolve, getChainIdentifier: vi.fn(async () => ({ chainIdentifier: activityGenesis })),
     getProtocolConfig: vi.fn(async () => ({ protocolConfig: { attributes: { max_tx_size_bytes: '131072', max_programmable_tx_commands: '1024', max_pure_argument_size: '16384' } } })),
@@ -96,7 +108,7 @@ export async function collectionCommandFixture(action: CollectionCommandRequest[
     priceAtomic: action === 'delist' ? null : options.price ?? '2000001' }, listingObjectOnChainId: action === 'list' ? null : listing.id }
   const plan = await prepareCollectionCommandPlan(params)
   async function packet(mutate?: (data: TransactionDataBuilder) => void): Promise<CollectionCommandRecord> {
-    const tx = buildCollectionCommandTransaction(plan); tx.setSender(author); tx.setExpiration({ Epoch: '10' })
+    const tx = buildCollectionCommandTransaction(plan); tx.setSender(author); tx.setExpiration(options.addressGas ? { ValidDuring: addressGasWindow } : { Epoch: '10' })
     const bytes = await tx.build({ client: client as never }), data = new TransactionDataBuilder(Transaction.from(bytes).getData()); mutate?.(data)
     const exact = data.build(), signed = await signer.signTransaction(exact)
     return { schema: 'soulidity.collection-command.v1', plan: structuredClone(plan), packet: { bytes: toBase64(exact),
@@ -106,7 +118,7 @@ export async function collectionCommandFixture(action: CollectionCommandRequest[
   evidence.transactionData.V1 = bcs.TransactionData.parse(fromBase64(record.packet.bytes)).V1
   const effects = bcs.TransactionEffects.parse(bcs.TransactionEffects.serialize({ V2: { status: { Success: true }, executedEpoch: '9',
     gasUsed: { computationCost: '1', storageCost: '0', storageRebate: '0', nonRefundableStorageFee: '0' }, transactionDigest: record.packet.digest,
-    gasObjectIndex: 0, eventsDigest: null, dependencies: [], lamportVersion: '12', changedObjects: [], unchangedConsensusObjects: [], auxDataDigest: null } }).toBytes())
+    gasObjectIndex: options.addressGas ? null : 0, eventsDigest: null, dependencies: [], lamportVersion: '12', changedObjects: [], unchangedConsensusObjects: [], auxDataDigest: null } }).toBytes())
   function transition(objectId: string, type: string, codec: Codec, before: any | null, after: any | null, owner: Owner, readonly = false) {
     const input = before === null ? null : full(objectId, type, codec, before, owner)
     if (readonly) { effects.V2!.unchangedConsensusObjects.push([objectId, { $kind: 'ReadOnlyRoot', ReadOnlyRoot: ['11', input!.digest] }]); return }
@@ -117,7 +129,8 @@ export async function collectionCommandFixture(action: CollectionCommandRequest[
       outputState: output ? { $kind: 'ObjectWrite', ObjectWrite: [output.digest, ownerOf(output)] } : { $kind: 'NotExist', NotExist: true },
       idOperation: !output ? { $kind: 'Deleted', Deleted: true } : !input ? { $kind: 'Created', Created: true } : { $kind: 'None', None: true } }])
   }
-  transition(gasId, '0x2::coin::Coin<0x2::sui::SUI>', Coin, { id: gasId, balance: '10000000' }, { id: gasId, balance: '9999999' }, { AddressOwner: author })
+  if (options.addressGas) effects.V2!.changedObjects.push(addressGasEffect(author))
+  else transition(gasId, '0x2::coin::Coin<0x2::sui::SUI>', Coin, { id: gasId, balance: '10000000' }, { id: gasId, balance: '9999999' }, { AddressOwner: author })
   transition(c.id, types.collection, SoulPublicCollectionBcs, c, c, shared, true)
   transition(kiosk.id, types.kiosk, SoulPublicKioskBcs, kiosk, kiosk, shared)
   if (action !== 'delist') { transition(market.id, types.market, SoulPublicMarketConfigBcs, market, market, shared, true)

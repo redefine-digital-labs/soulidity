@@ -1,5 +1,6 @@
 'use client'
 
+import type { MarketBuyPurchaseFunds } from '@/lib/animacraft/market-buy-purchase-funds'
 import { Button } from '@/components/ui/button'
 import type { useNativeMarketBuyActions } from '@/lib/hooks/use-native-market-buy-actions'
 
@@ -29,6 +30,8 @@ export function NativePurchaseRecovery({ actions }: { actions: ReturnType<typeof
         Archiving requires a confirmed chain checkpoint after the transaction expiry. It preserves the record and does not mean the purchase failed.
       </p>}
     </div>}
+    {record && record.phase !== 'PREPARED' && record.phase !== 'CANCELLED' &&
+      <PurchaseFunds actions={actions} digest={record.digest} />}
     {actions.history.length > 0 && <details className="rounded-xl border border-border bg-card2 px-4 py-3">
       <summary className="cursor-pointer text-sm">Purchase history ({actions.history.length})</summary>
       <p className="mt-2 text-xs text-muted">Checking an archived transaction never signs, pays again or changes your current Soul state.</p>
@@ -38,6 +41,8 @@ export function NativePurchaseRecovery({ actions }: { actions: ReturnType<typeof
           <p role="status" className="mt-1 text-xs text-muted">{historyMessage(actions.historyResults[value.digest])}</p>
           <Button variant="outline" disabled={actions.busy} aria-label={`Check archived purchase ${value.digest}`}
             onClick={() => void actions.checkHistory(value.digest)}>Check archived purchase</Button>
+          {record?.digest !== value.digest && value.phase !== 'PREPARED' && value.phase !== 'CANCELLED' &&
+            <PurchaseFunds actions={actions} digest={value.digest} />}
         </li>)}
       </ul>
     </details>}
@@ -53,4 +58,41 @@ function historyMessage(status?: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED')
     case 'MISSING': return 'Not found by the current chain query. The past payment result remains unknown, not failed.'
     default: return 'Archived transaction; historical result has not been checked in this session.'
   }
+}
+
+
+const roleLabels = { seller: 'Seller', soulCreator: 'Soul creator', makerSource: 'Maker source', service: 'Service fee' }
+
+function PurchaseFunds({ actions, digest }: { actions: ReturnType<typeof useNativeMarketBuyActions>; digest: string }) {
+  const result = actions.fundsByDigest[digest]
+  return <section aria-label="Original purchase funds" className="mt-3 space-y-2 rounded-xl border border-border px-4 py-3 text-sm">
+    <Button variant="outline" disabled={actions.busy} onClick={() => void actions.checkFunds(digest)}>Verify original purchase funds</Button>
+    {result?.error && <p role="alert">Original funds could not be checked. {result.error}</p>}
+    {result?.proof && <PurchaseFundsResult proof={result.proof} />}
+  </section>
+}
+
+function PurchaseFundsResult({ proof }: { proof: MarketBuyPurchaseFunds }) {
+  if (proof.status !== 'VERIFIED') {
+    const status = proof.status
+    return <p role="status">{status === 'LEGACY_EFFECTS' ? 'Historical object settlement is unavailable for this effects format.'
+      : historyMessage(status)}</p>
+  }
+  return <article aria-label="Verified original USDC settlement" className="space-y-2 break-all">
+    <p>Original buyer debit {proof.buyerDebit} USDC atomic units · checkpoint {proof.checkpoint}</p>
+    <p>Original change Coin {proof.buyerChangeCoinId}</p>
+    <dl className="space-y-1">{proof.shares.map(share => <div key={share.role}>
+      <dt>{roleLabels[share.role]}</dt><dd>{share.amount} · {share.owner}</dd>
+    </div>)}</dl>
+    <ul className="space-y-1">{proof.payouts.map(group => <li key={group.coinIds[0]}>
+      {group.roles.map(role => roleLabels[role]).join(' / ')} · {group.amount} per Coin · {group.coinIds.join(', ')}
+    </li>)}</ul>
+    <p>{proof.gas ? `Original SUI Gas ${proof.gas.netGasCharge} MIST` : 'Original SUI Gas evidence is unavailable.'}</p>
+    {proof.portableOriginal && <>
+      <a className="underline" download={`soul-payout-${proof.transactionDigest}.json`}
+        href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(proof.portableOriginal))}`}>Download read-only payout file</a>
+      <p>Recipients can import this file to verify the original and read their current USDC funds.</p>
+      <a className="underline" href={`/souls/${encodeURIComponent(proof.portableOriginal.snapshot.soulId)}/purchase/recovery`}>Open purchase recovery</a>
+    </>}
+  </article>
 }

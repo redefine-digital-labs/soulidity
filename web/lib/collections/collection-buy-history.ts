@@ -6,6 +6,7 @@ import { profileReadStep, SoulPublicCollectionBcs, SoulPublicCollectionRightBcs,
   CollectionKioskRegistryBcs, CollectionPublicListingBcs, CollectionKioskListingFieldBcs, CollectionPersonalKioskCapBcs,
   CollectionKioskRegistrationFieldBcs, deriveKioskItemFieldId, assertKioskItemField } from '@soulidity/sdk'
 import { historicalObjectOutput } from '../sui/historical-object'
+import { collectionAddressGasIds } from './collection-command-gas'
 import { collectionCommandHash, collectionCommandRaw, collectionCommandMarker, collectionCommandRegistration } from './collection-command-plan'
 import { collectionCommandProjection } from './collection-command-state'
 import { CollectionCommandEventsBcs } from './collection-command-history'
@@ -199,20 +200,24 @@ export async function proveCollectionBuyHistory(params: { client: SuiGrpcClient;
     check(index >= 0, 'HISTORY_PAYOUT'); payouts.splice(index, 1)
   }
   const gas = tx.gasData.payment!
-  check(e.gasObjectIndex !== null && e.changedObjects[e.gasObjectIndex]?.[0] === gas[0].objectId, 'HISTORY_GAS_INDEX')
-  let balance = 0n, finalBalance = 0n
-  for (const [index, coin] of gas.entries()) {
-    const c = change(coin.objectId), input = c.inputState.Exist
-    check(input?.[0][0] === coin.version && input[0][1] === coin.digest && input[1].AddressOwner === p.author, 'HISTORY_GAS_REFERENCE')
-    const before = await object(coin.objectId, '0x2::coin::Coin<0x2::sui::SUI>', 'input')
-    balance += BigInt(decode(Coin, before.bytes).balance)
-    if (index === 0) {
-      const after = await object(coin.objectId, '0x2::coin::Coin<0x2::sui::SUI>', 'mutated')
-      check(after.full.owner.AddressOwner === p.author, 'HISTORY_GAS_OWNER'); finalBalance = BigInt(decode(Coin, after.bytes).balance)
-    } else check(c.idOperation.$kind === 'Deleted' && c.outputState.$kind === 'NotExist', 'HISTORY_GAS_MERGE')
+  if (gas.length === 0) {
+    for (const objectId of collectionAddressGasIds(effects, r.packet.digest, p.author, tx.gasData.budget!)) allowed.add(objectId)
+  } else {
+    check(e.gasObjectIndex !== null && e.changedObjects[e.gasObjectIndex]?.[0] === gas[0].objectId, 'HISTORY_GAS_INDEX')
+    let balance = 0n, finalBalance = 0n
+    for (const [index, coin] of gas.entries()) {
+      const c = change(coin.objectId), input = c.inputState.Exist
+      check(input?.[0][0] === coin.version && input[0][1] === coin.digest && input[1].AddressOwner === p.author, 'HISTORY_GAS_REFERENCE')
+      const before = await object(coin.objectId, '0x2::coin::Coin<0x2::sui::SUI>', 'input')
+      balance += BigInt(decode(Coin, before.bytes).balance)
+      if (index === 0) {
+        const after = await object(coin.objectId, '0x2::coin::Coin<0x2::sui::SUI>', 'mutated')
+        check(after.full.owner.AddressOwner === p.author, 'HISTORY_GAS_OWNER'); finalBalance = BigInt(decode(Coin, after.bytes).balance)
+      } else check(c.idOperation.$kind === 'Deleted' && c.outputState.$kind === 'NotExist', 'HISTORY_GAS_MERGE')
+    }
+    const charge = BigInt(e.gasUsed.computationCost) + BigInt(e.gasUsed.storageCost) - BigInt(e.gasUsed.storageRebate)
+    check(balance - charge === finalBalance, 'HISTORY_GAS_AMOUNT')
   }
-  const charge = BigInt(e.gasUsed.computationCost) + BigInt(e.gasUsed.storageCost) - BigInt(e.gasUsed.storageRebate)
-  check(balance - charge === finalBalance, 'HISTORY_GAS_AMOUNT')
   check(e.changedObjects.every(([id]) => allowed.has(id)) && e.unchangedConsensusObjects.every(([id]) => reads.has(id)), 'HISTORY_UNEXPECTED_EFFECT')
   const expectedReads = tx.inputs.flatMap(row => row.Object?.SharedObject && !row.Object.SharedObject.mutable ? [row.Object.SharedObject.objectId] : [])
   check(expectedReads.length === reads.size && expectedReads.every(id => reads.has(id)), 'HISTORY_READ_SET')

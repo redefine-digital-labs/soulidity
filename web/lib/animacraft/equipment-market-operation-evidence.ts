@@ -6,6 +6,7 @@ import {equipmentOperationQuote,validateEquipmentMarketOperationRecord} from './
 import type {EquipmentMarketOperationRecord,EquipmentMarketAction} from './equipment-market-operation-types'
 import {marketListCheck as check,marketListId} from './market-list-operation'
 import {queryExactListingPacketEvidence,type ListingPacketEvidence} from './listing-operation-evidence'
+import {equipmentMarketGasPacket,proveEquipmentAddressGas} from './equipment-market-gas'
 
 const A=bcs.Address,U=bcs.u64(),V=bcs.vector(bcs.u8())
 export const EquipmentMarketOpenedEventBcs=bcs.struct('MarketListingOpenedV8',{
@@ -36,6 +37,7 @@ export interface EquipmentMarketOperationReceipt {
 }
 export type EquipmentMarketOperationEvidence={status:'MISSING'|'PENDING'|'FAILED'}|{
   status:'SUCCEEDED';checkpoint:string;receipt:EquipmentMarketOperationReceipt;effects:ReturnType<typeof bcs.TransactionEffects.parse>
+  addressGas?:ReturnType<typeof proveEquipmentAddressGas>
 }
 
 /** A historical receipt never depends on current asset ownership or availability.
@@ -46,18 +48,22 @@ export async function queryEquipmentMarketOperationEvidence(value:EquipmentMarke
   client:SuiGrpcClient):Promise<EquipmentMarketOperationEvidence>{
   const r=validateEquipmentMarketOperationRecord(value),s=r.snapshot,pin=s.release.equipmentMarket!,runtime=s.release.runtime!
   const name=eventNames[r.action]
+  const {window:executionWindow}=equipmentMarketGasPacket(r)
   const proof=await queryExactListingPacketEvidence({bytes:r.bytes,digest:r.digest,packagePin:pin,
+    executionWindow,verifyCheckpoint:executionWindow.addressGas?true:undefined,
     requiredEventOrigins:[{moduleName:'market_v8',datatypeName:name,packageId:pin.originalPackageId}]},client)
   if(proof.status!=='SUCCEEDED')return proof
   if(r.action!=='reprice'){
     const runtimeProof=await queryExactListingPacketEvidence({bytes:r.bytes,digest:r.digest,packagePin:runtime,
+      executionWindow,
       requiredEventOrigins:[{moduleName:'runtime_v8',datatypeName:custodyName,packageId:runtime.originalPackageId}]},client)
     check(runtimeProof.status==='SUCCEEDED'&&runtimeProof.checkpoint===proof.checkpoint
       &&JSON.stringify(runtimeProof.effects)===JSON.stringify(proof.effects)&&JSON.stringify(runtimeProof.events)===JSON.stringify(proof.events),
     'Equipment Runtime packet changed during query')
   }
   return {status:'SUCCEEDED',checkpoint:proof.checkpoint,effects:proof.effects,
-    receipt:decodeAuthenticatedEquipmentMarketReceipt(r,proof.events.data)}
+    receipt:decodeAuthenticatedEquipmentMarketReceipt(r,proof.events.data),
+    ...(executionWindow.addressGas?{addressGas:proveEquipmentAddressGas(r,proof.effects)}:{})}
 }
 
 /** Decode a row only AFTER its complete command graph and historical Market /

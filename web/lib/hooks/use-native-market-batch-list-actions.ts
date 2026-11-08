@@ -1,5 +1,8 @@
 'use client'
 
+import {withPackageObjectIdentity} from '@/lib/sui/package-object-client'
+import { createBrowserSameSoulMutation } from '../soulidity/browser-same-soul-mutation'
+import { sameSoulMarketReadPort } from '../soulidity/same-soul-mutation-client'
 import {useEffect} from 'react'
 import {useCommittedSession,useSessionState,type SessionLease} from './use-committed-session'
 import {useCurrentAccount,useCurrentWallet,useSignTransaction,useSuiClient} from '@mysten/dapp-kit'
@@ -52,14 +55,14 @@ export function useNativeMarketBatchListActions(params:{owner:string|null;identi
     window.addEventListener('storage',changed)
     return()=>{window.removeEventListener('storage',changed)}
   },[session])
-  async function read(rows:MarketBatchListSelection[],callerSignal?:AbortSignal,lease:SessionLease|null=session.capture()) {
+  async function read(rows:MarketBatchListSelection[],callerSignal?:AbortSignal,lease:SessionLease|null=session.capture(), operationClient?:SuiGrpcClient) {
     const matches=()=>lease?.matches()===true
     if(!activeOwner||!matches())throw new Error('Wallet or selection session changed; reopen selected sale')
     if(!config)throw configError??new Error('Native market configuration unavailable')
     const captured=validateMarketBatchListSelection(rows),controller=new AbortController();lease!.requests.add(controller)
     try{
       const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(25000),...(callerSignal?[callerSignal]:[])])
-      const value=validateMarketBatchListSnapshot(await profileReadStep(signal,()=>readBrowserNativeMarketBatchList({owner:owner!,selection:captured,config:config!,signal})))
+      const value=validateMarketBatchListSnapshot(await profileReadStep(signal,()=>readBrowserNativeMarketBatchList({owner:owner!,selection:captured,config:config!,signal},operationClient?{client:()=>withPackageObjectIdentity(sameSoulMarketReadPort(operationClient),signal)}:{})))
       if(!matches()||value.owner!==owner||marketListCanonical(batchListingSelection(value))!==marketListCanonical(captured))
         throw new Error('Verified batch does not match the exact selected assets and prices')
       return value
@@ -77,11 +80,11 @@ export function useNativeMarketBatchListActions(params:{owner:string|null;identi
   const visibleHistory=history.filter(row=>row.owner===owner)
   const pending=Boolean(visibleRecord&&!terminalMarketBatchListOperation(visibleRecord))
   const canStart=Boolean(activeOwner&&account&&currentWallet&&visibleSnapshot&&batchListingWritable(visibleSnapshot,address)&&!busy&&!loading&&!pending)
-  function adapter(start=false,lease:SessionLease) {
+  function adapter(start=false,lease:SessionLease,operationClient?:SuiGrpcClient) {
     const matches=lease.matches
-    const grpc=(client as unknown as {grpc?:SuiGrpcClient}).grpc
+    const grpc=operationClient??(client as unknown as {grpc?:SuiGrpcClient}).grpc
     if(!grpc)throw new Error('The verified gRPC wallet client is required')
-    return createMarketBatchListOperationAdapter({client:grpc,read:(rows,signal)=>read(rows,signal,lease),observed:start?visibleSnapshot??undefined:undefined,
+    return createMarketBatchListOperationAdapter({client:grpc,read:(rows,signal)=>read(rows,signal,lease,grpc),observed:start?visibleSnapshot??undefined:undefined,
       getAddress:()=>matches()&&activeOwner?address:null,
       sign:transaction=>{if(!matches()||!account||!activeOwner)throw new Error('Wallet changed before batch signature')
         return Promise.resolve(signTransaction({transaction,account,chain:'sui:mainnet'})).then(result=>{
@@ -93,9 +96,10 @@ export function useNativeMarketBatchListActions(params:{owner:string|null;identi
         if(!readback)throw readbackError??new Error('Native release configuration unavailable; saved batch remains queryable')
         const controller=new AbortController();lease!.requests.add(controller)
         try{const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(120000)])
+          const readClient=withPackageObjectIdentity(operationClient?sameSoulMarketReadPort(operationClient):grpc,signal)
           const result=await profileReadStep(signal,()=>value.equipment!==undefined
-            ?confirmBrowserSelectedMarketSale(selectedBatchRecord(value),{target:readback!.target,signal},{client:grpc})
-            :confirmBrowserNativeMarketBatchList(value,{target:readback!.target,signal},{client:grpc}))
+            ?confirmBrowserSelectedMarketSale(selectedBatchRecord(value),{target:readback!.target,signal},{client:readClient})
+            :confirmBrowserNativeMarketBatchList(value,{target:readback!.target,signal},{client:readClient}))
           if(!matches())throw new Error('Wallet changed during batch readback');return result
         }finally{lease!.requests.delete(controller)}
       }})
@@ -104,9 +108,18 @@ export function useNativeMarketBatchListActions(params:{owner:string|null;identi
     const lease=session.capture(),matches=()=>lease?.matches()===true
     if(!activeOwner||!account||!currentWallet||!matches()||lease!.isRunning()||start&&!canStart)return null
     lease!.setRunning(true);setBusy(true);setError(null)
+    let coordinateAbort:AbortController|undefined
     try{
-      const result=await runMarketBatchListOperation({owner:owner!,start,queryOnly,cancelUnsigned,retireExpired,
-        store:browserMarketBatchListOperationStore(),adapter:adapter(start,lease!),onRecord:value=>{if(matches()){setRecord(value)}}})
+      coordinateAbort=new AbortController();lease!.requests.add(coordinateAbort)
+      const grpc=(client as unknown as {grpc?:SuiGrpcClient}).grpc;if(!grpc)throw Error('Verified gRPC client required')
+      const selected=start?visibleSnapshot:visibleRecord
+      const scopes=(selected?.rows??[]).flatMap(row=>row.assetType==='soul'?[{chainIdentifier:'35834a8a',soulId:row.snapshot.soulId,author:owner!}]:[])
+      const coordinate=createBrowserSameSoulMutation({client:grpc,scopes,ownKeys:[marketBatchListOperationKey(owner!)],signal:coordinateAbort.signal,guard:()=>{if(!matches())throw Error('Batch wallet/session changed')},recoveryOnly:queryOnly||cancelUnsigned||retireExpired})
+      const operationAdapter=adapter(start,lease!,coordinate.client)
+      const operation=()=>runMarketBatchListOperation({owner:owner!,start,queryOnly,cancelUnsigned,retireExpired,
+        store:browserMarketBatchListOperationStore(),adapter:operationAdapter,onRecord:value=>{if(matches()){setRecord(value)}}})
+      // A free-Item-only batch does not mutate a Soul; its original item/wallet locks remain authoritative.
+      const result=await (scopes.length?coordinate.run(operation):operation()).finally(()=>lease!.requests.delete(coordinateAbort!))
       if(!matches())return null
       readRecovery();setRecord(result)
       if(result.phase==='RETIRED'&&retireExpired){setSnapshot(null);setLoading(Boolean(owner!==null&&owner===address&&selection.length));setRefreshIndex(n=>n+1)}
@@ -118,7 +131,7 @@ export function useNativeMarketBatchListActions(params:{owner:string|null;identi
       }
       return result
     }catch(cause){if(matches()){setError(message(cause));try{readRecovery()}catch{/* Keep original uncertainty. */}}return null}
-    finally{lease!.setRunning(false);if(matches())setBusy(false)}
+    finally{if(coordinateAbort)lease!.requests.delete(coordinateAbort);lease!.setRunning(false);if(matches())setBusy(false)}
   }
   async function checkHistory(digest:string):Promise<HistoryResult|null>{
     const lease=session.capture(),matches=()=>lease?.matches()===true

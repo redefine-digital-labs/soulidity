@@ -1,10 +1,12 @@
 import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { Transaction } from '@mysten/sui/transactions'
-import { deriveDynamicFieldID, fromBase58, fromBase64, toBase58 } from '@mysten/sui/utils'
+import { deriveDynamicFieldID, fromBase58, fromBase64, normalizeStructTag, toBase58, toBase64 } from '@mysten/sui/utils'
 import { assertKioskItemField, deriveKioskItemFieldId, KIOSK_ITEM_FIELD_TYPE, profileReadStep, quoteAnimacraftV8SoulSale, SoulPublicKioskBcs,
   SoulPublicCollectionBcs, SoulPublicCollectionRightBcs, tryExtractAnimacraftV8SoulPurchasedEvent } from '@soulidity/sdk'
 import { queryMarketBuyOperationEvidence } from './market-buy-operation-adapter'
+import { marketBuyFundsOriginalReadRecord, parseMarketBuyFundsOriginal } from './market-buy-funds-original'
+import { assertMarketBuyEffectsCheckpoint, type MarketBuyCheckpointProof } from './market-buy-purchase-funds'
 import { queryMarketListOperationEvidence } from './market-list-operation-adapter'
 import {queryMarketBatchListOperationEvidence} from './market-batch-list-operation-adapter'
 import {validateMarketBatchListOperationRecord,type BatchMarketListOperationRecord} from './market-batch-list-operation'
@@ -19,6 +21,9 @@ import { NativeMarketListingBcs } from './native-market'
 import { verifyNativeMarketListing } from './native-market-listing'
 import { verifyNativeMarketCancellation } from './native-market-cancellation'
 import { verifyNativePurchaseWithClient } from './native-purchase-verifier'
+import { collectionCommandRaw } from '../collections/collection-command-plan'
+import { historicalMoveObjectType } from '../sui/historical-object'
+import { withPackageObjectIdentity } from '../sui/package-object-client'
 
 type Record = MarketBuyOperationRecord | MarketListOperationRecord | MarketCancelOperationRecord
 type Options = { target: NativeReceiveTarget; signal?: AbortSignal }
@@ -33,7 +38,8 @@ function check(value: unknown, message: string): asserts value {
 
 /** A detached, bounded read session. Re-reads compare raw bytes as well as
  * references, including immutable packages and exact optional-field absence. */
-function readSession(original: SuiGrpcClient, signal: AbortSignal, selectedRows=1) {
+function readSession(original: SuiGrpcClient, signal: AbortSignal, selectedRows=1, requireRawMove=false) {
+  const readPaths = requireRawMove ? [...paths, 'bcs'] : paths
   const seen = new Map<string, { request: { objectId: string; version?: bigint }; value: string }>()
   const batches = new Map<string, { request: unknown; value: string }>()
   let calls = 0, bytes = 0
@@ -46,6 +52,7 @@ function readSession(original: SuiGrpcClient, signal: AbortSignal, selectedRows=
       && row.owner.version <= row.version, 'Invalid shared object birth version')
     const size = row.contents?.value?.length ?? 0
     check(size <= 256 * 1024 && (bytes += size) <= Math.min(64,16*selectedRows) * 1024 * 1024, 'Readback object budget exceeded')
+    if (requireRawMove && (!row.package || row.contents !== undefined)) assertRawCustodyObject(row)
     const key = `${request.objectId}:${request.version ?? 'current'}`, value = fingerprint(row)
     check(!seen.has(key) || seen.get(key)!.value === value, 'Object changed during readback')
     seen.set(key, { request: { objectId: row.objectId!, ...(request.version === undefined ? {} : { version: request.version }) }, value })
@@ -56,7 +63,7 @@ function readSession(original: SuiGrpcClient, signal: AbortSignal, selectedRows=
     return (input: any, options?: any) => {
       signal.throwIfAborted(); check(++calls <= 256*selectedRows, 'Readback call budget exceeded')
       const request = structuredClone(input)
-      if (key === 'getObject' || key === 'batchGetObjects') request.readMask = { paths }
+      if (key === 'getObject' || key === 'batchGetObjects') request.readMask = { paths: readPaths }
       const call = method.call(value, request, { ...options, abort: signal })
       const finished = profileReadStep(signal, async () => {
         const wire = await call, result = { ...wire, response: structuredClone(wire.response) }
@@ -94,10 +101,26 @@ function readSession(original: SuiGrpcClient, signal: AbortSignal, selectedRows=
     return key === 'ledgerService' ? ledger : key === 'core' ? core : Reflect.get(value, key, value)
   } })
   return { client, async verify() {
-    for (const { request } of [...seen.values()]) await client.ledgerService.getObject({ ...request, readMask: { paths } })
+    for (const { request } of [...seen.values()]) await client.ledgerService.getObject({ ...request, readMask: { paths: readPaths } })
     for (const { request } of batches.values()) await client.ledgerService.batchGetObjects(request as Parameters<typeof client.ledgerService.batchGetObjects>[0])
     signal.throwIfAborted()
   } }
+}
+
+function assertRawCustodyObject(row: Raw) {
+  const bytes = row.bcs?.value
+  check(bytes instanceof Uint8Array && bytes.length > 0 && bytes.length <= 270 * 1024
+    && row.objectId && row.version && row.digest, 'Full Soul custody object unavailable')
+  const raw = collectionCommandRaw({ objectId: row.objectId, version: String(row.version), digest: row.digest, bcs: toBase64(bytes) })
+  const move = raw.data.Move
+  const owner = raw.owner.Shared ? { kind: 3, version: BigInt(raw.owner.Shared.initialSharedVersion) }
+    : raw.owner.ObjectOwner ? { kind: 2, address: raw.owner.ObjectOwner }
+    : raw.owner.AddressOwner ? { kind: 1, address: raw.owner.AddressOwner }
+    : raw.owner.Immutable ? { kind: 4 } : null
+  check(move && owner && row.owner && owner.kind === row.owner.kind && owner.address === row.owner.address
+    && owner.version === row.owner.version && row.previousTransaction === raw.previousTransaction
+    && row.objectType && historicalMoveObjectType(move.type) === normalizeStructTag(row.objectType)
+    && row.contents?.value && toBase64(move.contents) === toBase64(row.contents.value), 'Soul custody object projection mismatch')
 }
 
 function outputReference(effects: Effects, objectId: string) {
@@ -129,16 +152,42 @@ function outputReference(effects: Effects, objectId: string) {
 // a transaction's business outcome nor weaken its concrete graph validator.
 export {readSession as createNativeMarketReadbackSession,outputReference as nativeMarketSharedOutputReference}
 
+/** The cold file supplies transaction identity only. The configured release
+ * and a fresh same-checkpoint proof govern historical and current custody. */
+export async function readBrowserNativeMarketBuyHandoff(input: {
+  file: unknown; soulId: string; settlement: MarketBuyCheckpointProof; target: NativeReceiveTarget; client: SuiGrpcClient; signal: AbortSignal
+}) {
+  const file = parseMarketBuyFundsOriginal(input.file, input.soulId)
+  const record = marketBuyFundsOriginalReadRecord(file), target = structuredClone(input.target)
+  const settlement = structuredClone(input.settlement)
+  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(25000)])
+  assertReadbackRelease(record.snapshot.release, target)
+  const session = readSession(withPackageObjectIdentity(input.client, signal), signal, 1, true)
+  const proof = await queryMarketBuyOperationEvidence(record, session.client)
+  check(proof.status === 'SUCCEEDED' && proof.originalPackageId === target.soulidityOriginalPackageId
+    && proof.checkpoint === settlement.checkpoint, 'Original checkout checkpoint changed')
+  const checkpoint = proof.checkpointProof ?? await assertMarketBuyEffectsCheckpoint({ client: session.client, effects: proof.effects,
+    checkpoint: proof.checkpoint, transactionDigest: record.digest, signal })
+  check(checkpoint.digest === settlement.digest && checkpoint.effectsDigest === settlement.effectsDigest, 'Original checkout checkpoint proof changed')
+  const custody = await readVerifiedCustody(record, target, signal, session, proof)
+  await session.verify()
+  return { ...custody, soulId: record.snapshot.soulId, originalBuyer: record.snapshot.buyer, checkpoint: proof.checkpoint }
+}
+
+function assertReadbackRelease(release: (MarketBuyOperationRecord | MarketListOperationRecord)['snapshot']['release'] | MarketCancelOperationRecord['release'], target: NativeReceiveTarget) {
+  check(release.protocolConfigId === target.protocolConfigId
+    && release.soulidityCallablePackageId === target.soulidityCallablePackageId
+    && release.soulidityCallableDigest === target.soulidityCallableDigest
+    && (!('soulidityOriginalPackageId' in release) || release.soulidityOriginalPackageId === target.soulidityOriginalPackageId), 'Captured release mismatch')
+}
+
 async function confirm(value: Record, options: Options, dependencies: Dependencies): Promise<'COMPLETE' | 'SUPERSEDED'> {
   const record = value.kind === 'buy' ? validateMarketBuyOperationRecord(value)
     : value.kind === 'cancel-listing' ? validateMarketCancelOperationRecord(value) : validateMarketListOperationRecord(value)
   const target = structuredClone(options.target)
   check(record.phase === 'SUCCEEDED', 'Only finalized successful operations can be confirmed')
   const s = record.kind === 'cancel-listing' ? record : record.snapshot
-  check(s.release.protocolConfigId === target.protocolConfigId
-    && s.release.soulidityCallablePackageId === target.soulidityCallablePackageId
-    && s.release.soulidityCallableDigest === target.soulidityCallableDigest
-    && (!('soulidityOriginalPackageId' in s.release) || s.release.soulidityOriginalPackageId === target.soulidityOriginalPackageId), 'Captured release mismatch')
+  assertReadbackRelease(s.release, target)
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(25000)]) : AbortSignal.timeout(25000)
   signal.throwIfAborted()
   const session = readSession(dependencies.client ?? createNativeReceiveClient(signal), signal), client = session.client
@@ -158,6 +207,11 @@ type VerifiedMarketProof=Extract<Awaited<ReturnType<typeof queryMarketBuyOperati
  * packet or the entire batch packet before providing this selected row view. */
 async function confirmVerified(record:Record,target:NativeReceiveTarget,signal:AbortSignal,
   session:ReturnType<typeof readSession>,proof:VerifiedMarketProof):Promise<'COMPLETE'|'SUPERSEDED'>{
+  return (await readVerifiedCustody(record, target, signal, session, proof)).status
+}
+
+async function readVerifiedCustody(record: Record, target: NativeReceiveTarget, signal: AbortSignal,
+  session: ReturnType<typeof readSession>, proof: VerifiedMarketProof) {
   const client=session.client
   const s=record.kind==='cancel-listing'?record:record.snapshot
   const types = await attestNativeReceiveTarget(client, target, { market: true }), reads = new EquipmentReadSet(client)
@@ -339,7 +393,8 @@ async function confirmVerified(record:Record,target:NativeReceiveTarget,signal:A
       { soulId: s.soulId, stateId: s.stateId, txDigest: record.digest, sender: owner, transaction }, signal)
   }
   await attestNativeReceiveTarget(client, target, { market: true })
-  return superseded ? 'SUPERSEDED' : 'COMPLETE'
+  return { status: superseded ? 'SUPERSEDED' as const : 'COMPLETE' as const,
+    owner: state.current_owner, kioskId: state.current_kiosk_id, ownershipEpoch: state.ownership_epoch, listed: state.is_listed }
 }
 
 export const confirmBrowserNativeMarketBuy = (record: MarketBuyOperationRecord, options: Options, dependencies: Dependencies = {}) => confirm(record, options, dependencies)

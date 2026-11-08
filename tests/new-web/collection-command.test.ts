@@ -7,11 +7,38 @@ import { parseCollectionCommandPlan, collectionCommandRaw, collectionCommandHash
 import { prepareCollectionCommandPlan, assertCollectionCommandCurrent } from '../../web/lib/collections/collection-command-state'
 import { parseCollectionCommandRecord, buildCollectionCommandTransaction } from '../../web/lib/collections/collection-command-operation'
 import { proveCollectionCommandHistory } from '../../web/lib/collections/collection-command-history'
-import { collectionCommandFixture, cid } from './fixtures/collection-command'
+import { addressGasWindow, collectionCommandFixture, cid } from './fixtures/collection-command'
 
 afterEach(() => vi.restoreAllMocks())
 const actions: CollectionCommandRequest['action'][] = ['list', 'reprice', 'delist']
 describe('Collection command raw plan and exact packet', () => {
+  it.each(actions)('prepares and recovers the original %s with address-balance gas', async action => {
+    const f = await collectionCommandFixture(action, { addressGas: true })
+    vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => {
+      const nonce = array as Uint32Array
+      nonce[0] = addressGasWindow.nonce
+      return array
+    })
+    const prepared = await f.adapter.prepare(f.plan)
+    expect(prepared.packet.bytes).toBe(f.record.packet.bytes)
+    const tx = bcs.TransactionData.parse(fromBase64(prepared.packet.bytes)).V1!
+    expect(tx.gasData.payment).toEqual([])
+    expect(tx.expiration.ValidDuring).toMatchObject({ minEpoch: '9', maxEpoch: '10' })
+    expect(f.client.transactionExecutionService.simulateTransaction).toHaveBeenLastCalledWith(
+      expect.objectContaining({ transaction: { bcs: { value: fromBase64(prepared.packet.bytes) } } }), expect.anything())
+    const signed = await f.adapter.sign(prepared)
+    expect(signed.bytes).toBe(prepared.packet.bytes)
+    f.setAddress(null)
+    await expect(f.adapter.query({ ...prepared, packet: { ...prepared.packet, phase: 'SIGNED', signature: signed.signature } })).resolves.toMatchObject({
+      status: 'SUCCEEDED', checkpoint: '42', receipt: { collectionId: f.c.id, rightId: f.right.id },
+    })
+  })
+  it('rejects an original cancellation with a missing SUI accumulator', async () => {
+    const f = await collectionCommandFixture('delist', { addressGas: true })
+    f.effects.V2!.changedObjects = f.effects.V2!.changedObjects.filter(([, change]) => !change.outputState.AccumulatorWriteV1)
+    f.evidence.rehashEffects()
+    await expect(f.adapter.query(f.record)).rejects.toThrow('ADDRESS_BALANCE_EFFECTS_WRITE_MISMATCH')
+  })
   it.each(['replace', 'mutate'] as const)('captures complete historical inputs before first await: %s', async kind => {
     const f = await collectionCommandFixture(), params = { client: f.client as never, record: structuredClone(f.record), effects: structuredClone(f.effects),
       events: new Uint8Array(f.evidence.ledger.events.bcs.value), signal: new AbortController().signal }

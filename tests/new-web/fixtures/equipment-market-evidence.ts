@@ -1,14 +1,24 @@
 import {vi} from 'vitest'
 import {bcs} from '@mysten/sui/bcs'
-import {fromBase64,fromHex,toBase58} from '@mysten/sui/utils'
+import {deriveDynamicFieldID,fromBase64,fromHex,normalizeStructTag,toBase58} from '@mysten/sui/utils'
 import {blake2b} from '@noble/hashes/blake2.js'
 import {EquipmentMarketOpenedEventBcs,EquipmentMarketRepricedEventBcs,
   EquipmentMarketSettledEventBcs,EquipmentMarketClosedEventBcs,EquipmentMarketCustodyEventBcs} from '../../../web/lib/animacraft/equipment-market-operation-evidence'
 import {equipmentOperationQuote,type EquipmentMarketAction} from '../../../web/lib/animacraft/equipment-market-operation'
 import {MAINNET_GENESIS_DIGEST} from '../../../web/lib/animacraft/mainnet-chain'
-import {equipmentMarketOperationFixture} from './equipment-market-operation'
+import {equipmentMarketOperationFixture,equipmentRecordWithTransaction} from './equipment-market-operation'
+import {activityEvidenceFixture,activityHash,adigest} from './activity-transaction-evidence'
 
 const id=(n:number)=>`0x${n.toString(16).padStart(64,'0')}`
+export const equipmentAddressGasWindow={chain:MAINNET_GENESIS_DIGEST,minEpoch:'8',maxEpoch:'9',
+  minTimestamp:null,maxTimestamp:null,nonce:77}
+export function equipmentAddressGasEffect(owner:string,delta:bigint){
+  const ty=normalizeStructTag('0x2::balance::Balance<0x2::sui::SUI>')
+  const field=deriveDynamicFieldID('0xacc',`0x2::accumulator::Key<${ty}>`,bcs.Address.serialize(owner).toBytes())
+  return [field,{inputState:{NotExist:true},idOperation:{None:true},outputState:{AccumulatorWriteV1:{
+    address:{address:owner,ty},operation:delta<0n?{Split:true}:{Merge:true},value:{Integer:String(delta<0n?-delta:delta)},
+  }}}]
+}
 export const EquipmentMarketEventsBcs=bcs.struct('TransactionEvents',{data:bcs.vector(bcs.struct('Event',{
   package_id:bcs.Address,transaction_module:bcs.string(),sender:bcs.Address,type_:bcs.StructTag,contents:bcs.vector(bcs.u8()),
 }))})
@@ -45,4 +55,30 @@ export async function equipmentMarketEvidenceFixture(action:EquipmentMarketActio
   return {...f,rawClient:f.client,client,events,packages,ledger,effects,refresh,fields,custody,listingId,
     changeMarket(change:(v:any)=>void){change(fields);events[events.length-1].contents=[...codec.serialize(fields).toBytes()];refresh()},
     changeCustody(change:(v:any)=>void){change(custody);events[0].contents=[...EquipmentMarketCustodyEventBcs.serialize(custody).toBytes()];refresh()}}
+}
+
+export async function linkEquipmentOriginalCheckpoint(f:Awaited<ReturnType<typeof equipmentMarketEvidenceFixture>>,wrongEffects=false){
+  const checkpoint=await activityEvidenceFixture()
+  checkpoint.summaryData.sequence_number=String(f.ledger.checkpoint)
+  checkpoint.summaryData.epoch=f.effects.V2.executedEpoch
+  checkpoint.contentsData.V2!.transactions[1].digest={
+    transaction:f.record.digest,
+    effects:wrongEffects?adigest(12):activityHash('TransactionEffects',f.ledger.effects.bcs.value),
+  }
+  checkpoint.rehashContents()
+  f.client.ledgerService.getCheckpoint=checkpoint.client.ledgerService.getCheckpoint
+}
+
+export async function equipAddressGasEvidence(f:Awaited<ReturnType<typeof equipmentMarketEvidenceFixture>>){
+  f.tx.setGasPayment([])
+  f.tx.setExpiration({ValidDuring:equipmentAddressGasWindow})
+  Object.assign(f.record,await equipmentRecordWithTransaction(f.record,f.tx))
+  f.ledger.digest=f.record.digest
+  f.ledger.transaction={digest:f.record.digest,bcs:{value:fromBase64(f.record.bytes)}}
+  f.ledger.effects.transactionDigest=f.record.digest
+  Object.assign(f.effects.V2,{transactionDigest:f.record.digest,gasObjectIndex:null,
+    changedObjects:[equipmentAddressGasEffect(f.record.snapshot.actor,-1n)]})
+  f.refresh()
+  await linkEquipmentOriginalCheckpoint(f)
+  return f
 }

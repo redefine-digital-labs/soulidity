@@ -29,8 +29,12 @@ function digest(v: string) { check(fromBase58(v).length === 32 && toBase58(fromB
  * by its final effects, never by a newly observed object version. */
 export function historicalObjectOutput(effects: Effects, objectId: string,
   mode: 'created' | 'mutated' | 'written' = 'written'): HistoricalObjectReference {
+  return historicalObjectOutputForStatus(effects, objectId, mode, 'Success')
+}
+function historicalObjectOutputForStatus(effects: Effects, objectId: string,
+  mode: 'created' | 'mutated' | 'written', status: 'Success' | 'Failure'): HistoricalObjectReference {
   const e = effects.V2
-  check(e && e.status.$kind === 'Success', 'SUCCESSFUL_V2_EFFECTS_REQUIRED')
+  check(e && e.status.$kind === status, status === 'Success' ? 'SUCCESSFUL_V2_EFFECTS_REQUIRED' : 'FAILED_V2_EFFECTS_REQUIRED')
   const matches = e.changedObjects.filter(([id]) => id === objectId)
   check(matches.length === 1 && !e.unchangedConsensusObjects.some(([id]) => id === objectId), 'OUTPUT_NOT_UNIQUE')
   const change = matches[0][1], write = change.outputState.ObjectWrite, version = BigInt(e.lamportVersion)
@@ -45,18 +49,60 @@ export function historicalObjectOutput(effects: Effects, objectId: string,
     inputOwner: input ? structuredClone(input[1]) : null }
 }
 
+/** Exact original input, including a coin consumed/deleted by gas smashing or
+ * merging. No current version or replacement object can establish this input. */
+export function historicalObjectInput(effects: Effects, objectId: string): HistoricalObjectReference {
+  return historicalObjectInputForStatus(effects, objectId, 'Success')
+}
+function historicalObjectInputForStatus(effects: Effects, objectId: string, status: 'Success' | 'Failure'): HistoricalObjectReference {
+  const e = effects.V2
+  check(e?.status.$kind === status, status === 'Success' ? 'SUCCESSFUL_V2_EFFECTS_REQUIRED' : 'FAILED_V2_EFFECTS_REQUIRED')
+  const matches = e.changedObjects.filter(([id]) => id === objectId), change = matches[0]?.[1], input = change?.inputState.Exist
+  check(matches.length === 1 && !e.unchangedConsensusObjects.some(([id]) => id === objectId) && input
+    && ['None', 'Deleted'].includes(change.idOperation.$kind), 'INPUT_NOT_UNIQUE')
+  const version = BigInt(input[0][0])
+  check(uint(version) && uint(BigInt(e.lamportVersion)) && version < BigInt(e.lamportVersion), 'INVALID_INPUT_VERSION')
+  digest(input[0][1])
+  return { version, digest: input[0][1], owner: structuredClone(input[1]), created: false,
+    inputVersion: version, inputDigest: input[0][1], inputOwner: structuredClone(input[1]) }
+}
+
 /** Require the full canonical Object BCS and recompute its typed Sui digest.
  * Merely labelling arbitrary contents with an effects digest is not proof. */
-export async function readHistoricalMoveObject(params: {
+type HistoricalMoveObjectInput = {
   client: SuiGrpcClient; effects: Effects; transactionDigest: string; objectId: string; type: string
-  signal: AbortSignal; mode?: 'created' | 'mutated' | 'written' | 'readonly'; maxBytes?: number
-}) {
+  signal: AbortSignal; mode?: 'created' | 'mutated' | 'written' | 'readonly' | 'input'; maxBytes?: number
+}
+export async function readHistoricalMoveObject(params: HistoricalMoveObjectInput) {
+  return readHistoricalMoveObjectWithStatus(params, 'Success')
+}
+/** Authenticate a created output before classifying its Move type. */
+export async function readHistoricalCreatedMoveObject(params: Omit<HistoricalMoveObjectInput, 'type' | 'mode'>) {
+  return readHistoricalMoveObjectWithStatus({ ...params, mode: 'created' }, 'Success')
+}
+/** Narrow failed-transaction object evidence for an unchanged Shared root.
+ * Preserves real Failure effects; cannot read coins, created/deleted objects,
+ * readonly roots, or a business result as successful. Parent proves finality
+ * and compares before/after payloads before continuing any child history. */
+export async function readHistoricalFailedSharedRoot(params: Omit<HistoricalMoveObjectInput, 'mode'> & { mode: 'input' | 'mutated' }) {
+  const effects = structuredClone(params.effects), e = effects.V2
+  check(e?.status.$kind === 'Failure' && ['input', 'mutated'].includes(params.mode), 'FAILED_SHARED_ROOT_SCOPE')
+  const matches = e.changedObjects.filter(([id]) => id === params.objectId), change = matches[0]?.[1]
+  check(matches.length === 1 && change.idOperation.$kind === 'None' && change.inputState.Exist?.[1].Shared
+    && change.outputState.ObjectWrite?.[1].Shared
+    && change.inputState.Exist[1].Shared.initialSharedVersion === change.outputState.ObjectWrite[1].Shared.initialSharedVersion, 'FAILED_SHARED_ROOT_LINEAGE')
+  const value = await readHistoricalMoveObjectWithStatus({ ...params, effects }, 'Failure')
+  check(value.object.owner.Shared, 'FAILED_SHARED_ROOT_OWNER')
+  return value
+}
+async function readHistoricalMoveObjectWithStatus(params: Omit<HistoricalMoveObjectInput, 'type'> & { type?: string }, status: 'Success' | 'Failure') {
   const { client, signal } = params
   const { effects, transactionDigest, objectId, type, mode, maxBytes } = structuredClone({ effects: params.effects,
     transactionDigest: params.transactionDigest, objectId: params.objectId, type: params.type,
     mode: params.mode ?? 'written', maxBytes: params.maxBytes ?? 1024 * 1024 })
   check(/^0x[0-9a-f]{64}$/.test(objectId) && !/^0x0+$/.test(objectId), 'INVALID_ID')
   check(Number.isSafeInteger(maxBytes) && maxBytes > 0 && maxBytes <= 4 * 1024 * 1024, 'INVALID_BUDGET')
+  check(['created', 'mutated', 'written', 'readonly', 'input'].includes(mode), 'INVALID_MODE')
   check(effects.V2?.transactionDigest === transactionDigest, 'TRANSACTION_MISMATCH'); digest(transactionDigest)
   let reference: Omit<HistoricalObjectReference, 'owner'> & { owner: Owner | null }
   if (mode === 'readonly') {
@@ -69,13 +115,13 @@ export async function readHistoricalMoveObject(params: {
     // Owner is established only after verifying the full Object digest below.
     reference = { version: BigInt(root[0]), digest: root[1], owner: null,
       created: false, inputVersion: BigInt(root[0]), inputDigest: root[1], inputOwner: null }
-  } else reference = historicalObjectOutput(effects, objectId, mode)
+  } else reference = mode === 'input' ? historicalObjectInputForStatus(effects, objectId, status) : historicalObjectOutputForStatus(effects, objectId, mode, status)
   const { response } = await profileReadStep(signal, () => client.ledgerService.getObject({ objectId, version: reference.version,
     readMask: { paths: ['object_id', 'version', 'digest', 'owner', 'object_type', 'contents', 'previous_transaction', 'bcs'] } }, { abort: signal }))
   const row = structuredClone(response.object)
   check(row?.objectId === objectId && row.version === reference.version && row.digest === reference.digest
-    && (mode === 'readonly' || row.previousTransaction === transactionDigest)
-    && row.objectType === normalizeStructTag(type), 'REFERENCE_MISMATCH')
+    && (mode === 'readonly' || mode === 'input' || row.previousTransaction === transactionDigest)
+    && typeof row.objectType === 'string' && (type === undefined || row.objectType === normalizeStructTag(type)), 'REFERENCE_MISMATCH')
   check(row.bcs?.value instanceof Uint8Array && row.bcs.value.length > 0 && row.bcs.value.length <= maxBytes + 1024
     && row.contents?.value instanceof Uint8Array && row.contents.value.length > 0 && row.contents.value.length <= maxBytes, 'BCS_BUDGET')
   const bytes = row.bcs.value, object = bcs.Object.parse(bytes), move = object.data.Move
@@ -84,7 +130,7 @@ export async function readHistoricalMoveObject(params: {
   check(toBase64(bcs.Object.serialize(object).toBytes()) === toBase64(bytes)
     && toBase58(blake2b(preimage, { dkLen: 32 })) === reference.digest, 'BCS_DIGEST_MISMATCH')
   check(move && move.version === String(reference.version)
-    && historicalMoveObjectType(move.type) === normalizeStructTag(type)
+    && historicalMoveObjectType(move.type) === row.objectType
     && `0x${toHex(move.contents.subarray(0, 32))}` === objectId
     && toBase64(move.contents) === toBase64(row.contents.value)
     && object.previousTransaction === row.previousTransaction && (mode === 'readonly' || same(object.owner, reference.owner)), 'BCS_OBJECT_MISMATCH')
@@ -99,5 +145,5 @@ export async function readHistoricalMoveObject(params: {
         : owner.$kind === 'Immutable' && raw?.kind === 4, 'OWNER_MISMATCH')
   if (owner.Shared) check(uint(BigInt(owner.Shared.initialSharedVersion)) && BigInt(owner.Shared.initialSharedVersion) <= reference.version, 'INVALID_SHARED_BIRTH')
   check(reference.owner, 'OWNER_REQUIRED')
-  return { bytes: new Uint8Array(move.contents), object, reference: { ...reference, owner: reference.owner } }
+  return { bytes: new Uint8Array(move.contents), object, type: row.objectType, reference: { ...reference, owner: reference.owner } }
 }

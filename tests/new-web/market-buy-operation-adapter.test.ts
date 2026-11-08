@@ -7,7 +7,7 @@ import { runMarketBuyOperation,type MarketBuySnapshot,type MarketBuyOperationRec
 import { MAINNET_GENESIS_DIGEST } from '../../web/lib/animacraft/mainnet-chain'
 import { marketBuyFixture,marketBuyEventEvidence,buySigner,bid,buyCoinBcs } from './fixtures/market-buy-operation'
 import { marketCancelCheckpointFixture } from './fixtures/market-cancel-operation'
-async function fixture(options:{newKiosk?:boolean;balances?:string[]}={}){
+async function fixture(options:{newKiosk?:boolean;balances?:string[];addressGas?:boolean}={}){
   const f=await marketBuyFixture(options);let address:string|null=f.snapshot.buyer
   const event=marketBuyEventEvidence(f.record);const checkpoint=marketCancelCheckpointFixture()
   const effects=(success=true,digest=f.record.digest)=>bcs.TransactionEffects.serialize({V2:{status:success?{Success:true}:{Failure:{error:{InsufficientGas:true},command:0}},
@@ -23,6 +23,9 @@ async function fixture(options:{newKiosk?:boolean;balances?:string[]}={}){
     getTransaction:vi.fn(async()=>({response:{transaction:ledger}})),getCheckpoint:vi.fn(async()=>({response:{checkpoint:checkpoint.checkpoint}})),
     getObject:vi.fn(async(request:{objectId:string})=>({response:{object:request.objectId===pkg.objectId?pkg:f.objects.get(request.objectId)}}))},
     stateService:{listOwnedObjects:vi.fn(async(request:{pageToken?:Uint8Array})=>({response:pages[request.pageToken?.[0]??0]}))},
+    transactionExecutionService:{simulateTransaction:vi.fn(async input=>({response:{transaction:{
+      transaction:input.transaction,effects:{status:{success:true}},
+    }}}))},
     core:{executeTransaction:vi.fn(async()=>({})),resolveTransactionPlugin:()=>async(data:any,_options:any,next:()=>Promise<void>)=>{
       data.inputs=data.inputs.map((input:any)=>{
         if(!input.UnresolvedObject)return input
@@ -30,7 +33,7 @@ async function fixture(options:{newKiosk?:boolean;balances?:string[]}={}){
         return id===f.snapshot.bindingId||id===f.snapshot.buyerKioskCapId
           ?Inputs.ObjectRef({objectId:id,version:'2',digest:f.snapshot.release.soulidityCallableDigest})
           :Inputs.SharedObjectRef({objectId:id,initialSharedVersion:'1',mutable:![f.snapshot.release.marketConfigV2Id,f.snapshot.release.soulTransferPolicyId].includes(id)})
-      });data.gasData=f.tx.getData().gasData;await next()
+      });data.gasData={...f.tx.getData().gasData,...(options.addressGas?{payment:[]}:{})};await next()
     }}}
   const read=vi.fn(async(_listing?:string)=>f.snapshot)
   const sign=vi.fn(async(tx:Transaction)=>buySigner.signTransaction(await tx.build()))
@@ -41,6 +44,32 @@ async function fixture(options:{newKiosk?:boolean;balances?:string[]}={}){
   return {...f,client,adapter,params,pages,event,ledger,pkg,effects,checkpoint,read,sign,sync,observed,setAddress:(value:string|null)=>{address=value}}
 }
 afterEach(()=>vi.useRealTimers())
+it.each([false,true])('prepares and signs exact address-balance gas with new buyer Kiosk=%s',async newKiosk=>{
+  const f=await fixture({newKiosk,addressGas:true}),record=await f.adapter.prepare()
+  const raw=bcs.TransactionData.parse(fromBase64(record.bytes)).V1!
+  expect(raw.gasData.payment).toEqual([])
+  expect(raw.expiration.ValidDuring).toMatchObject({chain:MAINNET_GENESIS_DIGEST,minEpoch:'9',maxEpoch:'10'})
+  expect(record.paymentCoins).toEqual(f.record.paymentCoins)
+  expect(f.client.transactionExecutionService.simulateTransaction).toHaveBeenLastCalledWith(
+    expect.objectContaining({transaction:{bcs:{value:fromBase64(record.bytes)}},doGasSelection:false}),expect.anything())
+  await f.adapter.preflight(record,true)
+  const signed=await f.adapter.sign(record)
+  expect(signed.bytes).toBe(record.bytes)
+  await f.adapter.verifySignature({...record,phase:'SIGNED',signature:signed.signature})
+  f.setAddress(null);f.client.ledgerService.getTransaction.mockRejectedValueOnce({code:'NOT_FOUND'})
+  await expect(f.adapter.query(record)).resolves.toBe('MISSING')
+  expect(f.client.core.executeTransaction).not.toHaveBeenCalled()
+})
+it('blocks altered exact simulation and premature address-gas preflight before signing',async()=>{
+  const f=await fixture({addressGas:true}),record=await f.adapter.prepare()
+  f.client.ledgerService.getEpoch.mockResolvedValueOnce({response:{epoch:{epoch:8n}}})
+  await expect(f.adapter.preflight(record,true)).rejects.toThrow('outside its epoch window')
+  f.client.transactionExecutionService.simulateTransaction.mockResolvedValue({response:{transaction:{
+    transaction:{bcs:{value:Uint8Array.of(1)}},effects:{status:{success:true}},
+  }}})
+  await expect(f.adapter.preflight(record,true)).rejects.toThrow('address-gas simulation failed')
+  expect(f.sign).not.toHaveBeenCalled()
+})
 it.each([{newKiosk:false,balances:['1200000']},{newKiosk:false,balances:['600000','500000']},
   {newKiosk:true,balances:['1200000']},{newKiosk:true,balances:['600000','500000']}])
   ('prepares and preflights actual SDK bytes newKiosk=$newKiosk payment=$balances',async options=>{

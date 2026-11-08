@@ -1,1 +1,5 @@
-../../../../../../../Documents/Claude/Projects/soulidity-ecosystem/soul-sdk/packages/sui-core/src/sui-network.ts
+export type SupportedSuiNetwork = 'testnet' | 'mainnet'
+
+export function resolveSuiNetwork(value: string | null | undefined): SupportedSuiNetwork {
+  return value === 'mainnet' ? 'mainnet' : 'testnet'
+}

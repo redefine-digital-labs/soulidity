@@ -1,5 +1,6 @@
 'use client'
 
+import {withPackageObjectIdentity} from '@/lib/sui/package-object-client'
 import {useEffect} from 'react'
 import {useCommittedSession,useSessionState,type SessionLease} from './use-committed-session'
 import {useCurrentAccount,useCurrentWallet,useSignTransaction,useSuiClient} from '@mysten/dapp-kit'
@@ -15,6 +16,7 @@ import {equipmentMarketOperationKey,terminalEquipmentMarketOperation,validateEqu
 import {createEquipmentMarketOperationAdapter,equipmentMarketWritable} from '@/lib/animacraft/equipment-market-operation-adapter'
 import type {EquipmentMarketReadRequest} from '@/lib/animacraft/equipment-market-operation-snapshot'
 import {marketListCanonical} from '@/lib/animacraft/market-list-operation'
+import {queryEquipmentMarketPurchaseFunds,type EquipmentMarketPurchaseFunds} from '@/lib/animacraft/equipment-market-purchase-funds'
 
 type HistoryResult='MISSING'|'PENDING'|'SUCCEEDED'|'FAILED'
 /** The item/actor journal survives draft, listing and release changes. Recovery
@@ -31,6 +33,7 @@ export function useEquipmentMarketActions(params:{request:EquipmentMarketReadReq
   const [snapshot,setSnapshot]=useSessionState<EquipmentMarketOperationSnapshot|null>(session,null)
   const [record,setRecord]=useSessionState<EquipmentMarketOperationRecord|null>(session,null)
   const [history,setHistory]=useSessionState<EquipmentMarketOperationRecord[]>(session,[]),[historyResults,setHistoryResults]=useSessionState<Record<string,HistoryResult>>(session,{})
+  const [funds,setFunds]=useSessionState<EquipmentMarketPurchaseFunds|null>(session,null)
   const [error,setError]=useSessionState<string|null>(session,null),[loading,setLoading]=useSessionState(session,Boolean(request&&request.actor===address)),[busy,setBusy]=useSessionState(session,false),[refreshIndex,setRefreshIndex]=useSessionState(session,0)
   const activeActor=Boolean(request&&request.actor===address)
   function readRecovery(){
@@ -95,7 +98,7 @@ export function useEquipmentMarketActions(params:{request:EquipmentMarketReadReq
         if(!matches())throw new Error('Wallet changed; recover the saved equipment transaction after reconnecting')
         const controller=new AbortController();lease!.requests.add(controller)
         try{const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(25000)])
-          const result=await profileReadStep(signal,()=>confirmBrowserEquipmentMarketOperation(value,{signal},{client:grpc}))
+          const result=await profileReadStep(signal,()=>confirmBrowserEquipmentMarketOperation(value,{signal},{client:withPackageObjectIdentity(grpc,signal)}))
           if(!matches())throw new Error('Wallet changed during equipment readback');return result
         }finally{lease!.requests.delete(controller)}
       }})
@@ -129,8 +132,21 @@ export function useEquipmentMarketActions(params:{request:EquipmentMarketReadReq
     }catch(cause){if(matches())setError(message(cause));return null}
     finally{lease!.setRunning(false);if(matches())setBusy(false)}
   }
+  async function checkFunds(){
+    const lease=session.capture(),saved=visibleRecord
+    const grpc=(client as unknown as {grpc?:SuiGrpcClient}).grpc
+    if(!activeActor||!grpc||saved?.action!=='buy'||saved.phase!=='SUCCEEDED'||!lease?.matches()||lease.isRunning())return
+    const controller=new AbortController()
+    lease.requests.add(controller);lease.setRunning(true);setBusy(true);setError(null);setFunds(null)
+    try{
+      const proof=await queryEquipmentMarketPurchaseFunds(saved,grpc,controller.signal)
+      if(lease.matches())setFunds(proof)
+    }catch(cause){if(lease.matches())setError(message(cause))}
+    finally{lease.requests.delete(controller);lease.setRunning(false);if(lease.matches())setBusy(false)}
+  }
   return {snapshot:visibleSnapshot,record:visibleRecord,history:visibleHistory,historyResults,
-    error,loading,busy,pending,canStart,checkHistory,start:()=>run(true),resume:()=>run(),check:()=>run(false,true),
+    error,loading,busy,pending,canStart,checkHistory,checkFunds,funds:funds?.transactionDigest===visibleRecord?.digest?funds:null,
+    start:()=>run(true),resume:()=>run(),check:()=>run(false,true),
     cancelUnsigned:()=>run(false,false,true),retireExpired:()=>run(false,false,false,true),
     refresh:async()=>{if(matches()){setError(null);setSnapshot(null);setLoading(Boolean(request&&request.actor===address));setRefreshIndex(n=>n+1)}}}
 }

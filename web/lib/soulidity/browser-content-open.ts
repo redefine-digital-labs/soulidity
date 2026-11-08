@@ -111,7 +111,7 @@ function wrappedKey(access: BrowserContentAccess, config: BrowserContentSealConf
 
 /** Own the response before handoff, bound actual streaming bytes and release
  * partial buffers on failure. No redirect, cookies or arbitrary artifact URL. */
-export async function fetchBrowserContentBytes(access: BrowserContentAccess, signal: AbortSignal, fetcher: typeof fetch = fetch) {
+export async function fetchBrowserContentBytes(access: Pick<BrowserContentAccess, 'artifact'>, signal: AbortSignal, fetcher: typeof fetch = fetch) {
   const artifact = structuredClone(access.artifact), size = BigInt(artifact.byteLength)
   check(size >= 16n && size <= BigInt(BROWSER_CONTENT_MAX_BYTES), 'Content exceeds the browser read limit')
   const abort = AbortSignal.any([signal, AbortSignal.timeout(30000)])

@@ -1,5 +1,8 @@
 'use client'
 
+import {withPackageObjectIdentity} from '@/lib/sui/package-object-client'
+import { createBrowserSameSoulMutation } from '../soulidity/browser-same-soul-mutation'
+import { sameSoulMarketReadPort } from '../soulidity/same-soul-mutation-client'
 import {useEffect} from 'react'
 import {useCommittedSession,useSessionState,type SessionLease} from './use-committed-session'
 import {useCurrentAccount,useCurrentWallet,useSignTransaction,useSuiClient} from '@mysten/dapp-kit'
@@ -60,7 +63,7 @@ export function useNativeMarketListActions(scope:Scope) {
     }
   },[session])
 
-  async function read(listingId=scope?.listingId??undefined,capId?:string,lease:SessionLease|null=session.capture()) {
+  async function read(listingId=scope?.listingId??undefined,capId?:string,lease:SessionLease|null=session.capture(), operationClient?:SuiGrpcClient) {
     const matches=()=>lease?.matches()===true
     if(!scope || !matches())throw new Error('Soul or wallet session changed; reopen listing')
     if(!releaseConfig)throw configError??new Error('Native market configuration unavailable')
@@ -68,7 +71,7 @@ export function useNativeMarketListActions(scope:Scope) {
     try {
       const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(25000)])
       const value=await profileReadStep(signal,()=>readBrowserNativeMarketList({soulId:scope.soulId,
-        stateId:scope.stateId,listingId,kioskCapId:capId,config:releaseConfig!,signal}))
+        stateId:scope.stateId,listingId,kioskCapId:capId,config:releaseConfig!,signal},operationClient?{client:()=>withPackageObjectIdentity(sameSoulMarketReadPort(operationClient),signal)}:{}))
       const verified=validateMarketListSnapshot(value)
       if(!matches() || verified.soulId!==scope.soulId || verified.stateId!==scope.stateId)
         throw new Error('Listing snapshot does not match this Soul')
@@ -101,11 +104,11 @@ export function useNativeMarketListActions(scope:Scope) {
     && !busy && !loading && !pending)
   const canList=ready && visibleSnapshot?.listAvailable===true,canReprice=ready && visibleSnapshot?.repriceAvailable===true
 
-  function createAdapter(intent:Intent|undefined,priceAtomic:bigint|undefined,lease:SessionLease) {
+  function createAdapter(intent:Intent|undefined,priceAtomic:bigint|undefined,lease:SessionLease,operationClient?:SuiGrpcClient) {
     const matches=lease.matches
-    const grpc=(client as unknown as {grpc?:SuiGrpcClient}).grpc
+    const grpc=operationClient??(client as unknown as {grpc?:SuiGrpcClient}).grpc
     if(!grpc)throw new Error('The verified gRPC wallet client is required')
-    return createMarketListOperationAdapter({client:grpc,read:(listingId,capId)=>read(listingId,capId,lease),observed:intent?visibleSnapshot??undefined:undefined,intent,priceAtomic,
+    return createMarketListOperationAdapter({client:grpc,read:(listingId,capId)=>read(listingId,capId,lease,grpc),observed:intent?visibleSnapshot??undefined:undefined,intent,priceAtomic,
       getAddress:()=>matches()?address:null,
       sign:transaction=>{
         if(!matches() || !account)throw new Error('Wallet or network client changed before signature')
@@ -121,7 +124,7 @@ export function useNativeMarketListActions(scope:Scope) {
         try {
           const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(25000)])
           const result=await profileReadStep(signal,()=>confirmBrowserNativeMarketList(value,
-            {target:readbackConfig!.target,signal},{client:grpc}))
+            {target:readbackConfig!.target,signal},{client:withPackageObjectIdentity(operationClient?sameSoulMarketReadPort(operationClient):grpc,signal)}))
           if(!matches())throw new Error('Wallet changed during listing readback')
           return result
         } finally {lease!.requests.delete(controller)}
@@ -134,11 +137,16 @@ export function useNativeMarketListActions(scope:Scope) {
     if(!scope || !address || !account || !currentWallet || !matches() || lease!.isRunning()
       || (start && !(intent==='list'?canList:canReprice)))return null
     lease!.setRunning(true);setBusy(true);setError(null);setConfirmedResult(null)
+    let coordinateAbort:AbortController|undefined
     try {
-      const result=await runMarketListOperation({soulId:scope.soulId,owner:address,start,queryOnly,cancelUnsigned,retireExpired,
-        store:browserMarketListOperationStore(),adapter:createAdapter(intent,priceAtomic,lease!),
+      coordinateAbort=new AbortController();lease!.requests.add(coordinateAbort)
+      const grpc=(client as unknown as {grpc?:SuiGrpcClient}).grpc;if(!grpc)throw Error('Verified gRPC client required')
+      const coordinate=createBrowserSameSoulMutation({client:grpc,scopes:[{chainIdentifier:'35834a8a',soulId:scope.soulId,author:address}],ownKeys:[marketListOperationKey(scope.soulId,address)],signal:coordinateAbort.signal,guard:()=>{if(!matches())throw Error('Listing wallet/session changed')},recoveryOnly:queryOnly||cancelUnsigned||retireExpired})
+      const operationAdapter=createAdapter(intent,priceAtomic,lease!,coordinate.client)
+      const result=await coordinate.run(()=>runMarketListOperation({soulId:scope.soulId,owner:address,start,queryOnly,cancelUnsigned,retireExpired,
+        store:browserMarketListOperationStore(),adapter:operationAdapter,
         onRecord:value=>{if(matches()){setRecord(value)}},
-      })
+      })).finally(()=>lease!.requests.delete(coordinateAbort!))
       if(!matches())return null
       readRecovery();setRecord(result)
       if(result.phase==='RETIRED' && retireExpired){setSnapshot(null);setLoading(Boolean(scope));setRefreshIndex(value=>value+1)}
@@ -153,7 +161,7 @@ export function useNativeMarketListActions(scope:Scope) {
         setError(message(cause));try {readRecovery()}catch {/* Keep the original error and unknown transaction. */}
       }
       return null
-    } finally {lease!.setRunning(false);if(matches())setBusy(false)}
+    } finally {if(coordinateAbort)lease!.requests.delete(coordinateAbort);lease!.setRunning(false);if(matches())setBusy(false)}
   }
   async function checkHistory(digest:string):Promise<HistoryResult|null> {
     const lease=session.capture(),matches=()=>lease?.matches()===true

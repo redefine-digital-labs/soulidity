@@ -8,6 +8,12 @@ import {fromHex} from '@mysten/sui/utils'
 import {bcs} from '@mysten/sui/bcs'
 const id=(n:number)=>`0x${n.toString(16).padStart(64,'0')}`
 
+it.each(['list','buy','cancel'] as const)('reads custody through the exact address-funded %s checkpoint',async action=>{
+  const f=await fixture(action,'external',false,true)
+  expect(await f.confirm()).toBe('COMPLETE')
+  expect(f.client.ledgerService.getCheckpoint).toHaveBeenCalledTimes(1)
+})
+
 for(const kind of ['base','external'] as const)for(const action of ['list','reprice','buy','cancel','recover'] as const){
   it(`confirms ${kind} ${action} using exact effects, historical objects and current authority`,async()=>{
     const f=await fixture(action,kind)

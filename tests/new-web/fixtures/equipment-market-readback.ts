@@ -1,7 +1,7 @@
 import {vi} from 'vitest'
 import {bcs} from '@mysten/sui/bcs'
 import {fromHex,toBase58} from '@mysten/sui/utils'
-import {equipmentMarketEvidenceFixture} from './equipment-market-evidence'
+import {equipAddressGasEvidence,equipmentMarketEvidenceFixture,linkEquipmentOriginalCheckpoint} from './equipment-market-evidence'
 import {confirmBrowserEquipmentMarketOperation} from '../../../web/lib/animacraft/browser-equipment-market-readback'
 import {equipmentOperationQuote,type EquipmentMarketAction} from '../../../web/lib/animacraft/equipment-market-operation'
 import {EquipmentBaseItemBcs,EquipmentExternalItemBcs,EquipmentLoadoutBcs} from '../../../web/lib/animacraft/native-equipment'
@@ -9,8 +9,10 @@ import {EquipmentBaseHolderKeyBcs,EquipmentBaseOwnershipBcs} from '../../../web/
 import {EquipmentMarketListingBcs} from '../../../web/lib/animacraft/native-equipment-market-bcs'
 import {CompleteReadCatalogBcs} from '../../../web/lib/animacraft/native-complete-read-bcs'
 const id=(n:number)=>`0x${n.toString(16).padStart(64,'0')}`
-export async function equipmentMarketReadbackFixture(action:EquipmentMarketAction='list',kind:'base'|'external'='base',equipped=false){
+export async function equipmentMarketReadbackFixture(action:EquipmentMarketAction='list',kind:'base'|'external'='base',equipped=false,addressGas=false){
   const f=await equipmentMarketEvidenceFixture(action,kind,equipped),r=f.record,s=r.snapshot,objects=f.objects
+  if(addressGas)await equipAddressGasEvidence(f)
+  const gasEffects=f.effects.V2.changedObjects
   r.phase='SUCCEEDED';r.syncStatus='PENDING'
   for(const row of objects.values())if(row.owner?.kind===3)row.owner.version=1n
   for(const pkg of f.packages)objects.get(pkg.objectId).package.typeOrigins.push(...pkg.package.typeOrigins)
@@ -52,6 +54,7 @@ export async function equipmentMarketReadbackFixture(action:EquipmentMarketActio
   moveEntitlement(recipient,value.ownership_epoch)
   const shared={Shared:{initialSharedVersion:String(birth)}}
   f.effects.V2.changedObjects=[
+    ...gasEffects,
     [f.listingId,{inputState:action==='list'?{NotExist:true}:{Exist:[['2',s.reference.digest],shared]},
       outputState:{ObjectWrite:[listing.digest,shared]},idOperation:action==='list'?{Created:true}:{None:true}}],
     ...(action==='reprice'?[]:[[s.asset.itemId,{inputState:{Exist:[[s.reference.version,s.reference.digest],{AddressOwner:action==='list'?s.actor:s.listing!.id}]},
@@ -69,6 +72,7 @@ export async function equipmentMarketReadbackFixture(action:EquipmentMarketActio
       outputState:{ObjectWrite:[raw.digest,owner]},idOperation:{None:true}}])
   }
   f.refresh()
+  if(addressGas)await linkEquipmentOriginalCheckpoint(f)
   const get=vi.fn(async(p:any)=>({response:{object:p.version===undefined?objects.get(p.objectId):history.get(historyKey(p.objectId,p.version))}}))
   const batch=vi.fn(async({requests}:any)=>({response:{objects:requests.map((p:any)=>{
     const object=p.version===undefined?objects.get(p.objectId):history.get(historyKey(p.objectId,p.version))
