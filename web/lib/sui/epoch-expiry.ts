@@ -7,13 +7,17 @@ import { validateEpochCheckpoint, type EpochCheckpoint } from './epoch-checkpoin
  * not an independent BLS proof and not proof of past non-execution. The caller
  * MUST query the exact transaction after this read before retiring/replacing it. */
 export async function readEpochExpiry(client: SuiGrpcClient, expirationEpoch: string,
-  signal: AbortSignal, genesisDigest: string, saved?: EpochCheckpoint, errorPrefix = 'EPOCH_EXPIRY'): Promise<EpochCheckpoint> {
+  signal: AbortSignal, genesisDigest: string, saved?: EpochCheckpoint, errorPrefix = 'EPOCH_EXPIRY',
+  sequenceNumber?: string): Promise<EpochCheckpoint> {
   const check = (value: unknown) => { if (!value) throw new Error(`${errorPrefix}_CHECKPOINT_UNCONFIRMED`) }
   if (saved) validateEpochCheckpoint(saved, expirationEpoch)
+  check(sequenceNumber === undefined || /^(0|[1-9][0-9]{0,19})$/.test(sequenceNumber)
+    && BigInt(sequenceNumber) < (1n << 64n) && (!saved || saved.sequenceNumber === sequenceNumber))
+  const selected = saved?.sequenceNumber ?? sequenceNumber
   const info = await profileReadStep(signal, () => client.ledgerService.getServiceInfo({}, { abort: signal }))
   check(info.response.chainId === genesisDigest)
   const { response } = await profileReadStep(signal, () => client.ledgerService.getCheckpoint({
-    checkpointId: saved ? { oneofKind: 'sequenceNumber', sequenceNumber: BigInt(saved.sequenceNumber) } : { oneofKind: undefined },
+    checkpointId: selected !== undefined ? { oneofKind: 'sequenceNumber', sequenceNumber: BigInt(selected) } : { oneofKind: undefined },
     readMask: { paths: ['sequence_number', 'digest', 'summary', 'signature'] },
   }, { abort: signal }))
   const checkpoint = response.checkpoint, summary = checkpoint?.summary
@@ -23,6 +27,7 @@ export async function readEpochExpiry(client: SuiGrpcClient, expirationEpoch: st
     && checkpoint.signature.signature?.length === 48 && checkpoint.signature.bitmap?.length)
   const result = validateEpochCheckpoint({ bytes: toBase64(summary!.bcs!.value!), digest: checkpoint!.digest,
     epoch: String(summary!.epoch), sequenceNumber: String(summary!.sequenceNumber) }, expirationEpoch)
+  if (selected !== undefined) check(result.sequenceNumber === selected)
   if (saved) check(result.bytes === saved.bytes && result.digest === saved.digest
     && result.sequenceNumber === saved.sequenceNumber && result.epoch === saved.epoch)
   signal.throwIfAborted(); return result

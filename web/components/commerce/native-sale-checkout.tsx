@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { canRetireNativeSaleOriginal } from '@/lib/soulidity/commerce/native-sale-original-retirement'
 import { PurchaseRecoverySaleDelivery } from './purchase-recovery-sale-delivery'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { useCommittedSession, useSessionState } from '@/lib/hooks/use-committed-session'
@@ -19,6 +20,7 @@ const resultText = {
   MISSING: '本次未查到原摘要。',
   PENDING: '已找到原交易，等待终局。',
   FAILED: '已确认原交易失败。',
+  RETIRED: '已核对原购买过期且未执行，可以重新核对报价并准备新交易。',
   SUCCEEDED: '已核对原成交分账、托管交接和授权变化。',
 }
 
@@ -44,7 +46,7 @@ export function NativeSaleCheckout({ soulId, release, initialOffer = '', nativeR
   const phase = view.record?.packet.phase
   const canExecute = Boolean(release && buyer && recordPlan?.offerId === offerId && ['PREPARED', 'SIGNING', 'SIGNED'].includes(phase ?? ''))
 
-  async function run(action: 'review' | 'prepare' | 'load' | 'execute' | 'query' | 'cancel') {
+  async function run(action: 'review' | 'prepare' | 'load' | 'execute' | 'query' | 'cancel' | 'retire') {
     const lease = session.capture(), source = wallet.suiGrpcClient
     if (!buyer || !lease?.matches() || lease.isRunning() || !source) return
     const controller = new AbortController(), signal = controller.signal
@@ -73,7 +75,8 @@ export function NativeSaleCheckout({ soulId, release, initialOffer = '', nativeR
         const result = action === 'execute' && release && canExecute
           ? await executeNativeSaleCheckout({ ...options, activeOfferId: offerId, activeRelease: release, getBuyerAddress,
             sign: tx => wallet.signTransaction(tx, { retainReturnedSignature: true }) })
-          : await recoverNativeSaleCheckout({ ...options, ...(action === 'cancel' ? { cancelUnsigned: true } : {}) })
+          : await recoverNativeSaleCheckout({ ...options, ...(action === 'cancel' ? { cancelUnsigned: true } : {}),
+            ...(action === 'retire' ? { retireExpired: true } : {}) })
         if (active()) setView(previous => ({ ...previous, record: result.record,
           confirmedDigest: result.result.status === 'SUCCEEDED' ? result.record.packet.digest : '', status: result.record.packet.phase === 'CANCELLED'
           ? '已保存本机取消，原件仍可查询。' : resultText[result.result.status] }))
@@ -114,6 +117,8 @@ export function NativeSaleCheckout({ soulId, release, initialOffer = '', nativeR
       <a download={'purchase-' + view.record.packet.digest + '.json'} href={'data:application/json;charset=utf-8,' + encodeURIComponent(view.record.plan.originalText)}>下载原购买 JSON</a>
       <button type="button" disabled={busy} onClick={() => void run('query')}>查询原摘要</button>
       <button type="button" disabled={busy || phase !== 'PREPARED'} onClick={() => void run('cancel')}>取消本机未签名准备</button>
+      <button type="button" disabled={busy || !canRetireNativeSaleOriginal(view.record.packet)} onClick={() => void run('retire')}>核对过期并归档原购买</button>
+      {view.record.retirement && <p>过期证据检查点 {view.record.retirement.sequenceNumber} · Epoch {view.record.retirement.epoch}</p>}
       <button type="button" disabled={busy || !canExecute} onClick={() => void run('execute')}>{phase === 'SIGNED' ? '复核并提交原签名' : '复核并签名原购买'}</button>
     </article>}
     {busy && <p role="status">正在核对或处理原购买…</p>}

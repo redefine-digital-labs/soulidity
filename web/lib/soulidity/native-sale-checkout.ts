@@ -1,3 +1,4 @@
+import { canRetireNativeSaleOriginal, retiredNativeSaleResult, verifyNativeSaleRetirement } from './commerce/native-sale-original-retirement'
 import { simulateNativeSalePacket } from './commerce/native-sale-simulation'
 import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
@@ -62,7 +63,8 @@ export function prepareNativeSaleCheckout(input: WalletLease & {
       const observed = await queryNativeSaleCheckoutRecord(previous, client, signal)
       if (!((previous.packet.phase === 'FAILED' && observed.status === 'FAILED')
         || (previous.packet.phase === 'SUCCEEDED' && observed.status === 'SUCCEEDED')
-        || (previous.packet.phase === 'CANCELLED' && observed.status === 'MISSING'))) return { record: previous, prepared: false }
+        || (previous.packet.phase === 'CANCELLED' && observed.status === 'MISSING')
+        || (previous.packet.phase === 'RETIRED' && observed.status === 'RETIRED'))) return { record: previous, prepared: false }
     }
     const heads = createBrowserSameSoulHeadPort(client, undefined, signal)
     await assertSameSoulForeignHeads({ scopes: [scope], ownKeys: [key], signal, port: heads }); guard()
@@ -83,6 +85,7 @@ export function prepareNativeSaleCheckout(input: WalletLease & {
       reviewedTotal: review.total, reviewedQuoteIdentity: review.quoteIdentity })
     const record = await parseNativeSaleCheckoutRecord({ schema: 'soulidity.native-sale-checkout.v1',
       plan: { ...scope, originalText: JSON.stringify(original), reviewedQuoteIdentity: review.quoteIdentity }, packet: original.packet })
+    check(previous?.packet.digest !== record.packet.digest, 'SALE_CHECKOUT_PREVIOUS_PACKET_REUSE')
     check(canonical(await journal.read(key)) === canonical(previous), 'SALE_CHECKOUT_HEAD_CHANGED')
     guard()
     await journal.write(key, record)
@@ -95,25 +98,32 @@ export function prepareNativeSaleCheckout(input: WalletLease & {
 }
 
 export function recoverNativeSaleCheckout(input: {
-  record: NativeSaleCheckoutRecord; client: SuiGrpcClient; signal: AbortSignal; cancelUnsigned?: true
+  record: NativeSaleCheckoutRecord; client: SuiGrpcClient; signal: AbortSignal; cancelUnsigned?: true; retireExpired?: true
 }) {
   const record = structuredClone(input.record), signal = AbortSignal.any([input.signal, AbortSignal.timeout(90000)])
   const client = captureSameSoulMutationClient(input.client, signal)
   return lockSale(record.plan, async (key, journal) => {
     check(nativeSaleCheckoutMatches(await journal.read(key), record), 'SALE_CHECKOUT_HEAD_CHANGED')
-    if (input.cancelUnsigned) check(record.packet.phase === 'PREPARED' && record.packet.signature === null, 'SALE_CHECKOUT_CANCEL_PREPARED_ONLY')
+    const { cancelUnsigned, retireExpired } = input
+    check(!cancelUnsigned || !retireExpired, 'SALE_CHECKOUT_RECOVERY_MODE')
+    if (retireExpired) check(canRetireNativeSaleOriginal(record.packet), 'SALE_CHECKOUT_RETIRE_PHASE')
+    if (cancelUnsigned) check(record.packet.phase === 'PREPARED' && record.packet.signature === null, 'SALE_CHECKOUT_CANCEL_PREPARED_ONLY')
     const result = await queryNativeSaleCheckoutRecord(record, client, signal)
     signal.throwIfAborted()
-    if (input.cancelUnsigned) check(result.status === 'MISSING', 'SALE_CHECKOUT_CANCEL_ORIGINAL_FOUND')
+    if (cancelUnsigned) check(result.status === 'MISSING', 'SALE_CHECKOUT_CANCEL_ORIGINAL_FOUND')
     check(!['SUCCEEDED', 'FAILED'].includes(record.packet.phase) || record.packet.phase === result.status, 'SALE_CHECKOUT_TERMINAL_CONTRADICTION')
-    const phase = input.cancelUnsigned ? 'CANCELLED' : result.status === 'SUCCEEDED' || result.status === 'FAILED' ? result.status : record.packet.phase
+    const retirement = retireExpired && result.status === 'MISSING' ? await verifyNativeSaleRetirement({
+      client, signal, packet: record.packet, author: record.plan.author, queryOriginal: () => queryNativeSaleCheckoutRecord(record, client, signal),
+    }) : undefined
+    const phase = retirement ? 'RETIRED' : cancelUnsigned ? 'CANCELLED'
+      : result.status === 'SUCCEEDED' || result.status === 'FAILED' ? result.status : record.packet.phase
     if (phase === record.packet.phase) return { record, result }
     check(nativeSaleCheckoutMatches(await journal.read(key), record), 'SALE_CHECKOUT_HEAD_CHANGED')
     signal.throwIfAborted()
-    const updated = { ...record, packet: { ...record.packet, phase } }
+    const updated = { ...record, ...(retirement ? { retirement } : {}), packet: { ...record.packet, phase } }
     await journal.write(key, updated)
     check(nativeSaleCheckoutMatches(await journal.read(key), updated), 'SALE_CHECKOUT_PERSISTENCE')
-    return { record: updated, result }
+    return { record: updated, result: retirement ? retiredNativeSaleResult(record.packet.digest) : result }
   })
 }
 

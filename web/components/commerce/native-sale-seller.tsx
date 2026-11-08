@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { canRetireNativeSaleOriginal } from '@/lib/soulidity/commerce/native-sale-original-retirement'
 import { NativeSaleSellerSettlement } from './native-sale-seller-settlement'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { useCommittedSession, useSessionState } from '@/lib/hooks/use-committed-session'
@@ -16,7 +17,8 @@ import { browserNativeSellerJournal, discoverNativeSellerRecords, nativeSellerKe
 
 const address = (value: string) => isValidSuiAddress(value.trim()) ? normalizeSuiAddress(value.trim()) : ''
 const positive = (value: string) => /^[1-9][0-9]{0,19}$/.test(value)
-const resultText = { MISSING: '本次未查到原摘要。', PENDING: '已找到原交易，等待终局。', FAILED: '已确认原交易失败。' }
+const resultText = { MISSING: '本次未查到原摘要。', PENDING: '已找到原交易，等待终局。', FAILED: '已确认原交易失败。',
+  RETIRED: '已核对原操作过期且未执行，可以核对新操作。' }
 type Result = Awaited<ReturnType<typeof queryNativeSellerOriginal>>
 
 export function NativeSaleSeller({ soulId, release }: { soulId: string; release: NativeSaleCheckoutRelease | null }) {
@@ -44,7 +46,7 @@ export function NativeSaleSeller({ soulId, release }: { soulId: string; release:
   const canPrepare = Boolean(view.review && gasCoinIds.every(Boolean) && positive(budget))
   const buyRoute = '/souls/' + encodeURIComponent(soulId) + '/buy/native'
 
-  async function run(action: 'review' | 'prepare' | 'load' | 'execute' | 'query' | 'discard') {
+  async function run(action: 'review' | 'prepare' | 'load' | 'execute' | 'query' | 'discard' | 'retire') {
     const lease = session.capture()
     if (!lease?.matches() || lease.isRunning()) return
     const controller = new AbortController(), signal = controller.signal
@@ -80,10 +82,10 @@ export function NativeSaleSeller({ soulId, release }: { soulId: string; release:
           ? await reconcileNativeSellerOriginal({ record, client, signal })
           : { record, result: await queryNativeSellerOriginal(record, client, signal) }
         if (active()) setView(previous => ({ ...previous, ...observed }))
-      } else if (record && walletClient && sameSeller && (action === 'discard' || action === 'execute' && canExecute && release)) {
+      } else if (record && walletClient && sameSeller && (action === 'discard' || action === 'retire' || action === 'execute' && canExecute && release)) {
         const options = { record, client: withPackageObjectIdentity(walletClient, signal), signal }
-        const observed = action === 'discard'
-          ? await reconcileNativeSellerOriginal({ ...options, cancelUnsigned: true })
+        const observed = action === 'discard' || action === 'retire'
+          ? await reconcileNativeSellerOriginal({ ...options, ...(action === 'discard' ? { cancelUnsigned: true } : { retireExpired: true }) })
           : await executeNativeSellerOriginal({ ...options, activeRelease: release!, getSellerAddress,
             sign: tx => wallet.signTransaction(tx, { retainReturnedSignature: true }) })
         if (active()) setView(previous => ({ ...previous, ...observed,
@@ -137,6 +139,8 @@ export function NativeSaleSeller({ soulId, release }: { soulId: string; release:
       <p>Gas 预算 {record.plan.gas.budget} MIST · {record.plan.gas.coins.map(coin => coin.objectId).join('、')}</p>
       <button type="button" disabled={busy} onClick={() => void run('query')}>查询原摘要</button>
       <button type="button" disabled={busy || !sameSeller || phase !== 'PREPARED'} onClick={() => void run('discard')}>取消本机未签名准备</button>
+      <button type="button" disabled={busy || !sameSeller || !canRetireNativeSaleOriginal(record.packet)} onClick={() => void run('retire')}>核对过期并归档原操作</button>
+      {record.retirement && <p>过期证据检查点 {record.retirement.sequenceNumber} · Epoch {record.retirement.epoch}</p>}
       <button type="button" disabled={busy || !canExecute} onClick={() => void run('execute')}>{phase === 'SIGNED' ? '复核并提交原签名' : '复核并签名原操作'}</button>
     </article>}
     {busy && <p role="status">正在核对或处理原操作…</p>}

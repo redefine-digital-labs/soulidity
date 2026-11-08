@@ -5,9 +5,11 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import type { Transaction } from '@mysten/sui/transactions'
 import { toBase64 } from '@mysten/sui/utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { verifyNativeSaleRetirement } from '../../web/lib/soulidity/commerce/native-sale-original-retirement'
 import { PurchaseRecoveryImport } from '../../web/components/commerce/purchase-recovery-import'
 import { parsePurchaseRecoveryOriginal } from '../../web/lib/soulidity/commerce/purchase-recovery-original'
 import NativeSoulBuyPage from '../../web/app/souls/[id]/buy/native/page'
+import { nativeSaleRetirementFixture } from './fixtures/native-sale-retirement'
 import { nativeSaleCheckoutFixture } from './fixtures/native-sale-checkout'
 import { nativeSaleLifecycleWireFixture } from './fixtures/commerce-native-sale-lifecycle-wire'
 import { aid } from './fixtures/activity-transaction-evidence'
@@ -209,4 +211,69 @@ it('cold-discovers the original on the existing recovery page without the buyer 
   expect(mount.querySelector('a[download]')?.getAttribute('href')).toContain(encodeURIComponent(record.plan.originalText))
   expect(await f.read()).toEqual(record)
   expect(f.sign).not.toHaveBeenCalled()
+})
+
+it('retires a refused Native purchase from its real checkout and archives before preparing a new packet', async () => {
+  const f = await setup()
+  await f.prepare()
+  f.sign.mockRejectedValueOnce(Error('WALLET_REFUSED'))
+  await expect(f.execute()).rejects.toThrow('WALLET_REFUSED')
+  const original = (await f.read())!
+  expect(original.packet.phase).toBe('SIGNING')
+  const witness = await nativeSaleRetirementFixture(f.client, original.packet, f.gas)
+  const route = Promise.resolve({ id: f.soulId })
+  const search = Promise.resolve({ offer: f.offerId })
+  await act(async () => root.render(<NativeSoulBuyPage params={route} searchParams={search} />))
+  await click('读取本机原购买')
+  await text(original.packet.digest)
+  await click('核对过期并归档原购买')
+  await text('已核对原购买过期且未执行')
+  const retired = (await f.read())!
+  expect(retired.packet).toEqual({ ...original.packet, phase: 'RETIRED' })
+  expect(retired.retirement).toEqual(witness.recorded)
+  expect(f.client.core.executeTransaction).not.toHaveBeenCalled()
+
+  await expect(f.execute()).resolves.toMatchObject({ result: { status: 'RETIRED', retiredOriginalDigest: original.packet.digest } })
+  f.client.ledgerService.getEpoch.mockResolvedValue({ response: { epoch: { epoch: 7n, referenceGasPrice: 1n } } })
+  const next = await f.prepare()
+  expect(next.prepared).toBe(true)
+  expect(next.record.packet.digest).not.toBe(original.packet.digest)
+  expect(await browserNativeSaleCheckoutJournal(true).history(f.key)).toEqual([retired])
+  expect(witness.fetch).toHaveBeenCalledTimes(3)
+  expect(f.sign).toHaveBeenCalledOnce()
+  wallet.address = null
+  await act(async () => root.render(<PurchaseRecoveryImport soulId={f.soulId} createReadOnlyClient={() => f.client} />))
+  await click('读取本机独立 Native 原购买')
+  await text(original.packet.digest)
+  await click(original.packet.digest + ' · RETIRED')
+  await click('查询原购买历史')
+  await text('已重新核对原购买过期且未执行。证据检查点 812')
+  expect(witness.fetch).toHaveBeenCalledTimes(4)
+})
+
+it.each([
+  [{ epoch: 6 }, 'RETIREMENT_INDEX_CHECKPOINT'],
+  [{ gasChanged: true }, 'RETIREMENT_GAS_CHANGED'],
+  [{ originalFound: true }, 'RETIREMENT_INDEX_ORIGINAL_FOUND'],
+  [{ differentCheckpoint: true }, 'RETIREMENT_CHECKPOINT_MISMATCH'],
+] as const)('keeps the original reserved when the checkpoint or Coin witness disagrees (%j)', async (options, reason) => {
+  const f = await setup(), { record } = await f.prepare()
+  await nativeSaleRetirementFixture(f.client, record.packet, f.gas, options)
+  await expect(recoverNativeSaleCheckout({ record, client: f.client, signal: signal(), retireExpired: true })).rejects.toThrow(reason)
+  expect(await f.read()).toEqual(record)
+  expect(f.sign).not.toHaveBeenCalled()
+  expect(f.client.core.executeTransaction).not.toHaveBeenCalled()
+})
+
+it('requires the exact digest query to remain missing after the checkpoint witness', async () => {
+  const f = await setup(), { record } = await f.prepare()
+  const witness = await nativeSaleRetirementFixture(f.client, record.packet, f.gas)
+  const queryOriginal = vi.fn(async () => ({ status: 'PENDING' }))
+  await expect(verifyNativeSaleRetirement({ client: f.client, packet: record.packet, author: f.buyer,
+    signal: signal(), queryOriginal })).rejects.toThrow('RETIREMENT_ORIGINAL_FOUND')
+  expect(queryOriginal).toHaveBeenCalledAfter(witness.getCheckpoint)
+  await expect(verifyNativeSaleRetirement({ client: f.client, packet: { ...record.packet, digest: witness.recorded.digest }, author: f.buyer,
+    signal: signal(), queryOriginal })).rejects.toThrow('RETIREMENT_PACKET')
+  expect(witness.fetch).toHaveBeenCalledOnce()
+  expect(await f.read()).toEqual(record)
 })

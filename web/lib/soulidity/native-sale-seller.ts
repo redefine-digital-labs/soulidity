@@ -6,6 +6,7 @@ import { profileReadStep } from '@soulidity/sdk'
 import { publicMutationCanonical as canonical, type PublicMutationPacket } from '../sui/public-mutation-journal'
 import { commerceCheck as check } from './commerce/economics-read'
 import { buildNativeSellerTransaction, prepareNativeSellerPlan, recheckNativeSellerPlan } from './commerce/native-sale-seller-plan'
+import { canRetireNativeSaleOriginal, retiredNativeSaleResult, verifyNativeSaleRetirement } from './commerce/native-sale-original-retirement'
 import { simulateNativeSalePacket } from './commerce/native-sale-simulation'
 import { captureAccountOriginalReadClientV155 } from './management/account-original-readers-v155'
 import { captureSameSoulMarketExecutionClient, captureSameSoulMutationClient } from './same-soul-mutation-client'
@@ -33,7 +34,7 @@ async function save(journal: Journal, key: string, expected: NativeSellerRecord 
   return record
 }
 function checkTerminal(record: NativeSellerRecord, status: string) {
-  check(!['SUCCEEDED', 'FAILED'].includes(record.packet.phase) || record.packet.phase === status, 'SELLER_TERMINAL_CONTRADICTION')
+  check(!['SUCCEEDED', 'FAILED', 'RETIRED'].includes(record.packet.phase) || record.packet.phase === status, 'SELLER_TERMINAL_CONTRADICTION')
 }
 function walletGuard(release: NativeSaleCheckoutRelease, seller: string, getSellerAddress: () => string | null, signal: AbortSignal) {
   signal.throwIfAborted()
@@ -58,7 +59,7 @@ export function prepareNativeSellerOriginal(input: Parameters<typeof prepareNati
       const result = await queryNativeSellerOriginal(previous, client, signal)
       checkTerminal(previous, result.status)
       if (!(previous.packet.phase === 'CANCELLED' && result.status === 'MISSING')
-        && !['SUCCEEDED', 'FAILED'].includes(previous.packet.phase)) return { record: previous, prepared: false }
+        && !['SUCCEEDED', 'FAILED', 'RETIRED'].includes(previous.packet.phase)) return { record: previous, prepared: false }
     }
     await excludeForeign(client, signal, scope, key); guard()
     const plan = await prepareNativeSellerPlan({ ...request, client, signal, getSellerAddress })
@@ -78,18 +79,27 @@ export function prepareNativeSellerOriginal(input: Parameters<typeof prepareNati
 
 /** Only the current local head may be changed. Historical lookup is available
  * separately without a wallet, journal lock, or current deployment selection. */
-export function reconcileNativeSellerOriginal(input: { record: NativeSellerRecord; client: SuiGrpcClient; signal: AbortSignal; cancelUnsigned?: true }) {
+export function reconcileNativeSellerOriginal(input: { record: NativeSellerRecord; client: SuiGrpcClient; signal: AbortSignal; cancelUnsigned?: true; retireExpired?: true }) {
   const record = structuredClone(input.record), signal = AbortSignal.any([input.signal, AbortSignal.timeout(90000)])
   const client = captureSameSoulMutationClient(input.client, signal), cancel = input.cancelUnsigned === true
+  const retire = input.retireExpired === true
   return exclusive(nativeSellerScope(record.plan), async (journal, key) => {
     await sameHead(journal, key, record)
+    check(!cancel || !retire, 'SELLER_RECOVERY_MODE')
+    if (retire) check(canRetireNativeSaleOriginal(record.packet), 'SELLER_RETIRE_PHASE')
     if (cancel) check(record.packet.phase === 'PREPARED' && record.packet.signature === null, 'SELLER_UNSIGNED_ONLY')
     const result = await queryNativeSellerOriginal(record, client, signal)
     signal.throwIfAborted(); checkTerminal(record, result.status)
     if (cancel) check(result.status === 'MISSING', 'SELLER_ORIGINAL_FOUND')
-    const phase = cancel ? 'CANCELLED' : result.status === 'SUCCEEDED' || result.status === 'FAILED' ? result.status : record.packet.phase
+    const retirement = retire && result.status === 'MISSING' ? await verifyNativeSaleRetirement({
+      client, signal, packet: record.packet, author: record.plan.intent.seller, queryOriginal: () => queryNativeSellerOriginal(record, client, signal),
+    }) : undefined
+    const phase = retirement ? 'RETIRED' : cancel ? 'CANCELLED'
+      : result.status === 'SUCCEEDED' || result.status === 'FAILED' ? result.status : record.packet.phase
     if (phase === record.packet.phase) return { record, result }
-    return { record: await save(journal, key, record, { ...record, packet: { ...record.packet, phase } }), result }
+    signal.throwIfAborted()
+    return { record: await save(journal, key, record, { ...record, ...(retirement ? { retirement } : {}), packet: { ...record.packet, phase } }),
+      result: retirement ? retiredNativeSaleResult(record.packet.digest) : result }
   })
 }
 

@@ -16,7 +16,7 @@ import { parseNativeSellerRecord, type NativeSellerRecord } from './native-sale-
 
 export function exportNativeSaleListing(record: NativeSellerRecord) {
   check(record.plan.intent.kind === 'LIST', 'NATIVE_SELLER_SETTLEMENT_LISTING')
-  return canonical({ ...record, packet: { ...record.packet, phase: 'PREPARED', signature: null } })
+  return canonical({ schema: record.schema, plan: record.plan, packet: { ...record.packet, phase: 'PREPARED', signature: null } })
 }
 
 export async function verifyNativeSaleSellerSettlement(input: {

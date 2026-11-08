@@ -12,17 +12,17 @@ import type {SuiGrpcClient} from '@mysten/sui/grpc'
 import {SuiGrpcClient as ReadClient} from '@mysten/sui/grpc'
 import {GrpcWebFetchTransport} from '@protobuf-ts/grpcweb-transport'
 import {getSuiGrpcFullnodeUrl} from '@soulidity/sdk'
-import {discoverNativeSaleCheckoutRecords,type NativeSaleCheckoutRecord} from '../../lib/soulidity/native-sale-checkout-journal'
+import {discoverNativeSaleCheckoutRecords,queryNativeSaleCheckoutRecord,type NativeSaleCheckoutRecord} from '../../lib/soulidity/native-sale-checkout-journal'
 import {withPackageObjectIdentity} from '../../lib/sui/package-object-client'
 import {parsePurchaseRecoveryOriginal,queryPurchaseRecoveryOriginal,PURCHASE_ORIGINAL_MAX_BYTES,type PurchaseRecoveryOriginal,type PurchaseRecoveryQuery} from '../../lib/soulidity/commerce/purchase-recovery-original'
 
 function defaultClient(signal:AbortSignal){return withPackageObjectIdentity(new ReadClient({network:'mainnet',transport:new GrpcWebFetchTransport({baseUrl:getSuiGrpcFullnodeUrl('mainnet'),abort:signal})}),signal)}
 type ClientFactory=(signal:AbortSignal)=>SuiGrpcClient
-type View={reader:SuiGrpcClient|null;soulId:string;client:ClientFactory;text:string;name:string;original:PurchaseRecoveryOriginal|null;result:PurchaseRecoveryQuery|null;pending:boolean;error:string|null;stopped:boolean}
+type View={reader:SuiGrpcClient|null;soulId:string;client:ClientFactory;text:string;name:string;original:PurchaseRecoveryOriginal|null;result:PurchaseRecoveryQuery|null;pending:boolean;error:string|null;stopped:boolean;retiredRecord:NativeSaleCheckoutRecord|null;retirementVerified:boolean}
 /** Explicit memory-only import; original formats retain their meaning. */
 export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadReleaseJson,createReadOnlyClient=defaultClient}:{soulId:string;nativeReleaseJson?:string;publicReadReleaseJson?:string;createReadOnlyClient?:ClientFactory}){
  const serial=useRef(0),active=useRef<AbortController|null>(null),current=useRef({soulId,client:createReadOnlyClient})
- const empty=():View=>({reader:null,soulId,client:createReadOnlyClient,text:'',name:'',original:null,result:null,pending:false,error:null,stopped:false})
+ const empty=():View=>({reader:null,soulId,client:createReadOnlyClient,text:'',name:'',original:null,result:null,pending:false,error:null,stopped:false,retiredRecord:null,retirementVerified:false})
  const [state,setState]=useState<View>(empty)
  const [saved,setSaved]=useState<{soulId:string;records:NativeSaleCheckoutRecord[]}|null>(null)
  useLayoutEffect(()=>{
@@ -56,15 +56,25 @@ export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadRelea
   const id=++serial.current;active.current?.abort();setState(empty())
   try{
    const text=record.plan.originalText,original=await parsePurchaseRecoveryOriginal(text,soulId)
-   if(valid(id))setState({...empty(),text,name:'本机原购买 · '+record.packet.phase,original})
+   if(valid(id))setState({...empty(),text,name:'本机原购买 · '+record.packet.phase,original,retiredRecord:record.packet.phase==='RETIRED'?record:null})
   }catch(error){if(valid(id))setState({...empty(),error:message(error)})}
  }
  async function query(){
   if(!view.original)return
   const text=view.text,id=++serial.current,controller=new AbortController();active.current?.abort();active.current=controller
-  setState({...view,pending:true,result:null,error:null,stopped:false})
-  try{const reader=createReadOnlyClient(controller.signal),result=await queryPurchaseRecoveryOriginal({text,soulId,client:reader,signal:controller.signal});if(valid(id)&&!controller.signal.aborted)setState({...view,reader,result,pending:false,error:null,stopped:false})}
-  catch(e){if(valid(id)&&!controller.signal.aborted)setState({...view,result:null,pending:false,error:message(e),stopped:false})}
+  const pending={...view,pending:true,result:null,error:null,stopped:false,retirementVerified:false}
+  setState(pending)
+  try{
+   const reader=createReadOnlyClient(controller.signal),signal=controller.signal
+   if(view.retiredRecord){
+    const observed=await queryNativeSaleCheckoutRecord(view.retiredRecord,reader,signal)
+    if(observed.status!=='RETIRED')throw Error('SALE_CHECKOUT_RETIREMENT_UNCONFIRMED')
+    if(valid(id)&&!signal.aborted)setState({...pending,reader,pending:false,retirementVerified:true})
+   }else{
+    const result=await queryPurchaseRecoveryOriginal({text,soulId,client:reader,signal})
+    if(valid(id)&&!signal.aborted)setState({...pending,reader,result,pending:false})
+   }
+  }catch(e){if(valid(id)&&!controller.signal.aborted)setState({...pending,pending:false,error:message(e)})}
  }
  function stop(){serial.current++;active.current?.abort();setState({...view,pending:false,stopped:true})}
  const checkout=view.result?.kind===MARKET_BUY_FUNDS_ORIGINAL?view.result:null
@@ -90,6 +100,7 @@ export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadRelea
    <a download={`purchase-${view.original.value.packet.digest}.json`} href={`data:application/json;charset=utf-8,${encodeURIComponent(view.text)}`}>下载导入的原购买 JSON</a>
    <p>下载仅包含导入文本，不包含本次查询结果、当前余额或新付款授权。</p>
    <button type="button" disabled={view.pending} onClick={()=>void query()} className="rounded border px-3 py-1">查询原购买历史</button>
+   {view.retirementVerified&&view.retiredRecord?.retirement&&<p role="status">已重新核对原购买过期且未执行。证据检查点 {view.retiredRecord.retirement.sequenceNumber}</p>}
    {view.pending&&<><p role="status">正在核对原交易…</p><button type="button" onClick={stop}>停止本次查询</button></>}
    {view.stopped&&<p role="status">本次查询已停止；没有取消链上交易。原付款结果仍需查询，不能据此重新付款。</p>}
   </article>}

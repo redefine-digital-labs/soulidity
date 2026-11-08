@@ -26,7 +26,7 @@ export interface SameSoulMutationHead {
   key: string; text: string; domain: SameSoulHeadDomain; value: unknown
   phase: string; signature: string | null; digest: string
 }
-export interface SameSoulHeadObservation { status: string; completeBusinessOutputVerified?: boolean; sourceQualification?: string; settledPaymentDigest?: string }
+export interface SameSoulHeadObservation { status: string; completeBusinessOutputVerified?: boolean; sourceQualification?: string; settledPaymentDigest?: string; retiredOriginalDigest?: string }
 export interface SameSoulMutationHeadPort {
   storage: Pick<Storage, 'length' | 'key' | 'getItem'>
   verifyNetwork?(signal: AbortSignal): Promise<void>
@@ -140,7 +140,9 @@ export async function assertSameSoulForeignHeads(input: {
     const retiredPayment = head.domain === 'NATIVE_PAID' && head.phase === 'RETIRED'
     const settledNativeSale = (head.domain === 'NATIVE_SALE_CHECKOUT' || head.domain === 'NATIVE_SELLER') && result.status === 'SUCCEEDED'
       && result.settledPaymentDigest === head.digest
-    const clear = retiredPayment ? nativePublicReadPaidHeadCanClearV2(head.value as NativePublicReadPaidRecordV2, result)
+    const retiredNativeSale = (head.domain === 'NATIVE_SALE_CHECKOUT' || head.domain === 'NATIVE_SELLER') && head.phase === 'RETIRED'
+    const clear = retiredNativeSale ? result.status === 'RETIRED' && result.retiredOriginalDigest === head.digest
+      : retiredPayment ? nativePublicReadPaidHeadCanClearV2(head.value as NativePublicReadPaidRecordV2, result)
       : settledPayment || settledNativeSale || result.status === 'FAILED' || head.phase === 'CANCELLED' && head.signature === null && result.status === 'MISSING'
       || result.status === 'SUCCEEDED' && result.completeBusinessOutputVerified === true && result.sourceQualification === 'COMPILED_ROOT_MATCHED'
     if (!clear) throw new SameSoulRecoveryRequired(head.key, head.text, 'ORIGINAL_RECOVERY_REQUIRED')
@@ -179,12 +181,14 @@ export function createBrowserSameSoulHeadPort(source: SuiGrpcClient, storage: Sa
     }
     if (head.domain === 'NATIVE_SALE_CHECKOUT') {
       const result = await queryNativeSaleCheckoutRecord(v, client, signal)
+      if (result.status === 'RETIRED') return result
       return result.status === 'SUCCEEDED'
         ? { status: result.status, settledPaymentDigest: v.packet.digest }
         : { status: result.status }
     }
     if (head.domain === 'NATIVE_SELLER') {
       const result = await queryNativeSellerOriginal(v, client, signal)
+      if (result.status === 'RETIRED') return result
       return result.status === 'SUCCEEDED' ? { status: result.status, settledPaymentDigest: v.packet.digest } : { status: result.status }
     }
     if (head.domain === 'SALE_LIST') return queryMarketListOperationEvidence(v, client)

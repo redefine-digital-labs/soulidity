@@ -12,6 +12,7 @@ import { buildNativeSaleGraph } from '../../web/lib/soulidity/commerce/native-sa
 import { decodeNativeSaleClosingPurchase, readNativeSaleClosingPacket } from '../../web/lib/soulidity/commerce/native-sale-original-graph'
 import { readNativeSaleListingHistory } from '../../web/lib/soulidity/commerce/native-sale-relist'
 import { readNativeSellerReview, type NativeSellerIntent } from '../../web/lib/soulidity/commerce/native-sale-seller-plan'
+import { nativeSaleRetirementFixture } from './fixtures/native-sale-retirement'
 import { nativeSaleCheckoutFixture } from './fixtures/native-sale-checkout'
 import { nativeSaleCancellationFixture } from './fixtures/commerce-sale-cancellation'
 import { nativeSaleLifecycleWireFixture, objectRow } from './fixtures/commerce-native-sale-lifecycle-wire'
@@ -408,4 +409,35 @@ it('extracts ordered merged payment refs and rejects an extra call in a recovere
   extra.moveCall({ target: `${plan.callablePackageId}::market::total` })
   const changed = await observe(extra)
   expect(() => decodeNativeSaleClosingPurchase(changed!, expected)).toThrow('NATIVE_CLOSURE_BUY_GRAPH')
+})
+
+it('retires a signed cancellation without dispatch, then requires its exact witness across Soul mutations', async () => {
+  const f = await setup('CANCEL')
+  await f.prepare()
+  await f.execute()
+  const original = (await f.read())!
+  expect(original.packet.phase).toBe('SIGNED')
+  const witness = await nativeSaleRetirementFixture(f.client, original.packet, f.sellerGas)
+  const route = Promise.resolve({ id: f.soulId })
+  await act(async () => root.render(<NativeSoulSellPage params={route} />))
+  await click('读取本机挂牌和取消原件')
+  await text(original.packet.digest)
+  await click('核对过期并归档原操作')
+  await text('已核对原操作过期且未执行')
+  const retired = (await f.read())!
+  expect(retired.packet).toEqual({ ...original.packet, phase: 'RETIRED' })
+  expect(retired.retirement).toEqual(witness.recorded)
+
+  const port = createBrowserSameSoulHeadPort(f.client)
+  await expect(assertSameSoulForeignHeads({ scopes: [f.scope], ownKeys: [], signal: signal(), port })).resolves.toBeUndefined()
+  await expect(assertSameSoulForeignHeads({ scopes: [f.scope], ownKeys: [], signal: signal(),
+    port: { ...port, query: async () => ({ status: 'RETIRED', retiredOriginalDigest: 'other' }) },
+  })).rejects.toThrow('ORIGINAL_RECOVERY_REQUIRED')
+  f.client.ledgerService.getEpoch.mockResolvedValue({ response: { epoch: { epoch: 7n, referenceGasPrice: 1n } } })
+  const next = await f.prepare()
+  expect(next.prepared).toBe(true)
+  expect(next.record.packet.digest).not.toBe(original.packet.digest)
+  expect(await browserNativeSellerJournal(true).history(f.key)).toEqual([retired])
+  expect(f.sign).toHaveBeenCalledOnce()
+  expect(f.client.core.executeTransaction).toHaveBeenCalledOnce()
 })

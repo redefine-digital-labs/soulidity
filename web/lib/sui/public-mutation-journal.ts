@@ -261,6 +261,7 @@ export interface AsyncPublicMutationStorage {
 export function createAsyncPublicMutationStore<P,R extends PublicMutationRecord<P>>(domain:{
  prefix:string;changedEvent:string;errorPrefix:string;key:(plan:P)=>string;parse:(input:unknown)=>Promise<R>
  classify:(storageName:string)=>{headKey:string;archived:boolean}
+ checkTransition?:(before:R,after:R)=>void
  storage?:AsyncPublicMutationStorage;maxRecordBytes?:number
  /** Original read/export remains available without mutation facilities. */
  readOnly?:boolean
@@ -288,7 +289,9 @@ export function createAsyncPublicMutationStore<P,R extends PublicMutationRecord<
    check(!readOnly,'READ_ONLY');headKey(key);check(held.has(key),'LOCK_REQUIRED');const record=await domain.parse(input);check(domain.key(record.plan)===key,'SCOPE_MISMATCH')
    const before=await readAt(key,key)
    if(!before)check(record.packet.phase==='PREPARED'&&record.packet.signature===null,'FIRST_RECORD_NOT_PREPARED')
-   else if(frozen(before)===frozen(record)&&!(before.packet.phase==='CANCELLED'&&record.packet.phase==='PREPARED'))assertPublicMutationTransition(before,record,domain.errorPrefix)
+   else if(frozen(before)===frozen(record)&&!(before.packet.phase==='CANCELLED'&&record.packet.phase==='PREPARED')){
+    assertPublicMutationTransition(before,record,domain.errorPrefix);domain.checkTransition?.(before,record)
+   }
    else{check(terminal(before)&&record.packet.phase==='PREPARED'&&record.packet.signature===null,'RECOVERY_REQUIRED');await archive(key,before)}
    await persist(key,record);window.dispatchEvent(new window.Event(domain.changedEvent))
   },

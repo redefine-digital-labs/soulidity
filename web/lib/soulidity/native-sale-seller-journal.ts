@@ -1,4 +1,7 @@
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
+import type { EpochCheckpoint } from '../sui/epoch-checkpoint'
+import { assertNativeSaleRetirementUnchanged, retiredNativeSaleResult, validateNativeSaleRetirement,
+  verifyNativeSaleRetirement } from './commerce/native-sale-original-retirement'
 import { fromBase58, fromBase64, toBase58, toBase64 } from '@mysten/sui/utils'
 import { createAsyncPublicMutationStore, publicMutationCanonical as canonical, type PublicMutationPacket } from '../sui/public-mutation-journal'
 import { parseCanonicalNativeWorkbenchTarget } from './canonical-native-workbench'
@@ -10,11 +13,12 @@ import { assertNativeSellerPacket, sellerListingBinding, type NativeSellerPlan }
 import type { SoulAccessAssetScope } from './soul-access-asset-lock'
 
 export const NATIVE_SELLER_PREFIX = 'soulidity.native-sale-seller.v1:'
-const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED']
+const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED']
 export interface NativeSellerRecord {
   schema: 'soulidity.native-sale-seller.v1'
   plan: NativeSellerPlan
   packet: PublicMutationPacket
+  retirement?: EpochCheckpoint
 }
 export const nativeSellerScope = (plan: NativeSellerPlan) => ({
   chainIdentifier: plan.release.target.chainIdentifier, soulId: plan.intent.soulId, author: plan.intent.seller,
@@ -27,7 +31,7 @@ export function nativeSellerKey(scope: SoulAccessAssetScope) {
 export async function parseNativeSellerRecord(value: unknown) {
   const record = structuredClone(value) as NativeSellerRecord
   const exact = (row: object, names: string) => check(row && Object.keys(row).sort().join(',') === names, 'SELLER_RECORD_FIELDS')
-  exact(record, 'packet,plan,schema')
+  exact(record, record?.packet?.phase === 'RETIRED' ? 'packet,plan,retirement,schema' : 'packet,plan,schema')
   exact(record.plan, 'account,expirationEpoch,gas,intent,kioskId,offerDigest,release,shared,snapshot')
   const { plan, packet } = record
   exact(plan.release, 'collection,economics,target')
@@ -44,6 +48,7 @@ export async function parseNativeSellerRecord(value: unknown) {
       && packet.signature.length <= 32768 && toBase64(fromBase64(packet.signature)) === packet.signature)
     && (packet.phase !== 'SIGNED' || packet.signature !== null)
     && (!['PREPARED', 'SIGNING', 'CANCELLED'].includes(packet.phase) || packet.signature === null), 'SELLER_RECORD_PHASE')
+  validateNativeSaleRetirement(packet, record.retirement)
   await assertNativeSellerPacket(plan, packet)
   return record
 }
@@ -51,6 +56,7 @@ export async function parseNativeSellerRecord(value: unknown) {
 export function browserNativeSellerJournal(readOnly = false) {
   return createAsyncPublicMutationStore<NativeSellerPlan, NativeSellerRecord>({ prefix: NATIVE_SELLER_PREFIX, changedEvent: 'soulidity:native-sale-seller-v1-changed',
     errorPrefix: 'NATIVE_SELLER', key: plan => nativeSellerKey(nativeSellerScope(plan)), parse: parseNativeSellerRecord, readOnly,
+    checkTransition: assertNativeSaleRetirementUnchanged,
     classify(name) {
       const parts = name.slice(NATIVE_SELLER_PREFIX.length).split(':')
       const [chainIdentifier, soulId, author, archive, digest, phase] = parts
@@ -62,7 +68,15 @@ export function browserNativeSellerJournal(readOnly = false) {
 }
 
 export async function queryNativeSellerOriginal(record: NativeSellerRecord, client: SuiGrpcClient, signal: AbortSignal) {
-  const { plan, packet } = await parseNativeSellerRecord(record), { target } = plan.release, { intent } = plan
+  const saved = await parseNativeSellerRecord(record)
+  const queryOriginal = () => queryNativeSellerHistory(saved, client, signal)
+  if (!saved.retirement) return queryOriginal()
+  await verifyNativeSaleRetirement({ client, signal, packet: saved.packet, author: saved.plan.intent.seller, saved: saved.retirement, queryOriginal })
+  return retiredNativeSaleResult(saved.packet.digest)
+}
+
+async function queryNativeSellerHistory({ plan, packet }: NativeSellerRecord, client: SuiGrpcClient, signal: AbortSignal) {
+  const { target } = plan.release, { intent } = plan
   if (intent.kind === 'LIST') {
     const result = await readNativeSaleListingHistory({ client, native: target.native, plan: sellerListingBinding(plan), packet, signal })
     return result.status === 'RELIST_CONFIRMED'

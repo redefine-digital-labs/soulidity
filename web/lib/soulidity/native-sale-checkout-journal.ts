@@ -1,4 +1,7 @@
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
+import type { EpochCheckpoint } from '../sui/epoch-checkpoint'
+import { assertNativeSaleRetirementUnchanged, retiredNativeSaleResult, validateNativeSaleRetirement,
+  verifyNativeSaleRetirement } from './commerce/native-sale-original-retirement'
 import { fromBase58, fromBase64, toBase58, toBase64 } from '@mysten/sui/utils'
 import { createAsyncPublicMutationStore, publicMutationCanonical as canonical, type PublicMutationPacket } from '../sui/public-mutation-journal'
 import { commerceCheck as check, commerceId } from './commerce/economics-read'
@@ -6,11 +9,12 @@ import { parsePurchaseRecoveryOriginal, queryPurchaseRecoveryOriginal } from './
 import type { SoulAccessAssetScope } from './soul-access-asset-lock'
 
 export const NATIVE_SALE_CHECKOUT_PREFIX = 'soulidity.native-sale-checkout.v1:'
-const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED']
+const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED']
 export interface NativeSaleCheckoutRecord {
   schema: 'soulidity.native-sale-checkout.v1'
   plan: SoulAccessAssetScope & { originalText: string; reviewedQuoteIdentity: string }
   packet: PublicMutationPacket
+  retirement?: EpochCheckpoint
 }
 
 export function nativeSaleCheckoutKey(scope: SoulAccessAssetScope) {
@@ -23,7 +27,7 @@ export async function parseNativeSaleCheckoutRecord(input: unknown) {
   function exact(value: object, keys: string) {
     check(value && Object.keys(value).sort().join(',') === keys, 'SALE_CHECKOUT_FIELDS')
   }
-  exact(record, 'packet,plan,schema')
+  exact(record, record?.packet?.phase === 'RETIRED' ? 'packet,plan,retirement,schema' : 'packet,plan,schema')
   exact(record.plan, 'author,chainIdentifier,originalText,reviewedQuoteIdentity,soulId')
   exact(record.packet, 'bytes,digest,expirationEpoch,phase,signature')
   nativeSaleCheckoutKey(record.plan)
@@ -41,12 +45,14 @@ export async function parseNativeSaleCheckoutRecord(input: unknown) {
       && current.signature.length <= 32768 && toBase64(fromBase64(current.signature)) === current.signature)
     && (current.phase !== 'SIGNED' || current.signature !== null)
     && (!['PREPARED', 'SIGNING', 'CANCELLED'].includes(current.phase) || current.signature === null), 'SALE_CHECKOUT_PACKET_PHASE')
+  validateNativeSaleRetirement(current, record.retirement)
   return record
 }
 
 export function browserNativeSaleCheckoutJournal(readOnly = false) {
   return createAsyncPublicMutationStore({ prefix: NATIVE_SALE_CHECKOUT_PREFIX, changedEvent: 'soulidity:native-sale-checkout-v1-changed',
     errorPrefix: 'NATIVE_SALE_CHECKOUT', key: nativeSaleCheckoutKey, parse: parseNativeSaleCheckoutRecord, readOnly,
+    checkTransition: assertNativeSaleRetirementUnchanged,
     classify(name) {
       const parts = name.slice(NATIVE_SALE_CHECKOUT_PREFIX.length).split(':')
       const [chainIdentifier, soulId, author, archive, digest, phase] = parts
@@ -62,6 +68,13 @@ export function browserNativeSaleCheckoutJournal(readOnly = false) {
 
 export async function queryNativeSaleCheckoutRecord(record: NativeSaleCheckoutRecord, client: SuiGrpcClient, signal: AbortSignal) {
   const saved = await parseNativeSaleCheckoutRecord(record)
+  const queryOriginal = () => queryNativeSaleCheckoutHistory(saved, client, signal)
+  if (!saved.retirement) return queryOriginal()
+  await verifyNativeSaleRetirement({ client, signal, packet: saved.packet, author: saved.plan.author, saved: saved.retirement, queryOriginal })
+  return retiredNativeSaleResult(saved.packet.digest)
+}
+
+async function queryNativeSaleCheckoutHistory(saved: NativeSaleCheckoutRecord, client: SuiGrpcClient, signal: AbortSignal) {
   const result = await queryPurchaseRecoveryOriginal({ text: saved.plan.originalText, soulId: saved.plan.soulId, client, signal,
     proveSaleSource: true, proveSaleCustody: true, proveSaleCleanup: true })
   check(result.kind === 'native-sale-preparation.v1', 'SALE_CHECKOUT_ORIGINAL_FORMAT')
