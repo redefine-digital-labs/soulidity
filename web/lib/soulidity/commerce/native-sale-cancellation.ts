@@ -166,7 +166,10 @@ export async function readNativeSaleCancellationHistory(input: { client: SuiGrpc
         && e.changedObjects.every(([id]) => claimedEffectIds.includes(id))
         && new Set(e.unchangedConsensusObjects.map(([id]) => id)).size === e.unchangedConsensusObjects.length
         && e.unchangedConsensusObjects.every(([id, kind]) => !claimedEffectIds.includes(id) && kind.$kind === 'PerEpochConfig'), 'CANCEL_EFFECTS_COVERAGE')
-      return { proof: 'native-cancel-finalized-listing-transition' as const, receipt, gas,
+      return { proof: 'native-cancel-finalized-listing-transition' as const, receipt, gas, accountId: intent.accountId,
+        offerContext: { configId: a.config, registryId: a.registry },
+        sellerKioskOutput: { objectId: intent.kioskId, version: String(kioskAfter.reference.version),
+          digest: kioskAfter.reference.digest, initialSharedVersion: kioskAfter.object.owner.Shared!.initialSharedVersion },
         sourceAssertsSoulStillLocked: true as const, notIndependentUntouchedLockProof: true as const,
         effectsReconciliation: 'exact-cancel-objects-and-gas' as const, claimedEffectIds,
         notCurrentAuthority: true as const, notCurrentListingAbsenceProof: true as const, notPermissionToRetryCancellation: true as const }

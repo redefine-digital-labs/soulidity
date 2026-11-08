@@ -53,5 +53,7 @@ export async function proveNativeSaleListingExit(input: { client: SuiGrpcClient;
     && capExit[0][1].outputState.$kind === 'NotExist' && capExit[0][1].idOperation.$kind === 'Deleted', 'SALE_EXIT_CAP_UID_DELETION')
   return { proof: 'native-sale-original-offer-and-exclusive-listing-exit-only' as const, transactionDigest,
     offerId: plan.offerId, listingId, purchaseCapId: capId, claimedEffectIds: [plan.offerId, listingId, capId],
+    offerInput: { version: String(before.reference.version), digest: before.reference.digest, writer: before.object.previousTransaction },
+    listingInput: { version: String(original.reference.version), digest: original.reference.digest, writer: original.object.previousTransaction },
     notRecursiveSourceCleanup: true as const, notCompleteSaleProof: true as const, notCurrentAuthority: true as const }
 }

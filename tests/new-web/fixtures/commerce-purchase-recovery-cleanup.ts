@@ -14,7 +14,7 @@ import vm from './commerce-native-market-vm.json'
 // model, covering real money + listing + custody + root Native cleanup readers.
 // Existing recursive VM tests separately cover nested trees; no node execution.
 export async function purchaseRecoveryCleanupFixture(variant=''){
- const x=await purchaseRecoveryCustodyFixture(),f=x.finality,plan=x.original.plan,content=await activityEvidenceFixture(),changes=f.effectsData.V2!.changedObjects
+ const x=await purchaseRecoveryCustodyFixture(variant==='collection'?'collection':''),f=x.finality,plan=x.original.plan,content=await activityEvidenceFixture(),changes=f.effectsData.V2!.changedObjects
  const pin=(p:any)=>({originalPackageId:p.originalPackageId,callablePackageId:p.callablePackageId,callableDigest:p.callableDigest})
  const cp=content.packageData.data.Package!;content.deployment.originalPackageId=aid(154);content.deployment.callablePackageId=aid(155);cp.id=aid(155);cp.moduleMap=new Map([['authorization',new Uint8Array([1])]]);cp.typeOriginTable=['Authorization','GenerationChanged'].map(datatypeName=>({moduleName:'authorization',datatypeName,package:aid(154)}));content.rehashPackage()
  const np=f.packageData.data.Package!;np.moduleMap.set('birth',new Uint8Array([1]));np.typeOriginTable.push(...['State','NativeModule','AuthorizationKey','ContentOperator'].map(datatypeName=>({moduleName:'birth',datatypeName,package:f.deployment.originalPackageId})));np.linkageTable.set(aid(154),{upgradedId:aid(155),upgradedVersion:'2'});f.rehashPackage()
