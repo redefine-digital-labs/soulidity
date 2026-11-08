@@ -5,6 +5,7 @@ import {formatEquipmentMarketAmount} from '@/lib/animacraft/equipment-market-amo
 import {usePublicEquipmentMarketSource} from '@/lib/hooks/use-public-market'
 import {EquipmentMarketPanel} from './equipment-market-panel'
 import {EquipmentMarketRecovery} from './equipment-market-recovery'
+import {EquipmentMarketPurchaseRecovery} from './equipment-market-purchase-recovery'
 import {equipmentMarketReadRequest} from '@/lib/animacraft/equipment-market-operation-adapter'
 import type {EquipmentMarketReadRequest} from '@/lib/animacraft/equipment-market-operation-snapshot'
 import type {EquipmentMarketAction} from '@/lib/animacraft/equipment-market-operation'
@@ -51,6 +52,7 @@ export function EquipmentMarketBrowser(){
     })}</div>
     <div className="flex gap-3"><button type="button" disabled={current<=1} onClick={()=>setPage(current-1)}>Previous component page</button>
       <span>{current}/{pages}</span><button type="button" disabled={current>=pages} onClick={()=>setPage(current+1)}>Next component page</button></div>
+    <EquipmentMarketPurchaseRecovery/>
     <EquipmentMarketRecovery onSelect={record=>setSelected({request:equipmentMarketReadRequest(record.snapshot),action:record.action})}/>
     {selected&&selected.request.actor===source.viewerAddress&&<EquipmentMarketPanel key={JSON.stringify([selected.request,selected.action])}
       {...selected} identityKey={source.identityKey}/>}

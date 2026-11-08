@@ -7,6 +7,7 @@ import {equipmentOperationQuote,type EquipmentMarketAction} from '@/lib/animacra
 import type {EquipmentMarketReadRequest} from '@/lib/animacraft/equipment-market-operation-snapshot'
 import {equipmentMarketCurrency,formatEquipmentMarketAmount} from '@/lib/animacraft/equipment-market-amount'
 import {createEquipmentPurchaseOriginal} from '@/lib/animacraft/equipment-market-purchase-original'
+import {EquipmentPurchaseEvidence} from './equipment-market-purchase-recovery'
 import type {EquipmentMarketOperationRecord} from '@/lib/animacraft/equipment-market-operation'
 
 function EquipmentPurchaseExport({ record }: { record: EquipmentMarketOperationRecord }) {
@@ -86,13 +87,7 @@ export function EquipmentMarketPanel({request,identityKey,action='list',blocked=
         <button type="button" disabled={actions.busy} onClick={()=>act(actions.check)}>Check saved component transaction</button>
         {r.action==='buy'&&<EquipmentPurchaseExport key={r.digest} record={r}/>}
         {r.action==='buy'&&r.phase==='SUCCEEDED'&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.checkFunds)}>Verify original purchase funds</button>}
-        {actions.funds?.status==='FUNDS_VERIFIED'&&<div aria-label="Verified original component settlement">
-          <p>Buyer paid {formatEquipmentMarketAmount(actions.funds.receipt.grossAtomic,actions.funds.coinType)}.</p>
-          <p>Seller received {formatEquipmentMarketAmount(actions.funds.receipt.sellerAtomic,actions.funds.coinType)} · platform treasury credited {formatEquipmentMarketAmount(actions.funds.receipt.protocolAtomic,actions.funds.coinType)}.</p>
-          <p>Original checkpoint {actions.funds.checkpoint} · net gas {actions.funds.gas.netGasCharge} MIST.</p>
-        </div>}
-        {actions.funds?.status==='LEGACY_EFFECTS'&&<p>Funds verification requires Effects V2. The saved transaction can still be queried.</p>}
-        {actions.funds&&['MISSING','PENDING','FAILED'].includes(actions.funds.status)&&<p>Original funds verification: {actions.funds.status}.</p>}
+        {actions.funds&&<EquipmentPurchaseEvidence proof={actions.funds}/>}
         {['PREPARED','SIGNING','SIGNED'].includes(r.phase)&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.resume)}>Resume saved component transaction</button>}
         {r.phase==='PREPARED'&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.cancelUnsigned)}>Discard unsigned component transaction</button>}
         {['SIGNING','SIGNED'].includes(r.phase)&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.retireExpired)}>Check expiry and archive component transaction</button>}
