@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { PurchaseRecoverySaleDelivery } from './purchase-recovery-sale-delivery'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { useCommittedSession, useSessionState } from '@/lib/hooks/use-committed-session'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
@@ -9,6 +10,7 @@ import { publicMutationCanonical } from '@/lib/sui/public-mutation-journal'
 import { browserNativeSaleCheckoutJournal, nativeSaleCheckoutKey, type NativeSaleCheckoutRecord } from '@/lib/soulidity/native-sale-checkout-journal'
 import { executeNativeSaleCheckout, prepareNativeSaleCheckout, recoverNativeSaleCheckout, reviewNativeSaleCheckout } from '@/lib/soulidity/native-sale-checkout'
 import type { NativeSaleCheckoutRelease } from '@/lib/soulidity/native-sale-checkout-config'
+import type { CanonicalNativeWorkbenchTarget } from '@/lib/soulidity/canonical-native-workbench'
 import type { NativeSaleGraphPlan } from '@/lib/soulidity/commerce/native-sale-graph'
 
 const normalize = (value: string) => isValidSuiAddress(value.trim()) ? normalizeSuiAddress(value.trim()) : ''
@@ -17,22 +19,28 @@ const resultText = {
   MISSING: '本次未查到原摘要。',
   PENDING: '已找到原交易，等待终局。',
   FAILED: '已确认原交易失败。',
-  SUCCEEDED: '已核对原成交分账、托管交接和授权变化。可继续在恢复页核对当前内容。',
+  SUCCEEDED: '已核对原成交分账、托管交接和授权变化。',
 }
 
-export function NativeSaleCheckout({ soulId, release }: { soulId: string; release: NativeSaleCheckoutRelease | null }) {
+export function NativeSaleCheckout({ soulId, release, initialOffer = '', nativeReleaseJson }: {
+  soulId: string; release: NativeSaleCheckoutRelease | null; initialOffer?: string; nativeReleaseJson?: string
+}) {
   const wallet = useWalletSign(), buyer = wallet.suiWallet?.address ?? null
-  const [offer, setOffer] = useState(''), [account, setAccount] = useState('')
+  const [offer, setOffer] = useState(initialOffer), [account, setAccount] = useState('')
   const [payments, setPayments] = useState(''), [gas, setGas] = useState(''), [budget, setBudget] = useState('')
   const offerId = normalize(offer)
   const session = useCommittedSession(publicMutationCanonical([soulId, release, offerId]), wallet.walletAccount, wallet.suiGrpcClient, wallet.currentWallet)
   const [view, setView] = useSessionState(session, { pending: false, review: null as Awaited<ReturnType<typeof reviewNativeSaleCheckout>> | null,
-    record: null as NativeSaleCheckoutRecord | null, status: '', error: '' })
+    record: null as NativeSaleCheckoutRecord | null, confirmedDigest: '', status: '', error: '' })
   const route = '/souls/' + encodeURIComponent(soulId) + '/purchase/recovery'
   const busy = view.pending
   const canPrepare = Boolean(buyer && release && view.review && normalize(account) && ids(payments).every(Boolean)
     && ids(gas).every(Boolean) && /^[1-9][0-9]{0,19}$/.test(budget))
-  const recordPlan = view.record ? (JSON.parse(view.record.plan.originalText) as { plan: NativeSaleGraphPlan }).plan : null
+  const original = view.record ? JSON.parse(view.record.plan.originalText) as {
+    plan: NativeSaleGraphPlan; context: { target: CanonicalNativeWorkbenchTarget }
+  } : null
+  const recordPlan = original?.plan
+  const confirmed = view.record && view.confirmedDigest === view.record.packet.digest
   const phase = view.record?.packet.phase
   const canExecute = Boolean(release && buyer && recordPlan?.offerId === offerId && ['PREPARED', 'SIGNING', 'SIGNED'].includes(phase ?? ''))
 
@@ -66,7 +74,8 @@ export function NativeSaleCheckout({ soulId, release }: { soulId: string; releas
           ? await executeNativeSaleCheckout({ ...options, activeOfferId: offerId, activeRelease: release, getBuyerAddress,
             sign: tx => wallet.signTransaction(tx, { retainReturnedSignature: true }) })
           : await recoverNativeSaleCheckout({ ...options, ...(action === 'cancel' ? { cancelUnsigned: true } : {}) })
-        if (active()) setView(previous => ({ ...previous, record: result.record, status: result.record.packet.phase === 'CANCELLED'
+        if (active()) setView(previous => ({ ...previous, record: result.record,
+          confirmedDigest: result.result.status === 'SUCCEEDED' ? result.record.packet.digest : '', status: result.record.packet.phase === 'CANCELLED'
           ? '已保存本机取消，原件仍可查询。' : resultText[result.result.status] }))
       }
     } catch (error) {
@@ -110,6 +119,8 @@ export function NativeSaleCheckout({ soulId, release }: { soulId: string; releas
     {busy && <p role="status">正在核对或处理原购买…</p>}
     {view.status && <p role="status">{view.status}</p>}
     {view.error && <p role="alert">{view.error} 请先查原摘要再操作。</p>}
+    {original && confirmed && <PurchaseRecoverySaleDelivery releaseJson={nativeReleaseJson} savedTarget={original.context.target}
+      soulId={soulId} buyer={original.plan.buyer} digest={view.confirmedDigest} />}
     <a href={route}>打开原成交和内容恢复</a>
   </section>
 }

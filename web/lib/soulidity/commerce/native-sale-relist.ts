@@ -9,6 +9,7 @@ import { readFinalizedMutation } from '../../sui/finalized-mutation'
 import { readSuiGasSettlement } from '../../sui/gas-settlement'
 import { readHistoricalMoveObject } from '../../sui/historical-object'
 import { readPinnedMovePackage, type PinnedMovePackage } from '../../sui/pinned-move-package'
+import type { proveNativeSaleListingExit } from './native-sale-listing-exit'
 import type { PublicMutationPacket } from '../../sui/public-mutation-journal'
 import { commerceCheck, commerceId, decodeCommerce } from './economics-read'
 import { publicMutationCanonical as canonical } from '../../sui/public-mutation-journal'
@@ -157,4 +158,15 @@ export async function readNativeSaleListingHistory(input: {
         sellerKioskInput: { ...reference(kioskIn), initialSharedVersion, objectId: plan.sellerKioskId } }
     } })
   return result.status === 'SUCCEEDED' ? { ...result, status: 'RELIST_CONFIRMED' as const } : result
+}
+
+
+export function assertNativeSaleListingConsumed(
+  listing: Extract<Awaited<ReturnType<typeof readNativeSaleListingHistory>>, { status: 'RELIST_CONFIRMED' }>['receipt'],
+  exit: Awaited<ReturnType<typeof proveNativeSaleListingExit>>,
+  error: string,
+) {
+  commerceCheck(exit.offerId === listing.offerId && exit.listingId === listing.listingId
+    && exit.purchaseCapId === listing.purchaseCapId && canonical(exit.offerInput) === canonical(listing.offerOutput)
+    && canonical(exit.listingInput) === canonical(listing.listingOutput), error)
 }

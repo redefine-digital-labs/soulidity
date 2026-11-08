@@ -2,8 +2,8 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import type { Transaction } from '@mysten/sui/transactions'
-import { toBase64 } from '@mysten/sui/utils'
+import { Transaction } from '@mysten/sui/transactions'
+import { toBase64, toHex } from '@mysten/sui/utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import NativeSoulSellPage from '../../web/app/souls/[id]/list/native/page'
 import { bcs } from '@mysten/sui/bcs'
@@ -14,7 +14,8 @@ import { nativeSaleCheckoutFixture } from './fixtures/native-sale-checkout'
 import { nativeSaleLifecycleWireFixture } from './fixtures/commerce-native-sale-lifecycle-wire'
 import { aid } from './fixtures/activity-transaction-evidence'
 import type { NativeSaleCheckoutRelease } from '../../web/lib/soulidity/native-sale-checkout-config'
-import { browserNativeSellerJournal, nativeSellerKey } from '../../web/lib/soulidity/native-sale-seller-journal'
+import { browserNativeSellerJournal, nativeSellerKey, type NativeSellerRecord } from '../../web/lib/soulidity/native-sale-seller-journal'
+import { exportNativeSaleListing, verifyNativeSaleSellerSettlement } from '../../web/lib/soulidity/native-sale-seller-settlement'
 import { executeNativeSellerOriginal, prepareNativeSellerOriginal, reconcileNativeSellerOriginal } from '../../web/lib/soulidity/native-sale-seller'
 import { assertSameSoulForeignHeads, createBrowserSameSoulHeadPort } from '../../web/lib/soulidity/same-soul-mutation-heads'
 
@@ -210,4 +211,90 @@ it.each([false, true])('proves the created Offer and reservation without a known
   await expect(readNativeSaleListingHistory({ ...input, plan: { ...binding, ask: '1' } })).rejects.toThrow('RELIST_TERMS')
   await expect(readNativeSaleListingHistory({ ...input, plan: { ...binding, reviewSnapshot: { ...binding.reviewSnapshot, config_revision: '1' } } }))
     .resolves.toMatchObject({ status: 'RELIST_CONFIRMED', receipt: { offerId: review.purchasedOfferId, reviewChanged: true } })
+})
+
+async function settledListingFixture(withCollection = false, variant = '') {
+  const f = await nativeSaleLifecycleWireFixture(variant, withCollection)
+  const { review, plan, client } = f
+  const { response } = await client.ledgerService.getTransaction({ digest: review.relistDigest })
+  const bytes = response.transaction.transaction.bcs.value
+  const tx = Transaction.from(bytes).getData()
+  const shared = tx.inputs.flatMap(input => input.Object?.SharedObject ? [input.Object.SharedObject] : [])
+  const account = tx.inputs[shared.length].Object!.ImmOrOwnedObject!
+  const { state, creator, royalty, config_revision, generation, manifest, root_revision, ask } = NativeOfferBcs.parse(f.offer.contents.value)
+  const listing: NativeSellerRecord = {
+    schema: 'soulidity.native-sale-seller.v1',
+    plan: { release: { target: review.target, economics: review.economics, collection: review.collection },
+      intent: { kind: 'LIST', soulId: review.soulId, seller: review.seller, accountId: account.objectId,
+        policyId: plan.policyId, collectionId: plan.collectionId, ask },
+      kioskId: plan.sellerKioskId, account: { objectId: account.objectId, version: String(account.version), digest: account.digest },
+      shared: shared.map(row => ({ objectId: row.objectId, initialSharedVersion: String(row.initialSharedVersion), mutable: row.mutable })),
+      gas: { budget: String(tx.gasData.budget), price: String(tx.gasData.price), coins: tx.gasData.payment!.map(row => ({ ...row, version: String(row.version) })) },
+      expirationEpoch: '6', offerDigest: null,
+      snapshot: { state, creator, royalty, config_revision, generation, rootRevision: root_revision, manifestHex: toHex(manifest) } },
+    packet: { bytes: toBase64(bytes), digest: review.relistDigest, expirationEpoch: '6', phase: 'PREPARED', signature: null },
+  }
+  client.ledgerService.getTransaction.mockClear()
+  return { ...f, listing, verify: () => verifyNativeSaleSellerSettlement({ soulId: review.soulId,
+    listingText: exportNativeSaleListing(listing), purchaseText: f.purchaseText, client: client as never, signal: signal() }) }
+}
+
+it.each([false, true])('verifies seller proceeds and new buyer custody with the exact original Offer and reservation (Collection %s)', async withCollection => {
+  const f = await settledListingFixture(withCollection), { review } = f
+  await expect(f.verify()).resolves.toMatchObject({ status: 'SETTLEMENT_CONFIRMED', listingDigest: review.relistDigest,
+    purchaseDigest: review.purchaseDigest, offerId: review.purchasedOfferId, seller: review.seller, buyer: review.buyer,
+    sellerReceived: '101', creator: f.creator, creatorRoyalty: '3', protocolIncome: '3', gasMist: '3',
+    total: withCollection ? '113' : '107', collectionRoyalty: withCollection ? '6' : '0',
+    payouts: expect.arrayContaining([{ owner: review.seller, amount: '101', coinId: expect.any(String) }]),
+  })
+  const queries = f.client.ledgerService.getTransaction.mock.calls.map(([request]) => request.digest)
+  expect(queries).toContain(review.relistDigest)
+  expect(queries).toContain(review.purchaseDigest)
+  expect(queries).not.toContain(review.cancelDigest)
+})
+
+it('refuses a purchase whose historical reservation output does not come from the selected listing', async () => {
+  const f = await settledListingFixture(false, 'substituted-listing')
+  await expect(f.verify()).rejects.toThrow('NATIVE_SELLER_SETTLEMENT_LISTING_INPUT')
+})
+
+async function choose(label: string, content: string) {
+  const file = { name: 'original.json', size: new TextEncoder().encode(content).length, text: async () => content }
+  await act(async () => {
+    const input = [...mount.querySelectorAll('label')].find(node => node.textContent === label)?.querySelector('input')
+    expect(input).toBeDefined()
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    input!.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+it('links the verified Offer and reopens settlement without either wallet or browser storage on the real seller route', async () => {
+  const f = await settledListingFixture(true), { review, listing } = f
+  wallet.client = f.client
+  const key = nativeSellerKey({ chainIdentifier: '35834a8a', soulId: review.soulId, author: review.seller }), journal = browserNativeSellerJournal()
+  await journal.exclusive(key, () => journal.write(key, listing))
+  const route = Promise.resolve({ id: review.soulId })
+  const render = () => act(async () => root.render(<NativeSoulSellPage params={route} />))
+  await render()
+  await click('读取本机挂牌和取消原件')
+  await text(review.relistDigest)
+  await click('查询原摘要')
+  await text('已确认原挂牌')
+  expect(mount.querySelector('a[href*="/buy/native?offer="]')?.getAttribute('href'))
+    .toBe(`/souls/${review.soulId}/buy/native?offer=${review.purchasedOfferId}`)
+  const href = mount.querySelector('a[download]')?.getAttribute('href')!
+  const original = decodeURIComponent(href.slice(href.indexOf(',') + 1))
+  expect(JSON.parse(original).packet).toMatchObject({ phase: 'PREPARED', signature: null, digest: review.relistDigest })
+
+  await act(async () => root.unmount()); root = createRoot(mount)
+  localStorage.clear()
+  await render()
+  await choose('原挂牌 JSON ', original)
+  await choose('买方原购买 JSON ', f.purchaseText)
+  await click('核对原挂牌与成交')
+  await text('已核对原挂牌、成交分账和买方托管交接。')
+  await text('合集版税 6')
+  await text('总价 113')
+  expect(wallet.signTransaction).not.toHaveBeenCalled()
+  expect(localStorage.length).toBe(0)
 })

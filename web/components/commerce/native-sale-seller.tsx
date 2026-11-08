@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { NativeSaleSellerSettlement } from './native-sale-seller-settlement'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
 import { useCommittedSession, useSessionState } from '@/lib/hooks/use-committed-session'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
@@ -145,10 +146,11 @@ export function NativeSaleSeller({ soulId, release }: { soulId: string; release:
         <p>{result.kind === 'LIST' ? '已确认原挂牌' : '已确认原取消'} · Offer {result.offerId} · 检查点 {result.checkpoint}</p>
         {result.kind === 'LIST' && <>
           {result.reviewChanged && <p>链上挂牌条款与预览有变化，请在买入页重新核对该 Offer 和总价。</p>}
-          <a href={buyRoute}>打开买入页核对这个 Offer</a>
+          <a href={buyRoute + '?offer=' + encodeURIComponent(result.offerId)}>打开买入页核对这个 Offer</a>
         </>}
       </div>
       : <p role="status">{resultText[result.status]}</p>)}
     {view.error && <p role="alert">{view.error} 请先查原摘要再操作。</p>}
+    <NativeSaleSellerSettlement key={soulId} soulId={soulId} localListing={record?.plan.intent.kind === 'LIST' ? record : null} />
   </section>
 }

@@ -6,7 +6,7 @@ import { soulAccessExact } from '../soul-access-plan'
 import { commerceCheck, commerceId } from './economics-read'
 import { parseIncomeObservationTarget } from './income-source-qualification'
 import { readNativeSaleCancellationByDigest } from './native-sale-cancellation'
-import { readNativeSaleRelistByDigest } from './native-sale-relist'
+import { assertNativeSaleListingConsumed, readNativeSaleRelistByDigest } from './native-sale-relist'
 import { parsePurchaseRecoveryOriginal, queryPurchaseRecoveryOriginal } from './purchase-recovery-original'
 
 /** Compose reviewed originals only. The final buyer's actual use and current
@@ -65,10 +65,7 @@ export async function verifyNativeSaleLifecycle({ client, review, purchaseText, 
     const binding = money.reciprocalCollection
     commerceCheck(binding?.collectionId === plan.collectionId && binding.soulId === soulId, 'NATIVE_SALE_LIFECYCLE_COLLECTION_BINDING')
   }
-  const created = relist.receipt
-  commerceCheck(listingExit.offerId === created.offerId && listingExit.listingId === created.listingId
-    && listingExit.purchaseCapId === created.purchaseCapId && canonical(listingExit.offerInput) === canonical(created.offerOutput)
-    && canonical(listingExit.listingInput) === canonical(created.listingOutput), 'NATIVE_SALE_LIFECYCLE_RELIST_INPUT_MISMATCH')
+  assertNativeSaleListingConsumed(relist.receipt, listingExit, 'NATIVE_SALE_LIFECYCLE_RELIST_INPUT_MISMATCH')
 
   return { status: 'NATIVE_SALE_LIFECYCLE_CONFIRMED' as const, soulId, seller, buyer,
     cancelDigest, cancel, relistDigest, relist, purchaseDigest, sale, currentWalletUseRequired: true as const }

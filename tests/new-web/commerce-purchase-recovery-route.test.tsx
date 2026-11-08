@@ -3,6 +3,9 @@ import React,{act,Suspense} from 'react'
 import {createRoot,type Root} from 'react-dom/client'
 import {beforeEach,afterEach,expect,it,vi} from 'vitest'
 import Page from '../../web/app/souls/[id]/purchase/recovery/page'
+import BuyPage from '../../web/app/souls/[id]/buy/native/page'
+import { nativeSaleLifecycleWireFixture } from './fixtures/commerce-native-sale-lifecycle-wire'
+import { browserNativeSaleCheckoutJournal, nativeSaleCheckoutKey } from '../../web/lib/soulidity/native-sale-checkout-journal'
 import {purchaseRecoveryFixture} from './fixtures/commerce-purchase-recovery-original'
 import {aid,adigest} from './fixtures/activity-transaction-evidence'
 import {normalizeStructTag} from '@mysten/sui/utils'
@@ -13,6 +16,11 @@ vi.mock('../../web/lib/hooks/use-wallet-sign',()=>({useWalletSign:()=>({
  suiWallet:m.address?{address:m.address}:null,walletAccount:m.address,currentWallet:m.walletConnection,
  suiGrpcClient:m.walletClient,getWalletAddress:()=>m.address,signPersonalMessage:m.sign,
 })}))
+vi.mock('../../web/lib/sui/package-object-client',async importOriginal=>{
+ const actual=await importOriginal<typeof import('../../web/lib/sui/package-object-client')>()
+ return {...actual,withPackageObjectIdentity:(client:Parameters<typeof actual.withPackageObjectIdentity>[0],signal?:AbortSignal)=>
+  client===m.walletClient&&client.ledgerService.getCheckpoint?client:actual.withPackageObjectIdentity(client,signal)}
+})
 vi.mock('../../web/lib/soulidity/canonical-native-workbench',async importOriginal=>({
  ...await importOriginal<typeof import('../../web/lib/soulidity/canonical-native-workbench')>(),
  readCanonicalNativeWorkbench:m.readCurrent,
@@ -186,7 +194,7 @@ async function verifiedSaleWithContent() {
 const currentRecord=(index:number, name:string, deleted=false)=>({
  index:String(index),kind:index===0?0:1,name,version:'2',ciphertextHash:'11'.repeat(32),readMask:'1',deleted,purged:false,
 })
-function currentDirectory(x:Awaited<ReturnType<typeof verifiedSaleWithContent>>, owned=true) {
+function currentDirectory(x:Pick<Awaited<ReturnType<typeof verifiedSaleWithContent>>,'soulId'|'original'>, owned=true) {
  return {
   soulId:x.soulId,
   custody:{ownerReadCandidate:owned,viewerMatchesOwner:owned,ownerAddress:owned?x.original.plan.buyer:aid(99),accountId:aid(67)},
@@ -233,6 +241,37 @@ it.each(['text', 'file'])('opens %s for the original current buyer after origina
  expect(bytes.every(byte=>byte===0)).toBe(true)
  expect(host.querySelector('[aria-label="已核验原资产交接"]')).not.toBeNull()
  expect(host.querySelector('[aria-label="原买家当前内容"] button')).toBeNull()
+})
+
+it('prefills the exact Offer and reopens buyer content directly after verifying the original in checkout',async()=>{
+ const f=await nativeSaleLifecycleWireFixture()
+ const original=JSON.parse(f.purchaseText),soulId=f.review.soulId
+ m.id=soulId;m.address=f.plan.buyer;m.walletClient=f.client
+ const held=new Set<string>()
+ Object.defineProperty(navigator,'locks',{configurable:true,value:{request:async (key:string,_opts:unknown,run:(lock:unknown)=>unknown)=>{
+  if(held.has(key))return run(null)
+  held.add(key);try{return await run({name:key})}finally{held.delete(key)}
+ }}})
+ const scope={soulId,chainIdentifier:'35834a8a',author:f.plan.buyer},key=nativeSaleCheckoutKey(scope),journal=browserNativeSaleCheckoutJournal()
+ const record={schema:'soulidity.native-sale-checkout.v1' as const,plan:{...scope,originalText:f.purchaseText,reviewedQuoteIdentity:'fixture'},packet:original.packet}
+ await journal.exclusive(key,()=>journal.write(key,record))
+ vi.stubEnv('NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON',JSON.stringify(f.review.target))
+ m.readCurrent.mockResolvedValue(currentDirectory({soulId,original}))
+ m.openContent.mockResolvedValue({bytes:new TextEncoder().encode('exact buyer checkout content'),fileName:'soul.md',mimeType:'text/markdown',downloadAllowed:true})
+ const params=Promise.resolve({id:soulId}),searchParams=Promise.resolve({offer:f.review.purchasedOfferId})
+ const renderBuy=()=>act(async()=>{root.render(<Suspense fallback="Loading"><BuyPage params={params} searchParams={searchParams}/></Suspense>);await new Promise(r=>setTimeout(r,25))})
+ await renderBuy()
+ expect(host.querySelector('input')?.value).toBe(f.review.purchasedOfferId)
+ await click('读取本机原购买')
+ expect(host.querySelector('[aria-label="原买家当前内容"]')).toBeNull()
+ await click('查询原摘要')
+ expect(host.textContent).toContain('已核对原成交分账、托管交接和授权变化')
+ await click('核对当前托管和内容目录');await click('Soul 原文 soul · 版本 2 · 记录 0');await click('Read protected content')
+ expect(host.textContent).toContain('exact buyer checkout content')
+ expect(m.openContent).toHaveBeenCalledWith(expect.objectContaining({soulId,viewerAddress:f.plan.buyer,recordIndex:0}))
+ m.address=f.review.seller
+ await renderBuy()
+ expect(host.textContent).not.toContain('exact buyer checkout content')
 })
 
 it('keeps history visible if the configured release differs or the original buyer has resold the Soul',async()=>{
