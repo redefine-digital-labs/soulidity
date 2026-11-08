@@ -11,15 +11,15 @@ import {SaleCollectionBcs,saleCollectionSnapshotHash} from '../../../web/lib/sou
 
 // One original SDK packet/effects/events/checkpoint containing both actual
 // money/listing exit and full custody evidence. Controlled objects, no node run.
-export async function purchaseRecoveryCustodyFixture(variant=''){
+export async function purchaseRecoveryCustodyFixture(variant='',buyerAddress=aid(7)){
  const standard=await activityEvidenceFixture(),custody=await activityEvidenceFixture()
  const pin=(p:any)=>({originalPackageId:p.originalPackageId,callablePackageId:p.callablePackageId,callableDigest:p.callableDigest})
  function pkg(f:typeof standard,original:number,callable:number,module:string,name:string){const p=f.packageData.data.Package!;f.deployment.originalPackageId=aid(original);f.deployment.callablePackageId=aid(callable);p.id=aid(callable);p.moduleMap=new Map([[module,new Uint8Array([1])]]);p.typeOriginTable=[{moduleName:module,datatypeName:name,package:aid(original)}];f.rehashPackage()}
  pkg(standard,144,145,'soul','Soul');pkg(custody,146,147,'account','Account')
- const accountId=aid(67),buyer=aid(7),buyerKiosk=aid(65),accountType=`${aid(146)}::account::Account`
+ const accountId=aid(67),buyer=buyerAddress,buyerKiosk=aid(65),accountType=`${aid(146)}::account::Account`
  const authority={cap:{id:aid(149),for:buyerKiosk},owner:buyer,kiosk:buyerKiosk,closed_digest:fromBase58(adigest(9))},account={id:accountId,owner:buyer,kiosk:buyerKiosk,authority}
  const accountBytes=CanonicalOwnedAccountBcs.serialize(account).toBytes(),rawAccount=bcs.Object.serialize({data:{Move:{type:{Other:TypeTagSerializer.parseFromStr(accountType).struct!},hasPublicTransfer:true,version:9,contents:accountBytes}},owner:{AddressOwner:buyer},previousTransaction:adigest(9),storageRebate:0}).toBytes()
- const x=await commerceSaleMoneyFixture(variant==='collection'?'collection':'',{objectId:accountId,version:'9',digest:variant==='account-reference'?adigest(999):activityHash('Object',rawAccount)}),p=x.params,f=x.f,plan=p.plan
+ const x=await commerceSaleMoneyFixture(variant==='collection'?'collection':'',{objectId:accountId,version:'9',digest:variant==='account-reference'?adigest(999):activityHash('Object',rawAccount)},buyerAddress),p=x.params,f=x.f,plan=p.plan
  const np=f.packageData.data.Package!;np.linkageTable.set(aid(144),{upgradedId:aid(145),upgradedVersion:'2'});np.linkageTable.set(aid(146),{upgradedId:aid(147),upgradedVersion:'2'});f.rehashPackage()
  const rows=new Map<string,any>(),object=(...args:Parameters<typeof x.object>)=>{const result=x.object(...args);if(args[3].Shared)result.row.owner.version=BigInt(args[3].Shared.initialSharedVersion);rows.set(`${args[0]}:${args[4]}`,result.row);return result},effect=x.effect
  const root=CanonicalSoulBcs.parse(fromHex(vm.rows.NEW.rootAfterReopenHex));root.id=plan.soulId;root.revision='1'

@@ -11,7 +11,7 @@ import { NativeExclusiveListingFieldBcs } from '../../../web/lib/soulidity/comme
 
 // Controlled original objects/effects using actual SDK transaction bytes and
 // actual VM Config layout. No executed sale/mainnet result is claimed.
-export async function commerceSaleMoneyFixture(variant = '', buyerAccount?: NativeSaleGraphPlan['buyerAccount']) {
+export async function commerceSaleMoneyFixture(variant = '', buyerAccount?: NativeSaleGraphPlan['buyerAccount'], buyerAddress?: string) {
   const f = await activityEvidenceFixture(), foundation = await activityEvidenceFixture(), collection = await activityEvidenceFixture()
   const before = EconomicsConfigBcs.parse(fromHex(vm.sections.ENABLED.config)), native = f.deployment
   const pin = (fixture: typeof f, original: string, callable: string, definitions: string[]) => {
@@ -36,7 +36,7 @@ export async function commerceSaleMoneyFixture(variant = '', buyerAccount?: Nati
   if (variant === 'role-original') before.roles.roles[3].original = aid(99)
   if (variant === 'role-marker') before.roles.roles[3].marker = { name: `${aid(10)}::market::MarketRevision1` }
   before.commitment = economicsOperationalSnapshotHash({ domain: new TextEncoder().encode('soulidity-protocol-operational-v4'), config: economicsConfigSnapshot(before), gates: { primary: true, secondary: true } })
-  const withCollection = variant.startsWith('collection'), multi = variant === 'multi' || variant === 'merge-disposition', buyer = f.sender, seller = aid(70)
+  const withCollection = variant.startsWith('collection'), multi = variant === 'multi' || variant === 'merge-disposition', buyer = buyerAddress ?? f.sender, seller = aid(70)
   const creator = variant === 'creator-seller' ? seller : variant === 'creator-buyer' ? buyer : aid(71), collectionHolder = aid(72)
   const coinType = normalizeStructTag(before.payment_coin.name), quote = quoteNativeSale(101n, { secondaryBps: before.secondary_bps, creatorBps: 250, collectionBps: withCollection ? 500 : 0 })
   const distribution = nativeSaleDistribution(quote, { seller, creator, collection: withCollection ? collectionHolder : seller })

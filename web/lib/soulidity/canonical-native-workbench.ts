@@ -1,3 +1,4 @@
+import { MAINNET_GENESIS_DIGEST } from '../animacraft/mainnet-chain'
 import { MoveEmptyStructBcs, moveEmptyStructBytes } from '../sui/move-empty-struct'
 import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
@@ -79,7 +80,7 @@ export async function readCanonicalNativeWorkbench(input: {
   check(Number.isSafeInteger(start) && start >= 0 && start <= 4096 && (target.content || start === 0), 'CONTENT_PAGE_INVALID')
   check(id(soulId) && id(target.registryId) && id(target.configId) && /^[0-9a-f]{8}$/.test(target.chainIdentifier), 'TARGET_INVALID')
   const chain = (await profileReadStep(signal, () => client.core.getChainIdentifier())).chainIdentifier
-  check(toHex(fromBase58(chain).subarray(0, 4)) === target.chainIdentifier, 'WRONG_CHAIN')
+  check(chain === MAINNET_GENESIS_DIGEST, 'WRONG_CHAIN')
   const [standard, native] = await Promise.all([readPinnedMovePackageOrigins(client, target.standard, signal), readPinnedMovePackageOrigins(client, target.native, signal)])
   function type(origins: Map<string, string>, module: string, name: string) {
     const origin = origins.get(`${module}::${name}`); check(origin, 'TYPE_ORIGIN_REQUIRED'); return `${origin}::${module}::${name}`

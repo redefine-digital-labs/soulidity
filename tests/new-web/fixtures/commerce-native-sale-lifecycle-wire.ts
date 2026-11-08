@@ -19,7 +19,7 @@ type Move = NonNullable<RawObject['data']['Move']>
 type FixtureRow = { objectId: string; objectType: string; version: bigint; digest: string; previousTransaction: string;
   bcs: { value: Uint8Array }; contents: { value: Uint8Array }; owner: { kind: number; version?: bigint; address?: string } }
 
-function objectRow(objectId: string, type: string, raw: Parameters<typeof bcs.Object.serialize>[0]): FixtureRow {
+export function objectRow(objectId: string, type: string, raw: Parameters<typeof bcs.Object.serialize>[0]): FixtureRow {
   const bytes = bcs.Object.serialize(raw).toBytes(), object = bcs.Object.parse(bytes), owner = object.owner
   const move = object.data.Move!
   return { objectId, objectType: normalizeStructTag(type), version: BigInt(move.version), digest: activityHash('Object', bytes),
@@ -36,8 +36,8 @@ function rewrite(row: FixtureRow, writer: string, patch: Partial<Move> = {}, own
 
 function owner(row: FixtureRow) { return bcs.Object.parse(row.bcs.value).owner }
 
-export async function nativeSaleLifecycleWireFixture(variant = '', withCollection = false) {
-  const sale = await purchaseRecoveryCleanupFixture(withCollection ? 'collection' : ''), { original, finality: purchase } = sale
+export async function nativeSaleLifecycleWireFixture(variant = '', withCollection = false, buyerAddress?: string) {
+  const sale = await purchaseRecoveryCleanupFixture(withCollection ? 'collection' : '', buyerAddress), { original, finality: purchase } = sale
   const { plan, context } = original, { target, economics } = context
   const ledger = sale.client.ledgerService
   const read = async (objectId: string, version?: bigint): Promise<FixtureRow> =>
@@ -215,5 +215,6 @@ export async function nativeSaleLifecycleWireFixture(variant = '', withCollectio
     buyer: plan.buyer, cancelledOfferId: cancel.intent.offerId, purchasedOfferId: plan.offerId,
     cancelDigest: cancellation.ledger.digest, relistDigest: relist.ledger.digest, purchaseDigest: saleDigest, target, economics, collection: context.collection }
   return { review, purchaseText: JSON.stringify(original), client: { ledgerService }, signal: new AbortController().signal,
-    offer, listing, setupDigest, plan, creator: terms.creator, collectionHolder, memberId, nativeCollectionFieldId }
+    offer, listing, setupDigest, plan, creator: terms.creator, collectionHolder, memberId, nativeCollectionFieldId,
+    stateId: terms.state, purchaseRows: saleRows }
 }
