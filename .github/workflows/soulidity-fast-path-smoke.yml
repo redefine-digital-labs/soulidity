@@ -147,6 +147,9 @@ jobs:
           version: 9
       - name: Install desktop deps
         working-directory: desktop
+        env:
+          # Commerce runs typechecks and the root Vitest suite with an Electron mock.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: ${{ github.ref == 'refs/heads/codex/commerce-paid-checkout' && '1' || '' }}
         run: pnpm install --frozen-lockfile
       - name: Typecheck Soulidity SDK
         run: npm --prefix packages/soulidity-sdk run typecheck
