@@ -100,7 +100,7 @@ export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadRelea
    <a download={`purchase-${view.original.value.packet.digest}.json`} href={`data:application/json;charset=utf-8,${encodeURIComponent(view.text)}`}>下载导入的原购买 JSON</a>
    <p>下载仅包含导入文本，不包含本次查询结果、当前余额或新付款授权。</p>
    <button type="button" disabled={view.pending} onClick={()=>void query()} className="rounded border px-3 py-1">查询原购买历史</button>
-   {view.retirementVerified&&view.retiredRecord?.retirement&&<p role="status">已重新核对原购买过期且未执行。证据检查点 {view.retiredRecord.retirement.sequenceNumber}</p>}
+   {view.retirementVerified&&view.retiredRecord?.retirement&&<p role="status">已重新核对原购买过期且未执行。证据检查点 {view.retiredRecord.retirement.sequenceNumber}{view.retiredRecord.retirement.conflict && ' · 冲突交易 '+view.retiredRecord.retirement.conflict.digest}</p>}
    {view.pending&&<><p role="status">正在核对原交易…</p><button type="button" onClick={stop}>停止本次查询</button></>}
    {view.stopped&&<p role="status">本次查询已停止；没有取消链上交易。原付款结果仍需查询，不能据此重新付款。</p>}
   </article>}

@@ -1,7 +1,6 @@
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
-import type { EpochCheckpoint } from '../sui/epoch-checkpoint'
 import { assertNativeSaleRetirementUnchanged, retiredNativeSaleResult, validateNativeSaleRetirement,
-  verifyNativeSaleRetirement } from './commerce/native-sale-original-retirement'
+  verifyNativeSaleRetirement, type NativeSaleRetirement } from './commerce/native-sale-original-retirement'
 import { fromBase58, fromBase64, toBase58, toBase64 } from '@mysten/sui/utils'
 import { createAsyncPublicMutationStore, publicMutationCanonical as canonical, type PublicMutationPacket } from '../sui/public-mutation-journal'
 import { parseCanonicalNativeWorkbenchTarget } from './canonical-native-workbench'
@@ -18,7 +17,7 @@ export interface NativeSellerRecord {
   schema: 'soulidity.native-sale-seller.v1'
   plan: NativeSellerPlan
   packet: PublicMutationPacket
-  retirement?: EpochCheckpoint
+  retirement?: NativeSaleRetirement
 }
 export const nativeSellerScope = (plan: NativeSellerPlan) => ({
   chainIdentifier: plan.release.target.chainIdentifier, soulId: plan.intent.soulId, author: plan.intent.seller,

@@ -98,14 +98,14 @@ export function prepareNativeSaleCheckout(input: WalletLease & {
 }
 
 export function recoverNativeSaleCheckout(input: {
-  record: NativeSaleCheckoutRecord; client: SuiGrpcClient; signal: AbortSignal; cancelUnsigned?: true; retireExpired?: true
+  record: NativeSaleCheckoutRecord; client: SuiGrpcClient; signal: AbortSignal; cancelUnsigned?: true; retireExpired?: true; conflictDigest?: string
 }) {
   const record = structuredClone(input.record), signal = AbortSignal.any([input.signal, AbortSignal.timeout(90000)])
   const client = captureSameSoulMutationClient(input.client, signal)
+  const { cancelUnsigned, retireExpired, conflictDigest } = input
   return lockSale(record.plan, async (key, journal) => {
     check(nativeSaleCheckoutMatches(await journal.read(key), record), 'SALE_CHECKOUT_HEAD_CHANGED')
-    const { cancelUnsigned, retireExpired } = input
-    check(!cancelUnsigned || !retireExpired, 'SALE_CHECKOUT_RECOVERY_MODE')
+    check((!cancelUnsigned || !retireExpired) && (conflictDigest === undefined || retireExpired), 'SALE_CHECKOUT_RECOVERY_MODE')
     if (retireExpired) check(canRetireNativeSaleOriginal(record.packet), 'SALE_CHECKOUT_RETIRE_PHASE')
     if (cancelUnsigned) check(record.packet.phase === 'PREPARED' && record.packet.signature === null, 'SALE_CHECKOUT_CANCEL_PREPARED_ONLY')
     const result = await queryNativeSaleCheckoutRecord(record, client, signal)
@@ -113,7 +113,7 @@ export function recoverNativeSaleCheckout(input: {
     if (cancelUnsigned) check(result.status === 'MISSING', 'SALE_CHECKOUT_CANCEL_ORIGINAL_FOUND')
     check(!['SUCCEEDED', 'FAILED'].includes(record.packet.phase) || record.packet.phase === result.status, 'SALE_CHECKOUT_TERMINAL_CONTRADICTION')
     const retirement = retireExpired && result.status === 'MISSING' ? await verifyNativeSaleRetirement({
-      client, signal, packet: record.packet, author: record.plan.author, queryOriginal: () => queryNativeSaleCheckoutRecord(record, client, signal),
+      client, signal, packet: record.packet, author: record.plan.author, conflictDigest, queryOriginal: () => queryNativeSaleCheckoutRecord(record, client, signal),
     }) : undefined
     const phase = retirement ? 'RETIRED' : cancelUnsigned ? 'CANCELLED'
       : result.status === 'SUCCEEDED' || result.status === 'FAILED' ? result.status : record.packet.phase

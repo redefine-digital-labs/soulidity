@@ -1,7 +1,6 @@
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
-import type { EpochCheckpoint } from '../sui/epoch-checkpoint'
 import { assertNativeSaleRetirementUnchanged, retiredNativeSaleResult, validateNativeSaleRetirement,
-  verifyNativeSaleRetirement } from './commerce/native-sale-original-retirement'
+  verifyNativeSaleRetirement, type NativeSaleRetirement } from './commerce/native-sale-original-retirement'
 import { fromBase58, fromBase64, toBase58, toBase64 } from '@mysten/sui/utils'
 import { createAsyncPublicMutationStore, publicMutationCanonical as canonical, type PublicMutationPacket } from '../sui/public-mutation-journal'
 import { commerceCheck as check, commerceId } from './commerce/economics-read'
@@ -14,7 +13,7 @@ export interface NativeSaleCheckoutRecord {
   schema: 'soulidity.native-sale-checkout.v1'
   plan: SoulAccessAssetScope & { originalText: string; reviewedQuoteIdentity: string }
   packet: PublicMutationPacket
-  retirement?: EpochCheckpoint
+  retirement?: NativeSaleRetirement
 }
 
 export function nativeSaleCheckoutKey(scope: SoulAccessAssetScope) {

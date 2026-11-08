@@ -80,6 +80,17 @@ export async function readHistoricalMoveObject(params: HistoricalMoveObjectInput
 export async function readHistoricalCreatedMoveObject(params: Omit<HistoricalMoveObjectInput, 'type' | 'mode'>) {
   return readHistoricalMoveObjectWithStatus({ ...params, mode: 'created' }, 'Success')
 }
+/** Authenticate a consumed SUI Coin input even when the finalized transaction
+ * failed. This verifies the input only and makes no claim about business success. */
+export async function readHistoricalSpentSuiCoin(params: Omit<HistoricalMoveObjectInput, 'type' | 'mode' | 'maxBytes'>) {
+  const effects = structuredClone(params.effects), status = effects.V2?.status.$kind
+  check(status === 'Success' || status === 'Failure', 'SPENT_COIN_EFFECTS_STATUS')
+  const type = normalizeStructTag('0x2::coin::Coin<0x2::sui::SUI>')
+  const coin = await readHistoricalMoveObjectWithStatus({ ...params, effects, type, mode: 'input', maxBytes: 128 }, status)
+  check(coin.object.owner.AddressOwner, 'SPENT_COIN_ADDRESS_OWNER')
+  return coin
+}
+
 /** Narrow failed-transaction object evidence for an unchanged Shared root.
  * Preserves real Failure effects; cannot read coins, created/deleted objects,
  * readonly roots, or a business result as successful. Parent proves finality

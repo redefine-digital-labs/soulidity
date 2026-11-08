@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { marketListDigest } from '@/lib/animacraft/market-list-operation'
 import { canRetireNativeSaleOriginal } from '@/lib/soulidity/commerce/native-sale-original-retirement'
 import { PurchaseRecoverySaleDelivery } from './purchase-recovery-sale-delivery'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
@@ -43,7 +44,10 @@ export function NativeSaleCheckout({ soulId, release, initialOffer = '', nativeR
   } : null
   const recordPlan = original?.plan
   const confirmed = view.record && view.confirmedDigest === view.record.packet.digest
-  const phase = view.record?.packet.phase
+  const phase = view.record?.packet.phase, recordDigest = view.record?.packet.digest
+  const [conflict, setConflict] = useState<{ original: string; text: string } | null>(null)
+  const conflictText = conflict?.original === recordDigest ? conflict?.text ?? '' : ''
+  const conflictDigest = conflictText.trim()
   const canExecute = Boolean(release && buyer && recordPlan?.offerId === offerId && ['PREPARED', 'SIGNING', 'SIGNED'].includes(phase ?? ''))
 
   async function run(action: 'review' | 'prepare' | 'load' | 'execute' | 'query' | 'cancel' | 'retire') {
@@ -76,7 +80,7 @@ export function NativeSaleCheckout({ soulId, release, initialOffer = '', nativeR
           ? await executeNativeSaleCheckout({ ...options, activeOfferId: offerId, activeRelease: release, getBuyerAddress,
             sign: tx => wallet.signTransaction(tx, { retainReturnedSignature: true }) })
           : await recoverNativeSaleCheckout({ ...options, ...(action === 'cancel' ? { cancelUnsigned: true } : {}),
-            ...(action === 'retire' ? { retireExpired: true } : {}) })
+            ...(action === 'retire' ? { retireExpired: true, conflictDigest: conflictDigest || undefined } : {}) })
         if (active()) setView(previous => ({ ...previous, record: result.record,
           confirmedDigest: result.result.status === 'SUCCEEDED' ? result.record.packet.digest : '', status: result.record.packet.phase === 'CANCELLED'
           ? '已保存本机取消，原件仍可查询。' : resultText[result.result.status] }))
@@ -117,8 +121,11 @@ export function NativeSaleCheckout({ soulId, release, initialOffer = '', nativeR
       <a download={'purchase-' + view.record.packet.digest + '.json'} href={'data:application/json;charset=utf-8,' + encodeURIComponent(view.record.plan.originalText)}>下载原购买 JSON</a>
       <button type="button" disabled={busy} onClick={() => void run('query')}>查询原摘要</button>
       <button type="button" disabled={busy || phase !== 'PREPARED'} onClick={() => void run('cancel')}>取消本机未签名准备</button>
-      <button type="button" disabled={busy || !canRetireNativeSaleOriginal(view.record.packet)} onClick={() => void run('retire')}>核对过期并归档原购买</button>
-      {view.record.retirement && <p>过期证据检查点 {view.record.retirement.sequenceNumber} · Epoch {view.record.retirement.epoch}</p>}
+      {canRetireNativeSaleOriginal(view.record.packet) && <label className="block">冲突交易摘要（可选） <input
+        value={conflictText} maxLength={44} disabled={busy}
+        onChange={event => setConflict({ original: view.record!.packet.digest, text: event.currentTarget.value })} /></label>}
+      <button type="button" disabled={busy || !canRetireNativeSaleOriginal(view.record.packet) || Boolean(conflictDigest && !marketListDigest(conflictDigest))} onClick={() => void run('retire')}>核对过期并归档原购买</button>
+      {view.record.retirement && <p>过期证据检查点 {view.record.retirement.sequenceNumber} · Epoch {view.record.retirement.epoch}{view.record.retirement.conflict && ' · 冲突交易 ' + view.record.retirement.conflict.digest}</p>}
       <button type="button" disabled={busy || !canExecute} onClick={() => void run('execute')}>{phase === 'SIGNED' ? '复核并提交原签名' : '复核并签名原购买'}</button>
     </article>}
     {busy && <p role="status">正在核对或处理原购买…</p>}

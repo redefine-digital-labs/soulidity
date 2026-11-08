@@ -79,20 +79,20 @@ export function prepareNativeSellerOriginal(input: Parameters<typeof prepareNati
 
 /** Only the current local head may be changed. Historical lookup is available
  * separately without a wallet, journal lock, or current deployment selection. */
-export function reconcileNativeSellerOriginal(input: { record: NativeSellerRecord; client: SuiGrpcClient; signal: AbortSignal; cancelUnsigned?: true; retireExpired?: true }) {
+export function reconcileNativeSellerOriginal(input: { record: NativeSellerRecord; client: SuiGrpcClient; signal: AbortSignal; cancelUnsigned?: true; retireExpired?: true; conflictDigest?: string }) {
   const record = structuredClone(input.record), signal = AbortSignal.any([input.signal, AbortSignal.timeout(90000)])
   const client = captureSameSoulMutationClient(input.client, signal), cancel = input.cancelUnsigned === true
-  const retire = input.retireExpired === true
+  const retire = input.retireExpired === true, { conflictDigest } = input
   return exclusive(nativeSellerScope(record.plan), async (journal, key) => {
     await sameHead(journal, key, record)
-    check(!cancel || !retire, 'SELLER_RECOVERY_MODE')
+    check((!cancel || !retire) && (conflictDigest === undefined || retire), 'SELLER_RECOVERY_MODE')
     if (retire) check(canRetireNativeSaleOriginal(record.packet), 'SELLER_RETIRE_PHASE')
     if (cancel) check(record.packet.phase === 'PREPARED' && record.packet.signature === null, 'SELLER_UNSIGNED_ONLY')
     const result = await queryNativeSellerOriginal(record, client, signal)
     signal.throwIfAborted(); checkTerminal(record, result.status)
     if (cancel) check(result.status === 'MISSING', 'SELLER_ORIGINAL_FOUND')
     const retirement = retire && result.status === 'MISSING' ? await verifyNativeSaleRetirement({
-      client, signal, packet: record.packet, author: record.plan.intent.seller, queryOriginal: () => queryNativeSellerOriginal(record, client, signal),
+      client, signal, packet: record.packet, author: record.plan.intent.seller, conflictDigest, queryOriginal: () => queryNativeSellerOriginal(record, client, signal),
     }) : undefined
     const phase = retirement ? 'RETIRED' : cancel ? 'CANCELLED'
       : result.status === 'SUCCEEDED' || result.status === 'FAILED' ? result.status : record.packet.phase

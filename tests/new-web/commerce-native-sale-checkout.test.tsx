@@ -9,7 +9,7 @@ import { verifyNativeSaleRetirement } from '../../web/lib/soulidity/commerce/nat
 import { PurchaseRecoveryImport } from '../../web/components/commerce/purchase-recovery-import'
 import { parsePurchaseRecoveryOriginal } from '../../web/lib/soulidity/commerce/purchase-recovery-original'
 import NativeSoulBuyPage from '../../web/app/souls/[id]/buy/native/page'
-import { nativeSaleRetirementFixture } from './fixtures/native-sale-retirement'
+import { installNativeSaleGasSpends, nativeSaleGasSpendFixture, nativeSaleRetirementFixture } from './fixtures/native-sale-retirement'
 import { nativeSaleCheckoutFixture } from './fixtures/native-sale-checkout'
 import { nativeSaleLifecycleWireFixture } from './fixtures/commerce-native-sale-lifecycle-wire'
 import { aid } from './fixtures/activity-transaction-evidence'
@@ -276,4 +276,35 @@ it('requires the exact digest query to remain missing after the checkpoint witne
     signal: signal(), queryOriginal })).rejects.toThrow('RETIREMENT_PACKET')
   expect(witness.fetch).toHaveBeenCalledOnce()
   expect(await f.read()).toEqual(record)
+})
+
+it('walks two Gas Coin versions to a charged failed transaction that spent the exact original ref', async () => {
+  const f = await setup()
+  await f.prepare()
+  await f.execute()
+  const original = (await f.read())!
+  const gas = { ...(await f.client.ledgerService.getObject({ objectId: f.gas })).response.object, objectType: '0x2::coin::Coin<0x2::sui::SUI>' }
+  const first = await nativeSaleGasSpendFixture(gas, 702, { failure: true })
+  const last = await nativeSaleGasSpendFixture(first.output, 703)
+  const witness = await nativeSaleRetirementFixture(f.client, original.packet, f.gas, { observedGas: last.output })
+  installNativeSaleGasSpends(f.client, [first, last], last.output)
+
+  const recover = (conflictDigest?: string) => recoverNativeSaleCheckout({ record: original, client: f.client, signal: signal(),
+    retireExpired: true, conflictDigest })
+  await expect(recover(last.digest)).rejects.toThrow('NATIVE_SALE_CONFLICT_INPUT')
+  expect(await f.read()).toEqual(original)
+  await expect(recover()).resolves.toMatchObject({ result: { status: 'RETIRED' }, record: {
+    packet: { ...original.packet, phase: 'RETIRED' },
+    retirement: { ...witness.recorded, conflict: { digest: first.digest, checkpoint: '702', coinId: f.gas } },
+  } })
+  const retired = (await f.read())!
+  expect(witness.fetch).toHaveBeenCalledOnce()
+  // The authenticated spender rechecks through gRPC after the indexed Coin has moved again.
+  witness.fetch.mockRejectedValue(Error('INDEX_UNAVAILABLE'))
+  f.client.ledgerService.getEpoch.mockResolvedValue({ response: { epoch: { epoch: 7n, referenceGasPrice: 1n } } })
+  const replacement = await f.prepare()
+  expect(replacement.prepared).toBe(true)
+  expect(await browserNativeSaleCheckoutJournal(true).history(f.key)).toEqual([retired])
+  expect(witness.fetch).toHaveBeenCalledOnce()
+  expect(f.sign).toHaveBeenCalledOnce()
 })

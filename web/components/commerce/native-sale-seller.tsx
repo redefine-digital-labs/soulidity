@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { marketListDigest } from '@/lib/animacraft/market-list-operation'
 import { canRetireNativeSaleOriginal } from '@/lib/soulidity/commerce/native-sale-original-retirement'
 import { NativeSaleSellerSettlement } from './native-sale-seller-settlement'
 import { isValidSuiAddress, normalizeSuiAddress } from '@mysten/sui/utils'
@@ -39,7 +40,10 @@ export function NativeSaleSeller({ soulId, release }: { soulId: string; release:
   const [view, setView] = useSessionState(session, { busy: false, review: null as Awaited<ReturnType<typeof readNativeSellerReview>> | null,
     record: null as NativeSellerRecord | null, records: [] as NativeSellerRecord[], result: null as Result | null, status: '', error: '' })
   const { record, result, busy } = view
-  const phase = record?.packet.phase
+  const phase = record?.packet.phase, recordDigest = record?.packet.digest
+  const [conflict, setConflict] = useState<{ original: string; text: string } | null>(null)
+  const conflictText = conflict?.original === recordDigest ? conflict?.text ?? '' : ''
+  const conflictDigest = conflictText.trim()
   const sameSeller = Boolean(seller && record?.plan.intent.seller === seller)
   const canExecute = Boolean(sameSeller && release && record && publicMutationCanonical(record.plan.release) === publicMutationCanonical(release)
     && ['PREPARED', 'SIGNING', 'SIGNED'].includes(phase ?? ''))
@@ -85,7 +89,7 @@ export function NativeSaleSeller({ soulId, release }: { soulId: string; release:
       } else if (record && walletClient && sameSeller && (action === 'discard' || action === 'retire' || action === 'execute' && canExecute && release)) {
         const options = { record, client: withPackageObjectIdentity(walletClient, signal), signal }
         const observed = action === 'discard' || action === 'retire'
-          ? await reconcileNativeSellerOriginal({ ...options, ...(action === 'discard' ? { cancelUnsigned: true } : { retireExpired: true }) })
+          ? await reconcileNativeSellerOriginal({ ...options, ...(action === 'discard' ? { cancelUnsigned: true } : { retireExpired: true, conflictDigest: conflictDigest || undefined }) })
           : await executeNativeSellerOriginal({ ...options, activeRelease: release!, getSellerAddress,
             sign: tx => wallet.signTransaction(tx, { retainReturnedSignature: true }) })
         if (active()) setView(previous => ({ ...previous, ...observed,
@@ -139,8 +143,11 @@ export function NativeSaleSeller({ soulId, release }: { soulId: string; release:
       <p>Gas 预算 {record.plan.gas.budget} MIST · {record.plan.gas.coins.map(coin => coin.objectId).join('、')}</p>
       <button type="button" disabled={busy} onClick={() => void run('query')}>查询原摘要</button>
       <button type="button" disabled={busy || !sameSeller || phase !== 'PREPARED'} onClick={() => void run('discard')}>取消本机未签名准备</button>
-      <button type="button" disabled={busy || !sameSeller || !canRetireNativeSaleOriginal(record.packet)} onClick={() => void run('retire')}>核对过期并归档原操作</button>
-      {record.retirement && <p>过期证据检查点 {record.retirement.sequenceNumber} · Epoch {record.retirement.epoch}</p>}
+      {sameSeller && canRetireNativeSaleOriginal(record.packet) && <label className="block">冲突交易摘要（可选） <input
+        value={conflictText} maxLength={44} disabled={busy}
+        onChange={event => setConflict({ original: record.packet.digest, text: event.currentTarget.value })} /></label>}
+      <button type="button" disabled={busy || !sameSeller || !canRetireNativeSaleOriginal(record.packet) || Boolean(conflictDigest && !marketListDigest(conflictDigest))} onClick={() => void run('retire')}>核对过期并归档原操作</button>
+      {record.retirement && <p>过期证据检查点 {record.retirement.sequenceNumber} · Epoch {record.retirement.epoch}{record.retirement.conflict && ' · 冲突交易 ' + record.retirement.conflict.digest}</p>}
       <button type="button" disabled={busy || !canExecute} onClick={() => void run('execute')}>{phase === 'SIGNED' ? '复核并提交原签名' : '复核并签名原操作'}</button>
     </article>}
     {busy && <p role="status">正在核对或处理原操作…</p>}

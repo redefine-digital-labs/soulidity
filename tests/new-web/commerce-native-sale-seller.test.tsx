@@ -12,7 +12,7 @@ import { buildNativeSaleGraph } from '../../web/lib/soulidity/commerce/native-sa
 import { decodeNativeSaleClosingPurchase, readNativeSaleClosingPacket } from '../../web/lib/soulidity/commerce/native-sale-original-graph'
 import { readNativeSaleListingHistory } from '../../web/lib/soulidity/commerce/native-sale-relist'
 import { readNativeSellerReview, type NativeSellerIntent } from '../../web/lib/soulidity/commerce/native-sale-seller-plan'
-import { nativeSaleRetirementFixture } from './fixtures/native-sale-retirement'
+import { installNativeSaleGasSpends, nativeSaleGasSpendFixture, nativeSaleRetirementFixture } from './fixtures/native-sale-retirement'
 import { nativeSaleCheckoutFixture } from './fixtures/native-sale-checkout'
 import { nativeSaleCancellationFixture } from './fixtures/commerce-sale-cancellation'
 import { nativeSaleLifecycleWireFixture, objectRow } from './fixtures/commerce-native-sale-lifecycle-wire'
@@ -438,6 +438,39 @@ it('retires a signed cancellation without dispatch, then requires its exact witn
   expect(next.prepared).toBe(true)
   expect(next.record.packet.digest).not.toBe(original.packet.digest)
   expect(await browserNativeSellerJournal(true).history(f.key)).toEqual([retired])
+  expect(f.sign).toHaveBeenCalledOnce()
+  expect(f.client.core.executeTransaction).toHaveBeenCalledOnce()
+})
+
+it('uses a manual conflicting digest when the signed seller gas was deleted by gas smashing', async () => {
+  const f = await setup('CANCEL')
+  await f.prepare()
+  await f.execute()
+  const original = (await f.read())!
+  const gas = { ...(await f.client.ledgerService.getObject({ objectId: f.sellerGas })).response.object, objectType: '0x2::coin::Coin<0x2::sui::SUI>' }
+  const primary = { ...gas, objectId: aid(985) }
+  const alternate = bcs.Object.parse(gas.bcs.value)
+  const Coin = bcs.struct('Coin', { id: bcs.Address, balance: bcs.u64() })
+  alternate.data.Move!.contents = Coin.serialize({ id: primary.objectId, balance: 10000 }).toBytes()
+  const primaryRow = objectRow(primary.objectId, gas.objectType, alternate)
+  const spend = await nativeSaleGasSpendFixture(gas, 701, { primary: primaryRow })
+  const witness = await nativeSaleRetirementFixture(f.client, original.packet, f.sellerGas, { observedGas: null })
+  installNativeSaleGasSpends(f.client, [spend])
+  const route = Promise.resolve({ id: f.soulId })
+  await act(async () => root.render(<NativeSoulSellPage params={route} />))
+  await click('读取本机挂牌和取消原件')
+  await text(original.packet.digest)
+  await click('核对过期并归档原操作')
+  await text('RETIREMENT_GAS_CHANGED')
+  expect(await f.read()).toEqual(original)
+  await type('冲突交易摘要（可选） ', spend.digest)
+  await click('核对过期并归档原操作')
+  await text('已核对原操作过期且未执行')
+  expect(await f.read()).toMatchObject({ packet: { ...original.packet, phase: 'RETIRED' },
+    retirement: { conflict: { digest: spend.digest, checkpoint: '701', coinId: f.sellerGas } } })
+  await click('查询原摘要')
+  await text('已核对原操作过期且未执行')
+  expect(witness.fetch).toHaveBeenCalledOnce()
   expect(f.sign).toHaveBeenCalledOnce()
   expect(f.client.core.executeTransaction).toHaveBeenCalledOnce()
 })
