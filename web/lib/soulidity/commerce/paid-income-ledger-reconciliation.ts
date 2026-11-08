@@ -5,7 +5,7 @@ import { parseCanonicalNativeWorkbenchTarget } from '../canonical-native-workben
 import { soulAccessExact } from '../soul-access-plan'
 import { commerceCheck, commerceId, readEconomicsIncome } from './economics-read'
 import type { IncomeExecutionRegistryV1 } from './income-execution-source-v1'
-import { incomeLedgerWitness, relateIncomeLedgerWitness } from './income-ledger-witness'
+import { incomeLedgerWitness, relateIncomeLedgerWitness, type IncomeLedgerWitness } from './income-ledger-witness'
 import { parseIncomeObservationTarget } from './income-source-qualification'
 import { readIncomeWithdrawalHistory } from './income-withdrawal-history'
 import { importIncomeWithdrawalRecoveryRecord, incomeWithdrawalRecoveryProps } from './income-withdrawal-recovery-record'
@@ -32,12 +32,38 @@ type ReconciliationInput = OriginalFiles & {
   client: SuiGrpcClient; signal: AbortSignal; executionRegistry?: IncomeExecutionRegistryV1
 }
 
-async function parseOriginalFiles({ purchaseText, withdrawalText }: OriginalFiles, soulId: string) {
+async function parsePaidIncomePurchase(purchaseText: string, soulId: string) {
   const original = await parsePurchaseRecoveryOriginal(purchaseText, soulId)
   commerceCheck(original.kind === 'native-public-read-v2', 'PAID_INCOME_PURCHASE_FORMAT')
-  const withdrawal = incomeWithdrawalRecoveryProps(importIncomeWithdrawalRecoveryRecord(withdrawalText))
-  return { purchase: original.value, withdrawal }
+  return original.value
 }
+
+async function parseOriginalFiles({ purchaseText, withdrawalText }: OriginalFiles, soulId: string) {
+  const purchase = await parsePaidIncomePurchase(purchaseText, soulId)
+  const withdrawal = incomeWithdrawalRecoveryProps(importIncomeWithdrawalRecoveryRecord(withdrawalText))
+  return { purchase, withdrawal }
+}
+
+type IncomeRead = Pick<ReconciliationInput, 'client' | 'signal'>
+async function confirmPurchase({ client, signal }: IncomeRead, p: Awaited<ReturnType<typeof parsePaidIncomePurchase>>) {
+  const economics = parseIncomeObservationTarget(p.context.economics)
+  signal.throwIfAborted()
+  const paid = await readNativePublicReadPaidHistoryV2({ ...p.context.originalReceiptContext,
+    client, signal, intent: p.intent, packet: p.packet, gas: p.reviewedGas, proveMoney: true })
+  if (paid.status !== 'SUBSCRIPTION_RECORDED') return { stage: 'PURCHASE' as const, transactionDigest: p.packet.digest, ...paid }
+  const money = paid.receipt.money
+  commerceCheck(money && money.payout.owner === p.context.originalQuotedOffer.issuer, 'PAID_INCOME_MONEY_REQUIRED')
+  return { status: 'PAID_INCOME_PURCHASE_CONFIRMED' as const, economics,
+    purchase: { transactionDigest: p.packet.digest, checkpoint: paid.checkpoint, money } }
+}
+
+/** Prove the original credit without a withdrawal file or a current release selection. */
+export async function confirmPaidIncomePurchase(input: IncomeRead & { purchaseText: string; soulId: string }) {
+  return confirmPurchase(input, await parsePaidIncomePurchase(input.purchaseText, input.soulId))
+}
+
+export type ConfirmedPaidIncomePurchase = Extract<Awaited<ReturnType<typeof confirmPaidIncomePurchase>>,
+  { status: 'PAID_INCOME_PURCHASE_CONFIRMED' }>
 
 /** Independent acceptance can bind both files to reviewed expectations. */
 export async function reconcilePaidIncomeLedger(input: ReconciliationInput & { review: unknown }) {
@@ -76,20 +102,16 @@ async function confirmOriginals(
 ) {
   const economics = parseIncomeObservationTarget(p.context.economics)
   commerceCheck(p.packet.digest !== w.packet.digest && canonical(w.target) === canonical(economics), 'PAID_INCOME_ORIGINAL_CONFIG_MISMATCH')
-  signal.throwIfAborted()
-  const paid = await readNativePublicReadPaidHistoryV2({ ...p.context.originalReceiptContext,
-    client, signal, intent: p.intent, packet: p.packet, gas: p.reviewedGas, proveMoney: true })
-  if (paid.status !== 'SUBSCRIPTION_RECORDED') return { stage: 'PURCHASE' as const, transactionDigest: p.packet.digest, ...paid }
-  const money = paid.receipt.money
-  commerceCheck(money && money.payout.owner === p.context.originalQuotedOffer.issuer, 'PAID_INCOME_MONEY_REQUIRED')
-  const purchase = { transactionDigest: p.packet.digest, checkpoint: paid.checkpoint, money }
+  const original = await confirmPurchase({ client, signal }, p)
+  if (original.status !== 'PAID_INCOME_PURCHASE_CONFIRMED') return original
+  const { purchase } = original, { money } = purchase
   if (money.protocolIncome === '0') return { status: 'PURCHASE_WITHOUT_PROTOCOL_FEE' as const, purchase }
 
   const withdrawn = await readIncomeWithdrawalHistory({ ...w, client, signal, executionRegistry })
   if (withdrawn.status !== 'WITHDRAWAL_EVIDENCE_CONFIRMED') {
     return { stage: 'WITHDRAWAL' as const, transactionDigest: w.packet.digest, purchase, ...withdrawn }
   }
-  const payout = withdrawn.receipt, checkpointsOrdered = BigInt(paid.checkpoint) <= BigInt(withdrawn.checkpoint)
+  const payout = withdrawn.receipt, checkpointsOrdered = BigInt(purchase.checkpoint) <= BigInt(withdrawn.checkpoint)
   commerceCheck(checkpointsOrdered && payout.coinType === money.coinType, 'PAID_INCOME_CHECKPOINT_OR_COIN')
   const afterPurchase = money.platformLedger.after, beforeWithdrawal = payout.ledger.before
   const purchaseToWithdrawal = relateIncomeLedgerWitness(afterPurchase, beforeWithdrawal)
@@ -108,12 +130,9 @@ async function confirmOriginals(
 export type ConfirmedPaidIncomeOriginals = Extract<Awaited<ReturnType<typeof confirmPaidIncomeOriginals>>,
   { status: 'PAID_INCOME_ORIGINALS_CONFIRMED' }>
 
-/** Observe the current Config against the already authenticated withdrawal output.
- * A failed observation leaves the exact historical pair available for another read. */
-export async function readCurrentPaidIncomeLedger({ client, signal, confirmed }: {
-  client: SuiGrpcClient; signal: AbortSignal; confirmed: ConfirmedPaidIncomeOriginals
+async function observeIncomeLedgerAfter({ client, signal, economics, after }: IncomeRead & {
+  economics: ConfirmedPaidIncomePurchase['economics']; after: IncomeLedgerWitness
 }) {
-  const { economics, evidence } = confirmed
   signal.throwIfAborted()
   let current: ReturnType<typeof incomeLedgerWitness>
   try {
@@ -122,13 +141,34 @@ export async function readCurrentPaidIncomeLedger({ client, signal, confirmed }:
       observed.initialSharedVersion)
   } catch {
     signal.throwIfAborted()
-    return { ...evidence, status: 'PAID_INCOME_CURRENT_UNVERIFIED' as const, reason: 'CONFIG_READ_FAILED' as const }
+    return { status: 'PAID_INCOME_CURRENT_UNVERIFIED' as const, reason: 'CONFIG_READ_FAILED' as const }
   }
   signal.throwIfAborted()
   try {
-    const withdrawalToCurrent = relateIncomeLedgerWitness(evidence.withdrawal.ledger.after, current)
-    return { ...evidence, status: 'PAID_INCOME_LEDGER_RECONCILED' as const, withdrawalToCurrent, current }
+    return { status: 'OBSERVED' as const, relation: relateIncomeLedgerWitness(after, current), current }
   } catch {
-    return { ...evidence, status: 'PAID_INCOME_CURRENT_UNVERIFIED' as const, reason: 'CONFIG_REFERENCE_CONFLICT' as const }
+    return { status: 'PAID_INCOME_CURRENT_UNVERIFIED' as const, reason: 'CONFIG_REFERENCE_CONFLICT' as const }
   }
+}
+
+/** Compare the original credited Config with a fresh observation of the same ledger. */
+export async function readCurrentPaidIncomeAfterPurchase({ confirmed, ...input }: IncomeRead & {
+  confirmed: ConfirmedPaidIncomePurchase
+}) {
+  const { purchase, economics } = confirmed
+  const observed = await observeIncomeLedgerAfter({ ...input, economics, after: purchase.money.platformLedger.after })
+  return observed.status === 'OBSERVED'
+    ? { purchase, status: 'PAID_INCOME_PURCHASE_LEDGER_OBSERVED' as const, purchaseToCurrent: observed.relation, current: observed.current }
+    : { purchase, ...observed }
+}
+
+/** Observe the current Config against the already authenticated withdrawal output. */
+export async function readCurrentPaidIncomeLedger({ confirmed, ...input }: IncomeRead & {
+  confirmed: ConfirmedPaidIncomeOriginals
+}) {
+  const { economics, evidence } = confirmed
+  const observed = await observeIncomeLedgerAfter({ ...input, economics, after: evidence.withdrawal.ledger.after })
+  return observed.status === 'OBSERVED'
+    ? { ...evidence, status: 'PAID_INCOME_LEDGER_RECONCILED' as const, withdrawalToCurrent: observed.relation, current: observed.current }
+    : { ...evidence, ...observed }
 }

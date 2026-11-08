@@ -7,6 +7,8 @@ import { createConfiguredIncomeOriginalExecutionRegistry } from '../../lib/souli
 import { importIncomeWithdrawalRecoveryRecord } from '../../lib/soulidity/commerce/income-withdrawal-recovery-record'
 import { confirmPaidIncomeOriginals, readCurrentPaidIncomeLedger, type ConfirmedPaidIncomeOriginals } from '../../lib/soulidity/commerce/paid-income-ledger-reconciliation'
 
+import { PaidIncomePurchaseReadback } from './paid-income-purchase-readback'
+
 type OriginalResult = Awaited<ReturnType<typeof confirmPaidIncomeOriginals>>
 type Result = Exclude<OriginalResult, ConfirmedPaidIncomeOriginals> | Awaited<ReturnType<typeof readCurrentPaidIncomeLedger>>
 const empty = {
@@ -85,7 +87,8 @@ export function PaidIncomeReconciliation({ client, soulId, purchaseText }: {
   const result = view.result, evidence = view.confirmed?.evidence
   return <section aria-label="原购买与原提款对账" className="space-y-2 rounded border p-3">
     <h2 className="font-semibold">核对付费入账与原提款</h2>
-    <p>选择同一协议 Config 的原提款恢复文件。对账分别核验原购买、原提款和当前协议账本。</p>
+    <PaidIncomePurchaseReadback client={client} soulId={soulId} purchaseText={purchaseText}/>
+    <p>已有提款回执时，可选择同一协议 Config 的原提款文件核对到账。</p>
     <label className="block">用于对账的原提款文件
       <input type="file" accept="application/json,.json" onChange={event => void select(event.currentTarget.files?.[0])}/>
     </label>

@@ -708,3 +708,46 @@ it('drops a late reconciliation when the withdrawal file is replaced', async () 
   expect(host.querySelector('[aria-label="原付款历史"]')?.textContent).toContain('原协议收入（最小单位）：3')
  } finally { release() }
 })
+
+it('reads the original fee and pooled current balance on the recovery page before importing a withdrawal', async () => {
+ const f=await paidIncomePage(true)
+ const panel=incomePanel().querySelector('[aria-label="原付费入账与当前账本"]')!
+ const read=f.client.core.getChainIdentifier
+ read.mockRejectedValueOnce(Error('Current ledger temporarily unavailable'))
+ const storageBefore=Object.entries(localStorage)
+ await click('核对原购买与当前账本')
+ expect(panel.querySelector('[aria-label="已核验原付费入账"]')?.textContent).toContain('原协议入账（最小单位）3')
+ expect(panel.querySelector('[role="alert"]')?.textContent).toContain('当前协议账本暂不可读')
+ await click('重新读取原购买对应的当前账本')
+ const current=panel.querySelector('[aria-label="原购买对应的当前协议账本"]')
+ expect(current?.textContent).toContain('当前账本余额（最小单位）3')
+ expect(current?.textContent).toContain('原购买后共用账本新增入账 5 · 提款 5')
+ expect(current?.querySelector('a')?.getAttribute('href')).toBe('/income')
+ expect(f.client.ledgerService.getTransaction.mock.calls.map(([request])=>request.digest)).toEqual([
+  f.review.purchaseDigest,f.review.purchaseDigest,
+ ])
+ expect(m.sign).not.toHaveBeenCalled()
+ expect(Object.entries(localStorage)).toEqual(storageBefore)
+})
+
+it('keeps the original credit when stopping a slow current read and ignores the late balance', async () => {
+ const f=await paidIncomePage()
+ const panel=incomePanel().querySelector('[aria-label="原付费入账与当前账本"]')!
+ const chain=f.client.core.getChainIdentifier
+ let release!:()=>void
+ const stalled=new Promise<void>(resolve=>{release=resolve})
+ const read=chain.getMockImplementation()!
+ chain.mockImplementationOnce(async()=>{await stalled;return read()})
+ try {
+  await click('核对原购买与当前账本')
+  expect(panel.querySelector('[aria-label="已核验原付费入账"]')?.textContent).toContain(f.review.purchaseDigest)
+  await click('停止原付费入账核对')
+  await act(async()=>{release();await stalled})
+  expect(panel.querySelector('[aria-label="原购买对应的当前协议账本"]')).toBeNull()
+  expect(panel.querySelector('[role="status"]')?.textContent).toContain('已停止本次读取')
+  expect(panel.querySelector('[aria-label="已核验原付费入账"]')?.textContent).toContain(f.review.purchaseDigest)
+  expect(f.client.ledgerService.getTransaction.mock.calls.map(([request])=>request.digest)).toEqual([
+   f.review.purchaseDigest,f.review.purchaseDigest,
+  ])
+ } finally {release()}
+})
