@@ -4,13 +4,16 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import type { Transaction } from '@mysten/sui/transactions'
-import { toBase64 } from '@mysten/sui/utils'
+import { bcs } from '@mysten/sui/bcs'
+import { deriveDynamicFieldID, toBase64 } from '@mysten/sui/utils'
 import { IncomeWithdrawalPreflight } from '../../web/components/commerce/income-withdrawal-preflight'
 import { IncomeWithdrawalLocalRecovery } from '../../web/components/commerce/income-withdrawal-local-recovery'
 import { IncomeWithdrawalResumeProvider } from '../../web/components/providers/income-withdrawal-resume-provider'
-import { browserIncomeWithdrawalOriginalReaderV1, incomeWithdrawalFundKeyV1 } from '../../web/lib/soulidity/income-withdrawal-journal-v1'
+import { IncomeReceiptFieldBcs, IncomeRequestBcs } from '../../web/lib/soulidity/commerce/economics-bcs'
+import { browserIncomeWithdrawalOriginalReaderV1, incomeWithdrawalFundKeyV1, incomeWithdrawalHeadCanClearV1,
+  queryIncomeWithdrawalJournalOriginalV1 } from '../../web/lib/soulidity/income-withdrawal-journal-v1'
 import { incomeEntryFixture } from './fixtures/income-entry'
-import { aid } from './fixtures/activity-transaction-evidence'
+import { activityEvidenceFixture, activityHash, aid } from './fixtures/activity-transaction-evidence'
 
 const wallet = vi.hoisted(() => ({ address: null as string | null, sign: vi.fn() }))
 vi.mock('../../web/lib/hooks/use-wallet-sign', () => ({
@@ -46,9 +49,9 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function fixture() {
+async function fixture(allowRetirement = false) {
   const signer = Ed25519Keypair.fromSecretKey(new Uint8Array(32).fill(42))
-  const actor = signer.toSuiAddress(), x = await incomeEntryFixture(actor)
+  const actor = signer.toSuiAddress(), x = await incomeEntryFixture(actor, allowRetirement)
   const capability = x.controller.resumeCapability()!
   const key = incomeWithdrawalFundKeyV1(x.input.target)
   const read = () => browserIncomeWithdrawalOriginalReaderV1().read(key)
@@ -236,4 +239,140 @@ it('holds the shared funds lock while the original wallet prompt is outstanding'
   await expect(first).resolves.toMatchObject({ original: { status: 'MISSING' },
     record: { packet: { phase: 'SIGNED', digest: prepared.packet.digest } } })
   expect(f.submit).toHaveBeenCalledOnce()
+})
+
+async function retirementFixture() {
+  const f = await fixture(true)
+  await f.run(await f.seed())
+  const signed = (await f.read())!
+  expect(signed.packet.phase).toBe('SIGNED')
+  const expiry = await activityEvidenceFixture()
+  expiry.summaryData.epoch = '7'
+  expiry.summaryData.sequence_number = '101'
+  expiry.rehashSummary()
+  expiry.checkpoint.signature = { epoch: 7n, signature: new Uint8Array(48).fill(1), bitmap: new Uint8Array([1]) }
+  const getCheckpoint = f.client.ledgerService.getCheckpoint.getMockImplementation()!
+  f.client.ledgerService.getCheckpoint.mockImplementation(async (request, options) =>
+    request.checkpointId?.oneofKind === undefined || request.checkpointId.sequenceNumber === 101n
+      ? { response: { checkpoint: expiry.checkpoint } } : getCheckpoint(request, options))
+  const retire = () => f.capability.retirement!.retire({ selected: signed, signal: f.input.signal, isCurrent: () => true })
+
+  function currentReceipt(kind: 'matching' | 'unrelated' | 'incomplete') {
+    const config = f.rows.get(`${f.input.target.configId}:10`)
+    const getObject = f.client.ledgerService.getObject.getMockImplementation()!
+    f.client.ledgerService.getObject.mockImplementation(async (request, options) =>
+      request.version === undefined && request.objectId === config.objectId ? { response: { object: config } } : getObject(request, options))
+    let row = [...f.rows.values()].find(value => value.objectType.includes('::revenue::Receipt>'))
+    const tableId = row.owner.address
+    if (kind === 'unrelated') {
+      const raw = bcs.Object.parse(row.bcs.value), field = IncomeReceiptFieldBcs.parse(raw.data.Move!.contents)
+      field.name.actor = aid(778)
+      field.value.actor = field.name.actor
+      const requestType = `${f.input.target.foundation.originalPackageId}::revenue::Request`
+      field.id = deriveDynamicFieldID(tableId, requestType, IncomeRequestBcs.serialize(field.name).toBytes())
+      raw.data.Move!.contents = IncomeReceiptFieldBcs.serialize(field).toBytes()
+      const bytes = bcs.Object.serialize(raw).toBytes()
+      row = { ...row, objectId: field.id, digest: activityHash('Object', bytes), bcs: { value: bytes } }
+    }
+    f.client.stateService = { listDynamicFields: vi.fn(async () => ({
+      response: { dynamicFields: kind === 'incomplete' ? [] : [{ parent: tableId, fieldId: row.objectId }] },
+    })) }
+    f.client.ledgerService.batchGetObjects = vi.fn(async () => ({
+      response: { objects: [{ result: { oneofKind: 'object', object: row } }] },
+    }))
+  }
+  return { ...f, signed, expiry, retire, currentReceipt }
+}
+
+it('retires the same signed head and archives it before a new Foundation original is retained', async () => {
+  const f = await retirementFixture()
+  f.currentReceipt('unrelated')
+  await act(async () => root.render(<IncomeWithdrawalResumeProvider capability={f.capability}>
+    <IncomeWithdrawalLocalRecovery viewerAddress={null} createReadOnlyClient={f.capability.client}/>
+  </IncomeWithdrawalResumeProvider>))
+  await waitForText('核对并退役过期原提款')
+  await click('核对并退役过期原提款')
+  await waitForText('已保存退役证据 · 检查点 101 · Epoch 7')
+  const retired = (await f.read())!
+  expect(retired.packet).toEqual({ ...f.signed.packet, phase: 'RETIRED' })
+  expect(retired.plan.originalText).toBe(f.signed.plan.originalText)
+  expect(retired.retirement).toMatchObject({ checkpoint: { sequenceNumber: '101', epoch: '7' },
+    tableSize: '1', config: { version: '10', ledgerRevision: '9' },
+    sourceManifestSha256: f.installation.acceptedManifestSha256 })
+  expect(incomeWithdrawalHeadCanClearV1(retired, { status: 'MISSING' })).toBe(false)
+
+  const epoch = f.client.ledgerService.getEpoch.getMockImplementation()!
+  f.client.ledgerService.getEpoch.mockImplementation(async request => {
+    const result = await epoch(request)
+    if (request.epoch === undefined) result.response.epoch.epoch = 7n
+    return result
+  })
+  const getActorAddress = () => f.actor
+  const observation = await f.controller.observe(f.selection, f.input.signal, getActorAddress)
+  expect(observation.previous).toMatchObject({ digest: retired.packet.digest, status: 'MISSING' })
+  const review = f.controller.makeReview(observation, { ...f.draft, expirationEpoch: '7', attemptHex: '02'.repeat(32) })
+  const prepare = f.controller.createPreflight(review)
+  // Stop at simulation of the next packet. The real Host has to verify the
+  // retired proof again and archive it before it can persist a new original.
+  f.client.transactionExecutionService.simulateTransaction.mockRejectedValueOnce(Error('STOP_NEW_SIMULATION'))
+  await expect(prepare({ ...review.request, client: f.client, signal: f.input.signal, getActorAddress }))
+    .rejects.toMatchObject({ message: 'STOP_NEW_SIMULATION', recovery: { headPhase: 'PREPARED', durability: 'CONFIRMED' } })
+  const next = (await f.read())!
+  expect(next.packet.digest).not.toBe(retired.packet.digest)
+  expect(next.packet.phase).toBe('PREPARED')
+  expect(await browserIncomeWithdrawalOriginalReaderV1().history(incomeWithdrawalFundKeyV1(retired.plan))).toEqual([retired])
+  expect(f.sign).toHaveBeenCalledOnce()
+  expect(f.submit).toHaveBeenCalledOnce()
+})
+
+it.each([
+  ['matching', 'WITHDRAW_RETIREMENT_RECEIPT_EXISTS'],
+  ['incomplete', 'WITHDRAW_RETIREMENT_TABLE_INCOMPLETE'],
+] as const)('keeps the signed head when the receipt table is %s despite the missing digest', async (kind, reason) => {
+  const f = await retirementFixture()
+  f.currentReceipt(kind)
+  await expect(f.retire()).rejects.toThrow(reason)
+  expect(await f.read()).toEqual(f.signed)
+})
+
+it('rejects a post-scan original that becomes visible', async () => {
+  const f = await retirementFixture()
+  f.publish()
+  f.getTransaction.mockRejectedValueOnce({ code: 'NOT_FOUND' })
+  await expect(f.retire()).rejects.toThrow('WITHDRAW_RETIREMENT_ORIGINAL_FOUND')
+  expect(await f.read()).toEqual(f.signed)
+})
+
+it('requires an executed checkpoint strictly later than the expiry epoch', async () => {
+  const f = await retirementFixture()
+  f.expiry.summaryData.epoch = '6'
+  f.expiry.rehashSummary()
+  f.expiry.checkpoint.signature.epoch = 6n
+  await expect(f.retire()).rejects.toThrow('strictly later executed checkpoint epoch')
+  expect(await f.read()).toEqual(f.signed)
+})
+
+it('rechecks stored retirement and rejects a later contradictory receipt table', async () => {
+  const f = await retirementFixture()
+  const { record } = await f.retire()
+  const { executionRegistry } = f
+  await expect(queryIncomeWithdrawalJournalOriginalV1({ record, client: f.client, signal: f.input.signal, executionRegistry }))
+    .rejects.toThrow('WITHDRAW_RETIREMENT_SOURCE_NOT_INSTALLED')
+  f.currentReceipt('matching')
+  await expect(f.controller.observe(f.selection, f.input.signal, () => f.actor)).rejects.toThrow('WITHDRAW_RETIREMENT_RECEIPT_EXISTS')
+  expect(await f.read()).toEqual(record)
+})
+
+it('rejects a changed Config during receipt enumeration', async () => {
+  const f = await retirementFixture()
+  f.currentReceipt('unrelated')
+  const list = f.client.stateService.listDynamicFields.getMockImplementation()!
+  f.client.stateService.listDynamicFields.mockImplementationOnce(async request => {
+    const result = await list(request)
+    const config = f.rows.get(`${f.input.target.configId}:10`)
+    Object.assign(config, f.rows.get(`${f.input.target.configId}:9`))
+    return result
+  })
+  await expect(f.retire()).rejects.toThrow('WITHDRAW_RETIREMENT_CONFIG_CHANGED')
+  expect(await f.read()).toEqual(f.signed)
 })

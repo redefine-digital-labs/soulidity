@@ -1,4 +1,4 @@
-import { captureOptionalIncomeEpoch } from './commerce/income-original-ledger'
+import { captureIncomeReceiptTableMethods, captureOptionalIncomeEpoch } from './commerce/income-original-ledger'
 import { EMPTY_INCOME_EXECUTION_REGISTRY_V1, type IncomeExecutionRegistryV1 } from './commerce/income-execution-source-v1'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { withIncomeWithdrawalFundLock } from './income-withdrawal-fund-lock'
@@ -21,10 +21,11 @@ function snapshotClient(source: SuiGrpcClient): SuiGrpcClient {
   const { getObject, getServiceInfo, getTransaction, getCheckpoint } = ledger
   const getChainIdentifier = core?.getChainIdentifier, getMoveFunction = core?.getMoveFunction, listOwnedObjects = core?.listOwnedObjects
   const simulateTransaction = execution?.simulateTransaction
+  const { batchGetObjects, listDynamicFields } = captureIncomeReceiptTableMethods(source)
   return { core: { getChainIdentifier: getChainIdentifier?.bind(core), getMoveFunction: getMoveFunction?.bind(core), listOwnedObjects: listOwnedObjects?.bind(core) },
     ledgerService: { getObject: getObject.bind(ledger), getServiceInfo: getServiceInfo?.bind(ledger), getTransaction: getTransaction?.bind(ledger),
-      getCheckpoint: getCheckpoint?.bind(ledger), getEpoch: captureOptionalIncomeEpoch(ledger) },
-    transactionExecutionService: { simulateTransaction: simulateTransaction?.bind(execution) } } as unknown as SuiGrpcClient
+      getCheckpoint: getCheckpoint?.bind(ledger), getEpoch: captureOptionalIncomeEpoch(ledger), batchGetObjects },
+    stateService: { listDynamicFields }, transactionExecutionService: { simulateTransaction: simulateTransaction?.bind(execution) } } as unknown as SuiGrpcClient
 }
 function snapshot(input: IncomeWithdrawalHostRequest) {
   const { client, signal, getActorAddress, ...values } = input

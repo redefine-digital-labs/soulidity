@@ -94,6 +94,28 @@ export function IncomeWithdrawalLocalRecovery({ viewerAddress = null, createRead
     publish(id, previous => ({ ...previous, pending: false, stopped: true }))
   }
   const original = record ? importIncomeWithdrawalRecoveryRecord(record.plan.originalText) : null
+  const retirement = resume.capability?.retirement
+  const canRetire = Boolean(record && original && !view.archiveSelection && locks
+    && ['SIGNING', 'SIGNED'].includes(record.packet.phase) && retirement?.canRetire(original.target))
+
+  async function retire() {
+    if (!same() || !record || !retirement || !canRetire || busy.current || view.error || view.stopped) return
+    const selected = structuredClone(record), id = ++serial.current, controller = new AbortController()
+    active.current?.abort(); active.current = controller; busy.current = true
+    const valid = () => same() && serial.current === id && !controller.signal.aborted
+    publish(id, previous => ({ ...previous, pending: true, error: null, stopped: false }), controller.signal, selected)
+    try {
+      const { record: updated, original: observed } = await retirement.retire({ selected, signal: controller.signal, isCurrent: valid })
+      const expectedPacket = { ...selected.packet, phase: 'RETIRED' }
+      if (!updated.retirement || observed.status !== 'MISSING' || publicMutationCanonical(updated.plan) !== publicMutationCanonical(selected.plan)
+        || publicMutationCanonical(updated.packet) !== publicMutationCanonical(expectedPacket)) throw Error('退役结果与所选原提款不一致。')
+      publish(id, previous => ({ ...previous, pending: false, records: previous.records.map(row =>
+        incomeWithdrawalFundKeyV1(row.plan) === incomeWithdrawalFundKeyV1(updated.plan) ? updated : row) }), controller.signal, selected)
+    } catch (error) {
+      publish(id, previous => ({ ...previous, pending: false, error: error instanceof Error ? error.message : '原提款退役核对未完成。' }), controller.signal, selected)
+    } finally { if (same() && serial.current === id) busy.current = false }
+  }
+
   return <section aria-label="本机原提款记录" className="space-y-4 rounded-xl border p-4">
     <h2>本机原提款记录</h2>
     <p>无需新提款配置、连接钱包或导入文件。这里保留同一协议资金范围的原操作，切换操作人或收款人不会绕过旧未知结果。</p>
@@ -112,6 +134,14 @@ export function IncomeWithdrawalLocalRecovery({ viewerAddress = null, createRead
       <button type="button" disabled={Boolean(view.archiveSelection) || view.pending || Boolean(view.error) || view.stopped || !locks || record.packet.phase !== 'PREPARED' || record.packet.signature !== null} onClick={() => void cancel()}>核对并取消本机未签名提款</button>
       <p>只在完整未签原记录与原交易 MISSING 时保存本机 CANCELLED，不撤销链上交易、不生成新提款授权。原文件保持不变。</p>
       {!locks && <p>当前环境没有操作锁；仍可查看、下载和查询原记录，不能修改本机阶段。</p>}
+      {canRetire && <button type="button" disabled={view.pending || Boolean(view.error) || view.stopped} onClick={() => void retire()}>
+        核对并退役过期原提款
+      </button>}
+      {record.retirement && <article aria-label="已核验过期原提款退役" className="space-y-1">
+        <p>已保存退役证据 · 检查点 {record.retirement.checkpoint.sequenceNumber} · Epoch {record.retirement.checkpoint.epoch}</p>
+        <p>Config 对象版本 {record.retirement.config.version} · 核对回执 {record.retirement.tableSize} 项</p>
+        <p>准备下一笔提款时，将重新核验原摘要与回执表，再归档本原件。</p>
+      </article>}
       <IncomeWithdrawalRecovery key={`${record.packet.digest}:${record.packet.phase}`} {...incomeWithdrawalRecoveryProps(original)} client={createReadOnlyClient} viewerAddress={viewerAddress}/>
       {!view.archiveSelection && resume.capability?.execute &&
         <IncomeWithdrawalExecute key={record.packet.digest} originalText={record.plan.originalText} phase={record.packet.phase}

@@ -10,7 +10,7 @@ import { preflightFixture } from './commerce-withdrawal-host'
 /** Controlled full-BCS source tuple. Test-only Root installation; none of this
  * synthetic source/audit/bytecode is installed by the production factory.
  */
-export async function incomeEntryFixture(actor?: string) {
+export async function incomeEntryFixture(actor?: string, allowRetirement = false) {
   const x = await preflightFixture(actor), input = x.preflightInput, client = input.client
   const pkg = await readPinnedMovePackage(client, input.target.foundation, input.signal)
   const current = x.rows.get(`${input.target.configId}:9`)!, config = bcs.Object.parse(current.bcs.value)
@@ -28,7 +28,8 @@ export async function incomeEntryFixture(actor?: string) {
   client.core.listOwnedObjects = vi.fn(async () => ({ objects: [{ objectId: gasId }], hasNextPage: false, cursor: null }))
   client.ledgerService.getTransaction = vi.fn(async () => { throw { code: 'NOT_FOUND' } })
   const selection = { target: input.target, actor: input.actor, adminId: input.adminId, installedSourceId: installation.acceptedManifestSha256 }
-  const controller = createRootIncomeEntryController({ installations: [installation], executionModels:x.executionModels, client: () => client })
+  const controller = createRootIncomeEntryController({ installations: [installation], executionModels:x.executionModels, client: () => client,
+    foundationRetirementSourceManifestSha256s: allowRetirement ? [installation.acceptedManifestSha256] : [] })
   const draft = { amount: input.amount, recipient: input.recipient, gasBudget: input.gas.budget, gasPrice: input.gas.price, gasCoinIds: [gasId], expirationEpoch: input.expirationEpoch, attemptHex: x.record.intent.attemptHex }
   return { ...x, client, input, manifest, manifestText, installation, selection, controller, draft, gasId }
 }

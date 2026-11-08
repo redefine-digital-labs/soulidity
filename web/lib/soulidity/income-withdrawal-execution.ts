@@ -82,7 +82,7 @@ export function executeIncomeWithdrawalOriginalV1(input: ExecutionInput) {
       await sameHead()
       recovery.durability = 'CONFIRMED'
       const before = await query()
-      if (before.status !== 'MISSING' || record.packet.phase === 'CANCELLED') return { record, original: before }
+      if (before.status !== 'MISSING' || ['CANCELLED', 'RETIRED'].includes(record.packet.phase)) return { record, original: before }
       guard()
       commerceCheck(typeof client.core.executeTransaction === 'function' && ['PREPARED', 'SIGNING', 'SIGNED'].includes(record.packet.phase),
         'WITHDRAW_EXECUTION_UNAVAILABLE')

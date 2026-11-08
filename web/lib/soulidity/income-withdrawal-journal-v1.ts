@@ -1,20 +1,22 @@
-import { captureOptionalIncomeEpoch } from './commerce/income-original-ledger'
+import { captureIncomeOriginalLedger } from './commerce/income-original-ledger'
 import type { IncomeExecutionRegistryV1 } from './commerce/income-execution-source-v1'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { fromBase58, fromBase64, normalizeStructTag, toBase58, toBase64 } from '@mysten/sui/utils'
 import { createAsyncPublicMutationStore, publicMutationCanonical, type AsyncPublicMutationStorage, type AsyncPublicMutationStore, type PublicMutationPacket } from '../sui/public-mutation-journal'
 import { commerceCheck, commerceId } from './commerce/economics-read'
+import { captureIncomeWithdrawalRetirementClient, validateIncomeWithdrawalRetirementEvidence,
+  verifyIncomeWithdrawalRetirement, type IncomeWithdrawalRetirementEvidence } from './commerce/income-withdrawal-retirement'
 import { importIncomeWithdrawalRecoveryRecord, queryIncomeWithdrawalRecoveryRecord } from './commerce/income-withdrawal-recovery-record'
 
 export const INCOME_WITHDRAWAL_PREFIX_V1 = 'soulidity.income-withdrawal.v1:'
 export const INCOME_WITHDRAWAL_CHANGED_V1 = 'soulidity:income-withdrawal-v1-changed'
 export interface IncomeWithdrawalFundScope { chainIdentifier: string; configId: string; coinType: string }
 export interface IncomeWithdrawalJournalPlanV1 extends IncomeWithdrawalFundScope { originalText: string }
-export interface IncomeWithdrawalJournalRecordV1 { schema: 'soulidity.income-withdrawal-operation.v1'; plan: IncomeWithdrawalJournalPlanV1; packet: PublicMutationPacket }
+export interface IncomeWithdrawalJournalRecordV1 { schema: 'soulidity.income-withdrawal-operation.v1'; plan: IncomeWithdrawalJournalPlanV1; packet: PublicMutationPacket; retirement?: IncomeWithdrawalRetirementEvidence }
 export type IncomeWithdrawalJournalV1 = AsyncPublicMutationStore<IncomeWithdrawalJournalPlanV1, IncomeWithdrawalJournalRecordV1>
 export type IncomeWithdrawalOriginalReaderV1 = Pick<IncomeWithdrawalJournalV1, 'read' | 'heads' | 'history'>
-const phases = ['PREPARED', 'SIGNING', 'SIGNED', 'SUCCEEDED', 'FAILED', 'CANCELLED']
-const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED']
+const phases = ['PREPARED', 'SIGNING', 'SIGNED', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED']
+const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED']
 function exact(value: unknown, names: string[]) {
   commerceCheck(value !== null && typeof value === 'object' && !Array.isArray(value)
     && Object.keys(value).sort().join() === names.slice().sort().join(), 'WITHDRAW_JOURNAL_FIELDS')
@@ -31,7 +33,7 @@ export function incomeWithdrawalFundKeyV1(input: IncomeWithdrawalFundScope) {
 }
 export async function parseIncomeWithdrawalJournalRecordV1(input: unknown): Promise<IncomeWithdrawalJournalRecordV1> {
   const record = structuredClone(input) as IncomeWithdrawalJournalRecordV1
-  exact(record, ['schema', 'plan', 'packet']); commerceCheck(record.schema === 'soulidity.income-withdrawal-operation.v1', 'WITHDRAW_JOURNAL_SCHEMA')
+  exact(record, ['schema', 'plan', 'packet', ...(record?.retirement !== undefined ? ['retirement'] : [])]); commerceCheck(record.schema === 'soulidity.income-withdrawal-operation.v1', 'WITHDRAW_JOURNAL_SCHEMA')
   exact(record.plan, ['chainIdentifier', 'configId', 'coinType', 'originalText'])
   const scope = incomeWithdrawalFundScope(record.plan)
   commerceCheck(scope.coinType === record.plan.coinType && typeof record.plan.originalText === 'string', 'WITHDRAW_JOURNAL_SCOPE')
@@ -41,6 +43,8 @@ export async function parseIncomeWithdrawalJournalRecordV1(input: unknown): Prom
     && packet.signature.length > 0 && packet.signature.length <= 32768 && toBase64(fromBase64(packet.signature)) === packet.signature), 'WITHDRAW_JOURNAL_PHASE_SIGNATURE')
   commerceCheck(packet.phase !== 'SIGNED' || packet.signature !== null, 'WITHDRAW_JOURNAL_SIGNATURE_REQUIRED')
   commerceCheck(!['PREPARED', 'SIGNING', 'CANCELLED'].includes(packet.phase) || packet.signature === null, 'WITHDRAW_JOURNAL_UNEXPECTED_SIGNATURE')
+  commerceCheck((packet.phase === 'RETIRED') === (record.retirement !== undefined), 'WITHDRAW_JOURNAL_RETIREMENT_SCOPE')
+  if (record.retirement !== undefined) validateIncomeWithdrawalRetirementEvidence(record.retirement, packet.expirationEpoch)
   const original = importIncomeWithdrawalRecoveryRecord(record.plan.originalText)
   commerceCheck(original.packet.phase === 'PREPARED' && original.packet.signature === null, 'WITHDRAW_JOURNAL_ORIGINAL_NOT_PREPARED')
   commerceCheck(publicMutationCanonical(incomeWithdrawalFundScope(original.target)) === publicMutationCanonical(scope), 'WITHDRAW_JOURNAL_ORIGINAL_SCOPE')
@@ -91,17 +95,27 @@ export async function persistIncomeWithdrawalHeadV1(journal: IncomeWithdrawalJou
   commerceCheck(matched, 'WITHDRAW_HOST_PERSISTENCE_FAILED')
   return after!
 }
+// Only a fresh verified observation may release this exact retired head.
+const reverifiedRetirements = new WeakMap<object, string>()
 export async function queryIncomeWithdrawalJournalOriginalV1(input: { record: IncomeWithdrawalJournalRecordV1; client: SuiGrpcClient; signal: AbortSignal; executionRegistry?: IncomeExecutionRegistryV1 }) {
-  const executionRegistry = input.executionRegistry
-  const saved = structuredClone(input.record), ledger = input.client.ledgerService
-  const { getServiceInfo, getTransaction, getCheckpoint, getObject } = ledger
-  const client = { ledgerService: { getServiceInfo: getServiceInfo.bind(ledger), getTransaction: getTransaction.bind(ledger),
-    getCheckpoint: getCheckpoint.bind(ledger), getObject: getObject.bind(ledger), getEpoch: captureOptionalIncomeEpoch(ledger) } } as unknown as SuiGrpcClient
-  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(60000)]), record = await parseIncomeWithdrawalJournalRecordV1(saved)
+  const executionRegistry = input.executionRegistry, saved = structuredClone(input.record)
+  const client = saved.retirement !== undefined ? captureIncomeWithdrawalRetirementClient(input.client) : captureIncomeOriginalLedger(input.client)
+  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(saved.retirement === undefined ? 60000 : 90000)]), record = await parseIncomeWithdrawalJournalRecordV1(saved)
   signal.throwIfAborted()
-  return queryIncomeWithdrawalRecoveryRecord({ text: record.plan.originalText, client, signal, executionRegistry })
+  const query = () => queryIncomeWithdrawalRecoveryRecord({ text: record.plan.originalText, client, signal, executionRegistry })
+  if (!record.retirement) return query()
+  commerceCheck(executionRegistry, 'WITHDRAW_RETIREMENT_SOURCE_NOT_INSTALLED')
+  const result = await verifyIncomeWithdrawalRetirement({ client, signal, executionRegistry, saved: record.retirement,
+    original: importIncomeWithdrawalRecoveryRecord(record.plan.originalText), queryOriginal: query })
+  reverifiedRetirements.set(result.observed, publicMutationCanonical(record))
+  return result.observed
 }
 export function incomeWithdrawalHeadCanClearV1(record: IncomeWithdrawalJournalRecordV1, result: Awaited<ReturnType<typeof queryIncomeWithdrawalJournalOriginalV1>>) {
+  if (record.packet.phase === 'RETIRED') {
+    const verified = reverifiedRetirements.get(result)
+    reverifiedRetirements.delete(result)
+    return result.status === 'MISSING' && verified === publicMutationCanonical(record)
+  }
   if (record.packet.phase === 'SUCCEEDED') commerceCheck(result.status === 'WITHDRAWAL_EVIDENCE_CONFIRMED', 'WITHDRAW_JOURNAL_TERMINAL_UNCONFIRMED')
   if (record.packet.phase === 'FAILED') commerceCheck(result.status === 'FAILED', 'WITHDRAW_JOURNAL_TERMINAL_UNCONFIRMED')
   return result.status === 'FAILED' || result.status === 'WITHDRAWAL_EVIDENCE_CONFIRMED'

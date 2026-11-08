@@ -25,3 +25,9 @@ export function captureIncomeOriginalLedger(source: SuiGrpcClient): SuiGrpcClien
     getEpoch: captureOptionalIncomeEpoch(ledger),
   } } as unknown as SuiGrpcClient
 }
+
+export function captureIncomeReceiptTableMethods(source: SuiGrpcClient) {
+  const ledger = source.ledgerService, state = source.stateService
+  return { batchGetObjects: ledger.batchGetObjects?.bind(ledger),
+    listDynamicFields: state?.listDynamicFields?.bind(state) }
+}

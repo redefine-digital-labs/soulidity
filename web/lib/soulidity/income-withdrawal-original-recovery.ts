@@ -5,7 +5,8 @@ import { publicMutationCanonical } from '../sui/public-mutation-journal'
 import { commerceCheck } from './commerce/economics-read'
 import { withIncomeWithdrawalFundLock } from './income-withdrawal-fund-lock'
 import { recheckPreparedIncomeWithdrawal } from './commerce/income-withdrawal-resume-preflight'
-import { exportIncomeWithdrawalRecoveryRecord, parseIncomeWithdrawalRecoveryRecord } from './commerce/income-withdrawal-recovery-record'
+import { captureIncomeWithdrawalRetirementClient, verifyIncomeWithdrawalRetirement } from './commerce/income-withdrawal-retirement'
+import { exportIncomeWithdrawalRecoveryRecord, importIncomeWithdrawalRecoveryRecord, parseIncomeWithdrawalRecoveryRecord } from './commerce/income-withdrawal-recovery-record'
 import { IncomeWithdrawalHostRecoveryError, type IncomeWithdrawalHostRecovery } from './commerce/income-withdrawal-host-preflight'
 import { browserIncomeWithdrawalOriginalReaderV1, browserIncomeWithdrawalJournalV1, incomeWithdrawalFundKeyV1,
   incomeWithdrawalFundScope, parseIncomeWithdrawalJournalRecordV1, queryIncomeWithdrawalJournalOriginalV1, persistIncomeWithdrawalHeadV1, captureIncomeWithdrawalJournalV1,
@@ -120,4 +121,48 @@ export function recheckSelectedIncomeWithdrawalOriginalV1(input: {
       } catch (error) { throw new IncomeWithdrawalHostRecoveryError(error instanceof Error ? error.message : 'ORIGINAL_RESUME_FAILED', recovery, { cause: error }) }
     })
   })
+}
+
+/** Retire an unresolved expired original under the same funds and head locks. */
+export function retireIncomeWithdrawalOriginalV1(input: {
+  selected: IncomeWithdrawalJournalRecordV1; client: SuiGrpcClient; signal: AbortSignal; executionRegistry: IncomeExecutionRegistryV1
+  isCurrent: (target: ReturnType<typeof importIncomeWithdrawalRecoveryRecord>['target']) => boolean
+  journal?: IncomeWithdrawalJournalV1
+}) {
+  const selected = structuredClone(input.selected), key = incomeWithdrawalFundKeyV1(selected.plan)
+  const client = captureIncomeWithdrawalRetirementClient(input.client), { executionRegistry, isCurrent } = input
+  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(90000)])
+  const journal = captureIncomeWithdrawalJournalV1(input.journal ?? browserIncomeWithdrawalJournalV1())
+  return withIncomeWithdrawalFundLock(selected.plan, () => journal.exclusive(key, async () => {
+    const expected = await parseIncomeWithdrawalJournalRecordV1(selected)
+    const original = importIncomeWithdrawalRecoveryRecord(expected.plan.originalText)
+    const recovery: IncomeWithdrawalHostRecovery = { text: expected.plan.originalText, digest: expected.packet.digest,
+      headPhase: expected.packet.phase, durability: 'UNCONFIRMED' }
+    const guard = () => { signal.throwIfAborted(); commerceCheck(isCurrent(original.target), 'WITHDRAW_RETIREMENT_NOT_ENABLED') }
+    try {
+      guard()
+      const head = await journal.read(key)
+      commerceCheck(head && publicMutationCanonical(head) === publicMutationCanonical(expected), 'WITHDRAW_RETIREMENT_SELECTED_CHANGED')
+      recovery.durability = 'CONFIRMED'
+      commerceCheck(['SIGNING', 'SIGNED'].includes(head.packet.phase), 'WITHDRAW_RETIREMENT_PHASE')
+      const queryOriginal = () => queryIncomeWithdrawalJournalOriginalV1({ record: head, client, signal, executionRegistry })
+      const first = await queryOriginal()
+      commerceCheck(first.status === 'MISSING', 'WITHDRAW_RETIREMENT_ORIGINAL_FOUND')
+      guard()
+      const { evidence, observed } = await verifyIncomeWithdrawalRetirement({ client, original, signal, executionRegistry, queryOriginal })
+      const after = await journal.read(key)
+      guard()
+      commerceCheck(publicMutationCanonical(after) === publicMutationCanonical(head), 'WITHDRAW_RETIREMENT_HEAD_CHANGED')
+      const record = { ...head, packet: { ...head.packet, phase: 'RETIRED' as const }, retirement: evidence }
+      recovery.durability = 'UNCONFIRMED'
+      const retained = await persistIncomeWithdrawalHeadV1(journal, key, record, () => {
+        recovery.headPhase = 'RETIRED'
+        recovery.durability = 'CONFIRMED'
+      })
+      signal.throwIfAborted()
+      return { record: retained, original: observed }
+    } catch (error) {
+      throw new IncomeWithdrawalHostRecoveryError(error instanceof Error ? error.message : 'WITHDRAW_RETIREMENT_FAILED', recovery, { cause: error })
+    }
+  }))
 }

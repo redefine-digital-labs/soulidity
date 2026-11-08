@@ -1,6 +1,6 @@
-import { captureOptionalIncomeEpoch } from './income-original-ledger'
+import { captureIncomeReceiptTableMethods, captureOptionalIncomeEpoch } from './income-original-ledger'
 import type { HistoricalExecutionModelInstallationV1 } from '../../sui/historical-execution-frame-v1'
-import { createIncomeExecutionRegistryV1, EMPTY_INCOME_EXECUTION_REGISTRY_V1, assertIncomeExecutionRegistrySupportsTargetV1 } from './income-execution-source-v1'
+import { createIncomeExecutionRegistryV1, EMPTY_INCOME_EXECUTION_REGISTRY_V1, assertIncomeExecutionRegistrySupportsTargetV1, canVerifyFoundationIncomeRetirementSourceV1 } from './income-execution-source-v1'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { fromHex } from '@mysten/sui/utils'
 import { publicMutationCanonical } from '../../sui/public-mutation-journal'
@@ -9,6 +9,8 @@ import { readCommerceOwnedCoinInventory } from './owned-coin-inventory'
 import { verifyIncomeWithdrawalInterface } from './income-withdrawal-interface'
 import { parseIncomeObservationTarget, parseRootIncomeInstallation, verifyInstalledIncomeSource, incomeSourceManifestHash, type RootIncomeSourceInstallation } from './income-source-qualification'
 import { browserIncomeWithdrawalOriginalReaderV1, incomeWithdrawalFundKeyV1, incomeWithdrawalHeadCanClearV1, queryIncomeWithdrawalJournalOriginalV1 } from '../income-withdrawal-journal-v1'
+import { retireIncomeWithdrawalOriginalV1 } from '../income-withdrawal-original-recovery'
+import type { IncomeWithdrawalResumeCapability } from './income-withdrawal-host-resume'
 import { createIncomeWithdrawalHostPreflight, createIncomeWithdrawalHostResume, createIncomeWithdrawalHostExecution } from '../income-withdrawal-host'
 import { IncomeWithdrawalHostRecoveryError, type IncomeWithdrawalHostPreflight, type IncomeWithdrawalHostRequest } from './income-withdrawal-host-preflight'
 
@@ -27,9 +29,10 @@ export interface IncomePreparationReview { observation: IncomeObservation; reque
 const data = ({ client, signal, getActorAddress, ...value }: IncomeWithdrawalHostRequest) => value
 function captureClient(source: SuiGrpcClient): SuiGrpcClient {
   const core = source.core, ledger = source.ledgerService, execution = source.transactionExecutionService
+  const { batchGetObjects, listDynamicFields } = captureIncomeReceiptTableMethods(source)
   return { core: Object.fromEntries(['getChainIdentifier', 'getMoveFunction', 'listOwnedObjects'].map(name => [name, (core as any)?.[name]?.bind(core)])),
-    ledgerService: { ...Object.fromEntries(['getObject', 'getTransaction', 'getCheckpoint', 'getServiceInfo'].map(name => [name, (ledger as any)?.[name]?.bind(ledger)])), getEpoch: captureOptionalIncomeEpoch(ledger) },
-    transactionExecutionService: { simulateTransaction: execution?.simulateTransaction?.bind(execution) } } as unknown as SuiGrpcClient
+    ledgerService: { ...Object.fromEntries(['getObject', 'getTransaction', 'getCheckpoint', 'getServiceInfo'].map(name => [name, (ledger as any)?.[name]?.bind(ledger)])), getEpoch: captureOptionalIncomeEpoch(ledger), batchGetObjects },
+    stateService: { listDynamicFields }, transactionExecutionService: { simulateTransaction: execution?.simulateTransaction?.bind(execution) } } as unknown as SuiGrpcClient
 }
 /** Root constructs this controller from its compiled installation catalog.
  * Public form fields select/observe; they cannot install an anchor. There is
@@ -38,15 +41,19 @@ function captureClient(source: SuiGrpcClient): SuiGrpcClient {
  */
 export function createRootIncomeEntryController(options: {
   installations: readonly RootIncomeSourceInstallation[]; client: (signal: AbortSignal) => SuiGrpcClient; isCurrent?: () => boolean; executionModels?: readonly HistoricalExecutionModelInstallationV1[]
+  foundationRetirementSourceManifestSha256s?: readonly string[]
 }) {
   const installations = structuredClone(options.installations), clientFactory = options.client, isCurrent = options.isCurrent ?? (() => true)
   const executionModels = structuredClone(options.executionModels ?? [])
   commerceCheck(Array.isArray(executionModels) && executionModels.length <= 32, 'INCOME_EXECUTION_MODEL_CATALOG_BOUND')
-  const executionRegistry = () => executionModels.length ? createIncomeExecutionRegistryV1({ models: executionModels, foundationSources: installations }) : EMPTY_INCOME_EXECUTION_REGISTRY_V1
+  const foundationRetirementSourceManifestSha256s = structuredClone(options.foundationRetirementSourceManifestSha256s ?? [])
+  const executionRegistry = () => executionModels.length ? createIncomeExecutionRegistryV1({ models: executionModels,
+    foundationSources: installations, foundationRetirementSourceManifestSha256s }) : EMPTY_INCOME_EXECUTION_REGISTRY_V1
   const originalRegistry = () => { try { return executionRegistry() } catch { return EMPTY_INCOME_EXECUTION_REGISTRY_V1 } }
   const current = () => { try { return isCurrent() === true } catch { return false } }
   commerceCheck(Array.isArray(installations) && installations.length <= 64, 'INCOME_ROOT_CATALOG_BOUND')
-  const catalogVersion = incomeSourceManifestHash(publicMutationCanonical({ installations, executionModels }))
+  const catalogVersion = incomeSourceManifestHash(publicMutationCanonical({ installations, executionModels,
+    ...(foundationRetirementSourceManifestSha256s.length ? { foundationRetirementSourceManifestSha256s } : {}) }))
   // Display copies are never authority to redefine a review. Only an exact
   // issued object with this private independent baseline can be consumed.
   const reviews = new WeakMap<IncomePreparationReview, { snapshot: IncomePreparationReview; canonical: string }>()
@@ -161,8 +168,18 @@ export function createRootIncomeEntryController(options: {
           await verifyInstalledIncomeSource({ installed: matching[0], client, income, signal }); commerceCheck(current(), 'INCOME_RESUME_SOURCE_CHANGED')
           return { sourceId, target: original.target }
         } }
-      return { sourceId, activationKey, isActive: current, client: clientFactory,
+      const capability = { sourceId, activationKey, isActive: current, client: clientFactory,
         host: createIncomeWithdrawalHostResume(options), execute: createIncomeWithdrawalHostExecution(options) }
+      if (!foundationRetirementSourceManifestSha256s.length) return capability
+      const registry = originalRegistry()
+      const canRetire = (target: EconomicsTarget) => current() && canVerifyFoundationIncomeRetirementSourceV1(registry, target)
+      const retirement: NonNullable<IncomeWithdrawalResumeCapability['retirement']> = {
+        canRetire,
+        retire: ({ selected, signal, isCurrent }) => retireIncomeWithdrawalOriginalV1({
+          selected, signal, client: clientFactory(signal), executionRegistry: registry, isCurrent: target => isCurrent() && canRetire(target),
+        }),
+      }
+      return { ...capability, retirement }
     } })
 }
 export type RootIncomeEntryController = ReturnType<typeof createRootIncomeEntryController>

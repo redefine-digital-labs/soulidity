@@ -20,6 +20,7 @@ type Entries = {
   makerSources: ReturnType<typeof parseRootMakerProductIncomeInstallation>[]
   foundationSources: ReturnType<typeof parseRootIncomeInstallation>[]
   retirementSources: ReadonlySet<string>
+  foundationRetirementSources: ReadonlySet<string>
 }
 const registries = new WeakMap<object, Entries>()
 /** Explicit caller-owned trust inputs, reusable by release. Constructing this
@@ -29,6 +30,7 @@ export function createIncomeExecutionRegistryV1(input: {
   makerSources?: readonly RootMakerProductIncomeInstallation[]
   foundationSources?: readonly RootIncomeSourceInstallation[]
   retirementSourceManifestSha256s?: readonly string[]
+  foundationRetirementSourceManifestSha256s?: readonly string[]
 }) {
   const models = createHistoricalExecutionModelRegistryV1(input.models), simulatedModels = createSimulatedExecutionModelRegistryV1(input.models)
   commerceCheck((input.makerSources?.length ?? 0) <= 64 && (input.foundationSources?.length ?? 0) <= 64, 'INCOME_EXECUTION_SOURCE_BOUND')
@@ -38,8 +40,12 @@ export function createIncomeExecutionRegistryV1(input: {
   const retirementSources = new Set(acceptedRetirements)
   commerceCheck(acceptedRetirements.length <= 64 && retirementSources.size === acceptedRetirements.length
     && acceptedRetirements.every(sha => makerSources.some(source => source.manifestSha256 === sha)), 'MAKER_INCOME_RETIREMENT_CATALOG')
+  const acceptedFoundationRetirements = input.foundationRetirementSourceManifestSha256s ?? []
+  const foundationRetirementSources = new Set(acceptedFoundationRetirements)
+  commerceCheck(acceptedFoundationRetirements.length <= 64 && foundationRetirementSources.size === acceptedFoundationRetirements.length
+    && acceptedFoundationRetirements.every(sha => foundationSources.some(source => source.manifestSha256 === sha)), 'WITHDRAW_RETIREMENT_CATALOG')
   const registry = Object.freeze({ modelCount: models.length })
-  registries.set(registry, { models, simulatedModels, makerSources, foundationSources, retirementSources }); return registry
+  registries.set(registry, { models, simulatedModels, makerSources, foundationSources, retirementSources, foundationRetirementSources }); return registry
 }
 export type IncomeExecutionRegistryV1 = ReturnType<typeof createIncomeExecutionRegistryV1>
 export const EMPTY_INCOME_EXECUTION_REGISTRY_V1 = createIncomeExecutionRegistryV1({ models: [] })
@@ -128,6 +134,31 @@ export async function verifyMakerIncomeRetirementSourceV1(input: {
   const request = origins.find(row => row.name === 'revenue::Request'), receipt = origins.find(row => row.name === 'revenue::Receipt')
   commerceCheck(request && receipt, 'MAKER_INCOME_RETIREMENT_RECEIPT_TYPES')
   return { requestType: `${request.packageId}::revenue::Request`, receiptType: `${receipt.packageId}::revenue::Receipt` }
+}
+function foundationRetirementSource(entries: Entries, target: EconomicsTarget) {
+  const key = publicMutationCanonical(target)
+  const matches = entries.foundationSources.filter(row => publicMutationCanonical(row.manifest.target) === key)
+  return matches.length === 1 && entries.foundationRetirementSources.has(matches[0].manifestSha256) ? matches[0] : null
+}
+
+export function canVerifyFoundationIncomeRetirementSourceV1(registry: IncomeExecutionRegistryV1, target: EconomicsTarget) {
+  return Boolean(foundationRetirementSource(entriesFor(registry), target))
+}
+
+/** Retirement admission additionally attests the persistent receipt invariant
+ * for this Config and its effective deployment lineage. */
+export async function verifyFoundationIncomeRetirementSourceV1(input: {
+  registry: IncomeExecutionRegistryV1; client: SuiGrpcClient; target: EconomicsTarget; signal: AbortSignal
+}) {
+  const target = structuredClone(input.target), client = captureIncomeOriginalLedger(input.client), entries = entriesFor(input.registry)
+  const installed = foundationRetirementSource(entries, target)
+  commerceCheck(installed, 'WITHDRAW_RETIREMENT_SOURCE_NOT_INSTALLED')
+  await readQualifiedTopCall({ ...input, client, target, entries })
+  const request = installed.manifest.typeOrigins.find(row => row.name === 'revenue::Request')
+  const receipt = installed.manifest.typeOrigins.find(row => row.name === 'revenue::Receipt')
+  commerceCheck(request && receipt, 'WITHDRAW_RETIREMENT_RECEIPT_TYPES')
+  return { requestType: `${request.packageId}::revenue::Request`, receiptType: `${receipt.packageId}::revenue::Receipt`,
+    initialSharedVersion: installed.manifest.configInitialSharedVersion, sourceManifestSha256: installed.manifestSha256 }
 }
 type ObservationInput = Omit<Parameters<typeof observeHistoricalExecutionFrameV1>[0], 'registry' | 'topCall'> & {
   registry: IncomeExecutionRegistryV1; client: SuiGrpcClient; signal: AbortSignal; target: Target
