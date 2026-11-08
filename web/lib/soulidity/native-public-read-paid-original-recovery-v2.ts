@@ -74,13 +74,13 @@ export function cancelNativePublicReadPaidOriginalV2(input:{record:NativePublicR
 }
 
 /** Explicit local retirement of the selected signing or signed head. A second
- * digest read runs inside the verifier after the committed table scan. */
+ * digest read runs after the committed table scan or exact gas conflict proof. */
 export function retireNativePublicReadPaidOriginalV2(input:{
- record:NativePublicReadPaidRecordV2;client:SuiGrpcClient;signal:AbortSignal;journal?:NativePublicReadPaidJournalV2
+ record:NativePublicReadPaidRecordV2;client:SuiGrpcClient;signal:AbortSignal;journal?:NativePublicReadPaidJournalV2;conflictDigest?:string
 }){
  const selected=structuredClone(input.record),signal=AbortSignal.any([input.signal,AbortSignal.timeout(90000)])
  const client=captureSameSoulMutationClient(input.client,signal),sources=structuredClone(ROOT_NATIVE_PAID_RETIREMENT_SOURCES_V2)
- const key=nativePublicReadPaidKeyV2(selected.plan),providedJournal=input.journal
+ const key=nativePublicReadPaidKeyV2(selected.plan),{journal:providedJournal,conflictDigest}=input
  return withSoulAccessAssetLock(selected.plan,async()=>{
   signal.throwIfAborted()
   const expected=await parseNativePublicReadPaidRecordV2(selected),journal=providedJournal??browserNativePublicReadPaidJournalV2()
@@ -92,7 +92,7 @@ export function retireNativePublicReadPaidOriginalV2(input:{
    check(original.kind==='native-public-read-v2','ORIGINAL_FORMAT')
    const queryOriginal=()=>queryNativePublicReadPaidRecordV2(expected,client,signal)
    check((await queryOriginal()).status==='MISSING','ORIGINAL_RESULT_NOT_MISSING')
-   const {evidence,observed}=await verifyNativePaidRetirementV2({original:original.value,client,signal,sources,queryOriginal})
+   const {evidence,observed}=await verifyNativePaidRetirementV2({original:original.value,client,signal,sources,queryOriginal,conflictDigest})
    const record=await parseNativePublicReadPaidRecordV2({...expected,packet:{...expected.packet,phase:'RETIRED'},retirement:evidence})
    await sameHead();signal.throwIfAborted()
    let failure:unknown,failed=false

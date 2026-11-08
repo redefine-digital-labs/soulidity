@@ -12,6 +12,7 @@ import { IncomeWithdrawalResumeProvider } from '../../web/components/providers/i
 import { IncomeReceiptFieldBcs, IncomeRequestBcs } from '../../web/lib/soulidity/commerce/economics-bcs'
 import { browserIncomeWithdrawalOriginalReaderV1, incomeWithdrawalFundKeyV1, incomeWithdrawalHeadCanClearV1,
   queryIncomeWithdrawalJournalOriginalV1 } from '../../web/lib/soulidity/income-withdrawal-journal-v1'
+import { installNativeSaleGasSpends, nativeSaleGasSpendFixture } from './fixtures/native-sale-retirement'
 import { incomeEntryFixture } from './fixtures/income-entry'
 import { activityEvidenceFixture, activityHash, aid } from './fixtures/activity-transaction-evidence'
 
@@ -375,4 +376,70 @@ it('rejects a changed Config during receipt enumeration', async () => {
   })
   await expect(f.retire()).rejects.toThrow('WITHDRAW_RETIREMENT_CONFIG_CHANGED')
   expect(await f.read()).toEqual(f.signed)
+})
+
+it('retires a Foundation original with a verified gas spend and rechecks before clearing its funds head', async () => {
+  const f = await retirementFixture()
+  f.currentReceipt('incomplete')
+  await expect(f.retire()).rejects.toThrow('WITHDRAW_RETIREMENT_TABLE_INCOMPLETE')
+  const gas = (await f.client.ledgerService.getObject({ objectId: f.gasId })).response.object
+  const spend = await nativeSaleGasSpendFixture(gas, 98)
+  installNativeSaleGasSpends(f.client, [spend], spend.output)
+
+  // Return the original only after the independently verified conflict.
+  const read = f.getTransaction.getMockImplementation()!
+  let originalReads = 0
+  f.getTransaction.mockImplementation(async (request, options) => {
+    if (request.digest === f.signed.packet.digest && ++originalReads === 2) {
+      return { response: { transaction: structuredClone(f.f.ledger) } }
+    }
+    return read(request, options)
+  })
+  const retire = () => f.capability.retirement!.retire({ selected: f.signed, signal: f.input.signal,
+    isCurrent: () => true, conflictDigest: spend.digest })
+  await expect(retire()).rejects.toThrow('WITHDRAW_RETIREMENT_ORIGINAL_FOUND')
+  expect(await f.read()).toEqual(f.signed)
+  f.getTransaction.mockImplementation(read)
+
+  await act(async () => root.render(<IncomeWithdrawalResumeProvider capability={f.capability}>
+    <IncomeWithdrawalLocalRecovery viewerAddress={null} createReadOnlyClient={f.capability.client}/>
+  </IncomeWithdrawalResumeProvider>))
+  await waitForText('核对并退役过期原提款')
+  await act(async () => {
+    const input = [...container.querySelectorAll('label')].find(node => node.textContent?.includes('冲突交易摘要'))!.querySelector('input')!
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, spend.digest)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await click('核对并退役过期原提款')
+  await waitForText('冲突交易 ' + spend.digest)
+  const retired = (await f.read())!
+  expect(retired).toMatchObject({ packet: { ...f.signed.packet, phase: 'RETIRED' }, plan: f.signed.plan,
+    retirement: { sourceManifestSha256: f.installation.acceptedManifestSha256,
+      conflict: { digest: spend.digest, checkpoint: '98', coinId: f.gasId } } })
+
+  f.getTransaction.mockImplementation(async (request, options) => {
+    if (request.digest === spend.digest) throw { code: 'NOT_FOUND' }
+    return read(request, options)
+  })
+  await expect(f.controller.observe(f.selection, f.input.signal, () => f.actor)).rejects.toMatchObject({ message: 'INCOME_ORIGINAL_QUERY_FAILED', cause: { code: 'NOT_FOUND' } })
+  expect(await f.read()).toEqual(retired)
+  f.getTransaction.mockImplementation(read)
+  const readEpoch = f.client.ledgerService.getEpoch.getMockImplementation()!
+  f.client.ledgerService.getEpoch.mockImplementation(async request => {
+    const result = await readEpoch(request)
+    if (request.epoch === undefined) result.response.epoch.epoch = 7n
+    return result
+  })
+  const observed = await f.controller.observe(f.selection, f.input.signal, () => f.actor)
+  expect(observed.previous).toMatchObject({ digest: retired.packet.digest, status: 'MISSING' })
+  const getActorAddress = () => f.actor
+  const review = f.controller.makeReview(observed, { ...f.draft, expirationEpoch: '7', attemptHex: '02'.repeat(32),
+    gasBudget: String(BigInt(f.draft.gasBudget) - 1n) })
+  f.client.transactionExecutionService.simulateTransaction.mockRejectedValueOnce(Error('STOP_NEW_SIMULATION'))
+  await expect(f.controller.createPreflight(review)({ ...review.request, client: f.client, signal: f.input.signal, getActorAddress }))
+    .rejects.toMatchObject({ message: 'STOP_NEW_SIMULATION', recovery: { headPhase: 'PREPARED', durability: 'CONFIRMED' } })
+  expect((await f.read())!.packet).toMatchObject({ phase: 'PREPARED', signature: null })
+  expect(await browserIncomeWithdrawalOriginalReaderV1().history(incomeWithdrawalFundKeyV1(retired.plan))).toEqual([retired])
+  expect(f.sign).toHaveBeenCalledOnce()
+  expect(f.submit).toHaveBeenCalledOnce()
 })

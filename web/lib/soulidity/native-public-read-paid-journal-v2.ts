@@ -42,11 +42,11 @@ export async function parseNativePublicReadPaidRecordV2(input:unknown):Promise<N
  check(r.packet.phase!=='SIGNED'||r.packet.signature!==null,'SIGNATURE_REQUIRED')
  check(!['PREPARED','SIGNING','CANCELLED'].includes(r.packet.phase)||r.packet.signature===null,'UNEXPECTED_SIGNATURE')
  check((r.packet.phase==='RETIRED')===(r.retirement!==undefined),'RETIREMENT_SCOPE')
- if(r.retirement)validateNativePaidRetirementEvidenceV2(r.retirement,r.packet.expirationEpoch)
+ if(r.retirement)validateNativePaidRetirementEvidenceV2(r.retirement,r.packet)
  const original=await parsePurchaseRecoveryOriginal(r.plan.originalText,r.plan.soulId)
  check(original.kind==='native-public-read-v2','ORIGINAL_FORMAT')
  const v=original.value,p=v.packet
- check(!r.retirement||r.retirement.host.objectId===v.intent.host.objectId
+ check(!r.retirement||'conflict' in r.retirement||r.retirement.host.objectId===v.intent.host.objectId
   &&r.retirement.ledger.objectId===v.context.originalReceiptContext.ledgerId,'RETIREMENT_ORIGINAL_SCOPE')
  check(p.phase==='PREPARED'&&p.signature===null,'ORIGINAL_NOT_PREPARED')
  check(v.context.economics.chainIdentifier===r.plan.chainIdentifier&&v.intent.buyer===r.plan.author,'ORIGINAL_SCOPE')

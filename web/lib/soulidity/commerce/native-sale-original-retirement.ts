@@ -1,7 +1,6 @@
 import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
-import { TransactionDataBuilder } from '@mysten/sui/transactions'
-import { fromBase64, normalizeStructTag } from '@mysten/sui/utils'
+import { normalizeStructTag } from '@mysten/sui/utils'
 import { profileReadStep } from '@soulidity/sdk'
 import { marketListDigest } from '../../animacraft/market-list-operation'
 import { MAINNET_GENESIS_DIGEST } from '../../animacraft/mainnet-chain'
@@ -10,8 +9,9 @@ import { validateEpochCheckpoint, type EpochCheckpoint } from '../../sui/epoch-c
 import { readEpochExpiry } from '../../sui/epoch-expiry'
 import { historicalMoveObjectType } from '../../sui/historical-object'
 import { publicMutationCanonical as canonical, type PublicMutationPacket } from '../../sui/public-mutation-journal'
-import { proveNativeSaleSpentGas, type NativeSaleGasConflict } from './native-sale-spent-gas'
-import { commerceCheck as check, commerceId, decodeCommerce } from './economics-read'
+import { proveExplicitGasConflict, readOriginalSuiGasReferences, validateExplicitGasConflict,
+  type ExplicitGasConflict } from './explicit-gas-conflict'
+import { commerceCheck as check, decodeCommerce } from './economics-read'
 
 const endpoint = 'https://graphql.mainnet.sui.io/graphql'
 const query = `query NativeSaleRetirement($checkpoint: UInt53, $coin: SuiAddress!, $digest: String!) {
@@ -29,7 +29,7 @@ export const canRetireNativeSaleOriginal = (packet: PublicMutationPacket) =>
 
 export const retiredNativeSaleResult = (digest: string) => ({ status: 'RETIRED' as const, retiredOriginalDigest: digest })
 
-export type NativeSaleRetirement = EpochCheckpoint & { conflict?: NativeSaleGasConflict }
+export type NativeSaleRetirement = EpochCheckpoint & { conflict?: ExplicitGasConflict }
 
 export function validateNativeSaleRetirement(packet: PublicMutationPacket, saved: NativeSaleRetirement | undefined) {
   check((packet.phase === 'RETIRED') === (saved !== undefined), 'NATIVE_SALE_RETIREMENT_PHASE')
@@ -37,11 +37,7 @@ export function validateNativeSaleRetirement(packet: PublicMutationPacket, saved
     check(saved && Object.keys(saved).sort().join(',') === (saved.conflict ? 'bytes,conflict,digest,epoch,sequenceNumber' : 'bytes,digest,epoch,sequenceNumber'),
       'NATIVE_SALE_RETIREMENT_FIELDS')
     validateEpochCheckpoint(saved, packet.expirationEpoch)
-    const conflict = saved.conflict
-    if (conflict) check(Object.keys(conflict).sort().join(',') === 'checkpoint,coinId,digest'
-      && marketListDigest(conflict.digest) && conflict.digest !== packet.digest && commerceId(conflict.coinId)
-      && /^(0|[1-9][0-9]{0,19})$/.test(conflict.checkpoint) && BigInt(conflict.checkpoint) <= BigInt(saved.sequenceNumber),
-    'NATIVE_SALE_RETIREMENT_CONFLICT')
+    if (saved.conflict) validateExplicitGasConflict(saved.conflict, packet, saved, 'NATIVE_SALE_RETIREMENT')
   }
 }
 
@@ -68,19 +64,13 @@ export async function verifyNativeSaleRetirement(input: {
   const { client, author, signal, queryOriginal, conflictDigest } = input
   const { packet, saved } = structuredClone({ packet: input.packet, saved: input.saved })
   const fetchSnapshot = globalThis.fetch
-  check(packet.bytes.length > 0 && packet.bytes.length <= 180000, 'NATIVE_SALE_RETIREMENT_PACKET')
-  const bytes = fromBase64(packet.bytes)
-  check(TransactionDataBuilder.getDigestFromBytes(bytes) === packet.digest, 'NATIVE_SALE_RETIREMENT_PACKET')
-  const data = decodeCommerce(bcs.TransactionData, bytes).V1
-  const gasRefs = data.gasData.payment, gas = gasRefs[0]
-  check(data.sender === author && data.gasData.owner === author && gas && gasRefs.length <= 256
-    && String(data.expiration.Epoch) === packet.expirationEpoch, 'NATIVE_SALE_RETIREMENT_GAS')
+  const gasRefs = readOriginalSuiGasReferences(packet, author, 'NATIVE_SALE_RETIREMENT'), gas = gasRefs[0]
   check(conflictDigest === undefined || !saved && marketListDigest(conflictDigest) && conflictDigest !== packet.digest, 'NATIVE_SALE_CONFLICT_DIGEST')
   const candidate = saved?.conflict?.digest ?? conflictDigest
   const proof = { client, signal, originalDigest: packet.digest, author, gasRefs }
   if (candidate) {
     const checkpoint = await readEpochExpiry(client, packet.expirationEpoch, signal, MAINNET_GENESIS_DIGEST, saved, 'NATIVE_SALE_RETIREMENT')
-    const conflict = await proveNativeSaleSpentGas({ ...proof, maxCheckpoint: checkpoint.sequenceNumber, candidate, saved: saved?.conflict })
+    const conflict = await proveExplicitGasConflict({ ...proof, maxCheckpoint: checkpoint.sequenceNumber, candidate, saved: saved?.conflict })
     await assertOriginalMissing()
     return { ...checkpoint, conflict }
   }
@@ -115,7 +105,7 @@ export async function verifyNativeSaleRetirement(input: {
   const checkpoint = await readEpochExpiry(client, packet.expirationEpoch, signal, MAINNET_GENESIS_DIGEST,
     saved, 'NATIVE_SALE_RETIREMENT', String(selected.sequenceNumber))
   check(checkpoint.digest === selected.digest && checkpoint.epoch === String(selected.epoch!.epochId), 'NATIVE_SALE_RETIREMENT_CHECKPOINT_MISMATCH')
-  const conflict = unchanged ? undefined : await proveNativeSaleSpentGas({ ...proof, maxCheckpoint: checkpoint.sequenceNumber,
+  const conflict = unchanged ? undefined : await proveExplicitGasConflict({ ...proof, maxCheckpoint: checkpoint.sequenceNumber,
     candidate: { version, digest: object.digest, writer: raw.previousTransaction } })
   await assertOriginalMissing()
   return conflict ? { ...checkpoint, conflict } : checkpoint

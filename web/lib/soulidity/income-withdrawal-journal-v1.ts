@@ -44,7 +44,7 @@ export async function parseIncomeWithdrawalJournalRecordV1(input: unknown): Prom
   commerceCheck(packet.phase !== 'SIGNED' || packet.signature !== null, 'WITHDRAW_JOURNAL_SIGNATURE_REQUIRED')
   commerceCheck(!['PREPARED', 'SIGNING', 'CANCELLED'].includes(packet.phase) || packet.signature === null, 'WITHDRAW_JOURNAL_UNEXPECTED_SIGNATURE')
   commerceCheck((packet.phase === 'RETIRED') === (record.retirement !== undefined), 'WITHDRAW_JOURNAL_RETIREMENT_SCOPE')
-  if (record.retirement !== undefined) validateIncomeWithdrawalRetirementEvidence(record.retirement, packet.expirationEpoch)
+  if (record.retirement !== undefined) validateIncomeWithdrawalRetirementEvidence(record.retirement, packet)
   const original = importIncomeWithdrawalRecoveryRecord(record.plan.originalText)
   commerceCheck(original.packet.phase === 'PREPARED' && original.packet.signature === null, 'WITHDRAW_JOURNAL_ORIGINAL_NOT_PREPARED')
   commerceCheck(publicMutationCanonical(incomeWithdrawalFundScope(original.target)) === publicMutationCanonical(scope), 'WITHDRAW_JOURNAL_ORIGINAL_SCOPE')

@@ -175,8 +175,9 @@ export function createRootIncomeEntryController(options: {
       const canRetire = (target: EconomicsTarget) => current() && canVerifyFoundationIncomeRetirementSourceV1(registry, target)
       const retirement: NonNullable<IncomeWithdrawalResumeCapability['retirement']> = {
         canRetire,
-        retire: ({ selected, signal, isCurrent }) => retireIncomeWithdrawalOriginalV1({
-          selected, signal, client: clientFactory(signal), executionRegistry: registry, isCurrent: target => isCurrent() && canRetire(target),
+        retire: ({ selected, signal, isCurrent, conflictDigest }) => retireIncomeWithdrawalOriginalV1({
+          selected, signal, client: clientFactory(signal), executionRegistry: registry, conflictDigest,
+          isCurrent: target => isCurrent() && canRetire(target),
         }),
       }
       return { ...capability, retirement }

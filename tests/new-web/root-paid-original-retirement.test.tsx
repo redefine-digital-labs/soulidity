@@ -7,6 +7,7 @@ import type { Transaction } from '@mysten/sui/transactions'
 import { bcs } from '@mysten/sui/bcs'
 import { deriveDynamicFieldID } from '@mysten/sui/utils'
 import { completePreflightFixture, installNativePaidSettlementFixture } from './fixtures/commerce-new-paid-preflight'
+import { installNativeSaleGasSpends, nativeSaleGasSpendFixture } from './fixtures/native-sale-retirement'
 import { activityEvidenceFixture, activityHash, aid } from './fixtures/activity-transaction-evidence'
 import { NativePublicReadPaidOriginalRecoveryV2 } from '../../web/components/commerce/native-public-read-paid-original-recovery'
 import { createNativePublicReadPaidHostPreflightV2 } from '../../web/lib/soulidity/native-public-read-paid-host-v2'
@@ -216,4 +217,47 @@ it('keeps the original when the paid ledger changes while the table is read', as
   })
   await expect(f.retire()).rejects.toThrow('PAID_V2_RETIREMENT_LEDGER_CHANGED')
   expect(await f.read()).toEqual(f.selected)
+})
+
+it('retires a paid original through the real recovery panel when the attempt index is incomplete', async () => {
+  const f = await fixture()
+  f.installTable('partial')
+  await expect(f.retire()).rejects.toThrow('PAID_V2_RETIREMENT_TABLE_INCOMPLETE')
+  const gasId = f.input.gas.coins[0].objectId
+  const gas = { ...(await f.client.ledgerService.getObject({ objectId: gasId })).response.object, objectType: '0x2::coin::Coin<0x2::sui::SUI>' }
+  const spend = await nativeSaleGasSpendFixture(gas, 98, { failure: true })
+  const later = await nativeSaleGasSpendFixture(spend.output, 99)
+  installNativeSaleGasSpends(f.client, [spend, later], later.output)
+  const retire = (conflictDigest: string) =>
+    retireNativePublicReadPaidOriginalV2({ record: f.selected, client: f.client, signal: signal(), conflictDigest })
+  await expect(retire(later.digest)).rejects.toThrow('PAID_V2_RETIREMENT_CONFLICT_INPUT')
+  expect(await f.read()).toEqual(f.selected)
+
+  await act(async () => root.render(<NativePublicReadPaidOriginalRecoveryV2 soulId={f.params.soulId} createReadOnlyClient={() => f.client}/>))
+  await until('本机保存阶段：SIGNED')
+  await act(async () => {
+    const input = [...container.querySelectorAll('label')].find(node => node.textContent?.includes('冲突交易摘要'))!.querySelector('input')!
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, spend.digest)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => [...container.querySelectorAll('button')].find(row => row.textContent === '核对并退役过期原购买')!.click())
+  await until('冲突交易 ' + spend.digest)
+  const retired = (await f.read())!
+  expect(retired).toMatchObject({ packet: { ...f.selected.packet, phase: 'RETIRED' }, plan: f.selected.plan,
+    retirement: { auditSha256: f.admission.auditSha256, conflict: { digest: spend.digest, checkpoint: '98', coinId: gasId } } })
+  expect(container.textContent).not.toContain('付款结果仍未知')
+  expect(nativePublicReadPaidHeadCanClearV2(retired, await queryNativePublicReadPaidOriginalV2({ record: retired, client: f.client, signal: signal() }))).toBe(false)
+  await expect(f.foreign()).resolves.toBeUndefined()
+  f.f.rows.set(gasId, later.output)
+  const reviewed = await readNativePublicReadPaidV2(f.params)
+  f.client.ledgerService.getEpoch.mockResolvedValue({ response: { epoch: { epoch: 7n, referenceGasPrice: 1n } } })
+  f.client.transactionExecutionService.simulateTransaction.mockRejectedValueOnce(Error('STOP_NEW_SIMULATION'))
+  const gasRef = { objectId: gasId, digest: later.output.digest, version: String(later.output.version) }
+  await expect(createNativePublicReadPaidHostPreflightV2()({ ...f.input, reviewed, expirationEpoch: '7',
+    gas: { ...f.input.gas, coins: [gasRef] }, attempt: new Uint8Array(32).fill(2) }))
+    .rejects.toMatchObject({ message: 'STOP_NEW_SIMULATION', recovery: { durability: 'CONFIRMED' } })
+  expect((await f.read())!.packet).toMatchObject({ phase: 'PREPARED', signature: null })
+  expect(await f.journal.history(f.key)).toEqual([retired])
+  expect(f.sign).toHaveBeenCalledOnce()
+  expect(f.submit).toHaveBeenCalledOnce()
 })

@@ -6,11 +6,12 @@ import { validateEpochCheckpoint, type EpochCheckpoint } from '../../sui/epoch-c
 import { readEpochExpiry } from '../../sui/epoch-expiry'
 import { MoveEmptyStructBcs, moveEmptyStructBytes } from '../../sui/move-empty-struct'
 import { readPinnedMovePackage } from '../../sui/pinned-move-package'
-import { publicMutationCanonical as canonical } from '../../sui/public-mutation-journal'
+import { publicMutationCanonical as canonical, type PublicMutationPacket } from '../../sui/public-mutation-journal'
 import { NativeInitialPaidBcs } from '../native-initial-children'
 import { NativePublicReadHostV2Bcs } from '../native-public-read-record-v2'
 import type { CanonicalNativeWorkbenchTarget } from '../canonical-native-workbench'
 import { commerceCheck as check, commerceId, decodeCommerce, readCommerceObject, type EconomicsTarget } from './economics-read'
+import { validateExplicitGasConflict, verifyExplicitGasConflict, type ExplicitGasConflict } from './explicit-gas-conflict'
 import { assertRetirementReceiptAbsent, MAX_INCOME_RETIREMENT_RECEIPTS } from './income-retirement-receipt-table'
 import { NativePaidAttemptFieldBcs, NativePaidAttemptKeyBcs } from './native-paid-content-receipt'
 import type { NativePublicReadPaidPreparedOriginalV2 } from './native-public-read-paid-preflight-v2'
@@ -27,9 +28,8 @@ export interface NativePaidRetirementSourceV2 {
 export const ROOT_NATIVE_PAID_RETIREMENT_SOURCES_V2: readonly NativePaidRetirementSourceV2[] = Object.freeze([])
 
 type Reference = { objectId: string; version: string; digest: string }
-export interface NativePaidRetirementEvidenceV2 {
-  checkpoint: EpochCheckpoint
-  auditSha256: string
+type RetirementBasis = { checkpoint: EpochCheckpoint; auditSha256: string }
+type ReceiptTableEvidence = RetirementBasis & {
   host: Reference
   pointer: Reference
   ledger: Reference
@@ -37,15 +37,23 @@ export interface NativePaidRetirementEvidenceV2 {
   tableSize: string
   receiptFieldId: string
 }
+export type NativePaidRetirementEvidenceV2 = ReceiptTableEvidence | (RetirementBasis & { conflict: ExplicitGasConflict })
+const prefix = 'PAID_V2_RETIREMENT'
 const Link = bcs.struct('Field', { id: bcs.Address,
   name: bcs.struct('Wrapper', { name: MoveEmptyStructBcs }), value: bcs.Address })
 const hash = (s: unknown) => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s)
 const uint = (s: unknown) => typeof s === 'string' && /^(0|[1-9][0-9]{0,19})$/.test(s) && BigInt(s) <= (1n << 64n) - 1n
 const exact = (row: object | undefined, fields: string[]) => row && Object.keys(row).sort().join() === fields.sort().join()
 
-export function validateNativePaidRetirementEvidenceV2(value: NativePaidRetirementEvidenceV2, expirationEpoch: string) {
-  check(value && exact(value, ['checkpoint', 'auditSha256', 'host', 'pointer', 'ledger', 'tableId', 'tableSize', 'receiptFieldId'])
-    && exact(value.checkpoint, ['bytes', 'digest', 'epoch', 'sequenceNumber']) && hash(value.auditSha256)
+export function validateNativePaidRetirementEvidenceV2<T extends NativePaidRetirementEvidenceV2>(value: T, packet: PublicMutationPacket): T {
+  check(value && exact(value.checkpoint, ['bytes', 'digest', 'epoch', 'sequenceNumber']) && hash(value.auditSha256), 'PAID_V2_RETIREMENT_EVIDENCE')
+  validateEpochCheckpoint(value.checkpoint, packet.expirationEpoch)
+  if ('conflict' in value) {
+    check(exact(value, ['checkpoint', 'auditSha256', 'conflict']), 'PAID_V2_RETIREMENT_EVIDENCE')
+    validateExplicitGasConflict(value.conflict, packet, value.checkpoint, prefix)
+    return value
+  }
+  check(exact(value, ['checkpoint', 'auditSha256', 'host', 'pointer', 'ledger', 'tableId', 'tableSize', 'receiptFieldId'])
     && commerceId(value.tableId) && commerceId(value.receiptFieldId) && uint(value.tableSize)
     && BigInt(value.tableSize) <= MAX_INCOME_RETIREMENT_RECEIPTS, 'PAID_V2_RETIREMENT_EVIDENCE')
   const ids = [value.tableId, value.receiptFieldId]
@@ -58,7 +66,6 @@ export function validateNativePaidRetirementEvidenceV2(value: NativePaidRetireme
     ids.push(row.objectId)
   }
   check(new Set(ids).size === ids.length, 'PAID_V2_RETIREMENT_ALIASES')
-  validateEpochCheckpoint(value.checkpoint, expirationEpoch)
   return value
 }
 
@@ -68,6 +75,7 @@ export async function verifyNativePaidRetirementV2<T extends { status: string }>
   signal: AbortSignal
   sources: readonly NativePaidRetirementSourceV2[]
   saved?: NativePaidRetirementEvidenceV2
+  conflictDigest?: string
   queryOriginal: () => Promise<T>
 }) {
   const { client, signal, queryOriginal } = input, original = structuredClone(input.original)
@@ -77,13 +85,25 @@ export async function verifyNativePaidRetirementV2<T extends { status: string }>
     && canonical(row.economics) === canonical(context.economics))
   check(matches.length === 1 && hash(matches[0].auditSha256), 'PAID_V2_RETIREMENT_SOURCE_NOT_INSTALLED')
   const auditSha256 = matches[0].auditSha256
-  const saved = input.saved && validateNativePaidRetirementEvidenceV2(structuredClone(input.saved), packet.expirationEpoch)
-  const checkpoint = await readEpochExpiry(client, packet.expirationEpoch, signal, MAINNET_GENESIS_DIGEST, saved?.checkpoint, 'PAID_V2_RETIREMENT')
+  const saved = input.saved && validateNativePaidRetirementEvidenceV2(structuredClone(input.saved), packet)
+  check(input.conflictDigest === undefined || !saved, 'PAID_V2_RETIREMENT_CONFLICT_OVERRIDE')
+  check(!saved || saved.auditSha256 === auditSha256, 'PAID_V2_RETIREMENT_STORED_SCOPE')
+  const checkpoint = await readEpochExpiry(client, packet.expirationEpoch, signal, MAINNET_GENESIS_DIGEST, saved?.checkpoint, prefix)
   const [nativePackage, contentPackage, foundationPackage] = await Promise.all(
     [native, content, foundation].map(pin => readPinnedMovePackage(client, pin, signal)))
   for (const [from, to] of [[nativePackage, contentPackage], [nativePackage, foundationPackage], [contentPackage, foundationPackage]]) {
     const dependency = from.linkage.get(to.pin.originalPackageId)
     check(dependency?.upgradedId === to.pin.callablePackageId && dependency.upgradedVersion === String(to.version), 'PAID_V2_RETIREMENT_LINKAGE')
+  }
+  const savedConflict = saved && 'conflict' in saved ? saved.conflict : undefined
+  const candidate = savedConflict?.digest ?? input.conflictDigest
+  if (candidate !== undefined) {
+    const conflict = await verifyExplicitGasConflict({ client, signal, packet, checkpoint, author: intent.buyer,
+      digest: candidate, saved: savedConflict, prefix })
+    const observed = await queryOriginal()
+    check(observed.status === 'MISSING', 'PAID_V2_RETIREMENT_ORIGINAL_FOUND')
+    signal.throwIfAborted()
+    return { evidence: { checkpoint, auditSha256, conflict }, observed }
   }
   function type(pkg: typeof nativePackage, module: string, name: string) {
     const origin = pkg.origins.get(module + '::' + name)
@@ -123,9 +143,9 @@ export async function verifyNativePaidRetirementV2<T extends { status: string }>
   const key = NativePaidAttemptKeyBcs.serialize({ buyer: intent.buyer, attempt: intent.attempt }).toBytes()
   const receiptFieldId = deriveDynamicFieldID(table.id, requestType, key)
   const evidence = validateNativePaidRetirementEvidenceV2({ checkpoint, auditSha256, host, pointer, ledger,
-    tableId: table.id, tableSize: table.size, receiptFieldId }, packet.expirationEpoch)
-  if (saved) {
-    check(saved.auditSha256 === auditSha256 && saved.tableId === table.id && saved.receiptFieldId === receiptFieldId
+    tableId: table.id, tableSize: table.size, receiptFieldId }, packet)
+  if (saved && !('conflict' in saved)) {
+    check(saved.tableId === table.id && saved.receiptFieldId === receiptFieldId
       && BigInt(evidence.tableSize) >= BigInt(saved.tableSize)
       && (saved.ledger.version !== ledger.version || saved.tableSize === evidence.tableSize), 'PAID_V2_RETIREMENT_STORED_SCOPE')
     for (const [previous, current] of [[saved.host, host], [saved.pointer, pointer], [saved.ledger, ledger]]) {

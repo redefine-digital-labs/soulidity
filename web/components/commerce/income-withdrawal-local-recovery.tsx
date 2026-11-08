@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useRef, useState } from 'react'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
+import { marketListDigest } from '../../lib/animacraft/market-list-operation'
 import { publicMutationCanonical } from '../../lib/sui/public-mutation-journal'
 import { incomeWithdrawalFundKeyV1, browserIncomeWithdrawalOriginalReaderV1, type IncomeWithdrawalJournalRecordV1 } from '../../lib/soulidity/income-withdrawal-journal-v1'
 import { discoverIncomeWithdrawalOriginalsV1, cancelIncomeWithdrawalOriginalV1 } from '../../lib/soulidity/income-withdrawal-original-recovery'
@@ -26,9 +27,12 @@ export function IncomeWithdrawalLocalRecovery({ viewerAddress = null, createRead
   const serial = useRef(0), busy = useRef(false), active = useRef<AbortController | null>(null)
   const empty = (): View => ({ client: createReadOnlyClient, records: [], selected: null, archives: [], archiveSelection: null, historyError: null, pending: false, stopped: false, error: null })
   const [state, setState] = useState<View>(empty), [locks, setLocks] = useState(false)
+  const [conflictInput, setConflictInput] = useState<{ digest: string; value: string } | null>(null)
   const view = state.client === createReadOnlyClient ? state : empty()
   const head = view.records.find(row => incomeWithdrawalFundKeyV1(row.plan) === view.selected) ?? null
   const record = view.archiveSelection ? view.archives.find(row => archiveKey(row) === view.archiveSelection) ?? null : head
+  const conflictDigest = conflictInput && conflictInput.digest === record?.packet.digest ? conflictInput.value.trim() : ''
+  const invalidConflict = Boolean(conflictDigest && !marketListDigest(conflictDigest))
   const same = () => current.current === createReadOnlyClient
   function publish(id: number, update: (previous: View) => View, signal?: AbortSignal, selected?: IncomeWithdrawalJournalRecordV1) {
     setState(previous => {
@@ -99,13 +103,13 @@ export function IncomeWithdrawalLocalRecovery({ viewerAddress = null, createRead
     && ['SIGNING', 'SIGNED'].includes(record.packet.phase) && retirement?.canRetire(original.target))
 
   async function retire() {
-    if (!same() || !record || !retirement || !canRetire || busy.current || view.error || view.stopped) return
+    if (!same() || !record || !retirement || !canRetire || invalidConflict || busy.current || view.error || view.stopped) return
     const selected = structuredClone(record), id = ++serial.current, controller = new AbortController()
     active.current?.abort(); active.current = controller; busy.current = true
     const valid = () => same() && serial.current === id && !controller.signal.aborted
     publish(id, previous => ({ ...previous, pending: true, error: null, stopped: false }), controller.signal, selected)
     try {
-      const { record: updated, original: observed } = await retirement.retire({ selected, signal: controller.signal, isCurrent: valid })
+      const { record: updated, original: observed } = await retirement.retire({ selected, signal: controller.signal, isCurrent: valid, conflictDigest: conflictDigest || undefined })
       const expectedPacket = { ...selected.packet, phase: 'RETIRED' }
       if (!updated.retirement || observed.status !== 'MISSING' || publicMutationCanonical(updated.plan) !== publicMutationCanonical(selected.plan)
         || publicMutationCanonical(updated.packet) !== publicMutationCanonical(expectedPacket)) throw Error('退役结果与所选原提款不一致。')
@@ -134,13 +138,16 @@ export function IncomeWithdrawalLocalRecovery({ viewerAddress = null, createRead
       <button type="button" disabled={Boolean(view.archiveSelection) || view.pending || Boolean(view.error) || view.stopped || !locks || record.packet.phase !== 'PREPARED' || record.packet.signature !== null} onClick={() => void cancel()}>核对并取消本机未签名提款</button>
       <p>只在完整未签原记录与原交易 MISSING 时保存本机 CANCELLED，不撤销链上交易、不生成新提款授权。原文件保持不变。</p>
       {!locks && <p>当前环境没有操作锁；仍可查看、下载和查询原记录，不能修改本机阶段。</p>}
-      {canRetire && <button type="button" disabled={view.pending || Boolean(view.error) || view.stopped} onClick={() => void retire()}>
-        核对并退役过期原提款
-      </button>}
+      {canRetire && <><label>冲突交易摘要（可选） <input value={conflictDigest} disabled={view.pending}
+        onChange={event => setConflictInput({ digest: record.packet.digest, value: event.currentTarget.value })}/></label>
+        <button type="button" disabled={view.pending || Boolean(view.error) || view.stopped || invalidConflict} onClick={() => void retire()}>
+          核对并退役过期原提款
+        </button></>}
       {record.retirement && <article aria-label="已核验过期原提款退役" className="space-y-1">
         <p>已保存退役证据 · 检查点 {record.retirement.checkpoint.sequenceNumber} · Epoch {record.retirement.checkpoint.epoch}</p>
-        <p>Config 对象版本 {record.retirement.config.version} · 核对回执 {record.retirement.tableSize} 项</p>
-        <p>准备下一笔提款时，将重新核验原摘要与回执表，再归档本原件。</p>
+        {'conflict' in record.retirement ? <p>冲突交易 {record.retirement.conflict.digest}</p>
+          : <p>Config 对象版本 {record.retirement.config.version} · 核对回执 {record.retirement.tableSize} 项</p>}
+        <p>准备下一笔提款时，将重新核验原摘要与保存的证据，再归档本原件。</p>
       </article>}
       <IncomeWithdrawalRecovery key={`${record.packet.digest}:${record.packet.phase}`} {...incomeWithdrawalRecoveryProps(original)} client={createReadOnlyClient} viewerAddress={viewerAddress}/>
       {!view.archiveSelection && resume.capability?.execute &&

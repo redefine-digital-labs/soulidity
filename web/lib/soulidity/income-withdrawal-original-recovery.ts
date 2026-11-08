@@ -127,10 +127,10 @@ export function recheckSelectedIncomeWithdrawalOriginalV1(input: {
 export function retireIncomeWithdrawalOriginalV1(input: {
   selected: IncomeWithdrawalJournalRecordV1; client: SuiGrpcClient; signal: AbortSignal; executionRegistry: IncomeExecutionRegistryV1
   isCurrent: (target: ReturnType<typeof importIncomeWithdrawalRecoveryRecord>['target']) => boolean
-  journal?: IncomeWithdrawalJournalV1
+  journal?: IncomeWithdrawalJournalV1; conflictDigest?: string
 }) {
   const selected = structuredClone(input.selected), key = incomeWithdrawalFundKeyV1(selected.plan)
-  const client = captureIncomeWithdrawalRetirementClient(input.client), { executionRegistry, isCurrent } = input
+  const client = captureIncomeWithdrawalRetirementClient(input.client), { executionRegistry, isCurrent, conflictDigest } = input
   const signal = AbortSignal.any([input.signal, AbortSignal.timeout(90000)])
   const journal = captureIncomeWithdrawalJournalV1(input.journal ?? browserIncomeWithdrawalJournalV1())
   return withIncomeWithdrawalFundLock(selected.plan, () => journal.exclusive(key, async () => {
@@ -149,7 +149,7 @@ export function retireIncomeWithdrawalOriginalV1(input: {
       const first = await queryOriginal()
       commerceCheck(first.status === 'MISSING', 'WITHDRAW_RETIREMENT_ORIGINAL_FOUND')
       guard()
-      const { evidence, observed } = await verifyIncomeWithdrawalRetirement({ client, original, signal, executionRegistry, queryOriginal })
+      const { evidence, observed } = await verifyIncomeWithdrawalRetirement({ client, original, signal, executionRegistry, queryOriginal, conflictDigest })
       const after = await journal.read(key)
       guard()
       commerceCheck(publicMutationCanonical(after) === publicMutationCanonical(head), 'WITHDRAW_RETIREMENT_HEAD_CHANGED')

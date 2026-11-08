@@ -19,7 +19,7 @@ export interface IncomeWithdrawalResumeCapability {
   client: (signal: AbortSignal) => SuiGrpcClient; host: IncomeWithdrawalResumeHost; execute?: IncomeWithdrawalExecutionHost
   retirement?: {
     canRetire: (target: EconomicsTarget) => boolean
-    retire: (input: { selected: IncomeWithdrawalJournalRecordV1; signal: AbortSignal; isCurrent: () => boolean }) => ReturnType<typeof retireIncomeWithdrawalOriginalV1>
+    retire: (input: { selected: IncomeWithdrawalJournalRecordV1; signal: AbortSignal; isCurrent: () => boolean; conflictDigest?: string }) => ReturnType<typeof retireIncomeWithdrawalOriginalV1>
   }
 }
 
