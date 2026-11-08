@@ -1,3 +1,4 @@
+import { incomeLedgerWitness } from './income-ledger-witness'
 import { assertSimulatedEventFrameV1 } from '../../sui/simulated-execution-frame-v1'
 import { assertIncomeExecutionSourceFrameV1, type IncomeExecutionFrameV1 } from './income-execution-source-v1'
 import { MAINNET_GENESIS_DIGEST } from '../../animacraft/mainnet-chain'
@@ -83,6 +84,7 @@ async function inspectIncomeWithdrawalEffectsInternal(input:{client:SuiGrpcClien
         && a.schema === 3 && a.original_package === target.foundation.originalPackageId
         && normalizeStructTag(a.payment_coin.name) === coinType
         && before.object.owner.Shared!.initialSharedVersion === String(data.inputs[0].Object!.SharedObject!.initialSharedVersion)
+        && after.object.owner.Shared!.initialSharedVersion === before.object.owner.Shared!.initialSharedVersion
         && a.income.revision === intent.revision && b.income.revision === receipt.after_revision
         && BigInt(a.income.funds) - BigInt(b.income.funds) === BigInt(intent.amount)
         && b.income.funds === receipt.balance && a.income.collected === b.income.collected && b.income.collected === receipt.total_collected
@@ -112,10 +114,13 @@ async function inspectIncomeWithdrawalEffectsInternal(input:{client:SuiGrpcClien
       const claimed = new Set([target.configId, intent.adminId, fieldId, coin.id, ...gas.gasCoinIds])
       commerceCheck(claimed.size === 4 + gas.gasCoinIds.length && effects.V2!.changedObjects.length === claimed.size
         && effects.V2!.changedObjects.every(([id]) => claimed.has(id)), 'WITHDRAW_HISTORY_EXTRA_EFFECTS')
+      const witness = (object: typeof before, config: typeof a) => incomeLedgerWitness(config, {
+        version: String(object.reference.version), digest: object.reference.digest,
+      }, before.object.owner.Shared!.initialSharedVersion)
       return { proof: 'withdrawal-ledger-payment-gas-subproof' as const, requiresOriginalFinalityAndCheckpoint: true as const, transactionDigest: packet.digest, receipt, gas,
         inputConfig:{objectId:target.configId,version:String(before.reference.version),digest:before.reference.digest},
         inputAdmin:{objectId:intent.adminId,version:String(admin.reference.version),digest:admin.reference.digest},
-        coinType, paymentCoinId: coin.id, notCurrentBalance: true as const }
+        coinType, paymentCoinId: coin.id, ledger: { before: witness(before, a), after: witness(after, b) }, notCurrentBalance: true as const }
 }
 
 /** Full domain proof needs both independently qualified source and an actual

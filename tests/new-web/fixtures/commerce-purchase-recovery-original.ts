@@ -4,15 +4,15 @@ import {salePurchaseHistoryFixture} from './commerce-purchase-recovery-v1'
 import {aid,adigest} from './activity-transaction-evidence'
 
 const pin=(p:any)=>({originalPackageId:p.originalPackageId,callablePackageId:p.callablePackageId,callableDigest:p.callableDigest})
-export async function purchaseRecoveryFixture(kind:'v1'|'v2',variant=''){
+export async function purchaseRecoveryFixture(kind:'v1'|'v2',variant='',options:Parameters<typeof publicReadPurchaseFixture>[3]={}){
  if(kind==='v2'){
-  const x=await publicReadPurchaseFixture(variant||'money'),p=x.params
+  const x=await publicReadPurchaseFixture(variant||'money', undefined, 1, options),p=x.params
   const target={chainIdentifier:'35834a8a',standard:pin(x.standard),native:pin(p.native),content:pin(p.content),configId:p.intent.config.objectId,registryId:p.intent.registry.objectId}
   const original={format:'native-public-read-v2',intent:p.intent,packet:{...p.packet,phase:'PREPARED',signature:null},reviewedGas:p.gas,
    context:{target,economics:{chainIdentifier:'35834a8a',foundation:pin(p.foundation),configId:target.configId,coinType:normalizeStructTag(p.intent.coinType)},originalQuotedOffer:p.offer,originalOfferReference:{objectId:aid(888),version:'9',digest:adigest(888)},originalReceiptContext:{soulId:p.soulId,ledgerId:p.ledgerId,native:pin(p.native),content:pin(p.content),foundation:pin(p.foundation),offer:p.offer}}}
   // Actual preparation stores the normalized coin type captured by its reader.
   original.intent.coinType=normalizeStructTag(original.intent.coinType)
-  return {text:JSON.stringify(original),original,soulId:p.soulId,client:p.client,finality:x.finality}
+  return {text:JSON.stringify(original),original,soulId:p.soulId,client:p.client,finality:x.finality,history:x.history,foundationObject:x.foundationObject}
  }
  const x=await salePurchaseHistoryFixture(variant),p=x.params,plan=p.moneySettlement.plan
  const target={chainIdentifier:'35834a8a',standard:pin(p.native),native:pin(p.native),registryId:plan.registryId,configId:plan.configId}

@@ -31,7 +31,7 @@ import { proveNativePublicReadPaidMoneyV2 } from '../../../web/lib/soulidity/com
 import { proveNativePublicReadPaidReceiptV2 } from '../../../web/lib/soulidity/commerce/native-public-read-paid-receipt-v2'
 
 // Controlled original SDK packet/full BCS corpus, copied from the existing receipt fixture. No executed node/mainnet claim.
-export async function publicReadPurchaseFixture(variant = '', buyerOverride?:string,kindOverride=1, coherent:{ids?:Record<number,string>;state?:any;hostBirth?:string;kioskBirth?:string}={}) {
+export async function publicReadPurchaseFixture(variant = '', buyerOverride?:string,kindOverride=1, coherent:{ids?:Record<number,string>;state?:any;hostBirth?:string;kioskBirth?:string;foundationRevenue?:boolean}={}) {
   const aid=(n:number)=>coherent.ids?.[n]??fixtureAid(n)
   const h = await batchHistoryFixture(0), n = await activityEvidenceFixture(), c = await activityEvidenceFixture(), f = await activityEvidenceFixture(), standard = await activityEvidenceFixture()
   const pin = (x: typeof n, original: number, callable: number, names: string[]) => {
@@ -41,7 +41,8 @@ export async function publicReadPurchaseFixture(variant = '', buyerOverride?:str
   }
   pin(n, 40, 41, ['birth::PublicReadHostV2', 'birth::PublicReadLinkV2', 'birth::PaidKey', 'birth::AuthorizationKey', 'birth::ContentOperator', 'birth::NativeModule', 'registry::SoulProducer', 'registry::Registry'])
   pin(c, 42, 43, ['authorization::Authorization', 'paid_access::Ledger', 'paid_access::Offer', 'paid_access::Entry', 'paid_access::BuyerKey', 'paid_access::AttemptKey', 'paid_access::Receipt', 'paid_access::PaidAuthority1', 'paid_access::PaidRevision1', 'paid_access::Updated'])
-  pin(f, 44, 45, ['economics::Config', 'economics::Paid'])
+  pin(f, 44, 45, ['economics::Config', 'economics::Paid', ...(coherent.foundationRevenue
+    ? ['economics::Admin', 'revenue::Request', 'revenue::Receipt', 'revenue::Withdrawn'] : [])])
   pin(standard, 46, 47, ['soul::Soul', 'soul::ModuleKey'])
   n.packageData.data.Package!.linkageTable = new Map([[aid(42), { upgradedId: aid(43), upgradedVersion: '2' }], [aid(44), { upgradedId: aid(45), upgradedVersion: '2' }], [aid(46), { upgradedId: aid(47), upgradedVersion: '2' }]]); n.rehashPackage()
   c.packageData.data.Package!.linkageTable = new Map([[aid(44), { upgradedId: aid(45), upgradedVersion: '2' }]]); c.rehashPackage()
@@ -106,5 +107,5 @@ export async function publicReadPurchaseFixture(variant = '', buyerOverride?:str
     if (r.objectId === stateId) throw Error('NO_STANDALONE_V1_STATE')
     return r.version === undefined && packages.has(r.objectId) ? Promise.resolve({ response: { object: packages.get(r.objectId) } }) : get(r, o)
   } } }
-  return { standard: standard.deployment, history: h, host, finality: n, stateId, params: { client, intent, packet: { bytes: toBase64(bytes), digest, expirationEpoch: '6' }, gas: { budget: '1000', price: '1', coins: [{ objectId: aid(82), version: '9', digest: gasInput?.digest ?? adigest(82) }] }, effects, offer, soulId, ledgerId, native: n.deployment, content: c.deployment, foundation: f.deployment, signal: h.controller.signal } }
+  return { standard: standard.deployment, history: h, host, finality: n, foundationObject: f.pkg, stateId, params: { client, intent, packet: { bytes: toBase64(bytes), digest, expirationEpoch: '6' }, gas: { budget: '1000', price: '1', coins: [{ objectId: aid(82), version: '9', digest: gasInput?.digest ?? adigest(82) }] }, effects, offer, soulId, ledgerId, native: n.deployment, content: c.deployment, foundation: f.deployment, signal: h.controller.signal } }
 }

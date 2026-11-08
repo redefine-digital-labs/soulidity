@@ -5,6 +5,7 @@ import { readPinnedMovePackage } from '../../sui/pinned-move-package'
 import { readSuiGasSettlement } from '../../sui/gas-settlement'
 import { publicMutationCanonical } from '../../sui/public-mutation-journal'
 import { EconomicsConfigBcs } from './economics-bcs'
+import { incomeLedgerWitness } from './income-ledger-witness'
 import { commerceCheck, decodeCommerce } from './economics-read'
 import { proveNativePublicReadPaidReceiptV2 } from './native-public-read-paid-receipt-v2'
 
@@ -31,7 +32,8 @@ export async function proveNativePublicReadPaidMoneyV2(input: Parameters<typeof 
   const beforeObject = await read(p.config.objectId, configType, 'input'), afterObject = await read(p.config.objectId, configType, 'mutated')
   const before = decodeCommerce(EconomicsConfigBcs, beforeObject.bytes), after = decodeCommerce(EconomicsConfigBcs, afterObject.bytes)
   const fee = BigInt(receipt.receipt.platform_fee)
-  commerceCheck(afterObject.object.owner.Shared?.initialSharedVersion === p.config.initialSharedVersion
+  commerceCheck(beforeObject.object.owner.Shared?.initialSharedVersion === p.config.initialSharedVersion
+    && afterObject.object.owner.Shared?.initialSharedVersion === p.config.initialSharedVersion
     && BigInt(before.income.collected) - BigInt(before.income.withdrawn) === BigInt(before.income.funds)
     && publicMutationCanonical(after) === publicMutationCanonical({ ...before, income: { ...before.income,
       funds: String(BigInt(before.income.funds) + fee), collected: String(BigInt(before.income.collected) + fee),
@@ -49,9 +51,12 @@ export async function proveNativePublicReadPaidMoneyV2(input: Parameters<typeof 
   commerceCheck(payout.id === created[0][0] && payoutObject.object.owner.AddressOwner === receipt.receipt.beneficiary
     && payout.balance === receipt.receipt.price && BigInt(payout.balance) + fee === BigInt(receipt.receipt.total), 'PUBLIC_PAID_V2_MONEY_BENEFICIARY')
   const gas = await readSuiGasSettlement({ client, packet: saved.packet, effects: saved.effects, signal })
+  const ledger = (object: typeof beforeObject, value: typeof before) => incomeLedgerWitness(value, {
+    version: String(object.reference.version), digest: object.reference.digest,
+  }, p.config.initialSharedVersion)
   return { format: 'native-public-read-v2' as const, proof: 'native-public-read-v2-original-coins-platform-income-gas-only' as const, transactionDigest: saved.packet.digest,
     buyer: p.buyer, coinType: normalizeStructTag(p.coinType), buyerGrossDebit: receipt.receipt.total, buyerChange: changeCoin.balance,
-    payout: { coinId: payout.id, owner: receipt.receipt.beneficiary, amount: payout.balance }, protocolIncome: String(fee), gas,
+    payout: { coinId: payout.id, owner: receipt.receipt.beneficiary, amount: payout.balance }, protocolIncome: String(fee), platformLedger: { before: ledger(beforeObject, before), after: ledger(afterObject, after) }, gas,
     claimedEffectIds: [p.config.objectId, ref.objectId, payout.id, ...gas.gasCoinIds],
     requiresOriginalHostLinkPaidPointerAuthAndOfferProof: true as const, requiresOriginalPolicyProof: true as const, notCompleteSubscriptionProof: true as const,
     notContentDeliveryProof: true as const, notCurrentBalances: true as const }

@@ -69,7 +69,7 @@ export async function readEconomicsIncome(input: { client: SuiGrpcClient; target
   // Detect a Config mutation while optional Admin evidence was fetched.
   const current = await readCommerceObject(client, object.objectId, `${origin}::economics::Config<${coinType}>`, signal)
   commerceCheck(current.version === object.version && current.digest === object.digest, 'CONFIG_CHANGED')
-  return { target, config, configType, foundationVersion: String(pkg.version), object: { objectId: object.objectId, version: object.version, digest: object.digest },
+  return { target, config, configType, initialSharedVersion: object.owner.Shared!.initialSharedVersion, foundationVersion: String(pkg.version), object: { objectId: object.objectId, version: object.version, digest: object.digest },
     authority, coinType, ledger: { revision: config.income.revision, balance: config.income.funds,
       collected: config.income.collected, withdrawn: config.income.withdrawn, requestsTableId: config.income.requests.id },
     notAuthorization: true as const }
