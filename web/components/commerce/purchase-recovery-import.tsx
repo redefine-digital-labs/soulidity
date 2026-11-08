@@ -12,6 +12,7 @@ import type {SuiGrpcClient} from '@mysten/sui/grpc'
 import {SuiGrpcClient as ReadClient} from '@mysten/sui/grpc'
 import {GrpcWebFetchTransport} from '@protobuf-ts/grpcweb-transport'
 import {getSuiGrpcFullnodeUrl} from '@soulidity/sdk'
+import {discoverNativeSaleCheckoutRecords,type NativeSaleCheckoutRecord} from '../../lib/soulidity/native-sale-checkout-journal'
 import {withPackageObjectIdentity} from '../../lib/sui/package-object-client'
 import {parsePurchaseRecoveryOriginal,queryPurchaseRecoveryOriginal,PURCHASE_ORIGINAL_MAX_BYTES,type PurchaseRecoveryOriginal,type PurchaseRecoveryQuery} from '../../lib/soulidity/commerce/purchase-recovery-original'
 
@@ -23,12 +24,13 @@ export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadRelea
  const serial=useRef(0),active=useRef<AbortController|null>(null),current=useRef({soulId,client:createReadOnlyClient})
  const empty=():View=>({reader:null,soulId,client:createReadOnlyClient,text:'',name:'',original:null,result:null,pending:false,error:null,stopped:false})
  const [state,setState]=useState<View>(empty)
+ const [saved,setSaved]=useState<{soulId:string;records:NativeSaleCheckoutRecord[]}|null>(null)
  useLayoutEffect(()=>{
   current.current={soulId,client:createReadOnlyClient}
   serial.current++;active.current?.abort()
   // Clear the previous Soul's import before the new Soul can be queried.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  setState(empty())
+  setState(empty());setSaved(null)
   return()=>{serial.current++;active.current?.abort()}
  },[soulId,createReadOnlyClient])
  const view=state.soulId===soulId&&state.client===createReadOnlyClient?state:empty()
@@ -41,6 +43,21 @@ export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadRelea
    const text=await file.text();if(!valid(id))return
    const original=await parsePurchaseRecoveryOriginal(text,soulId);if(valid(id))setState({...empty(),text,name:file.name,original})
   }catch(e){if(valid(id))setState({...empty(),name:file.name,error:message(e)})}
+ }
+ async function discoverSaved(){
+  const id=++serial.current;active.current?.abort();setSaved(null)
+  setState({...empty(),pending:true})
+  try{
+   const records=await discoverNativeSaleCheckoutRecords(soulId)
+   if(valid(id)){setSaved({soulId,records});setState(empty())}
+  }catch(error){if(valid(id))setState({...empty(),error:message(error)})}
+ }
+ async function selectSaved(record:NativeSaleCheckoutRecord){
+  const id=++serial.current;active.current?.abort();setState(empty())
+  try{
+   const text=record.plan.originalText,original=await parsePurchaseRecoveryOriginal(text,soulId)
+   if(valid(id))setState({...empty(),text,name:'本机原购买 · '+record.packet.phase,original})
+  }catch(error){if(valid(id))setState({...empty(),error:message(error)})}
  }
  async function query(){
   if(!view.original)return
@@ -58,6 +75,12 @@ export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadRelea
  return <section aria-label="原购买恢复" className="space-y-4">
   <p>导入原购买文件后，手动核对原字节、身份与链上历史。无需连接钱包；文件仅保留在本页内存中。</p>
   <p>支持 Native V1 原成交、Native V2 原付费内容购买，以及 Soul 结账页下载的只读成交 JSON。</p>
+  <button type="button" disabled={view.pending} onClick={()=>void discoverSaved()}>读取本机独立 Native 原购买</button>
+  {saved?.soulId===soulId&&(saved.records.length
+   ?<ul aria-label="本机独立 Native 原购买">{saved.records.map(record=><li key={record.plan.author+':'+record.packet.digest}>
+    <button type="button" disabled={view.pending} onClick={()=>void selectSaved(record)}>{record.packet.digest} · {record.packet.phase}</button>
+   </li>)}</ul>
+   :<p>本机未发现此 Soul 的独立 Native 原购买。</p>)}
   <label>原购买文件<input type="file" accept="application/json,.json" onChange={e=>void select(e.currentTarget.files?.[0])}/></label>
   {view.name&&<p>已选择：{view.name}</p>}
   {view.error&&<p role="alert">{view.error}</p>}

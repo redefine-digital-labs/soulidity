@@ -1,5 +1,6 @@
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { normalizeStructTag } from '@mysten/sui/utils'
+import { publicMutationCanonical } from '../../sui/public-mutation-journal'
 import { readPinnedMovePackage, type PinnedMovePackage } from '../../sui/pinned-move-package'
 import { readCommerceObject, decodeCommerce, commerceCheck, commerceId, readEconomicsIncome, type EconomicsTarget } from './economics-read'
 import { NativeOfferBcs } from './economics-bcs'
@@ -63,4 +64,16 @@ export async function readNativeOfferPreview(input: { client: SuiGrpcClient; eco
   return { offer, economics: income, observed: { objectId: object.objectId, version: object.version, digest: object.digest },
     quote, collection, distribution: quote ? nativeSaleDistribution(quote, { seller: offer.seller, creator: offer.creator, collection: collection?.holder ?? offer.seller }) : null,
     blockers, notAuthorization: true as const, remainingPreflight: ['TRANSFER_POLICY', 'BUYER_CUSTODY', 'MARKET_GATES', 'SUPPORTED_TREE'] as const }
+}
+
+/** Identify the reviewed Offer, economic terms and the recipients together. */
+export function nativeSaleQuoteIdentity(preview: Awaited<ReturnType<typeof readNativeOfferPreview>>) {
+  const { offer, quote, economics, observed, collection } = preview
+  commerceCheck(quote && preview.blockers.length === 0, 'SALE_QUOTE_UNAVAILABLE')
+  return publicMutationCanonical({
+    offer: observed, seller: offer.seller, creator: offer.creator, coin: economics.coinType,
+    feeRevision: economics.config.revision, platformRecipient: economics.config.recipient,
+    collection: collection && { holder: collection.holder, observed: collection.observed, member: collection.member },
+    amounts: Object.fromEntries(Object.entries(quote).map(([role, amount]) => [role, String(amount)])),
+  })
 }

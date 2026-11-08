@@ -82,7 +82,7 @@ it('route Soul change immediately clears the previous original and hides late su
 it.each(['invalid','0x0'])('invalid route Soul %s provides no import or RPC path',async id=>{m.id=id;await render();expect(host.textContent).toContain('Soul 身份无效');expect(host.querySelector('input[type=file]')).toBeNull();expect(m.factory).not.toHaveBeenCalled()})
 it('invalid replacement removes prior proof and download immediately',async()=>{
  const x=await purchaseRecoveryFixture('v2');m.id=x.soulId;m.factory.mockReturnValue(x.client);await render();await select(x.text);await click('查询原购买历史');expect(host.querySelector('[aria-label="原付款历史"]')).not.toBeNull()
- await select('{}');expect(host.querySelector('a[download]')).toBeNull();expect(host.querySelector('[aria-label="原付款历史"]')).toBeNull();expect(host.querySelector('[aria-label="原购买恢复"] button')).toBeNull()
+ await select('{}');expect(host.querySelector('a[download]')).toBeNull();expect(host.querySelector('[aria-label="原付款历史"]')).toBeNull();expect([...host.querySelectorAll('[aria-label="原购买恢复"] button')].some(b=>b.textContent==='查询原购买历史')).toBe(false)
  expect([...host.querySelectorAll('button')].some(b=>b.textContent==='重新发现本机原记录')).toBe(true)
 })
 

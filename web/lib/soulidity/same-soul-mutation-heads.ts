@@ -10,6 +10,7 @@ import { queryFormsOriginalOperation } from './management/application-forms-reco
 import { parseSoulAccessRecord, createSoulAccessAdapter } from './soul-access-operation'
 import { soulAccessKey } from './soul-access-plan'
 import { parseNativePublicReadPaidRecordV2, nativePublicReadPaidKeyV2, nativePublicReadPaidSettlementMatchesV2, nativePublicReadPaidHeadCanClearV2, queryNativePublicReadPaidHeadV2, type NativePublicReadPaidRecordV2 } from './native-public-read-paid-journal-v2'
+import { NATIVE_SALE_CHECKOUT_PREFIX, nativeSaleCheckoutKey, parseNativeSaleCheckoutRecord, queryNativeSaleCheckoutRecord } from './native-sale-checkout-journal'
 import { validateMarketListOperationRecord, marketListOperationKey } from '../animacraft/market-list-operation'
 import { validateMarketBuyOperationRecord, marketBuyOperationKey } from '../animacraft/market-buy-operation'
 import { validateMarketCancelOperationRecord, marketCancelOperationKey } from '../animacraft/market-cancel-operation'
@@ -19,7 +20,7 @@ import { queryMarketBuyOperationEvidence } from '../animacraft/market-buy-operat
 import { queryMarketCancelOperationEvidence } from '../animacraft/market-cancel-operation-adapter'
 import { queryMarketBatchListOperationEvidence } from '../animacraft/market-batch-list-operation-adapter'
 
-export type SameSoulHeadDomain = 'EQUIPMENT' | 'FORMS' | 'LEGACY_ACCESS' | 'NATIVE_PAID' | 'SALE_LIST' | 'SALE_BUY' | 'SALE_CANCEL' | 'SALE_BATCH'
+export type SameSoulHeadDomain = 'EQUIPMENT' | 'FORMS' | 'LEGACY_ACCESS' | 'NATIVE_PAID' | 'NATIVE_SALE_CHECKOUT' | 'SALE_LIST' | 'SALE_BUY' | 'SALE_CANCEL' | 'SALE_BATCH'
 export interface SameSoulMutationHead {
   key: string; text: string; domain: SameSoulHeadDomain; value: unknown
   phase: string; signature: string | null; digest: string
@@ -47,6 +48,9 @@ function shape(key: string, scopes: readonly SoulAccessAssetScope[]): Shape | nu
     return { domain: p.length === 8 || p.length === 11 && p[8] === 'history' ? 'LEGACY_ACCESS' : 'UNSUPPORTED', archived: p.length === 11 && p[8] === 'history' }
   if (p[0] === 'soulidity.native-public-read-paid.v2' && matching(p[1], p[2], p[3]))
     return { domain: p.length === 4 || p.length === 7 && p[4] === 'history' ? 'NATIVE_PAID' : 'UNSUPPORTED', archived: p.length === 7 && p[4] === 'history' }
+  if (p[0] === NATIVE_SALE_CHECKOUT_PREFIX.slice(0, -1) && matching(p[1], p[2], p[3]))
+    return { domain: p.length === 4 || p.length === 7 && p[4] === 'history' ? 'NATIVE_SALE_CHECKOUT' : 'UNSUPPORTED', archived: p.length === 7 && p[4] === 'history' }
+  if (p[0].startsWith('soulidity.native-sale-checkout.') && matching(p[1], p[2], p[3])) return { domain: 'UNSUPPORTED', archived: false }
   const sale = new Map<string, SameSoulHeadDomain>([['soulidity.market-list-operation', 'SALE_LIST'], ['soulidity.market-buy-operation', 'SALE_BUY'], ['soulidity.market-cancel-operation', 'SALE_CANCEL']])
   if (sale.has(p[0]) && p[1] === 'mainnet' && scopes.some(s => s.soulId === p[2] && s.author === p[3]))
     return { domain: p.length === 4 || p.length === 6 && p[4] === 'retired' ? sale.get(p[0])! : 'UNSUPPORTED', archived: p.length === 6 && p[4] === 'retired' }
@@ -67,6 +71,7 @@ async function parse(key: string, text: string, domain: SameSoulHeadDomain, scop
   else if (domain === 'FORMS') { value = parseFormsManagementRecord(input); expected = formsManagementKey(value.plan) }
   else if (domain === 'LEGACY_ACCESS') { value = parseSoulAccessRecord(input); expected = soulAccessKey(value.plan) }
   else if (domain === 'NATIVE_PAID') { value = await parseNativePublicReadPaidRecordV2(input); expected = nativePublicReadPaidKeyV2(value.plan) }
+  else if (domain === 'NATIVE_SALE_CHECKOUT') { value = await parseNativeSaleCheckoutRecord(input); expected = nativeSaleCheckoutKey(value.plan) }
   else if (domain === 'SALE_LIST') { value = validateMarketListOperationRecord(input); expected = marketListOperationKey(value.snapshot.soulId, value.snapshot.owner) }
   else if (domain === 'SALE_BUY') { value = validateMarketBuyOperationRecord(input); expected = marketBuyOperationKey(value.snapshot.soulId, value.snapshot.buyer) }
   else if (domain === 'SALE_CANCEL') { value = validateMarketCancelOperationRecord(input); expected = marketCancelOperationKey(value.snapshot.soulId, value.snapshot.owner) }
@@ -128,8 +133,10 @@ export async function assertSameSoulForeignHeads(input: {
     if (['SUCCEEDED', 'FAILED'].includes(head.phase) && result.status !== head.phase
       && !(head.phase === 'SUCCEEDED' && settledPayment)) throw new SameSoulRecoveryRequired(head.key, head.text, 'TERMINAL_RESULT_UNCONFIRMED')
     const retiredPayment = head.domain === 'NATIVE_PAID' && head.phase === 'RETIRED'
+    const settledNativeSale = head.domain === 'NATIVE_SALE_CHECKOUT' && result.status === 'SUCCEEDED'
+      && result.settledPaymentDigest === head.digest
     const clear = retiredPayment ? nativePublicReadPaidHeadCanClearV2(head.value as NativePublicReadPaidRecordV2, result)
-      : settledPayment || result.status === 'FAILED' || head.phase === 'CANCELLED' && head.signature === null && result.status === 'MISSING'
+      : settledPayment || settledNativeSale || result.status === 'FAILED' || head.phase === 'CANCELLED' && head.signature === null && result.status === 'MISSING'
       || result.status === 'SUCCEEDED' && result.completeBusinessOutputVerified === true && result.sourceQualification === 'COMPILED_ROOT_MATCHED'
     if (!clear) throw new SameSoulRecoveryRequired(head.key, head.text, 'ORIGINAL_RECOVERY_REQUIRED')
   }
@@ -162,6 +169,12 @@ export function createBrowserSameSoulHeadPort(source: SuiGrpcClient, storage: Sa
       const result = await queryNativePublicReadPaidHeadV2(v, client, signal)
       if (v.packet.phase === 'RETIRED') return result
       return nativePublicReadPaidSettlementMatchesV2(v, result)
+        ? { status: result.status, settledPaymentDigest: v.packet.digest }
+        : { status: result.status }
+    }
+    if (head.domain === 'NATIVE_SALE_CHECKOUT') {
+      const result = await queryNativeSaleCheckoutRecord(v, client, signal)
+      return result.status === 'SUCCEEDED'
         ? { status: result.status, settledPaymentDigest: v.packet.digest }
         : { status: result.status }
     }

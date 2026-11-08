@@ -1,5 +1,6 @@
 'use client'
 
+import { resolveNativeSaleCheckout } from '@/lib/soulidity/native-sale-checkout-config'
 import { useLayoutEffect, use, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -415,6 +416,10 @@ function Hero({
               <p className="text-xs text-muted">{soul.listingStatus === 'floor-violation'
                 ? 'This chain listing is below the collection floor and cannot be bought through the app.'
                 : 'Trading is currently unavailable for this release. The displayed listing price is an observation, not purchase approval.'}</p>
+            )}
+            {role !== 'owner' && resolveNativeSaleCheckout(process.env.NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON,
+              process.env.NEXT_PUBLIC_SOULIDITY_NATIVE_ECONOMICS_TARGET_JSON) && (
+              <Link href={`/souls/${encodeURIComponent(soul.onChainId)}/buy/native`}>核对独立 Native Offer</Link>
             )}
             {process.env.NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON && (
               <Link href={`/souls/${encodeURIComponent(soul.onChainId)}/purchase/recovery`}

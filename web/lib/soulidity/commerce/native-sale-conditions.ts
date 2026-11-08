@@ -7,7 +7,7 @@ import { MoveEmptyStructBcs, moveEmptyStructBytes } from '../../sui/move-empty-s
 import { readCanonicalNativeWorkbench, CanonicalOwnedAccountBcs, type CanonicalNativeWorkbenchTarget } from '../canonical-native-workbench'
 import { readNativeManagementState } from '../management/native-state'
 import { commerceCheck, commerceId, decodeCommerce, readCommerceObject, type EconomicsTarget } from './economics-read'
-import { readNativeOfferPreview } from './native-offer-read'
+import { nativeSaleQuoteIdentity, readNativeOfferPreview } from './native-offer-read'
 import { readNativeSaleTree } from './native-sale-tree'
 import { readNativeSaleSourceBinding } from './native-sale-source-binding'
 
@@ -98,6 +98,6 @@ export async function readNativeSaleConditions(input: { client: SuiGrpcClient; t
     offer: { policyId: preview.offer.policy, sellerKioskId: preview.offer.kiosk, generation: preview.offer.generation,
       collectionId: preview.offer.collection ?? null, observed: preview.observed }, collectionRelease,
     buyer, buyerKioskId: account.kiosk, buyerAccount: { objectId: accountObject.objectId, version: accountObject.version, digest: accountObject.digest },
-    quote: preview.quote, tree, source, observed: observations, notAuthorization: true as const,
+    quote: preview.quote, quoteIdentity: nativeSaleQuoteIdentity(preview), tree, source, observed: observations, notAuthorization: true as const,
     remaining: ['FUNDS', 'FINAL_TRANSACTION_GRAPH', 'WALLET_PREFLIGHT', 'POST_SALE_CLEANUP_PROOF'] as const }
 }

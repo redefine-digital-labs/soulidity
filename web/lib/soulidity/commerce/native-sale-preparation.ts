@@ -1,18 +1,19 @@
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { TransactionDataBuilder } from '@mysten/sui/transactions'
-import { toBase64 } from '@mysten/sui/utils'
+import { normalizeStructTag, toBase64 } from '@mysten/sui/utils'
 import { profileReadStep } from '@soulidity/sdk'
 import type { PublicMutationPacket } from '../../sui/public-mutation-journal'
 import { publicMutationCanonical } from '../../sui/public-mutation-journal'
+import { MAINNET_GENESIS_DIGEST } from '../../animacraft/mainnet-chain'
 import { commerceCheck } from './economics-read'
 import { readNativeSaleConditions } from './native-sale-conditions'
 import { readNativeSaleFunding } from './native-sale-funding'
 import { readNativeSaleSharedReferences } from './native-sale-shared-references'
 import { assertNativeSaleGraph, assertNativeSalePlanObservations, buildNativeSaleGraph, type NativeSaleGraphPlan } from './native-sale-graph'
 
-type Request = Parameters<typeof readNativeSaleConditions>[0] & {
+export type NativeSalePurchaseRequest = Parameters<typeof readNativeSaleConditions>[0] & {
   paymentCoinIds: string[]; gas: NativeSaleGraphPlan['gas']; expirationEpoch: string; quoteExpiryMs: string; attemptHex: string
-  reviewedSoulId: string; reviewedTotal: string
+  reviewedSoulId: string; reviewedTotal: string; reviewedQuoteIdentity?: string
 }
 
 /** NEW-intent preparation only, after the main journal has excluded an active
@@ -20,7 +21,7 @@ type Request = Parameters<typeof readNativeSaleConditions>[0] & {
  * this function. Main owns wallet selection, storage locking/readback, signing
  * and broadcast. This function only constructs and rechecks unsigned bytes.
  */
-export async function prepareNativeSalePurchase(input: Request) {
+export async function prepareNativeSalePurchase(input: NativeSalePurchaseRequest) {
   const client: SuiGrpcClient = input.client, signal = AbortSignal.any([input.signal, AbortSignal.timeout(60000)])
   const request = structuredClone({ ...input, client: undefined, signal: undefined, getBuyerAddress: undefined })
   const buyer = input.buyer, getBuyerAddress = input.getBuyerAddress
@@ -31,16 +32,11 @@ export async function prepareNativeSalePurchase(input: Request) {
     buyerAccountId: request.buyerAccountId, collection: request.collection, getBuyerAddress, signal }
   guard()
   const service = await profileReadStep(signal, () => client.ledgerService.getServiceInfo({}, { abort: signal }))
-  commerceCheck(service.response.chainId === '4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S', 'SALE_PREPARE_CHAIN')
-  async function epochCheck() {
-    const epoch = (await profileReadStep(signal, () => client.ledgerService.getEpoch({ readMask: { paths: ['epoch', 'reference_gas_price'] } }, { abort: signal }))).response.epoch
-    commerceCheck(typeof epoch?.epoch === 'bigint' && typeof epoch.referenceGasPrice === 'bigint' && epoch.referenceGasPrice > 0n
-      && BigInt(request.expirationEpoch) >= epoch.epoch && BigInt(request.expirationEpoch) <= epoch.epoch + 1n
-      && BigInt(request.gas.price) >= epoch.referenceGasPrice, 'SALE_PREPARE_EPOCH_OR_GAS_PRICE')
-  }
-  await epochCheck()
+  commerceCheck(service.response.chainId === MAINNET_GENESIS_DIGEST, 'SALE_PREPARE_CHAIN')
+  await checkSaleEpoch(client, request, signal)
   const conditions = await readNativeSaleConditions(conditionInput); guard()
-  commerceCheck(conditions.soulId === request.reviewedSoulId && String(conditions.quote.total) === request.reviewedTotal, 'SALE_PREPARE_REVIEW_CHANGED')
+  commerceCheck(conditions.soulId === request.reviewedSoulId && String(conditions.quote.total) === request.reviewedTotal
+    && (!request.reviewedQuoteIdentity || conditions.quoteIdentity === request.reviewedQuoteIdentity), 'SALE_PREPARE_REVIEW_CHANGED')
   const references = await readNativeSaleSharedReferences({ client, target: request.target, economics: request.economics, conditions, signal })
   commerceCheck(BigInt(references.timestampMs) <= BigInt(request.quoteExpiryMs), 'SALE_PREPARE_QUOTE_EXPIRED')
   const gasIds = request.gas.coins.map(coin => coin.objectId)
@@ -60,19 +56,8 @@ export async function prepareNativeSalePurchase(input: Request) {
   const bytes = await buildNativeSaleGraph(plan).build(), packet: PublicMutationPacket = { bytes: toBase64(bytes),
     digest: TransactionDataBuilder.getDigestFromBytes(bytes), expirationEpoch: plan.expirationEpoch, phase: 'PREPARED', signature: null }
   assertNativeSaleGraph(plan, packet)
-  // Re-prove all observations after bytes exist. Never silently reselect/rebuild
-  // them on drift; caller must query/preserve any existing prepared operation.
-  const finalConditions = await readNativeSaleConditions(conditionInput)
-  const finalFunding = await readNativeSaleFunding({ client, buyer, coinType: plan.coinType, total: plan.reviewedTotal,
-    coinIds: request.paymentCoinIds, gasCoinIds: gasIds, getBuyerAddress, signal })
-  assertNativeSalePlanObservations(plan, finalConditions, finalFunding)
-  const finalGasFunding = await readNativeSaleFunding({ client, buyer, coinType: '0x2::sui::SUI', total: request.gas.budget,
-    coinIds: gasIds, gasCoinIds: request.paymentCoinIds, getBuyerAddress, signal })
-  commerceCheck(publicMutationCanonical(finalGasFunding.coins) === publicMutationCanonical(gasFunding.coins), 'SALE_PREPARE_GAS_CHANGED')
-  const finalReferences = await readNativeSaleSharedReferences({ client, target: request.target, economics: request.economics, conditions: finalConditions, signal })
-  commerceCheck(publicMutationCanonical(finalReferences.shared) === publicMutationCanonical(plan.shared)
-    && BigInt(finalReferences.timestampMs) <= BigInt(plan.quoteExpiryMs), 'SALE_PREPARE_SHARED_OR_EXPIRY_CHANGED')
-  await epochCheck(); guard()
+  await recheckNativeSalePurchase({ ...conditionInput, plan, reviewedQuoteIdentity: conditions.quoteIdentity })
+  guard()
   return { schema: 'soulidity.native-sale-preparation.v1' as const, plan, packet,
     // Public release identities captured with the original operation. Recovery
     // must use these pins/bytes, not a later environment or new callable ABI.
@@ -80,4 +65,41 @@ export async function prepareNativeSalePurchase(input: Request) {
       reviewedSoulId: request.reviewedSoulId, reviewedTotal: request.reviewedTotal },
     notSignedOrExecuted: true as const, requiresDurableJournalBeforeSigning: true as const,
     remaining: ['WALLET_FINAL_PREFLIGHT', 'EXECUTED_QUALIFICATION', 'COMPLETE_ORIGINAL_SALE_PROOF', 'ACTUAL_POST_SALE_USE'] as const }
+}
+
+async function checkSaleEpoch(client: SuiGrpcClient, plan: Pick<NativeSaleGraphPlan, 'expirationEpoch' | 'gas'>, signal: AbortSignal) {
+  const { response: { epoch } } = await profileReadStep(signal, () => client.ledgerService.getEpoch({
+    readMask: { paths: ['epoch', 'reference_gas_price'] },
+  }, { abort: signal }))
+  commerceCheck(typeof epoch?.epoch === 'bigint' && typeof epoch.referenceGasPrice === 'bigint' && epoch.referenceGasPrice > 0n
+    && BigInt(plan.expirationEpoch) >= epoch.epoch && BigInt(plan.expirationEpoch) <= epoch.epoch + 1n
+    && BigInt(plan.gas.price) >= epoch.referenceGasPrice, 'SALE_PREPARE_EPOCH_OR_GAS_PRICE')
+}
+
+/** Re-read the actual conditions and exact owned/shared input references of a
+ * retained purchase. This path never reconstructs a replacement transaction. */
+export async function recheckNativeSalePurchase(input: Parameters<typeof readNativeSaleConditions>[0] & {
+  plan: NativeSaleGraphPlan; reviewedQuoteIdentity: string
+}) {
+  const { client, signal, getBuyerAddress, buyer } = input, plan = structuredClone(input.plan)
+  const guard = () => { signal.throwIfAborted(); commerceCheck(getBuyerAddress() === buyer, 'SALE_PREPARE_WALLET_CHANGED') }
+  guard()
+  await checkSaleEpoch(client, plan, signal)
+  const conditions = await readNativeSaleConditions(input)
+  commerceCheck(conditions.quoteIdentity === input.reviewedQuoteIdentity, 'SALE_PREPARE_REVIEW_CHANGED')
+  const paymentIds = plan.paymentCoins.map(coin => coin.objectId), gasIds = plan.gas.coins.map(coin => coin.objectId)
+  const [funding, gas, references] = await Promise.all([
+    readNativeSaleFunding({ client, buyer, coinType: plan.coinType, total: plan.reviewedTotal,
+      coinIds: paymentIds, gasCoinIds: gasIds, getBuyerAddress, signal }),
+    readNativeSaleFunding({ client, buyer, coinType: normalizeStructTag('0x2::sui::SUI'), total: plan.gas.budget,
+      coinIds: gasIds, gasCoinIds: paymentIds, getBuyerAddress, signal }),
+    readNativeSaleSharedReferences({ ...input, conditions }),
+  ])
+  assertNativeSalePlanObservations(plan, conditions, funding)
+  commerceCheck(publicMutationCanonical(gas.coins.map(({ objectId, version, digest }) => ({ objectId, version, digest })))
+    === publicMutationCanonical(plan.gas.coins), 'SALE_PREPARE_GAS_CHANGED')
+  commerceCheck(publicMutationCanonical(references.shared) === publicMutationCanonical(plan.shared)
+    && BigInt(references.timestampMs) <= BigInt(plan.quoteExpiryMs), 'SALE_PREPARE_SHARED_OR_EXPIRY_CHANGED')
+  await checkSaleEpoch(client, plan, signal)
+  guard()
 }
