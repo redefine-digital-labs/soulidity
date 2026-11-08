@@ -34,7 +34,8 @@ export async function openReusableNativePublicReadContentV2(input:{qualification
  // Clock or unrelated Ledger revision. The actual Seal policy remains authority.
  const identity=(v:typeof before)=>publicMutationCanonical({format:v.format,buyer:v.buyer,soulId:v.soulId,hostId:v.hostId,stateId:v.stateId,ledgerId:v.ledgerId,
   kind:v.kind,index:v.recordIndex,scope:v.contentScope,namespace:v.namespace,version:v.contentVersion,owner:v.owner,generation:v.generation,
-  entryHash:action==='REUSE_ENTRY'?v.entryHash:null,action:v.decision.action,recordReference:v.recordReference,hostReference:v.hostReference})
+  entryHash:action==='REUSE_ENTRY'?v.entryHash:null,entryReference:action==='REUSE_ENTRY'?v.entryReference:null,
+  action:v.decision.action,recordReference:v.recordReference,hostReference:v.hostReference})
  const original=identity(before)
  let opened:Awaited<ReturnType<typeof openNativePublicPaidContentV2>>|undefined
  try{

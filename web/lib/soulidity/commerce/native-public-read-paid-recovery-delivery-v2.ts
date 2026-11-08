@@ -1,3 +1,4 @@
+import { toHex } from '@mysten/sui/utils'
 import {readNativePublicReadPaidHistoryV2} from './native-public-read-paid-history-v2'
 import {openReusableNativePublicReadContentV2} from './native-public-read-paid-delivery-v2'
 import {readNativePublicReadPaidV2} from './native-public-read-paid-read-v2'
@@ -7,6 +8,7 @@ import {paidContentScopeCovers} from './paid-content-policy'
 
 type Delivery=Parameters<typeof openReusableNativePublicReadContentV2>[0]
 type OpenDependencies=NonNullable<Parameters<typeof openReusableNativePublicReadContentV2>[1]>
+export type PaidRecoveryAccessBasisV2 = 'ORIGINAL_ENTRY' | 'CURRENT_ENTRY' | 'CURRENT_OWNER'
 /** Original saved V2 subscription recovery followed by CURRENT protected access.
  * Never reconstructs/submits payment or treats a historical Entry as authority.
  * Original settlement remains partial; content opened is not durable completion.
@@ -40,14 +42,33 @@ export async function recoverNativePublicReadPaidContentV2(input:{history:Parame
  if(original.status!=='SUBSCRIPTION_RECORDED')return {format:'native-public-read-v2' as const,status:'ORIGINAL_SUBSCRIPTION_NOT_CONFIRMED' as const,original,notContentDelivered:true as const,notPermissionToRetryPayment:true as const}
  commerceCheck(original.receipt.transactionDigest===saved.packet.digest&&original.receipt.money?.transactionDigest===saved.packet.digest
   &&paidContentScopeCovers(BigInt(original.receipt.entry.scope),qualification.requiredScope),'PUBLIC_PAID_V2_RECOVERY_ORIGINAL_SCOPE')
+ const originalEntry = original.receipt.entryReference, originalEntryHash = toHex(original.receipt.receipt.entry_hash)
+ function entryBasis(current: Awaited<ReturnType<typeof readNativePublicReadPaidV2>>): PaidRecoveryAccessBasisV2 {
+  const ref = current.entryReference
+  commerceCheck(ref && current.entryHash, 'PUBLIC_PAID_V2_RECOVERY_ENTRY_REQUIRED')
+  if (ref.objectId !== originalEntry.objectId) return 'CURRENT_ENTRY'
+  const distance = BigInt(ref.version) - BigInt(originalEntry.version)
+  commerceCheck(distance >= 0n && (distance === 0n
+    ? ref.digest === originalEntry.digest && current.entryHash === originalEntryHash
+    : ref.digest !== originalEntry.digest), 'PUBLIC_PAID_V2_RECOVERY_ENTRY_LINEAGE')
+  return distance === 0n ? 'ORIGINAL_ENTRY' : 'CURRENT_ENTRY'
+ }
  const boundRead:typeof readNativePublicReadPaidV2=async request=>{
   guard();const current=await read(request);guard()
   commerceCheck(current.soulId===saved.soulId&&current.hostId===saved.intent.host.objectId&&current.ledgerId===saved.ledgerId
    &&current.stateId===original.receipt.stateId&&current.buyer===saved.intent.buyer&&current.kind===saved.intent.kind,'PUBLIC_PAID_V2_RECOVERY_CURRENT_BINDING')
+  if (current.decision.action === 'REUSE_ENTRY') entryBasis(current)
   return current
  }
  const delivered=await openReusableNativePublicReadContentV2({qualification,protected:protectedInput},{...openDependencies,read:boundRead})
- try{guard()}catch(error){if(delivered.status==='CONTENT_OPENED')delivered.content.bytes.fill(0);throw error}
- return {format:'native-public-read-v2' as const,status:delivered.status==='CONTENT_OPENED'?'ORIGINAL_SUBSCRIPTION_CONTENT_OPENED' as const:'ORIGINAL_SUBSCRIPTION_CURRENT_ACCESS_UNAVAILABLE' as const,
-  original,delivery:delivered,notPermissionToRetryPayment:true as const,notDurablePurchaseCompletion:true as const,requiresQualifiedSourceAndFormatAdoption:true as const,notMainnetAcceptance:true as const}
+ try {
+  guard()
+  const accessBasis: PaidRecoveryAccessBasisV2 | null = delivered.status !== 'CONTENT_OPENED' ? null
+    : delivered.accessPath === 'REUSE_OWNER' ? 'CURRENT_OWNER' : entryBasis(delivered.qualification)
+  return {format:'native-public-read-v2' as const,status:delivered.status==='CONTENT_OPENED'?'ORIGINAL_SUBSCRIPTION_CONTENT_OPENED' as const:'ORIGINAL_SUBSCRIPTION_CURRENT_ACCESS_UNAVAILABLE' as const,
+   original,delivery:delivered,accessBasis,notPermissionToRetryPayment:true as const,notDurablePurchaseCompletion:true as const,requiresQualifiedSourceAndFormatAdoption:true as const,notMainnetAcceptance:true as const}
+ } catch (error) {
+  if (delivered.status === 'CONTENT_OPENED') delivered.content.bytes.fill(0)
+  throw error
+ }
 }

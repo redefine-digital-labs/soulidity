@@ -113,6 +113,7 @@ export async function proveNativePublicReadPaidReceiptV2(input: { client: SuiGrp
   commerceCheck(attemptObject.object.owner.ObjectOwner === a.attempts.id && receipt.id === attemptId && receipt.name.buyer === p.buyer && toHex(receipt.name.attempt) === toHex(p.attempt)
     && publicMutationCanonical(receipt.value) === publicMutationCanonical({ kind: p.kind, quote: p.quote.hash, entry_hash: entryHash, price: quote.ask, total: quote.total, platform_fee: quote.platformFee, fee_revision: cfg.revision, platform_recipient: cfg.recipient, beneficiary: offer.issuer }), 'PUBLIC_PAID_V2_RECEIPT_ATTEMPT')
   return { format: 'native-public-read-v2' as const, proof: 'native-public-read-v2-original-host-entry-attempt-ledger-only' as const, transactionDigest: packet.digest, soulId, hostId: host.id, stateId, ledgerId, entry: entry.value,
+    entryReference: { objectId: entryId, version: String(output.reference.version), digest: output.reference.digest },
     receipt: receipt.value, originalPolicy, claimedEffectIds: [host.id, ledgerId, entryId, attemptId], observedReadOnlyIds: [p.kiosk.objectId, `0x${'6'.padStart(64, '0')}`], requiresOriginalFinalityAndEvents: true as const,
     requiresOriginalHostLinkPaidPointerAuthAndOfferProof: true as const, requiresOriginalKioskItemAndLockProof: true as const, requiresQualifiedSourceAndFormatAdoption: true as const, notMoneySettlementProof: true as const, notContentDeliveryProof: true as const, notCurrentAuthority: true as const }
 }

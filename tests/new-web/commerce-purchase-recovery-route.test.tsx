@@ -408,6 +408,7 @@ it.each(['file','journal'] as const)('opens a later compatible version from a V2
  expect(Array.from(picker.options).map(option=>option.value)).not.toContain(String(wrongKind.index))
  await click('用原买家钱包打开内容');await waitForPaidOpen()
  expect(paidPlaintext()?.textContent??'',host.textContent??'').toContain(new TextDecoder().decode(f.plaintext))
+ expect(paidPlaintext()?.textContent).toContain('已使用原交易产生的订阅资格打开此版本。')
  expect(m.sign).toHaveBeenCalledOnce()
  expect(f.cryptoFixture.decryptCall).toHaveBeenCalledOnce()
  expect(f.fetcher).toHaveBeenCalledOnce()

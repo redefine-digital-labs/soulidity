@@ -14,9 +14,15 @@ import { readContractCheckedNativePublicReadPaidPreviewV2 } from '@/lib/soulidit
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import type { NativePublicReadPaidPreparedOriginalV2 } from '@/lib/soulidity/commerce/native-public-read-paid-preflight-v2'
 import { openReusableNativePublicReadContentV2 } from '@/lib/soulidity/commerce/native-public-read-paid-delivery-v2'
+import type { PaidRecoveryAccessBasisV2 } from '@/lib/soulidity/commerce/native-public-read-paid-recovery-delivery-v2'
 
 type Preview = Awaited<ReturnType<typeof readContractCheckedNativePublicReadPaidPreviewV2>>
 const emptyPreview = { busy: false, result: null as Preview | null, error: null as string | null }
+const recoveryAccessLabels: Record<PaidRecoveryAccessBasisV2, string> = {
+  ORIGINAL_ENTRY: '已使用原交易产生的订阅资格打开此版本。',
+  CURRENT_ENTRY: '已使用当前链上生效的订阅资格打开此版本。',
+  CURRENT_OWNER: '已使用当前所有者的读取权限打开此版本。',
+}
 
 function selectedEconomics(json: string | undefined, target: ReturnType<typeof parseCanonicalNativeWorkbenchTarget>) {
   if (!json) return undefined
@@ -42,16 +48,16 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
   const buffer = useRef<Uint8Array | null>(null), active = useRef<AbortController | null>(null)
   const previewActive = useRef<AbortController | null>(null)
   const [preview, setPreview] = useSessionState(session, emptyPreview)
-  const [state, setState] = useSessionState(session, { busy: false, text: null as string | null, fileName: '', imageUrl: null as string | null, error: null as string | null })
+  const [state, setState] = useSessionState(session, { busy: false, text: null as string | null, fileName: '', imageUrl: null as string | null, error: null as string | null, accessBasis: null as PaidRecoveryAccessBasisV2 | null })
   useLayoutEffect(() => () => { previewActive.current?.abort(); previewActive.current = null; active.current?.abort(); active.current = null; buffer.current?.fill(0); buffer.current = null; if (image.current) URL.revokeObjectURL(image.current); image.current = null }, [session])
   const close = () => { active.current?.abort(); active.current = null; buffer.current?.fill(0); buffer.current = null
     if (image.current) URL.revokeObjectURL(image.current); image.current = null
-    setState({ busy: false, text: null, imageUrl: null, fileName: '', error: null }) }
+    setState({ busy: false, text: null, imageUrl: null, fileName: '', error: null, accessBasis: null }) }
   const open = async () => {
     const lease = session.capture()
     if (!canRead || !lease?.matches() || active.current || previewActive.current || !wallet.suiWallet || !wallet.suiGrpcClient) return
     const controller = new AbortController(); active.current = controller; lease.requests.add(controller)
-    buffer.current?.fill(0); buffer.current = null; if (image.current) URL.revokeObjectURL(image.current); image.current = null; setState({ busy: true, text: null, imageUrl: null, fileName: '', error: null })
+    buffer.current?.fill(0); buffer.current = null; if (image.current) URL.revokeObjectURL(image.current); image.current = null; setState({ busy: true, text: null, imageUrl: null, fileName: '', error: null, accessBasis: null })
     let received: Uint8Array | null = null
     try {
       const client = paidRecovery?.client ?? withPackageObjectIdentity(wallet.suiGrpcClient, controller.signal)
@@ -63,6 +69,7 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
       }
       const selected = { ...protectedOptions, client, target, soulId, recordIndex: index, viewerAddress, signal: controller.signal }
       let result: Awaited<ReturnType<typeof openNativePublicPaidContentV2>>
+      let accessBasis: PaidRecoveryAccessBasisV2 | null = null
       if (paidRecovery) {
         const { recoverNativePublicReadPaidContentV2 } = await import('@/lib/soulidity/commerce/native-public-read-paid-recovery-delivery-v2')
         controller.signal.throwIfAborted()
@@ -80,6 +87,7 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
             : '当前钱包已无可复用的读取资格。原付款记录仍可查询。')
         }
         result = delivery.delivery.content
+        accessBasis = delivery.accessBasis
       } else if (isOwner) result = await openNativePublicOwnerContentV2({ ...selected, expectedOwnerSourceKey })
       else if (paidPreview) {
         const delivery = await openReusableNativePublicReadContentV2({
@@ -98,10 +106,10 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
       const imageUrl = /^image\/(png|jpeg|gif|webp)$/.test(result.mimeType) && result.bytes.length <= 20 * 1024 * 1024
         ? URL.createObjectURL(new Blob([new Uint8Array(result.bytes)], { type: result.mimeType })) : null
       image.current = imageUrl
-      setState({ busy: false, text: imageUrl ? null : text, imageUrl, fileName: result.fileName, error: null })
+      setState({ busy: false, text: imageUrl ? null : text, imageUrl, fileName: result.fileName, error: null, accessBasis })
     } catch (error) {
       if (received && buffer.current === received) { received.fill(0); buffer.current = null }
-      if (active.current === controller && lease.matches() && !controller.signal.aborted) setState({ busy: false, text: null, imageUrl: null, fileName: '', error:
+      if (active.current === controller && lease.matches() && !controller.signal.aborted) setState({ busy: false, text: null, imageUrl: null, fileName: '', accessBasis: null, error:
         error instanceof Error && error.message.endsWith('_OVERVIEW_CHANGED_REFRESH') ? 'This Soul changed since the library was loaded. Refresh the content library before reading.'
           : error instanceof Error ? error.message : 'Content could not be opened.' })
     } finally { lease.requests.delete(controller); if (active.current === controller) active.current = null }
@@ -159,6 +167,7 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
     {state.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
     {(state.text !== null || state.imageUrl) && <section aria-label={`Opened content ${state.fileName}`} className="space-y-2">
       <div className="flex items-center justify-between gap-2"><span>{state.fileName}</span><Button variant="outline" onClick={close}>Close content</Button></div>
+      {state.accessBasis && <p>{recoveryAccessLabels[state.accessBasis]}</p>}
       {state.imageUrl && <img src={state.imageUrl} alt={state.fileName} className="max-h-[32rem] max-w-full object-contain" />}
       {state.text !== null && <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-card2 p-3 text-sm">{state.text}</pre>}
     </section>}

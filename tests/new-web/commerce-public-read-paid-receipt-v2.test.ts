@@ -1,6 +1,6 @@
 import { bcs } from '@mysten/sui/bcs'
 import { SoulPublicKioskBcs, KioskItemFieldBcs, KIOSK_ITEM_FIELD_TYPE, deriveKioskItemFieldId } from '@soulidity/sdk'
-import { deriveDynamicFieldID, toBase64 } from '@mysten/sui/utils'
+import { deriveDynamicFieldID, toBase64, toHex } from '@mysten/sui/utils'
 import { TransactionDataBuilder } from '@mysten/sui/transactions'
 import { sha3_256 } from '@noble/hashes/sha3.js'
 import { CanonicalSoulBcs } from '../../web/lib/soulidity/canonical-native-workbench'
@@ -576,7 +576,8 @@ it.each(['wallet','abort'])('does not mask %s during current funds recovery as a
 async function recoveryDeliveryFixture(buyerOverride?:string,kindOverride=1){
  const {recoverNativePublicReadPaidContentV2}=await import('../../web/lib/soulidity/commerce/native-public-read-paid-recovery-delivery-v2')
  const x=await beneficiaryFundsFixture('',buyerOverride,kindOverride),p=x.params;let address:string|null=p.intent.buyer
- const current:any={format:'native-public-read-v2',buyer:p.intent.buyer,soulId:p.soulId,hostId:p.intent.host.objectId,stateId:x.stateId,ledgerId:p.ledgerId,kind:p.intent.kind,recordIndex:0,contentScope:'1',contentVersion:'0',namespace:'current-content',owner:aid(70),generation:'2',entryHash:'01'.repeat(32),decision:{action:'REUSE_ENTRY'},recordReference:{objectId:aid(6000),version:'1',digest:adigest(1)},hostReference:{objectId:p.intent.host.objectId,version:'10',digest:adigest(10)}}
+ const entry = await proveNativePublicReadPaidReceiptV2(p)
+ const current:any={format:'native-public-read-v2',buyer:p.intent.buyer,soulId:p.soulId,hostId:p.intent.host.objectId,stateId:x.stateId,ledgerId:p.ledgerId,kind:p.intent.kind,recordIndex:0,contentScope:'1',contentVersion:'0',namespace:'current-content',owner:aid(70),generation:'2',entryReference:entry.entryReference,entryHash:toHex(entry.receipt.entry_hash),decision:{action:'REUSE_ENTRY'},recordReference:{objectId:aid(6000),version:'1',digest:adigest(1)},hostReference:{objectId:p.intent.host.objectId,version:'10',digest:adigest(10)}}
  const input:any={history:{...p,packet:{...p.packet,phase:'SIGNED',signature:'synthetic'}},delivery:{qualification:{format:'native-public-read-v2',client:p.client,target:{native:p.native,content:p.content,chainIdentifier:'35834a8a',registryId:p.intent.registry.objectId,configId:p.intent.config.objectId},economics:{},soulId:p.soulId,buyer:p.intent.buyer,kind:p.intent.kind,recordIndex:0,requiredScope:1n,signal:p.signal},protected:{sealConfig:{},getAddress:()=>address}}}
  const bytes=new Uint8Array([1,2,3]),read=vi.fn(async()=>structuredClone(current)),openPaid=vi.fn(async()=>({bytes,fileName:'content',mimeType:'text/plain'})),openOwner=vi.fn(async()=>({bytes,fileName:'content',mimeType:'text/plain'}))
  const deps:any={read,openPaid,openOwner}
@@ -612,7 +613,7 @@ it('zeros returned plaintext when final current binding changes after protected 
 })
 it('keeps current owner reuse on the owner opener after original paid recovery',async()=>{
  const x=await recoveryDeliveryFixture();x.current.decision.action='REUSE_OWNER';x.current.owner=x.current.buyer;x.current.entryHash=null
- expect(await x.run()).toMatchObject({status:'ORIGINAL_SUBSCRIPTION_CONTENT_OPENED',delivery:{accessPath:'REUSE_OWNER'}});expect(x.openOwner).toHaveBeenCalledTimes(1);expect(x.openPaid).not.toHaveBeenCalled()
+ expect(await x.run()).toMatchObject({status:'ORIGINAL_SUBSCRIPTION_CONTENT_OPENED',accessBasis:'CURRENT_OWNER',delivery:{accessPath:'REUSE_OWNER'}});expect(x.openOwner).toHaveBeenCalledTimes(1);expect(x.openPaid).not.toHaveBeenCalled()
 })
 it.each(['MISSING','PENDING','FAILED'])('does not open for an original transaction in %s even when current access might exist',async status=>{
  const x=await recoveryDeliveryFixture();x.deps.history=vi.fn(async()=>({status}))
