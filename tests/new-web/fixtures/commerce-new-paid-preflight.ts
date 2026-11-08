@@ -54,11 +54,13 @@ async function purchasePreparationFixture(variant='',buyerOverride?:string){
 }
 
 export async function completePreflightFixture(variant='',buyerOverride?:string){
- const x=await purchasePreparationFixture('',buyerOverride),client=x.client,expected=x.input.reviewed,offer=expected.offer!,content=x.params.target.content!.originalPackageId
+ const x=await purchasePreparationFixture('',buyerOverride),client=x.client,content=x.params.target.content!.originalPackageId
  client.ledgerService.getServiceInfo=vi.fn(async()=>({response:{chainId:MAINNET_GENESIS_DIGEST}}))
  client.transactionExecutionService={simulateTransaction:vi.fn(async(request:any)=>{
   expect(request.checks).toBe(0);expect(request.doGasSelection).toBe(false)
-  const bytes=request.transaction.bcs.value as Uint8Array,tx=bcs.TransactionData.parse(bytes).V1!,digest=TransactionDataBuilder.getDigestFromBytes(bytes),version='11',pool:any[]=[],changes:any[]=[]
+  const bytes=request.transaction.bcs.value as Uint8Array,tx=bcs.TransactionData.parse(bytes).V1!,digest=TransactionDataBuilder.getDigestFromBytes(bytes),pool:any[]=[],changes:any[]=[]
+  const expected=x.input.reviewed,offer=expected.offer!
+  const version=String(Math.max(...[...x.f.rows.values()].map(row=>Number(row.version)))+1)
   const project=(id:string,object:any)=>{const raw=bcs.Object.serialize(object).toBytes(),move=object.data.Move,owner=object.owner
    return {objectId:id,version:BigInt(move.version),digest:activityHash('Object',raw),bcs:{value:raw},contents:{value:move.contents},objectType:historicalMoveObjectType(move.type),previousTransaction:object.previousTransaction,
     owner:owner.AddressOwner?{kind:1,address:owner.AddressOwner}:owner.ObjectOwner?{kind:2,address:owner.ObjectOwner}:{kind:3,version:BigInt(owner.Shared.initialSharedVersion)}}}
@@ -69,23 +71,30 @@ export async function completePreflightFixture(variant='',buyerOverride?:string)
   const body=(id:string)=>bcs.Object.parse(x.f.rows.get(id).bcs.value).data.Move!.contents
   write(x.host.id,`${x.f.nativeId}::birth::PublicReadHostV2`,body(x.host.id),{Shared:{initialSharedVersion:'5'}})
   const paidOwner=deriveDynamicFieldID(x.f.state.id,`0x2::dynamic_object_field::Wrapper<${x.f.nativeId}::birth::PaidKey>`,new Uint8Array([0]))
-  write(x.ledger.id,`${content}::paid_access::Ledger`,NativeInitialPaidBcs.serialize({...x.ledger,revision:4,entries:{...x.ledger.entries,size:1},attempts:{...x.ledger.attempts,size:1}}).toBytes(),{ObjectOwner:paidOwner})
-  const nextConfig=structuredClone(x.cfg);nextConfig.income.funds='3';nextConfig.income.collected='3';nextConfig.income.revision='1'
+  const ledger=NativeInitialPaidBcs.parse(body(x.ledger.id)),revision=String(BigInt(ledger.revision)+1n)
+  const previousEntry=x.f.rows.has(x.entryId)?NativePaidEntryFieldBcs.parse(body(x.entryId)).value:null
+  write(x.ledger.id,`${content}::paid_access::Ledger`,NativeInitialPaidBcs.serialize({...ledger,revision,
+   entries:{...ledger.entries,size:BigInt(ledger.entries.size)+(previousEntry?0n:1n)},attempts:{...ledger.attempts,size:BigInt(ledger.attempts.size)+1n}}).toBytes(),{ObjectOwner:paidOwner})
+  const nextConfig=EconomicsConfigBcs.parse(body(x.cfg.id))
+  nextConfig.income.funds=String(BigInt(nextConfig.income.funds)+3n);nextConfig.income.collected=String(BigInt(nextConfig.income.collected)+3n);nextConfig.income.revision=String(BigInt(nextConfig.income.revision)+1n)
   write(x.cfg.id,`${x.params.economics.foundation.originalPackageId}::economics::Config<0x2::sui::SUI>`,EconomicsConfigBcs.serialize(nextConfig).toBytes(),{Shared:{initialSharedVersion:'1'}})
-  const entry={issuer:x.owner,generation:'2',scope:'1',expiry:'200',revision:'4'},buyerKey={kind:x.record.kind,buyer:x.buyer}
-  write(x.entryId,`0x2::dynamic_field::Field<${content}::paid_access::BuyerKey,${content}::paid_access::Entry>`,NativePaidEntryFieldBcs.serialize({id:x.entryId,name:buyerKey,value:entry}).toBytes(),{ObjectOwner:x.ledger.entries.id},true)
+  const clock=bcs.struct('Clock',{id:bcs.Address,timestamp_ms:bcs.u64()}).parse(body(aid(6)))
+  const now=BigInt(clock.timestamp_ms),previousExpiry=BigInt(previousEntry?.expiry??'0')
+  const entry={issuer:x.owner,generation:'2',scope:'1',expiry:String((previousExpiry>now?previousExpiry:now)+100n),revision},buyerKey={kind:x.record.kind,buyer:x.buyer}
+  write(x.entryId,`0x2::dynamic_field::Field<${content}::paid_access::BuyerKey,${content}::paid_access::Entry>`,NativePaidEntryFieldBcs.serialize({id:x.entryId,name:buyerKey,value:entry}).toBytes(),{ObjectOwner:x.ledger.entries.id},!previousEntry)
   const ptb=tx.kind.ProgrammableTransaction!,attemptArg=ptb.commands[1].MoveCall!.arguments[9]
   if(attemptArg.$kind!=='Input')throw Error('FIXTURE_ATTEMPT_INPUT')
   const attempt=bcs.byteVector().parse(fromBase64(ptb.inputs[attemptArg.Input].Pure!.bytes)),key={buyer:x.buyer,attempt},attemptId=deriveDynamicFieldID(x.ledger.attempts.id,`${content}::paid_access::AttemptKey`,NativePaidAttemptKeyBcs.serialize(key).toBytes())
   const receipt={kind:x.record.kind,quote:expected.quote!.hash,entry_hash:sha256(PaidContentEntryBcs.serialize(entry).toBytes()),price:offer.price,total:'104',platform_fee:'3',fee_revision:x.cfg.revision,platform_recipient:x.cfg.recipient,beneficiary:x.owner}
   write(attemptId,`0x2::dynamic_field::Field<${content}::paid_access::AttemptKey,${content}::paid_access::Receipt>`,NativePaidAttemptFieldBcs.serialize({id:attemptId,name:key,value:receipt}).toBytes(),{ObjectOwner:x.ledger.attempts.id},true)
   const Coin=bcs.struct('Coin',{id:bcs.Address,balance:bcs.u64()}),coinType='0x2::coin::Coin<0x2::sui::SUI>'
-  write(x.input.paymentCoin.objectId,coinType,Coin.serialize({id:x.input.paymentCoin.objectId,balance:variant==='debit'?897:896}).toBytes(),{AddressOwner:x.buyer})
-  write(aid(8810),coinType,Coin.serialize({id:aid(8810),balance:101}).toBytes(),{AddressOwner:x.owner},true)
-  const gasIndex=changes.length;write(x.input.gas.coins[0].objectId,coinType,Coin.serialize({id:x.input.gas.coins[0].objectId,balance:98}).toBytes(),{AddressOwner:x.buyer})
+  write(x.input.paymentCoin.objectId,coinType,Coin.serialize({id:x.input.paymentCoin.objectId,balance:BigInt(Coin.parse(body(x.input.paymentCoin.objectId)).balance)-(variant==='debit'?103n:104n)}).toBytes(),{AddressOwner:x.buyer})
+  const payout=aid(8810+Number(version)-11)
+  write(payout,coinType,Coin.serialize({id:payout,balance:101}).toBytes(),{AddressOwner:x.owner},true)
+  const gasIndex=changes.length;write(x.input.gas.coins[0].objectId,coinType,Coin.serialize({id:x.input.gas.coins[0].objectId,balance:BigInt(Coin.parse(body(x.input.gas.coins[0].objectId)).balance)-2n}).toBytes(),{AddressOwner:x.buyer})
   const readonly=[x.params.target.registryId,x.f.kiosk!.id,aid(6)].map(id=>{const row=before(id);return [id,{ReadOnlyRoot:[String(row.version),row.digest]}]})
   const Events=bcs.vector(bcs.struct('Event',{package_id:bcs.Address,transaction_module:bcs.string(),sender:bcs.Address,type_:bcs.StructTag,contents:bcs.byteVector()}))
-  const eventBytes=Events.serialize([{package_id:x.params.target.content!.callablePackageId,transaction_module:'paid_access',sender:x.buyer,type_:{address:content,module:'paid_access',name:'Updated',typeParams:[]},contents:NativePaidUpdatedBcs.serialize({root:x.params.soulId,kind:x.record.kind,buyer:x.buyer,revision:4,operation:2,entry}).toBytes()},
+  const eventBytes=Events.serialize([{package_id:x.params.target.content!.callablePackageId,transaction_module:'paid_access',sender:x.buyer,type_:{address:content,module:'paid_access',name:'Updated',typeParams:[]},contents:NativePaidUpdatedBcs.serialize({root:x.params.soulId,kind:x.record.kind,buyer:x.buyer,revision,operation:2,entry}).toBytes()},
    {package_id:x.params.economics.foundation.callablePackageId,transaction_module:'economics',sender:x.buyer,type_:{address:x.params.economics.foundation.originalPackageId,module:'economics',name:'Paid',typeParams:[]},contents:NativeSubscriptionPaidBcs.serialize({subject:x.params.soulId,attempt,payer:x.buyer,gross:104,fee:3,beneficiary:x.owner}).toBytes()}]).toBytes()
   const effects=bcs.TransactionEffects.serialize({V2:{transactionDigest:digest,status:{Success:true},executedEpoch:5,gasUsed:{computationCost:1,storageCost:1,storageRebate:0,nonRefundableStorageFee:0},lamportVersion:version,changedObjects:changes,unchangedConsensusObjects:readonly,gasObjectIndex:gasIndex,eventsDigest:activityHash('TransactionEvents',eventBytes),dependencies:[],auxDataDigest:null}}).toBytes()
   return {response:{transaction:{digest,transaction:{bcs:{value:bytes}},effects:{bcs:{value:effects},transactionDigest:digest,status:{success:true}},events:{bcs:{value:eventBytes}},objects:{objects:pool},signatures:[]},commandOutputs:[]}}

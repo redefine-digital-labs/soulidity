@@ -6,6 +6,7 @@ import PurchaseRecoveryPage from '../../web/app/souls/[id]/purchase/recovery/pag
 import {NativePublicReadPaidOriginalRecoveryV2} from '../../web/components/commerce/native-public-read-paid-original-recovery'
 import {createNativePublicReadPaidHostPreflightV2} from '../../web/lib/soulidity/native-public-read-paid-host-v2'
 import {browserNativePublicReadPaidJournalV2,nativePublicReadPaidKeyV2,nativePublicReadPaidRecordFromOriginalV2} from '../../web/lib/soulidity/native-public-read-paid-journal-v2'
+import {cancelNativePublicReadPaidOriginalV2} from '../../web/lib/soulidity/native-public-read-paid-original-recovery-v2'
 import {completePreflightFixture} from './fixtures/commerce-new-paid-preflight'
 import {purchaseRecoveryFixture} from './fixtures/commerce-purchase-recovery-original'
 const transport=vi.hoisted(()=>({client:null as any,make:vi.fn()}))
@@ -62,4 +63,26 @@ it('a stopped late original query never replaces the cold-discovered original or
  x.client.ledgerService.getTransaction.mockImplementation(async()=>{entered();await new Promise<void>(r=>finish=r);throw {code:'NOT_FOUND'}})
  await act(async()=>root.render(<NativePublicReadPaidOriginalRecoveryV2 soulId={x.params.soulId}/>));await wait('本机保存阶段：PREPARED');await click('查询本机原操作历史');await began
  await click('停止本次原记录操作');await act(async()=>{finish();await new Promise(r=>setTimeout(r,30))});expect(container.textContent).not.toContain('付款结果仍未知');expect(exported()).toBe(x.failure.recovery.text)
+})
+
+it('cold recovery selects, exports, and queries an archived original by its digest alongside the current head', async () => {
+ const x=await fixture(),signal=new AbortController().signal
+ await cancelNativePublicReadPaidOriginalV2({record:x.record,client:x.client,signal})
+ const error=await createNativePublicReadPaidHostPreflightV2()({...x.input,attempt:new Uint8Array(32).fill(2)}).catch(error=>error)
+ const current=(await browserNativePublicReadPaidJournalV2().read(x.key))!
+ expect(error.recovery.text).toBe(current.plan.originalText)
+ Object.defineProperty(navigator,'locks',{configurable:true,value:undefined})
+ await act(async()=>root.render(<NativePublicReadPaidOriginalRecoveryV2 soulId={x.params.soulId}/>))
+ await wait('本机保存阶段：PREPARED')
+ expect(exported()).toBe(current.plan.originalText)
+ const select=container.querySelector('select')!,options=[...select.options]
+ expect(options).toHaveLength(2)
+ expect(new Set(options.map(option=>option.value)).size).toBe(2)
+ const originalOption=options.find(option=>option.textContent?.includes(x.record.packet.digest))!
+ await act(async()=>{select.value=originalOption.value;select.dispatchEvent(new Event('change',{bubbles:true}))})
+ await wait('本机保存阶段：CANCELLED')
+ expect(exported()).toBe(x.record.plan.originalText)
+ await click('查询本机原操作历史');await wait('付款结果仍未知')
+ expect(x.client.ledgerService.getTransaction).toHaveBeenLastCalledWith(expect.objectContaining({digest:x.record.packet.digest}),expect.anything())
+ expect(exported()).toBe(x.record.plan.originalText)
 })

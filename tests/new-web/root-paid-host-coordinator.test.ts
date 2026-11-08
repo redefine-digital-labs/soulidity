@@ -180,12 +180,12 @@ it('cancelled packet cannot be resurrected with the same attempt or silently rep
  await expect(createNativePublicReadPaidHostPreflightV2({journal})({...x.input,attempt:new Uint8Array(32).fill(2)})).rejects.toThrow('ARCHIVE_QUOTA')
  expect(window.localStorage.getItem(x.key)).toBe(before);expect(x.client.transactionExecutionService.simulateTransaction).toHaveBeenCalledOnce()
 })
-it('actual V2 partial subscription receipt cannot release a fresh request or promote its journal phase',async()=>{
- const x=await fixture(),old=await purchaseRecoveryFixture('v2'),record=await nativePublicReadPaidRecordFromOriginalV2(old.text,old.soulId),key=nativePublicReadPaidKeyV2(record.plan)
+it('contradictory V2 payout cannot release a fresh request or promote its journal phase',async()=>{
+ const x=await fixture(),old=await purchaseRecoveryFixture('v2','money-payout'),record=await nativePublicReadPaidRecordFromOriginalV2(old.text,old.soulId),key=nativePublicReadPaidKeyV2(record.plan)
  await x.journal.exclusive(key,()=>x.journal.write(key,record))
  const client={...x.client,ledgerService:{...x.client.ledgerService,...old.client.ledgerService}},q={...x.input.qualification,client,soulId:record.plan.soulId,buyer:record.plan.author,economics:{...x.input.qualification.economics,chainIdentifier:record.plan.chainIdentifier}}
  // Prior original governs recovery even when a later selection is supplied.
  const error=await x.host({...x.input,qualification:q,getBuyerAddress:()=>record.plan.author}).catch(e=>e)
- expect(error).toBeInstanceOf(NativePublicReadPaidHostRecoveryErrorV2);expect(error.message).toContain('ORIGINAL_RECOVERY_REQUIRED');expect(error.recovery.text).toBe(old.text)
+ expect(error).toBeInstanceOf(NativePublicReadPaidHostRecoveryErrorV2);expect(error.message).toContain('PUBLIC_PAID_V2_MONEY_BENEFICIARY');expect(error.recovery.text).toBe(old.text)
  expect((await x.journal.read(key))?.packet.phase).toBe('PREPARED');expect(x.client.transactionExecutionService.simulateTransaction).not.toHaveBeenCalled();expect(x.client.core.simulateTransaction).not.toHaveBeenCalled()
 })

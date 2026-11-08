@@ -7,7 +7,7 @@ import {browserSoulAccessStore,type SoulAccessStore} from './soul-access-store'
 import {createSoulAccessAdapter,parseSoulAccessRecord} from './soul-access-operation'
 import {soulAccessKey} from './soul-access-plan'
 import {browserNativePublicReadPaidJournalV2,nativePublicReadPaidKeyV2,nativePublicReadPaidRecordFromOriginalV2,parseNativePublicReadPaidRecordV2,
- nativePublicReadPaidHeadCanClearV2,queryNativePublicReadPaidRecordV2,discoverNativePublicReadPaidAssetV2,type NativePublicReadPaidJournalV2} from './native-public-read-paid-journal-v2'
+ nativePublicReadPaidHeadCanClearV2,nativePublicReadPaidSettlementMatchesV2,queryNativePublicReadPaidRecordV2,discoverNativePublicReadPaidAssetV2,type NativePublicReadPaidJournalV2} from './native-public-read-paid-journal-v2'
 import {preflightNewNativePublicReadPaidPurchaseV2} from './commerce/native-public-read-paid-preflight-v2'
 import type {NativePublicReadPaidHostPreflightV2,NativePublicReadPaidHostRequestV2} from './commerce/native-public-read-paid-host-preflight-v2'
 import {nativePublicReadPaidReviewIdentityV2} from './commerce/native-public-read-paid-read-v2'
@@ -79,10 +79,11 @@ export function createNativePublicReadPaidHostPreflightV2(options:{legacyStore?:
      try{
       const result=await queryNativePublicReadPaidRecordV2(existing,q.client,q.signal);guard()
       check(nativePublicReadPaidHeadCanClearV2(existing,result),'ORIGINAL_RECOVERY_REQUIRED')
-      if(result.status==='FAILED'&&existing.packet.phase!=='FAILED'){
-       const failed=await parseNativePublicReadPaidRecordV2({...existing,packet:{...existing.packet,phase:'FAILED'}})
-       await journal.write(key,failed);const readback=await journal.read(key)
-       check(publicMutationCanonical(readback)===publicMutationCanonical(failed),'PERSISTENCE_FAILED');existing=failed
+      const phase=result.status==='FAILED'?'FAILED':nativePublicReadPaidSettlementMatchesV2(existing,result)?'SUCCEEDED':existing.packet.phase
+      if(phase!==existing.packet.phase){
+       const terminal=await parseNativePublicReadPaidRecordV2({...existing,packet:{...existing.packet,phase}})
+       await journal.write(key,terminal);const readback=await journal.read(key)
+       check(publicMutationCanonical(readback)===publicMutationCanonical(terminal),'PERSISTENCE_FAILED');existing=terminal
       }
      }catch(error){throw new NativePublicReadPaidHostRecoveryErrorV2(error instanceof Error?error.message:'ORIGINAL_QUERY_FAILED',recovery,{cause:error})}
     }
@@ -116,10 +117,11 @@ export function createNativePublicReadPaidHostPreflightV2(options:{legacyStore?:
       const text=JSON.stringify(original),record=await nativePublicReadPaidRecordFromOriginalV2(text,scope.soulId)
       check(nativePublicReadPaidKeyV2(record.plan)===key,'PREPARATION_SCOPE')
       retention.current={format:'native-public-read-v2',text,digest:record.packet.digest,soulId:scope.soulId,durability:'UNCONFIRMED'}
-      if(existing){
-       check(existing.packet.digest!==record.packet.digest,'PREVIOUS_PACKET_REUSE')
-       const previousAttempt=JSON.parse(existing.plan.originalText).intent.attempt
-       check(publicMutationCanonical(previousAttempt)!==publicMutationCanonical(original.intent.attempt),'PREVIOUS_ATTEMPT_REUSE')
+      const previous=await journal.history(key),attempt=publicMutationCanonical(original.intent.attempt)
+      if(existing)previous.unshift(existing)
+      for(const prior of previous){
+       check(prior.packet.digest!==record.packet.digest,'PREVIOUS_PACKET_REUSE')
+       check(publicMutationCanonical(JSON.parse(prior.plan.originalText).intent.attempt)!==attempt,'PREVIOUS_ATTEMPT_REUSE')
       }
       guard();await journal.write(key,record)
       const readback=await journal.read(key)

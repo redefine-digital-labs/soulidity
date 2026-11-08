@@ -1,8 +1,8 @@
 'use client'
 import React,{useEffect,useRef,useState} from 'react'
 import type {SuiGrpcClient} from '@mysten/sui/grpc'
-import {nativePublicReadPaidKeyV2,type NativePublicReadPaidRecordV2} from '../../lib/soulidity/native-public-read-paid-journal-v2'
-import {discoverNativePublicReadPaidOriginalsV2,queryNativePublicReadPaidOriginalV2,cancelNativePublicReadPaidOriginalV2} from '../../lib/soulidity/native-public-read-paid-original-recovery-v2'
+import type {NativePublicReadPaidRecordV2} from '../../lib/soulidity/native-public-read-paid-journal-v2'
+import {nativePublicReadPaidOriginalIdV2,discoverNativePublicReadPaidOriginalsV2,queryNativePublicReadPaidOriginalV2,cancelNativePublicReadPaidOriginalV2} from '../../lib/soulidity/native-public-read-paid-original-recovery-v2'
 import {createNativePublicReadPaidOriginalClientV2} from '../../lib/soulidity/native-public-read-paid-original-client-v2'
 import {publicMutationCanonical} from '../../lib/sui/public-mutation-journal'
 import {NativePublicReadPaidOriginalOutcomeV2} from './native-public-read-paid-original-outcome-v2'
@@ -17,7 +17,7 @@ export function NativePublicReadPaidOriginalRecoveryV2({soulId,chainIdentifier='
  const [actor,setActor]=useState(''),[locks,setLocks]=useState(false)
  const empty=():View=>({scope,client:createReadOnlyClient,records:[],selected:null,result:null,reader:null,pending:false,stopped:false,error:null})
  const [state,setState]=useState<View>(empty),view=state.scope===scope&&state.client===createReadOnlyClient?state:empty()
- const record=view.records.find(r=>nativePublicReadPaidKeyV2(r.plan)===view.selected)??null
+ const record=view.records.find(r=>nativePublicReadPaidOriginalIdV2(r)===view.selected)??null
  const sameSource=()=>current.current.scope===scope&&current.current.client===createReadOnlyClient
  const valid=(id:number)=>serial.current===id&&sameSource()
  // A pre-enqueue check alone cannot revoke an already queued React update.
@@ -26,7 +26,7 @@ export function NativePublicReadPaidOriginalRecoveryV2({soulId,chainIdentifier='
   setState(previous=>{
    if(!valid(id)||signal?.aborted)return previous
    const base=previous.scope===scope&&previous.client===createReadOnlyClient?previous:empty()
-   if(selected){const visible=base.records.find(r=>nativePublicReadPaidKeyV2(r.plan)===base.selected)
+   if(selected){const visible=base.records.find(r=>nativePublicReadPaidOriginalIdV2(r)===base.selected)
     if(!visible||publicMutationCanonical(visible)!==publicMutationCanonical(selected))return previous}
    return update(base)
   })
@@ -35,7 +35,7 @@ export function NativePublicReadPaidOriginalRecoveryV2({soulId,chainIdentifier='
  async function discover(author:string|null){
   if(!sameSource())return
   const id=++serial.current;active.current?.abort();busy.current=true;publish(id,()=>({...empty(),pending:true}))
-  try{const records=await discoverNativePublicReadPaidOriginalsV2({chainIdentifier,soulId,author});publish(id,()=>({...empty(),records,selected:records[0]?nativePublicReadPaidKeyV2(records[0].plan):null}))}
+  try{const records=await discoverNativePublicReadPaidOriginalsV2({chainIdentifier,soulId,author});publish(id,()=>({...empty(),records,selected:records[0]?nativePublicReadPaidOriginalIdV2(records[0]):null}))}
   catch(error){publish(id,()=>({...empty(),error:error instanceof Error?error.message:'本机原记录无法核对；请保留已有记录。'}))}
   finally{if(valid(id))busy.current=false}
  }
@@ -48,7 +48,7 @@ export function NativePublicReadPaidOriginalRecoveryV2({soulId,chainIdentifier='
    const client=createReadOnlyClient(controller.signal)
    if(cancel){
     const result=await cancelNativePublicReadPaidOriginalV2({record:selected,client,signal:controller.signal})
-    publish(id,previous=>({...previous,pending:false,result:result.original,records:previous.records.map(r=>nativePublicReadPaidKeyV2(r.plan)===nativePublicReadPaidKeyV2(result.record.plan)?result.record:r)}),controller.signal,selected)
+    publish(id,previous=>({...previous,pending:false,result:result.original,records:previous.records.map(r=>nativePublicReadPaidOriginalIdV2(r)===nativePublicReadPaidOriginalIdV2(result.record)?result.record:r)}),controller.signal,selected)
    }else{
     const result=await queryNativePublicReadPaidOriginalV2({record:selected,client,signal:controller.signal})
     publish(id,previous=>({...previous,pending:false,result,reader:client}),controller.signal,selected)
@@ -60,14 +60,14 @@ export function NativePublicReadPaidOriginalRecoveryV2({soulId,chainIdentifier='
  const status=view.result?.status
  return <section aria-label="本机 V2 原购买记录" className="space-y-3 rounded-xl border p-4">
   <h2 className="font-semibold">本机原购买记录</h2>
-  <p>无需原文件、连接钱包或当前购买配置。这里只读取本机已保留的 V2 原操作；跨设备接续请先下载原文件。</p>
+  <p>无需原文件、连接钱包或当前购买配置。本页可读取本机保留的当前和已归档 V2 原操作。跨设备接续请先下载原文件。</p>
   <label>原操作地址（可留空）<input value={actor} onChange={e=>setActor(e.currentTarget.value)} placeholder="0x…" className="block w-full rounded border p-2"/></label>
   <button type="button" disabled={view.pending} onClick={()=>void discover(actor.trim()||null)}>重新发现本机原记录</button>
   {view.error&&<p role="alert">{view.error}。请保留原记录；本页不会重建付款或删除记录。</p>}
   {!view.pending&&!view.error&&!view.records.length&&<p>本机未发现本页 Soul 的已核验 V2 原记录。可继续使用下面的原文件导入；这不表示原付款未发生。</p>}
-  {view.records.length>0&&<label>所选原操作<select value={view.selected??''} onChange={e=>select(e.currentTarget.value)}>{view.records.map(r=><option key={nativePublicReadPaidKeyV2(r.plan)} value={nativePublicReadPaidKeyV2(r.plan)}>{r.plan.author} · {r.packet.digest}</option>)}</select></label>}
+  {view.records.length>0&&<label>所选原操作<select value={view.selected??''} onChange={e=>select(e.currentTarget.value)}>{view.records.map(r=><option key={nativePublicReadPaidOriginalIdV2(r)} value={nativePublicReadPaidOriginalIdV2(r)}>{r.plan.author} · {r.packet.digest}</option>)}</select></label>}
   {record&&<article aria-label="已核验本机原操作" className="space-y-2 break-all">
-   <p>原操作地址：{record.plan.author}</p><p>原交易：{record.packet.digest}</p><p>本机保存阶段：{record.packet.phase}；保存的阶段不证明链上成功或签名有效。</p>
+   <p>原操作地址：{record.plan.author}</p><p>原交易：{record.packet.digest}</p><p>本机保存阶段：{record.packet.phase}。请查询原摘要核验链上结果和实收。{record.packet.phase==='SUCCEEDED'&&'本机阶段记录付款结算。当前内容权限由买家钱包单独核验。'}</p>
    <a download={`purchase-${record.packet.digest}.json`} href={`data:application/json;charset=utf-8,${encodeURIComponent(record.plan.originalText)}`}>下载本机保留的原购买 JSON</a>
    <div className="flex gap-2"><button type="button" disabled={view.pending} onClick={()=>void run(false)}>查询本机原操作历史</button><button type="button" disabled={view.pending||!locks||record.packet.phase!=='PREPARED'||record.packet.signature!==null} onClick={()=>void run(true)}>核对并取消本机未签名准备</button></div>
    <p>取消只保留本机 CANCELLED 阶段，不撤销链上交易；仅在原结果 MISSING、原记录仍完整且未进入签名时允许。不会生成新原包或自动重新付款。</p>

@@ -80,11 +80,22 @@ export async function queryNativePublicReadPaidRecordV2(input:NativePublicReadPa
  const result=await queryPurchaseRecoveryOriginal({text:record.plan.originalText,soulId:record.plan.soulId,client,signal})
  check(result.kind==='native-public-read-v2','QUERY_FORMAT');return result.history
 }
-/** Partial success is never promoted to operation SUCCEEDED. The only clear
- * exit without full success proof is actual FAILED or unsigned CANCELLED plus
- * original MISSING. Existing PREPARED+MISSING always requires recovery. */
-export function nativePublicReadPaidHeadCanClearV2(record:NativePublicReadPaidRecordV2,result:{status:string}){
- if(record.packet.phase==='SUCCEEDED'||record.packet.phase==='FAILED')check(result.status===record.packet.phase,'TERMINAL_RESULT_UNCONFIRMED')
- if(result.status==='FAILED')return true
- return record.packet.phase==='CANCELLED'&&record.packet.signature===null&&result.status==='MISSING'
+type PaidOriginalObservation = { status: string; checkpoint?: string; receipt?: {
+ transactionDigest: string; checkpoint: string; money?: { transactionDigest: string; buyer: string } | null
+} }
+
+/** Settlement terminates this payment packet. Content is opened separately
+ * under current access and Seal, including after a new head is prepared. */
+export function nativePublicReadPaidSettlementMatchesV2(record: NativePublicReadPaidRecordV2, result: PaidOriginalObservation) {
+ const receipt = result.receipt, digest = record.packet.digest
+ return result.status === 'SUBSCRIPTION_RECORDED' && typeof result.checkpoint === 'string'
+  && receipt?.checkpoint === result.checkpoint && receipt.transactionDigest === digest
+  && receipt.money?.transactionDigest === digest && receipt.money.buyer === record.plan.author
+}
+export function nativePublicReadPaidHeadCanClearV2(record: NativePublicReadPaidRecordV2, result: PaidOriginalObservation) {
+ const settled = nativePublicReadPaidSettlementMatchesV2(record, result)
+ if (record.packet.phase === 'SUCCEEDED') check(settled, 'TERMINAL_RESULT_UNCONFIRMED')
+ if (record.packet.phase === 'FAILED') check(result.status === 'FAILED', 'TERMINAL_RESULT_UNCONFIRMED')
+ return settled || result.status === 'FAILED'
+  || record.packet.phase === 'CANCELLED' && record.packet.signature === null && result.status === 'MISSING'
 }

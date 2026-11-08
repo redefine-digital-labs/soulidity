@@ -15,7 +15,7 @@ import { captureSameSoulMarketExecutionClient } from './same-soul-mutation-clien
 import { assertSameSoulForeignHeads, createBrowserSameSoulHeadPort } from './same-soul-mutation-heads'
 import { withSoulAccessAssetLock } from './soul-access-asset-lock'
 import { browserNativePublicReadPaidJournalV2, nativePublicReadPaidKeyV2, parseNativePublicReadPaidRecordV2,
-  queryNativePublicReadPaidRecordV2, type NativePublicReadPaidRecordV2 } from './native-public-read-paid-journal-v2'
+  nativePublicReadPaidSettlementMatchesV2, queryNativePublicReadPaidRecordV2, type NativePublicReadPaidRecordV2 } from './native-public-read-paid-journal-v2'
 import { NativePublicReadPaidHostRecoveryErrorV2, type NativePublicReadPaidRecoveryV2 } from './native-public-read-paid-host-v2'
 
 type Reviewed = Extract<Awaited<ReturnType<typeof reviewNativePublicReadPaidInputsV2>>, { status: 'PURCHASE_INPUTS_REVIEWED' }>
@@ -74,7 +74,10 @@ export function executeNativePublicReadPaidOriginalV2(input: {
     async function query() {
       const result = await queryNativePublicReadPaidRecordV2(record, client, signal)
       signal.throwIfAborted()
-      commerceCheck(record.packet.phase !== 'FAILED' || result.status === 'FAILED', 'PUBLIC_PAID_V2_EXECUTION_TERMINAL_CONTRADICTION')
+      const settled = nativePublicReadPaidSettlementMatchesV2(record, result)
+      commerceCheck((record.packet.phase !== 'FAILED' || result.status === 'FAILED')
+        && (record.packet.phase !== 'SUCCEEDED' || settled), 'PUBLIC_PAID_V2_EXECUTION_TERMINAL_CONTRADICTION')
+      if (settled && record.packet.phase !== 'SUCCEEDED') await save('SUCCEEDED')
       if (result.status === 'FAILED' && record.packet.phase !== 'FAILED') await save('FAILED')
       return result
     }

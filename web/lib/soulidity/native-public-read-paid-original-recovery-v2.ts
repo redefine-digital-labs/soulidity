@@ -12,15 +12,28 @@ function scope(input:NativePublicReadPaidOriginalScopeV2){
  check(/^[0-9a-f]{8}$/.test(saved.chainIdentifier)&&commerceId(saved.soulId)&&(saved.author===null||commerceId(saved.author)),'SCOPE')
  return saved
 }
-/** Public original bytes only. Neither paid release/config nor wallet state is
- * an input. Same canonical parser, key and readback assertion as the writer. */
+export function nativePublicReadPaidOriginalIdV2(record: NativePublicReadPaidRecordV2) {
+ return `${nativePublicReadPaidKeyV2(record.plan)}:${record.packet.digest}`
+}
+
+/** Discover intact originals from both the active head and its archive. */
 export async function discoverNativePublicReadPaidOriginalsV2(input:NativePublicReadPaidOriginalScopeV2,reader:NativePublicReadPaidOriginalReaderV2=browserNativePublicReadPaidOriginalReaderV2()){
  const selected=scope(input)
- if(selected.author!==null){
-  const record=await reader.read(nativePublicReadPaidKeyV2({...selected,author:selected.author}));return record?[record]:[]
- }
  const prefix=NATIVE_PUBLIC_READ_PAID_PREFIX_V2+selected.chainIdentifier+':'+selected.soulId+':'
- return reader.heads(key=>key.startsWith(prefix))
+ const keys=selected.author===null
+  ? (await reader.heads(key=>key.startsWith(prefix))).map(record=>nativePublicReadPaidKeyV2(record.plan))
+  : [nativePublicReadPaidKeyV2({...selected,author:selected.author})]
+ const result=new Map<string,NativePublicReadPaidRecordV2>()
+ for(const key of keys){
+  const archived=await reader.history(key), head=await reader.read(key)
+  if(head)result.set(nativePublicReadPaidOriginalIdV2(head),head)
+  for(const record of archived){
+   const id=nativePublicReadPaidOriginalIdV2(record), existing=result.get(id)
+   check(!existing||publicMutationCanonical(existing)===publicMutationCanonical(record),'ARCHIVE_CONFLICT')
+   result.set(id,record)
+  }
+ }
+ return [...result.values()]
 }
 function originalClient(source:SuiGrpcClient):SuiGrpcClient{
  const service=source.ledgerService
