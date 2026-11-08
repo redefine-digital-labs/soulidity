@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { EconomicsConfigBcs } from '../../web/lib/soulidity/commerce/economics-bcs'
 import { incomeLedgerWitness, relateIncomeLedgerWitness } from '../../web/lib/soulidity/commerce/income-ledger-witness'
-import { reconcilePaidIncomeOriginals } from '../../web/lib/soulidity/commerce/paid-income-ledger-reconciliation'
+import { confirmPaidIncomeOriginals, readCurrentPaidIncomeLedger, reconcilePaidIncomeOriginals } from '../../web/lib/soulidity/commerce/paid-income-ledger-reconciliation'
 import { adigest, aid } from './fixtures/activity-transaction-evidence'
 import { paidIncomeReconciliationFixture as fixture } from './fixtures/paid-income-ledger-reconciliation'
 
@@ -61,7 +61,7 @@ it('rejects same-version digest conflicts and regressions across authenticated r
   expect(() => relateIncomeLedgerWitness(witness, { ...witness, requestsTableId: aid(999) })).toThrow('INCOME_LEDGER_LINEAGE')
 })
 
-it('rejects a current Config read that predates the authenticated withdrawal output', async () => {
+it('keeps both authenticated receipts while rejecting a stale current Config reference', async () => {
   const f = await fixture()
   const read = f.client.ledgerService.getObject.getMockImplementation()!
   f.client.ledgerService.getObject.mockImplementation((request, options) => {
@@ -70,7 +70,43 @@ it('rejects a current Config read that predates the authenticated withdrawal out
     }
     return read(request, options)
   })
-  await expect(f.run()).rejects.toThrow('INCOME_LEDGER_CONTINUITY')
+  const result = await f.run()
+  expect(result).toMatchObject({ status: 'PAID_INCOME_CURRENT_UNVERIFIED', reason: 'CONFIG_REFERENCE_CONFLICT',
+    purchase: { transactionDigest: f.review.purchaseDigest }, withdrawal: { transactionDigest: f.review.withdrawalDigest } })
+  expect(result).not.toHaveProperty('current')
+  expect(result).not.toHaveProperty('withdrawalToCurrent')
+})
+
+it('returns exact historical results on a failed Config read and retries only the current ledger', async () => {
+  const f = await fixture()
+  const input = { purchaseText: f.purchaseText, withdrawalText: f.withdrawalText, soulId: f.review.soulId,
+    executionRegistry: f.executionRegistry, client: f.client as never, signal: new AbortController().signal }
+  const confirmed = await confirmPaidIncomeOriginals(input)
+  if (confirmed.status !== 'PAID_INCOME_ORIGINALS_CONFIRMED') throw Error(confirmed.status)
+  expect(f.client.core.getChainIdentifier).not.toHaveBeenCalled()
+  f.client.core.getChainIdentifier.mockRejectedValueOnce(Error('RPC unavailable'))
+  const result = await readCurrentPaidIncomeLedger({ ...input, confirmed })
+  expect(result).toMatchObject({ ...confirmed.evidence, status: 'PAID_INCOME_CURRENT_UNVERIFIED', reason: 'CONFIG_READ_FAILED' })
+  expect(result).not.toHaveProperty('current')
+  await expect(readCurrentPaidIncomeLedger({ ...input, confirmed })).resolves.toMatchObject({
+    status: 'PAID_INCOME_LEDGER_RECONCILED', current: { digest: f.current.digest },
+  })
+  expect(f.client.ledgerService.getTransaction.mock.calls.map(([request]) => request.digest)).toEqual([
+    f.review.purchaseDigest, f.review.withdrawalDigest,
+  ])
+})
+
+it('propagates cancellation of a current read independently of a read failure', async () => {
+  const f = await fixture(), controller = new AbortController()
+  const input = { purchaseText: f.purchaseText, withdrawalText: f.withdrawalText, soulId: f.review.soulId,
+    executionRegistry: f.executionRegistry, client: f.client as never, signal: controller.signal }
+  const confirmed = await confirmPaidIncomeOriginals(input)
+  if (confirmed.status !== 'PAID_INCOME_ORIGINALS_CONFIRMED') throw Error(confirmed.status)
+  f.client.core.getChainIdentifier.mockImplementationOnce(() => {
+    controller.abort()
+    return Promise.reject(Error('Transport closed'))
+  })
+  await expect(readCurrentPaidIncomeLedger({ ...input, confirmed })).rejects.toMatchObject({ name: 'AbortError' })
 })
 
 it('rejects a mismatched Foundation pin in the withdrawal original before reading either transaction', async () => {

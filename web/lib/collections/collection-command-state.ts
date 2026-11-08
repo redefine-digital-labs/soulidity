@@ -33,6 +33,33 @@ export async function collectionCommandChain(client: SuiGrpcClient, d: Collectio
   digest(chain); check(toHex(fromBase58(chain).subarray(0, 4)) === d.chainIdentifier, 'WRONG_CHAIN')
   return chain
 }
+export function collectionCommandReadSet(client: SuiGrpcClient, signal: AbortSignal) {
+  const ledger = client.ledgerService, batchGetObjects = ledger.batchGetObjects.bind(ledger)
+  const objects = new Map<string, CollectionCommandObject | null>()
+  async function read(objectId: string, optional = false) {
+    id(objectId)
+    const { response } = await profileReadStep(signal, () => batchGetObjects({ requests: [{ objectId }],
+      readMask: { paths: ['object_id', 'version', 'digest', 'owner', 'object_type', 'contents', 'previous_transaction', 'bcs'] } }, { abort: signal }))
+    check(response.objects.length === 1, 'INCOMPLETE_RESPONSE')
+    const r = response.objects[0].result
+    check(r.oneofKind === 'object' || optional && r.oneofKind === 'error' && r.error.code === 5, 'OBJECT_UNAVAILABLE')
+    const value = r.oneofKind === 'object' ? collectionCommandProjection(r.object) : null
+    if (value) check(value.objectId === objectId, 'OBJECT_RESPONSE_ID')
+    if (objects.has(objectId)) check(same(objects.get(objectId), value), 'READSET_CHANGED')
+    else objects.set(objectId, value)
+    return value
+  }
+  async function verify() {
+    for (const [objectId, value] of objects) await read(objectId, value === null)
+    signal.throwIfAborted()
+  }
+  return { objects, read, verify }
+}
+
+function contents(object: CollectionCommandObject | null) {
+  check(object, 'REQUIRED_OBJECT'); const move = collectionCommandRaw(object).data.Move; check(move, 'MOVE_REQUIRED'); return move.contents
+}
+
 /** The candidate listing ID is only a lookup hint. An inactive or mismatching
  * candidate fails; this reader never silently selects a different listing. */
 export async function prepareCollectionCommandPlan(params: {
@@ -44,23 +71,7 @@ export async function prepareCollectionCommandPlan(params: {
   id(author); id(request.collectionId)
   const target = parseCollectionCommandTarget(params.target), signal = collectionCommandSignal(params.signal), t = collectionCommandTypes(target)
   await collectionCommandChain(params.client, target, signal)
-  const objects = new Map<string, CollectionCommandObject | null>()
-  async function read(objectId: string, optional = false) {
-    id(objectId)
-    const { response } = await profileReadStep(signal, () => params.client.ledgerService.batchGetObjects({ requests: [{ objectId }],
-      readMask: { paths: ['object_id', 'version', 'digest', 'owner', 'object_type', 'contents', 'previous_transaction', 'bcs'] } }, { abort: signal }))
-    check(response.objects.length === 1, 'INCOMPLETE_RESPONSE')
-    const r = response.objects[0].result
-    check(r.oneofKind === 'object' || optional && r.oneofKind === 'error' && r.error.code === 5, 'OBJECT_UNAVAILABLE')
-    const value = r.oneofKind === 'object' ? collectionCommandProjection(r.object) : null
-    if (value) check(value.objectId === objectId, 'OBJECT_RESPONSE_ID')
-    if (objects.has(objectId)) check(same(objects.get(objectId), value), 'READSET_CHANGED')
-    else objects.set(objectId, value)
-    return value
-  }
-  function contents(object: CollectionCommandObject | null) {
-    check(object, 'REQUIRED_OBJECT'); const move = collectionCommandRaw(object).data.Move; check(move, 'MOVE_REQUIRED'); return move.contents
-  }
+  const { objects, read, verify } = collectionCommandReadSet(params.client, signal)
   await read(target.callablePackageId)
   const collectionBytes = contents(await read(request.collectionId)), c = decode(SoulPublicCollectionBcs, collectionBytes)
   id(c.right_id); id(c.current_holder_kiosk_id)
@@ -91,8 +102,8 @@ export async function prepareCollectionCommandPlan(params: {
     quote: { priceAtomic: price, feeBps, feeAtomic: String(fee), buyerTotalAtomic: String(BigInt(price) + fee), sellerReceivesAtomic: price } })
   // A stable double-read is a bounded observation, not an atomic chain snapshot.
   // The Move guards and owned references enforce the actual signing boundary.
-  for (const [objectId, value] of objects) await read(objectId, value === null)
-  signal.throwIfAborted(); return plan
+  await verify()
+  return plan
 }
 export async function assertCollectionCommandCurrent(params: { client: SuiGrpcClient; plan: CollectionCommandPlan; signal?: AbortSignal }) {
   const p = parseCollectionCommandPlan(params.plan)

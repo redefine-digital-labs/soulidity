@@ -170,3 +170,16 @@ export async function collectionBuyFixture(options: { newKiosk?: boolean; feeBps
     plan, record, packet, effects, evidence, adapter, sign, read, getAddress, resolve, paymentCoinObjectIds,
     setAddress: (next: string | null) => { address = next } }
 }
+
+/** Materialize finalized versions for current-read tests. The base fixture
+ * keeps pre-purchase rows current while testing historical receipt readers. */
+export function installCollectionBuyAfterFixture(f: Awaited<ReturnType<typeof collectionBuyFixture>>) {
+  const buyerMarker = collectionBuyOwnerMarker(f.target, f.buyerKiosk.id)
+  for (const id of [f.c.id, f.right.id, f.listing.id, f.destinationItemId, f.destinationLockId, buyerMarker,
+    f.buyerKiosk.id, f.sellerKiosk.id, f.registry.id, f.cap.id, f.regId]) {
+    const row = f.rows.get(`${id}:12`) ?? f.rows.get(`${id}:11`)
+    if (!row) throw Error(`Missing finalized collection fixture object ${id}`)
+    f.current.set(id, row)
+  }
+  for (const id of [f.itemId, f.markerId, f.sourceLockId]) f.current.delete(id)
+}

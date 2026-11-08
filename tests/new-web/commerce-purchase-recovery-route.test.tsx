@@ -571,7 +571,8 @@ it('can stop a late cancellation lookup and immediately query the same original 
 
 
 const incomePanel = () => host.querySelector<HTMLElement>('[aria-label="原购买与原提款对账"]')!
-const reconciledIncome = () => incomePanel()?.querySelector('[aria-label="已核验付费入账和提款"]')
+const confirmedIncome = () => incomePanel()?.querySelector('[aria-label="已核验原购买和原提款"]')
+const reconciledIncome = () => incomePanel()?.querySelector('[aria-label="已核验当前协议账本"]')
 async function selectWithdrawal(text: string) {
  const file = { name: 'withdrawal.json', size: new TextEncoder().encode(text).length, text: async () => text } as File
  await act(async () => {
@@ -605,12 +606,12 @@ it.each([false, true])('reconciles original paid income and withdrawal on the re
  expect(f.client.ledgerService.getTransaction).toHaveBeenCalledTimes(1)
  await click('核对两笔原交易')
  for (let i = 0; i < 40 && !reconciledIncome(); i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)) })
- const text = reconciledIncome()?.textContent
+ const text = confirmedIncome()?.textContent
  expect(text, incomePanel().textContent ?? '').toContain('内容受款方 101 · 协议入账 3')
  expect(text).toContain('提款到账（最小单位）3')
  expect(text).toContain(f.withdrawal.payoutId)
  expect(text).toContain(interleaved ? '两笔之间另有入账 5 · 提款 2' : '本次费用可与原提款逐笔对应')
- expect(text).toContain(interleaved ? '账本余额（最小单位）3' : '账本余额（最小单位）0')
+ expect(reconciledIncome()?.textContent).toContain(interleaved ? '账本余额（最小单位）3' : '账本余额（最小单位）0')
  expect(f.client.ledgerService.getTransaction.mock.calls.map(([request]) => request.digest)).toEqual([
   f.review.purchaseDigest, f.review.purchaseDigest, f.review.withdrawalDigest,
  ])
@@ -618,6 +619,56 @@ it.each([false, true])('reconciles original paid income and withdrawal on the re
  expect(Object.entries(localStorage)).toEqual(storageBefore)
  expect(payload()).toBe(f.purchaseText)
 })
+it('retains verified deposits and withdrawals during a failed or stopped current read and retries that read alone', async () => {
+ const f = await paidIncomePage()
+ const ledger = f.client.core.getChainIdentifier
+ ledger.mockRejectedValueOnce(Error('Current ledger temporarily unavailable'))
+ await selectWithdrawal(f.withdrawalText)
+ await click('核对两笔原交易')
+ expect(confirmedIncome()?.textContent).toContain(f.withdrawal.payoutId)
+ expect(incomePanel().querySelector('[role="alert"]')?.textContent).toContain('当前协议账本暂不可读')
+ expect(reconciledIncome()).toBeNull()
+
+ let release!: () => void
+ const stalled = new Promise<void>(resolve => { release = resolve })
+ const readChain = ledger.getMockImplementation()!
+ ledger.mockImplementationOnce(async () => { await stalled; return readChain() })
+ try {
+  await click('重新读取当前账本')
+  await click('停止对账')
+  expect(confirmedIncome()?.textContent).toContain(f.review.purchaseDigest)
+  expect(incomePanel().querySelector('[role="status"]')?.textContent).toContain('已停止读取当前账本')
+  await act(async () => { release(); await stalled })
+  expect(reconciledIncome()).toBeNull()
+
+  await click('重新读取当前账本')
+  expect(reconciledIncome()?.textContent).toContain('账本余额（最小单位）0')
+  expect(f.client.ledgerService.getTransaction.mock.calls.map(([request]) => request.digest)).toEqual([
+   f.review.purchaseDigest, f.review.purchaseDigest, f.review.withdrawalDigest,
+  ])
+  expect(m.sign).not.toHaveBeenCalled()
+ } finally { release() }
+})
+
+it('clears the confirmed pair and ignores a late current read when the withdrawal file changes', async () => {
+ const f = await paidIncomePage()
+ const ledger = f.client.core.getChainIdentifier, readChain = ledger.getMockImplementation()!
+ let release!: () => void
+ const stalled = new Promise<void>(resolve => { release = resolve })
+ ledger.mockImplementationOnce(async () => { await stalled; return readChain() })
+ try {
+  await selectWithdrawal(f.withdrawalText)
+  await click('核对两笔原交易')
+  expect(confirmedIncome()?.textContent).toContain(f.review.withdrawalDigest)
+  await selectWithdrawal('{}')
+  expect(confirmedIncome()).toBeNull()
+  await act(async () => { release(); await stalled })
+  expect(confirmedIncome()).toBeNull()
+  expect(reconciledIncome()).toBeNull()
+  expect(incomePanel().querySelector('[role="alert"]')).not.toBeNull()
+ } finally { release() }
+})
+
 it('preserves original paid evidence when withdrawal execution is unqualified and clears it only for a new purchase', async () => {
  const f = await paidIncomePage(false, false)
  await selectWithdrawal(f.withdrawalText)

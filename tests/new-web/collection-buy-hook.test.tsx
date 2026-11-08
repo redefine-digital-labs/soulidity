@@ -36,11 +36,11 @@ vi.mock('@soulidity/sdk', async original => ({ ...await original<typeof import('
   getKioskPackageAddress: () => h.target!.kioskPackageId,
   getRequiredSoulidityEnv: (name: string) => { if (name !== 'NEXT_PUBLIC_SOULIDITY_COLLECTION_TRANSFER_POLICY_ID') throw Error('Unexpected env request'); return h.target!.collectionTransferPolicyId },
   readCollectionPublicRoot: (...args: unknown[]) => h.raw(...args),
-  readCollectionRightCustody: (...args: unknown[]) => h.raw(...args),
 }))
 vi.mock('../../web/lib/collections/collection-buy-plan', async original => ({ ...await original<typeof import('../../web/lib/collections/collection-buy-plan')>(),
   parseCollectionBuyPlan: (input: CollectionBuyPlan) => structuredClone(input),
 }))
+vi.mock('../../web/lib/collections/collection-buy-handoff', () => ({ readCollectionBuyHandoff: (...args: unknown[]) => h.raw(...args) }))
 vi.mock('../../web/lib/collections/collection-buy-state', () => ({ prepareCollectionBuyPlan: (options: PlanOptions) => h.preparePlan(options) }))
 vi.mock('../../web/lib/collections/collection-buy-operation', () => ({ parseCollectionBuyRecord: (input: unknown) => h.parser(input),
   createCollectionBuyAdapter: (options: AdapterOptions) => {
@@ -72,6 +72,11 @@ async function save(r: CollectionBuyRecord) { await act(async () => {
   const store = browserCollectionBuyStore(), key = collectionBuyKey(r.plan); await store.exclusive(key, async () => store.write(key, r, true))
 }) }
 const stored = () => browserCollectionBuyStore().read(collectionBuyKey(record.plan))
+const confirmed = (): CollectionBuyQuery => ({ status: 'SUCCEEDED', checkpoint: '42', receipt: {
+  collectionId: record.plan.request.collectionId, rightId: record.plan.rightId, listingId: record.plan.request.listingId,
+  sellerAddress: record.plan.sellerAddress, buyerAddress: record.plan.author, buyerKioskId: buyId(300), buyerKioskCapId: buyId(301),
+  priceAtomic: record.plan.quote.priceAtomic, platformFeeAtomic: record.plan.quote.feeAtomic, totalPaymentAtomic: record.plan.quote.buyerTotalAtomic,
+} })
 async function prepared() { let r!: CollectionBuyRecord; await act(async () => { r = await current.prepare() }); return r }
 beforeEach(async () => {
   dom = collectionCommandTestDom('https://collection-buy-ui.example.test')
@@ -85,7 +90,7 @@ beforeEach(async () => {
   record = await collectionBuyUIRecord(); h.target = buyTarget(); h.account = { address: record.plan.author }; h.wallet = {}; h.client = { grpc: {} }; h.configError = false
   h.adapters.length = 0; h.sign.mockReset().mockResolvedValue({ bytes: record.packet.bytes, signature: 'CONTROLLED_PUBLIC_SIGNATURE' })
   h.query.mockReset().mockResolvedValue({ status: 'MISSING' }); h.verify.mockReset().mockResolvedValue(undefined); h.broadcast.mockReset().mockResolvedValue(undefined)
-  h.raw.mockReset().mockResolvedValue({ holderAddress: record.plan.author })
+  h.raw.mockReset().mockResolvedValue({ status: 'BUYER_HANDOFF_VERIFIED', holder: record.plan.author, kioskId: buyId(300), kioskCapId: buyId(301), reserved: false })
   h.parser.mockReset().mockImplementation(input => structuredClone(input) as CollectionBuyRecord)
   h.preparePlan.mockReset().mockImplementation(async options => ({ ...structuredClone(record.plan), target: options.target, author: options.author, request: options.request }))
   h.preparePacket.mockReset().mockImplementation(async plan => ({ ...structuredClone(record), plan, packet: { ...record.packet, phase: 'PREPARED', signature: null } }))
@@ -239,18 +244,18 @@ it('local exclusivity rejects parallel prepare/query/import before a second doma
   expect(h.preparePlan).toHaveBeenCalledOnce(); expect(h.query).not.toHaveBeenCalled()
   await act(async () => { gate.resolve(record.plan); await work }); expect(current.pending).toBe(false)
 })
-it('successful historical result reads current custody with exactly the six public deployment keys and refreshes once', async () => {
-  await render(); const packet = await prepared(); h.query.mockResolvedValue({ status: 'SUCCEEDED', checkpoint: '42' })
+it('successful historical result binds current custody to the receipt Kiosk and Cap, then refreshes once', async () => {
+  await render(); const packet = await prepared(); h.query.mockResolvedValue(confirmed())
   await act(async () => { await current.run(packet, 'query') })
   expect(h.raw).toHaveBeenCalledOnce(); const args = h.raw.mock.calls[0][0]
-  expect(Object.keys(args.deployment).sort()).toEqual(['chainIdentifier', 'originalPackageId', 'marketConfigId', 'paymentCoinType', 'kioskRegistryId', 'personalKioskTypePackageId'].sort())
-  expect(args).toMatchObject({ client: h.client.grpc, collectionId: subject.onChainId, rightId: record.plan.rightId, signal: expect.any(AbortSignal) })
+  expect(args).toMatchObject({ client: h.client.grpc, plan: packet.plan, receipt: confirmed().receipt, signal: expect.any(AbortSignal) })
+  expect(current.currentObservation).toContain(`Kiosk ${buyId(300)} · Cap ${buyId(301)}`)
   expect(current.currentObservation).toContain('purchasing wallet'); expect(current.status).toContain('checkpoint 42'); expect(onSuccess).toHaveBeenCalledOnce()
   expect(h.sign).not.toHaveBeenCalled(); expect(h.broadcast).not.toHaveBeenCalled()
 })
 it.each(['changed', 'unavailable'] as const)('current custody %s does not erase historical confirmation', async kind => {
-  await render(); const packet = await prepared(); h.query.mockResolvedValue({ status: 'SUCCEEDED', checkpoint: '42' })
-  if (kind === 'changed') h.raw.mockResolvedValue({ holderAddress: buyId(400) }); else h.raw.mockRejectedValue(Error('RPC offline'))
+  await render(); const packet = await prepared(); h.query.mockResolvedValue(confirmed())
+  if (kind === 'changed') h.raw.mockResolvedValue({ status: 'CUSTODY_CHANGED', holder: buyId(400) }); else h.raw.mockRejectedValue(Error('RPC offline'))
   await act(async () => { await current.run(packet, 'query') })
   expect(stored()?.packet.phase).toBe('SUCCEEDED'); expect(current.status).toContain('confirmed')
   expect(current.currentObservation).toContain(kind === 'changed' ? 'custody has changed' : 'Historical purchase confirmation is unchanged')
@@ -258,9 +263,9 @@ it.each(['changed', 'unavailable'] as const)('current custody %s does not erase 
 })
 it('cold recovery preserves the confirmed receipt when the root points to the buyer but the Right cannot be verified', async () => {
   record.packet.phase = 'SUCCEEDED'; await save(record); h.account = null; h.wallet = null
-  h.query.mockResolvedValue({ status: 'SUCCEEDED', checkpoint: '42' })
-  h.raw.mockImplementation(async ({ rightId }) => {
-    if (rightId === record.plan.rightId) throw Error('COLLECTION_PUBLIC_CUSTODY_MISMATCH')
+  h.query.mockResolvedValue(confirmed())
+  h.raw.mockImplementation(async ({ plan }) => {
+    if (plan.rightId === record.plan.rightId) throw Error('COLLECTION_PUBLIC_CUSTODY_MISMATCH')
     return { collection: { current_holder: record.plan.author } }
   })
   await render(); await settle()
@@ -271,19 +276,19 @@ it('cold recovery preserves the confirmed receipt when the root points to the bu
 })
 it.each(['wallet', 'collection', 'unmount'] as const)('%s during current observation cannot publish a late result or invoke onSuccess', async kind => {
   await render(); const packet = await prepared(), gate = buyDeferred<unknown>(); h.raw.mockReturnValueOnce(gate.promise)
-  h.query.mockResolvedValue({ status: 'SUCCEEDED', checkpoint: '42' }); let work!: Promise<unknown>
+  h.query.mockResolvedValue(confirmed()); let work!: Promise<unknown>
   await act(async () => { work = current.run(packet, 'query'); void work.catch(() => {}); await Promise.resolve() }); await settle()
   expect(h.raw).toHaveBeenCalledOnce(); expect(stored()?.packet.phase).toBe('SUCCEEDED')
   const signal = h.raw.mock.calls[0][0].signal as AbortSignal
   if (kind === 'unmount') { await act(async () => root.unmount()); unmounted = true }
   else { if (kind === 'wallet') h.wallet = {}; else subject = { ...subject, onChainId: buyId(901) }; await render() }
   expect(signal.aborted).toBe(true)
-  await act(async () => { gate.resolve({ holderAddress: record.plan.author }); await expect(work).rejects.toThrow() })
+  await act(async () => { gate.resolve({ status: 'BUYER_HANDOFF_VERIFIED', holder: record.plan.author }); await expect(work).rejects.toThrow() })
   expect(stored()?.packet.phase).toBe('SUCCEEDED'); expect(onSuccess).not.toHaveBeenCalled()
   if (kind === 'collection') expect(current.currentObservation).toBeNull()
 })
 it('cold confirmed receipts do not invoke onSuccess/invalidate forever across refresh, remount and StrictMode replay', async () => {
-  record.packet.phase = 'SUCCEEDED'; await save(record); h.query.mockResolvedValue({ status: 'SUCCEEDED', checkpoint: '42' })
+  record.packet.phase = 'SUCCEEDED'; await save(record); h.query.mockResolvedValue(confirmed())
   invalidateOnSuccess = true; const invalidate = vi.spyOn(query, 'invalidateQueries')
   await render(true); await settle(); expect(current.status).toContain('confirmed')
   for (let i = 0; i < 3; i++) { remountKey++; await render(true); await settle() }
@@ -315,7 +320,7 @@ it('root StrictMode retires a failed preparation without overwriting the replaye
 })
 it('cold newly confirmed receipt invokes success once, and subsequent remount reads the retained terminal phase', async () => {
   record.packet.phase = 'SIGNED'; record.packet.signature = 'CONTROLLED_PUBLIC_SIGNATURE'; await save(record)
-  h.query.mockResolvedValue({ status: 'SUCCEEDED', checkpoint: '42' }); await render(); expect(onSuccess).toHaveBeenCalledOnce()
+  h.query.mockResolvedValue(confirmed()); await render(); expect(onSuccess).toHaveBeenCalledOnce()
   expect(stored()?.packet.phase).toBe('SUCCEEDED'); remountKey++; await render(); expect(onSuccess).toHaveBeenCalledOnce()
 })
 it.each(['PENDING', 'FAILED'] as const)('%s is surfaced without an invented success or custody claim', async status => {

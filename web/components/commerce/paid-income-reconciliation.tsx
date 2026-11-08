@@ -5,12 +5,13 @@ import { useRef } from 'react'
 import { useCommittedSession, useSessionState } from '../../lib/hooks/use-committed-session'
 import { createConfiguredIncomeOriginalExecutionRegistry } from '../../lib/soulidity/configured-income-entry'
 import { importIncomeWithdrawalRecoveryRecord } from '../../lib/soulidity/commerce/income-withdrawal-recovery-record'
-import { reconcilePaidIncomeOriginals } from '../../lib/soulidity/commerce/paid-income-ledger-reconciliation'
+import { confirmPaidIncomeOriginals, readCurrentPaidIncomeLedger, type ConfirmedPaidIncomeOriginals } from '../../lib/soulidity/commerce/paid-income-ledger-reconciliation'
 
-type Result = Awaited<ReturnType<typeof reconcilePaidIncomeOriginals>>
+type OriginalResult = Awaited<ReturnType<typeof confirmPaidIncomeOriginals>>
+type Result = Exclude<OriginalResult, ConfirmedPaidIncomeOriginals> | Awaited<ReturnType<typeof readCurrentPaidIncomeLedger>>
 const empty = {
   file: null as { name: string; text: string; digest: string } | null,
-  pending: false, stopped: false, result: null as Result | null, error: null as string | null,
+  pending: false, stopped: false, confirmed: null as ConfirmedPaidIncomeOriginals | null, result: null as Result | null, error: null as string | null,
 }
 
 export function PaidIncomeReconciliation({ client, soulId, purchaseText }: {
@@ -44,7 +45,7 @@ export function PaidIncomeReconciliation({ client, soulId, purchaseText }: {
   function stop() {
     active.current?.abort()
     active.current = null
-    setView({ ...empty, file: view.file, stopped: true })
+    setView(previous => ({ ...empty, file: previous.file, confirmed: previous.confirmed, stopped: true }))
   }
 
   async function query() {
@@ -54,22 +55,34 @@ export function PaidIncomeReconciliation({ client, soulId, purchaseText }: {
     active.current = controller
     lease.requests.add(controller)
     const current = () => lease.matches() && active.current === controller && !controller.signal.aborted
-    setView({ ...empty, file, pending: true })
+    let confirmed = view.confirmed
+    setView({ ...empty, file, confirmed, pending: true })
     try {
-      const { registry } = createConfiguredIncomeOriginalExecutionRegistry()
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(75000)])
-      const result = await reconcilePaidIncomeOriginals({ client, soulId, purchaseText,
-        withdrawalText: file.text, executionRegistry: registry, signal })
-      if (current()) setView({ ...empty, file, result })
+      if (!confirmed) {
+        const { registry } = createConfiguredIncomeOriginalExecutionRegistry()
+        const original = await confirmPaidIncomeOriginals({ client, soulId, purchaseText,
+          withdrawalText: file.text, executionRegistry: registry, signal })
+        if (!current()) return
+        if (original.status !== 'PAID_INCOME_ORIGINALS_CONFIRMED') {
+          setView({ ...empty, file, result: original })
+          return
+        }
+        confirmed = original
+        setView({ ...empty, file, confirmed, pending: true })
+      }
+      const result = await readCurrentPaidIncomeLedger({ client, confirmed, signal })
+      if (current()) setView({ ...empty, file, confirmed, result })
     } catch (error) {
-      if (current()) setView({ ...empty, file, error: error instanceof Error ? error.message : '协议账本暂不可核对。' })
+      if (current()) setView({ ...empty, file, confirmed,
+        error: error instanceof Error ? error.message : '协议账本暂不可核对。' })
     } finally {
       lease.requests.delete(controller)
       if (active.current === controller) active.current = null
     }
   }
 
-  const result = view.result
+  const result = view.result, evidence = view.confirmed?.evidence
   return <section aria-label="原购买与原提款对账" className="space-y-2 rounded border p-3">
     <h2 className="font-semibold">核对付费入账与原提款</h2>
     <p>选择同一协议 Config 的原提款恢复文件。对账分别核验原购买、原提款和当前协议账本。</p>
@@ -78,25 +91,33 @@ export function PaidIncomeReconciliation({ client, soulId, purchaseText }: {
     </label>
     {view.file && <>
       <p className="break-all">原提款 {view.file.digest} · {view.file.name}</p>
-      <button type="button" className="rounded border px-3 py-1" disabled={view.pending} onClick={() => void query()}>核对两笔原交易</button>
+      <button type="button" className="rounded border px-3 py-1" disabled={view.pending} onClick={() => void query()}>
+        {evidence ? '重新读取当前账本' : '核对两笔原交易'}
+      </button>
     </>}
-    {view.pending && <><p role="status">正在核对两笔原交易与协议账本…</p><button type="button" onClick={stop}>停止对账</button></>}
-    {view.stopped && <p role="status">已停止对账。可用同一原件继续查询。</p>}
+    {view.pending && <><p role="status">{evidence ? '正在读取当前协议账本…' : '正在核对两笔原交易…'}</p><button type="button" onClick={stop}>停止对账</button></>}
+    {view.stopped && <p role="status">{evidence ? '已停止读取当前账本。可重新读取。' : '已停止对账。可用同一原件继续查询。'}</p>}
     {view.error && <p role="alert">对账未完成。{view.error}</p>}
+    {evidence && <article aria-label="已核验原购买和原提款" className="space-y-1 break-all">
+      <p>原购买 {evidence.purchase.transactionDigest} · 检查点 {evidence.purchase.checkpoint}</p>
+      <p>原买家总付款（最小单位）{evidence.purchase.money.buyerGrossDebit} · 内容受款方 {evidence.purchase.money.payout.amount} · 协议入账 {evidence.purchase.money.protocolIncome}</p>
+      <p>原提款 {evidence.withdrawal.transactionDigest} · 检查点 {evidence.withdrawal.checkpoint}</p>
+      <p>提款到账（最小单位）{evidence.withdrawal.amountAtomic} · 收款地址 {evidence.withdrawal.recipient}</p>
+      <p>原收款 Coin {evidence.withdrawal.paymentCoinId} · 币种 {evidence.coinType}</p>
+      {evidence.withdrawal.gas && <p>原提款 SUI Gas（MIST）{evidence.withdrawal.gas.netGasCharge}</p>}
+      <p>{evidence.isolatedFeeCase ? '本次费用可与原提款逐笔对应。' : '本次提款按共用协议账本核对。'}</p>
+      {evidence.purchaseToWithdrawal.kind === 'INTERVENING_CONFIG_WRITES' && <p>两笔之间另有入账 {evidence.purchaseToWithdrawal.collectedDelta} · 提款 {evidence.purchaseToWithdrawal.withdrawnDelta}</p>}
+    </article>}
     {result?.status === 'PAID_INCOME_LEDGER_RECONCILED'
-      ? <article aria-label="已核验付费入账和提款" className="space-y-1 break-all">
-        <p>原购买 {result.purchase.transactionDigest} · 检查点 {result.purchase.checkpoint}</p>
-        <p>原买家总付款（最小单位）{result.purchase.money.buyerGrossDebit} · 内容受款方 {result.purchase.money.payout.amount} · 协议入账 {result.purchase.money.protocolIncome}</p>
-        <p>原提款 {result.withdrawal.transactionDigest} · 检查点 {result.withdrawal.checkpoint}</p>
-        <p>提款到账（最小单位）{result.withdrawal.amountAtomic} · 收款地址 {result.withdrawal.recipient}</p>
-        <p>原收款 Coin {result.withdrawal.paymentCoinId} · 币种 {result.coinType}</p>
-        {result.withdrawal.gas && <p>原提款 SUI Gas（MIST）{result.withdrawal.gas.netGasCharge}</p>}
+      ? <article aria-label="已核验当前协议账本" className="space-y-1 break-all">
         <p>当前 Config {result.current.configId} · 账本余额（最小单位）{result.current.balance} · 对象版本 {result.current.version}</p>
         <p>累计入账 {result.current.collected} · 累计提款 {result.current.withdrawn}</p>
-        <p>{result.isolatedFeeCase ? '本次费用可与原提款逐笔对应。' : '本次提款按共用协议账本核对。'}</p>
-        {result.purchaseToWithdrawal.kind === 'INTERVENING_CONFIG_WRITES' && <p>两笔之间另有入账 {result.purchaseToWithdrawal.collectedDelta} · 提款 {result.purchaseToWithdrawal.withdrawnDelta}</p>}
         {result.withdrawalToCurrent.kind === 'INTERVENING_CONFIG_WRITES' && <p>原提款之后另有入账 {result.withdrawalToCurrent.collectedDelta} · 提款 {result.withdrawalToCurrent.withdrawnDelta}</p>}
       </article>
+      : result?.status === 'PAID_INCOME_CURRENT_UNVERIFIED'
+        ? <p role="alert">{result.reason === 'CONFIG_REFERENCE_CONFLICT'
+          ? '当前账本引用与原提款后的账本不连续，可重新读取。'
+          : '当前协议账本暂不可读，可重新读取。'}</p>
       : result && <p role="status">{result.status === 'PURCHASE_WITHOUT_PROTOCOL_FEE' ? '原购买的协议费用为零。'
         : result.status === 'FINALIZED_EXECUTION' ? '已查到原提款终局执行，到账证据仍待来源或执行模型核验。'
         : result.status === 'FAILED' ? '链上已确认该原交易失败。'

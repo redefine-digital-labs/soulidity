@@ -4,12 +4,13 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useCommittedSession, useSessionState } from './use-committed-session'
 import { useCurrentAccount, useCurrentWallet, useSignTransaction, useSuiClient } from '@mysten/dapp-kit'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
-import { getKioskPackageAddress, getRequiredSoulidityEnv, readCollectionRightCustody } from '@soulidity/sdk'
+import { getKioskPackageAddress, getRequiredSoulidityEnv } from '@soulidity/sdk'
 import { getCollectionCommandTarget, type CollectionCommandSubject } from './use-collection-commands'
 import { same } from '../collections/collection-command-plan'
 import { publicMutationCanonical } from '../sui/public-mutation-journal'
 import type { CollectionBuyRecord, CollectionBuyQuery } from '../collections/collection-buy-plan'
 import { prepareCollectionBuyPlan } from '../collections/collection-buy-state'
+import { readCollectionBuyHandoff } from '../collections/collection-buy-handoff'
 import { createCollectionBuyAdapter, parseCollectionBuyRecord } from '../collections/collection-buy-operation'
 import { COLLECTION_BUY_CHANGED, browserCollectionBuyStore, collectionBuyKey, prepareCollectionBuy,
   runCollectionBuy, importCollectionBuy } from '../collections/collection-buy-journal'
@@ -58,15 +59,12 @@ export function useCollectionBuy(subject: CollectionCommandSubject, onSuccess: (
   }
   async function observeCurrent(record: CollectionBuyRecord, result: CollectionBuyQuery, signal: AbortSignal, guard: () => void) {
     if (result.status !== 'SUCCEEDED') return
-    const p = record.plan
     try {
-      const d = p.target
-      const custody = await readCollectionRightCustody({ client: grpc!, deployment: { originalPackageId: d.originalPackageId,
-        chainIdentifier: d.chainIdentifier, marketConfigId: d.marketConfigId, paymentCoinType: d.paymentCoinType,
-        kioskRegistryId: d.kioskRegistryId, personalKioskTypePackageId: d.personalKioskTypePackageId },
-        collectionId: p.request.collectionId, rightId: p.rightId, signal })
-      guard(); publish({ currentObservation: custody.holderAddress === p.author
-        ? 'The purchasing wallet currently holds the Collection Right.' : 'Current custody has changed since the confirmed purchase.' })
+      check(result.receipt, 'HANDOFF_RECEIPT_REQUIRED')
+      const custody = await readCollectionBuyHandoff({ client: grpc!, plan: record.plan, receipt: result.receipt, signal })
+      guard(); publish({ currentObservation: custody.status === 'BUYER_HANDOFF_VERIFIED'
+        ? `The purchasing wallet currently holds the locked Collection Right. Kiosk ${custody.kioskId} · Cap ${custody.kioskCapId}. ${custody.reserved ? 'A current reservation is present.' : 'The Right currently has no listing reservation.'}`
+        : 'Current custody has changed since the confirmed purchase.' })
     } catch { if (matches() && !signal.aborted) publish({ currentObservation: 'Current custody could not be refreshed. Historical purchase confirmation is unchanged.' }) }
   }
   async function exclusive<T>(work: (signal: AbortSignal, guard: () => void) => Promise<T>, requiresWallet = true, announce = true) {
