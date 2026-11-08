@@ -4,18 +4,20 @@ import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { IncomeWithdrawalHostRecoveryError, validateIncomeWithdrawalHostResult, validateIncomeWithdrawalHostRecovery,
   type IncomeWithdrawalHostRequest, type IncomeWithdrawalHostPreflight } from '../../lib/soulidity/commerce/income-withdrawal-host-preflight'
 
+import type { IncomeWithdrawalResumeCapability } from '../../lib/soulidity/commerce/income-withdrawal-host-resume'
+import { IncomeWithdrawalExecute } from './income-withdrawal-execute'
+
 export type IncomeWithdrawalPreflightInput = Omit<IncomeWithdrawalHostRequest, 'client' | 'signal' | 'getActorAddress'>
 type Client = SuiGrpcClient | ((signal: AbortSignal) => SuiGrpcClient)
 type Result = ReturnType<typeof validateIncomeWithdrawalHostResult>
 type Recovery = ReturnType<typeof validateIncomeWithdrawalHostRecovery>
 
-/** Root supplies the actual durable Host and its qualified activation. There
- * is no direct leaf-preflight fallback and no signer/submitter in this consumer.
- */
-export function IncomeWithdrawalPreflight({ client, input, viewerAddress, hostPreflight = null, activationKey = '', disabledReason = null, isActivationCurrent = null }: {
+/** Root supplies the durable Host and its qualified activation. Preparation
+ * and execution each require a separate explicit action. */
+export function IncomeWithdrawalPreflight({ client, input, viewerAddress, hostPreflight = null, activationKey = '', disabledReason = null, isActivationCurrent = null, execution = null }: {
   client: Client; input: IncomeWithdrawalPreflightInput; viewerAddress: string | null
   hostPreflight?: IncomeWithdrawalHostPreflight | null; activationKey?: string; disabledReason?: string | null
-  isActivationCurrent?: (() => boolean) | null
+  isActivationCurrent?: (() => boolean) | null; execution?: IncomeWithdrawalResumeCapability | null
 }) {
   const scope = JSON.stringify([input, viewerAddress, activationKey, disabledReason], (_key, value) => typeof value === 'bigint' ? { bigint: String(value) } : value)
   const current = useRef({ scope, client, hostPreflight, viewerAddress, isActivationCurrent })
@@ -89,6 +91,8 @@ export function IncomeWithdrawalPreflight({ client, input, viewerAddress, hostPr
       <p>原交易：{digest}</p><a download={`income-withdrawal-${digest}.json`} href={`data:application/json;charset=utf-8,${encodeURIComponent(text)}`}>下载原提款恢复文件</a>
       <p>文件保留原交易，不包含本次模拟或查询结果；下载不表示可以重新提款。</p>
     </article>}
+    {view.result && execution?.execute && <IncomeWithdrawalExecute originalText={view.result.text} viewerAddress={viewerAddress}
+      capability={execution} isActivationCurrent={isActivationCurrent ?? undefined} disabled={Boolean(unavailable)}/>}
     <a href="/income/recovery">打开原提款恢复页</a>
   </section>
 }

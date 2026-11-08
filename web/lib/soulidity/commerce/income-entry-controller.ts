@@ -9,7 +9,7 @@ import { readCommerceOwnedCoinInventory } from './owned-coin-inventory'
 import { verifyIncomeWithdrawalInterface } from './income-withdrawal-interface'
 import { parseIncomeObservationTarget, parseRootIncomeInstallation, verifyInstalledIncomeSource, incomeSourceManifestHash, type RootIncomeSourceInstallation } from './income-source-qualification'
 import { browserIncomeWithdrawalOriginalReaderV1, incomeWithdrawalFundKeyV1, incomeWithdrawalHeadCanClearV1, queryIncomeWithdrawalJournalOriginalV1 } from '../income-withdrawal-journal-v1'
-import { createIncomeWithdrawalHostPreflight, createIncomeWithdrawalHostResume } from '../income-withdrawal-host'
+import { createIncomeWithdrawalHostPreflight, createIncomeWithdrawalHostResume, createIncomeWithdrawalHostExecution } from '../income-withdrawal-host'
 import { IncomeWithdrawalHostRecoveryError, type IncomeWithdrawalHostPreflight, type IncomeWithdrawalHostRequest } from './income-withdrawal-host-preflight'
 
 export interface IncomeObservationSelection { target: EconomicsTarget; actor: string | null; adminId: string; installedSourceId: string | null }
@@ -33,7 +33,8 @@ function captureClient(source: SuiGrpcClient): SuiGrpcClient {
 }
 /** Root constructs this controller from its compiled installation catalog.
  * Public form fields select/observe; they cannot install an anchor. There is
- * no URL/env/storage/global activation path, signer or second journal backend.
+ * no URL/env/storage/global activation path or second journal backend. A wallet
+ * signer is supplied per explicit execution request.
  */
 export function createRootIncomeEntryController(options: {
   installations: readonly RootIncomeSourceInstallation[]; client: (signal: AbortSignal) => SuiGrpcClient; isCurrent?: () => boolean; executionModels?: readonly HistoricalExecutionModelInstallationV1[]
@@ -151,15 +152,17 @@ export function createRootIncomeEntryController(options: {
       if (!installations.length || !executionModels.length) return null
       const sourceId = catalogVersion, activationKey = `root-income-source:${catalogVersion}`
       catalog()
-      return { sourceId, activationKey, isActive: current, client: clientFactory,
-        host: createIncomeWithdrawalHostResume({ sourceId, activationKey, executionRegistry: originalRegistry(), isActive: current, authorizeOriginalSource: async ({ original, client, signal }) => {
+      const options: Parameters<typeof createIncomeWithdrawalHostResume>[0] = {
+        sourceId, activationKey, executionRegistry: originalRegistry(), isActive: current, authorizeOriginalSource: async ({ original, client, signal }) => {
           const matching = catalog().filter(row => publicMutationCanonical(row.manifest.target) === publicMutationCanonical(original.target))
           commerceCheck(matching.length === 1, 'INCOME_RESUME_SOURCE_NOT_INSTALLED')
           assertIncomeExecutionRegistrySupportsTargetV1(executionRegistry(), original.target)
           const income = await readEconomicsIncome({ client, target: original.target, admin: { actor: original.intent.actor, objectId: original.intent.adminId }, signal })
           await verifyInstalledIncomeSource({ installed: matching[0], client, income, signal }); commerceCheck(current(), 'INCOME_RESUME_SOURCE_CHANGED')
           return { sourceId, target: original.target }
-        } }) }
+        } }
+      return { sourceId, activationKey, isActive: current, client: clientFactory,
+        host: createIncomeWithdrawalHostResume(options), execute: createIncomeWithdrawalHostExecution(options) }
     } })
 }
 export type RootIncomeEntryController = ReturnType<typeof createRootIncomeEntryController>

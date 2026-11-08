@@ -13,7 +13,8 @@ import { readEconomicsIncome, type EconomicsTarget } from './commerce/economics-
 import { Transaction } from '@mysten/sui/transactions'
 import { publicMutationCanonical } from '../sui/public-mutation-journal'
 import { recheckSelectedIncomeWithdrawalOriginalV1 } from './income-withdrawal-original-recovery'
-import type { IncomeWithdrawalResumeHost } from './commerce/income-withdrawal-host-resume'
+import { executeIncomeWithdrawalOriginalV1 } from './income-withdrawal-execution'
+import type { IncomeWithdrawalResumeRequest, IncomeWithdrawalResumeHost, IncomeWithdrawalExecutionHost } from './commerce/income-withdrawal-host-resume'
 
 function snapshotClient(source: SuiGrpcClient): SuiGrpcClient {
   const ledger = source.ledgerService, core = source.core, execution = source.transactionExecutionService
@@ -105,32 +106,43 @@ export function createIncomeWithdrawalHostPreflight(options: { executionRegistry
   }
 }
 
-/** The same Root journal/funds Host, continuing an existing original only.
- * Source qualification is a Root capability, never inferred from the file,
- * recipient, current Config enabled flag, or a nonempty UI token.
- */
-export function createIncomeWithdrawalHostResume(options: {
+type RootWithdrawalOptions = {
   activationKey: string; sourceId: string; isActive: () => boolean; journal?: IncomeWithdrawalJournalV1; executionRegistry?: IncomeExecutionRegistryV1
   authorizeOriginalSource: (input: { original: ReturnType<typeof importIncomeWithdrawalRecoveryRecord>; client: SuiGrpcClient; signal: AbortSignal }) => Promise<{ sourceId: string; target: EconomicsTarget }>
-}): IncomeWithdrawalResumeHost {
+}
+
+function bindOriginalWithdrawalHost(options: RootWithdrawalOptions) {
   const { activationKey, sourceId, isActive, authorizeOriginalSource, executionRegistry = EMPTY_INCOME_EXECUTION_REGISTRY_V1 } = options
   commerceCheck(Boolean(activationKey) && Boolean(sourceId) && typeof isActive === 'function' && typeof authorizeOriginalSource === 'function', 'WITHDRAW_RESUME_ROOT_CAPABILITY_REQUIRED')
-  const configuredJournal = options.journal ? captureIncomeWithdrawalJournalV1(options.journal) : undefined
-  return input => {
-    const selected = structuredClone(input.selected), client = snapshotClient(input.client), signal = input.signal,
-      getActorAddress = input.getActorAddress, isCurrent = input.isCurrent,
-      requestActivation = input.activationKey, requestSource = input.sourceId
+  const journal = options.journal ? captureIncomeWithdrawalJournalV1(options.journal) : undefined
+  return (input: IncomeWithdrawalResumeRequest) => {
+    const selected = structuredClone(input.selected), { client, signal, getActorAddress, isCurrent } = input
+    const requestActivation = input.activationKey, requestSource = input.sourceId
     const active = () => requestActivation === activationKey && requestSource === sourceId && isActive() && isCurrent()
-    return recheckSelectedIncomeWithdrawalOriginalV1({ selected, client, signal, getActorAddress, isCurrent: active, journal: configuredJournal, executionRegistry,
-      readCurrentReview: async (original, reader, abort) => {
-        const source = structuredClone(await authorizeOriginalSource({ original: structuredClone(original), client: reader, signal: abort }))
-        commerceCheck(active() && source.sourceId === sourceId && publicMutationCanonical(source.target) === publicMutationCanonical(original.target), 'WITHDRAW_RESUME_SOURCE_NOT_QUALIFIED')
-        const reviewed = await readEconomicsIncome({ client: reader, target: original.target, admin: { actor: original.intent.actor, objectId: original.intent.adminId }, signal: abort })
-        const gas = Transaction.from(original.packet.bytes).getData().gasData
-        commerceCheck(gas.owner === original.intent.actor && typeof gas.budget === 'string' && typeof gas.price === 'string'
-          && Boolean(gas.payment?.length) && gas.payment!.every(ref => typeof ref.version === 'string'), 'WITHDRAW_RESUME_ORIGINAL_GAS_REQUIRED')
-        return { reviewed, reviewedGas: { budget: String(gas.budget), price: String(gas.price),
-          coins: gas.payment!.map(ref => ({ objectId: ref.objectId, version: String(ref.version), digest: ref.digest })) } }
-      } })
+    const readCurrentReview: Parameters<typeof recheckSelectedIncomeWithdrawalOriginalV1>[0]['readCurrentReview'] = async (original, reader, abort) => {
+      const source = structuredClone(await authorizeOriginalSource({ original: structuredClone(original), client: reader, signal: abort }))
+      commerceCheck(active() && source.sourceId === sourceId && publicMutationCanonical(source.target) === publicMutationCanonical(original.target), 'WITHDRAW_RESUME_SOURCE_NOT_QUALIFIED')
+      const reviewed = await readEconomicsIncome({ client: reader, target: original.target, admin: { actor: original.intent.actor, objectId: original.intent.adminId }, signal: abort })
+      const gas = Transaction.from(original.packet.bytes).getData().gasData
+      commerceCheck(gas.owner === original.intent.actor && typeof gas.budget === 'string' && typeof gas.price === 'string'
+        && Boolean(gas.payment?.length) && gas.payment!.every(ref => typeof ref.version === 'string'), 'WITHDRAW_RESUME_ORIGINAL_GAS_REQUIRED')
+      return { reviewed, reviewedGas: { budget: gas.budget, price: gas.price,
+        coins: gas.payment!.map(ref => ({ objectId: ref.objectId, version: String(ref.version), digest: ref.digest })) } }
+    }
+    return { selected, client, signal, getActorAddress, isCurrent: active, journal, executionRegistry, readCurrentReview }
   }
+}
+
+/** Recheck and execution share the Root source review and exact original journal. */
+export function createIncomeWithdrawalHostResume(options: RootWithdrawalOptions): IncomeWithdrawalResumeHost {
+  const bind = bindOriginalWithdrawalHost(options)
+  return input => {
+    const scoped = bind(input)
+    return recheckSelectedIncomeWithdrawalOriginalV1({ ...scoped, client: snapshotClient(scoped.client) })
+  }
+}
+
+export function createIncomeWithdrawalHostExecution(options: RootWithdrawalOptions): IncomeWithdrawalExecutionHost {
+  const bind = bindOriginalWithdrawalHost(options)
+  return input => executeIncomeWithdrawalOriginalV1({ ...bind(input), sign: input.sign })
 }

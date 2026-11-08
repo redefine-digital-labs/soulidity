@@ -10,8 +10,8 @@ import { preflightFixture } from './commerce-withdrawal-host'
 /** Controlled full-BCS source tuple. Test-only Root installation; none of this
  * synthetic source/audit/bytecode is installed by the production factory.
  */
-export async function incomeEntryFixture() {
-  const x = await preflightFixture(), input = x.preflightInput, client = input.client
+export async function incomeEntryFixture(actor?: string) {
+  const x = await preflightFixture(actor), input = x.preflightInput, client = input.client
   const pkg = await readPinnedMovePackage(client, input.target.foundation, input.signal)
   const current = x.rows.get(`${input.target.configId}:9`)!, config = bcs.Object.parse(current.bcs.value)
   const manifest: IncomeSourceManifest = { schema: 'soulidity.foundation-income-source.v1', genesisDigest: MAINNET_GENESIS_DIGEST, target: input.target, configSchema: 3,

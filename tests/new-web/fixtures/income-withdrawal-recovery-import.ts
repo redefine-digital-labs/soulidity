@@ -13,7 +13,7 @@ type CreditInput = {
   amount: string
 }
 
-export async function incomeRecoveryImportFixture(credit?: CreditInput) {
+export async function incomeRecoveryImportFixture(credit?: CreditInput, actorOverride?: string) {
   const f = await activityEvidenceFixture(), pkg = f.packageData.data.Package!
   if (credit) {
     Object.assign(f.packageData, bcs.Object.parse(credit.packageBytes))
@@ -26,7 +26,7 @@ export async function incomeRecoveryImportFixture(credit?: CreditInput) {
     })
   }
   f.rehashPackage()
-  const configId = credit?.config.objectId ?? aid(60), adminId = aid(61), recipient = aid(62), payoutId = aid(64), actor = f.sender
+  const configId = credit?.config.objectId ?? aid(60), adminId = aid(61), recipient = aid(62), payoutId = aid(64), actor = actorOverride ?? f.sender
   const outputVersion = credit ? Number(credit.config.version) + 1 : 10
   const amount = credit?.amount ?? '50'
   const coinType = credit?.target.coinType ?? normalizeStructTag('0x2::sui::SUI'), attempt = new Uint8Array(32).fill(1), rows = new Map<string, any>(), changes: any[] = []
@@ -93,8 +93,8 @@ export async function portableIncomeRecoveryImportFixture(){const x=await income
 
 /** Explicit qualified successor used by positive proof/preflight tests. Raw
  * import/query fixtures above remain unqualified unless a caller supplies it. */
-export async function qualifiedIncomeRecoveryImportFixture(){
- const x=await incomeRecoveryImportFixture(),qualification=controlledFoundationIncomeQualification(x.params.target,x.f.pkg.bcs.value)
+export async function qualifiedIncomeRecoveryImportFixture(actor?: string){
+ const x=await incomeRecoveryImportFixture(undefined, actor),qualification=controlledFoundationIncomeQualification(x.params.target,x.f.pkg.bcs.value)
  attachControlledIncomeProtocol(x.f,x.params.client)
  return{...x,...qualification,params:{...x.params,executionRegistry:qualification.executionRegistry}}
 }

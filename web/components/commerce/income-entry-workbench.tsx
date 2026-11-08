@@ -66,6 +66,7 @@ export function IncomeEntryWorkbench({ controller, viewerAddress }: { controller
   const token = reviewToken.current
   const lease = useMemo(() => () => same() && reviewToken.current === token && controller.isCurrent(), [controller, generation, token])
   const host = useMemo(() => view.review ? controller.createPreflight(view.review) : null, [controller, view.review])
+  const execution = useMemo(() => view.review ? controller.resumeCapability() : null, [controller, view.review])
   const income = view.observation?.income, preparation = view.observation?.preparation
   const fields: Array<[keyof EconomicsTarget['foundation'], string]> = [['originalPackageId', 'Foundation 原始包'], ['callablePackageId', 'Foundation 当前包'], ['callableDigest', '包对象 Digest']]
   return <section aria-label="协议收益工作台" className="space-y-4 rounded-xl border p-4">
@@ -105,7 +106,7 @@ export function IncomeEntryWorkbench({ controller, viewerAddress }: { controller
       <button type="button" disabled={!confirmed || view.pending} onClick={lockReview}>锁定本次审阅</button>
     </article>}
     {view.review && host && <IncomeWithdrawalPreflight key={`${generation}:${token}`} input={view.review.request} client={controller.client} viewerAddress={viewerAddress} hostPreflight={host}
-      activationKey={`${controller.catalogVersion}:${view.review.observation.preparation!.source.manifestSha256}`} isActivationCurrent={lease}
+      activationKey={`${controller.catalogVersion}:${view.review.observation.preparation!.source.manifestSha256}`} isActivationCurrent={lease} execution={execution}
       disabledReason={!locks ? '当前环境没有操作锁；只能观察或查询原件。' : null}/>}
     <a href="/income/recovery">查询或继续原提款</a>
     <p>Maker／Pack Product 收益需要对应的当前 Control 和独立提款适配；此 Config 管理入口不会代替它。</p>

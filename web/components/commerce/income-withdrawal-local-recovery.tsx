@@ -7,6 +7,7 @@ import { discoverIncomeWithdrawalOriginalsV1, cancelIncomeWithdrawalOriginalV1 }
 import { createIncomeWithdrawalOriginalClient } from '../../lib/soulidity/income-withdrawal-original-client'
 import { importIncomeWithdrawalRecoveryRecord, incomeWithdrawalRecoveryProps } from '../../lib/soulidity/commerce/income-withdrawal-recovery-record'
 import { IncomeWithdrawalRecovery } from './income-withdrawal-recovery'
+import { IncomeWithdrawalExecute } from './income-withdrawal-execute'
 import { IncomeWithdrawalPreparedRecheck } from './income-withdrawal-prepared-recheck'
 import { useIncomeWithdrawalResumeCapability } from '../providers/income-withdrawal-resume-provider'
 type Client = (signal: AbortSignal) => SuiGrpcClient
@@ -112,6 +113,13 @@ export function IncomeWithdrawalLocalRecovery({ viewerAddress = null, createRead
       <p>只在完整未签原记录与原交易 MISSING 时保存本机 CANCELLED，不撤销链上交易、不生成新提款授权。原文件保持不变。</p>
       {!locks && <p>当前环境没有操作锁；仍可查看、下载和查询原记录，不能修改本机阶段。</p>}
       <IncomeWithdrawalRecovery key={`${record.packet.digest}:${record.packet.phase}`} {...incomeWithdrawalRecoveryProps(original)} client={createReadOnlyClient} viewerAddress={viewerAddress}/>
+      {!view.archiveSelection && resume.capability?.execute &&
+        <IncomeWithdrawalExecute key={record.packet.digest} originalText={record.plan.originalText} phase={record.packet.phase}
+          viewerAddress={viewerAddress} capability={resume.capability}
+          disabled={Boolean(view.error || view.stopped || view.pending || !locks)}
+          onRecord={updated => setState(previous => ({
+            ...previous, records: previous.records.map(row => publicMutationCanonical(row) === publicMutationCanonical(record) ? updated : row),
+          }))}/>}
       {!view.archiveSelection && <IncomeWithdrawalPreparedRecheck selected={record} viewerAddress={viewerAddress} capability={resume.capability}
         disabledReason={view.error || view.stopped || view.pending ? '请先重新核验当前本机原记录。原查询与下载仍可使用。' : resume.disabledReason}/>}
     </article>}

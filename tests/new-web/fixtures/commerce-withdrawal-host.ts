@@ -18,10 +18,10 @@ import {retainPreparedIncomeWithdrawalOriginal} from '../../../web/lib/soulidity
 import {qualifiedIncomeRecoveryImportFixture as fixture} from './income-withdrawal-recovery-import'
 
 // Extracted actual full-BCS/RPC fixture. No deployed/source/signing qualification.
-export async function portableFixture(){const x=await fixture(),pin=x.params.target.foundation;x.params.target.foundation={originalPackageId:pin.originalPackageId,callablePackageId:pin.callablePackageId,callableDigest:pin.callableDigest} as typeof pin;const record=createIncomeWithdrawalRecoveryRecord(x.params);return {...x,record,text:exportIncomeWithdrawalRecoveryRecord(record)}}
+export async function portableFixture(actor?: string){const x=await fixture(actor),pin=x.params.target.foundation;x.params.target.foundation={originalPackageId:pin.originalPackageId,callablePackageId:pin.callablePackageId,callableDigest:pin.callableDigest} as typeof pin;const record=createIncomeWithdrawalRecoveryRecord(x.params);return {...x,record,text:exportIncomeWithdrawalRecoveryRecord(record)}}
 
-export async function simulationFixture(multipleGas=false){
- const x=await portableFixture();x.record.packet.phase='PREPARED';x.record.packet.signature=null
+export async function simulationFixture(multipleGas=false, actor?: string){
+ const x=await portableFixture(actor);x.record.packet.phase='PREPARED';x.record.packet.signature=null
  if(multipleGas){
   const codec=bcs.struct('Coin',{id:bcs.Address,balance:bcs.u64()}),extraId=aid(80),before=structuredClone(x.rows.get(`${aid(8)}:2`)),raw=bcs.Object.parse(before.bcs.value)
   raw.data.Move!.contents=codec.serialize({id:extraId,balance:1100}).toBytes()
@@ -47,8 +47,8 @@ export async function simulationFixture(multipleGas=false){
  return {...x,raw,input}
 }
 
-export async function preflightFixture(){
- const x=await simulationFixture(),client=x.input.client,read=client.ledgerService.getObject
+export async function preflightFixture(actor?: string){
+ const x=await simulationFixture(false, actor),client=x.input.client,read=client.ledgerService.getObject
  client.ledgerService.getObject=vi.fn(async(r:any)=>{
   if(r.version!==undefined)throw Error('NO_PREFLIGHT_VERSIONED_LEDGER_READ')
   const row=x.rows.get(`${r.objectId}:${r.objectId===aid(8)?2:9}`)

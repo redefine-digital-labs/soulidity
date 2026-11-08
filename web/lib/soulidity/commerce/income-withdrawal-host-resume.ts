@@ -3,6 +3,7 @@ import { commerceCheck } from './economics-read'
 import { importIncomeWithdrawalRecoveryRecord } from './income-withdrawal-recovery-record'
 import { assertIncomeWithdrawalSimulationInputs } from './income-withdrawal-simulation'
 import { parseIncomeWithdrawalJournalRecordV1, type IncomeWithdrawalJournalRecordV1 } from '../income-withdrawal-journal-v1'
+import type { executeIncomeWithdrawalOriginalV1 } from '../income-withdrawal-execution'
 import type { recheckSelectedIncomeWithdrawalOriginalV1 } from '../income-withdrawal-original-recovery'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 
@@ -12,9 +13,10 @@ export interface IncomeWithdrawalResumeRequest {
 }
 export type IncomeWithdrawalResumeResult = Awaited<ReturnType<typeof recheckSelectedIncomeWithdrawalOriginalV1>>
 export type IncomeWithdrawalResumeHost = (input: IncomeWithdrawalResumeRequest) => Promise<IncomeWithdrawalResumeResult>
+export type IncomeWithdrawalExecutionHost = (input: IncomeWithdrawalResumeRequest & Pick<Parameters<typeof executeIncomeWithdrawalOriginalV1>[0], 'sign'>) => ReturnType<typeof executeIncomeWithdrawalOriginalV1>
 export interface IncomeWithdrawalResumeCapability {
   activationKey: string; sourceId: string; isActive: () => boolean
-  client: (signal: AbortSignal) => SuiGrpcClient; host: IncomeWithdrawalResumeHost
+  client: (signal: AbortSignal) => SuiGrpcClient; host: IncomeWithdrawalResumeHost; execute?: IncomeWithdrawalExecutionHost
 }
 
 /** Bind a trusted Root Host result to this exact selected original. Equality
