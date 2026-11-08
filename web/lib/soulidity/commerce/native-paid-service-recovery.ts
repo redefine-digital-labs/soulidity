@@ -4,7 +4,7 @@ import { MAINNET_GENESIS_DIGEST } from '../../animacraft/mainnet-chain'
 import type { PinnedMovePackage } from '../../sui/pinned-move-package'
 import { publicMutationCanonical, type PublicMutationPacket } from '../../sui/public-mutation-journal'
 import { commerceCheck, commerceId } from './economics-read'
-import { readNativePaidServiceBeneficiaryFunds } from './native-paid-service-beneficiary-funds'
+import { readNativePaidServiceBeneficiaryFunds, readNativePaidServiceOriginalProceeds } from './native-paid-service-beneficiary-funds'
 import { PaidContentOfferBcs } from './paid-content-policy'
 
 const REVIEW_SCHEMA = 'soulidity.native-paid-service-recovery.v1'
@@ -94,20 +94,38 @@ function parsePacket(text: string, reviewedDigest: string): PublicMutationPacket
   return packet as unknown as PublicMutationPacket
 }
 
-/** Read-only operator case. The separate review supplies release pins, original
- * intent and beneficiary. Observations use public chain data for that address.
- */
-export async function verifyNativePaidServiceRecovery(input: {
+type RecoveryInput = {
   client: SuiGrpcClient
   reviewText: string
   packetText: string
   signal: AbortSignal
-}) {
+}
+
+function recoveryInput(input: RecoveryInput, expectedSoulId?: string) {
   const { input: review, beneficiary, transactionDigest } = parseReview(input.reviewText)
+  commerceCheck(expectedSoulId === undefined || review.soulId === expectedSoulId, 'PAID_SERVICE_RECOVERY_SOUL')
   const packet = parsePacket(input.packetText, transactionDigest)
+  const { client, signal } = input
+  return { beneficiary, transactionDigest, history: {
+    ...review, client, signal, packet, proveTreeHistory: true, proveOpeningHistory: true,
+  } }
+}
+
+/** Verify the original for the page's Soul before making any current balance query. */
+export async function queryNativePaidServiceRecoveryHistory(input: RecoveryInput & { soulId: string }) {
+  const { beneficiary, transactionDigest, history } = recoveryInput(input, input.soulId)
+  const result = await readNativePaidServiceOriginalProceeds(history)
+  if (result.status === 'ORIGINAL_SERVICE_BACKED_PROCEEDS') {
+    commerceCheck(result.originalProceeds.owner === beneficiary, 'PAID_SERVICE_RECOVERY_BENEFICIARY')
+  }
+  return { transactionDigest, beneficiary, ...result }
+}
+
+/** Read-only operator case with both original and current observations. */
+export async function verifyNativePaidServiceRecovery(input: RecoveryInput) {
+  const { beneficiary, transactionDigest, history } = recoveryInput(input)
   const result = await readNativePaidServiceBeneficiaryFunds({
-    ...review, client: input.client, signal: input.signal, packet, viewerAddress: beneficiary,
-    getViewerAddress: () => beneficiary, proveTreeHistory: true, proveOpeningHistory: true,
+    ...history, viewerAddress: beneficiary, getViewerAddress: () => beneficiary,
   })
   return { transactionDigest, beneficiary, ...result }
 }

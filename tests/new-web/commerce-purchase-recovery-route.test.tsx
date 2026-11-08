@@ -4,7 +4,9 @@ import {createRoot,type Root} from 'react-dom/client'
 import {beforeEach,afterEach,expect,it,vi} from 'vitest'
 import Page from '../../web/app/souls/[id]/purchase/recovery/page'
 import {purchaseRecoveryFixture} from './fixtures/commerce-purchase-recovery-original'
-import {aid} from './fixtures/activity-transaction-evidence'
+import {aid,adigest} from './fixtures/activity-transaction-evidence'
+import {normalizeStructTag} from '@mysten/sui/utils'
+import {serviceRecoveryCase} from './fixtures/commerce-paid-content-receipt'
 const m=vi.hoisted(()=>({id:'',address:null as string|null,factory:vi.fn(),readCurrent:vi.fn(),openContent:vi.fn(),
  walletClient:{ledgerService:{}} as any,walletConnection:{},sign:vi.fn(),sealConfig:{} as any,incomeRegistry:vi.fn()}))
 vi.mock('../../web/lib/hooks/use-wallet-sign',()=>({useWalletSign:()=>({
@@ -750,4 +752,101 @@ it('keeps the original credit when stopping a slow current read and ignores the 
    f.review.purchaseDigest,f.review.purchaseDigest,
   ])
  } finally {release()}
+})
+
+async function selectServiceFile(index: number, text: string) {
+  const file = { name: index === 0 ? 'review.json' : 'payment.json', size: new TextEncoder().encode(text).length,
+    text: async () => text } as File
+  await act(async () => {
+    const input = host.querySelectorAll('[aria-label="原 Native 服务收款恢复"] input[type=file]')[index]
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+it('opens original service settlement on the anonymous route and retries current funds independently', async () => {
+  const x = await serviceRecoveryCase()
+  const readTransaction = vi.spyOn(x.f.client.ledgerService, 'getTransaction')
+  const getBalance = x.f.client.stateService.getBalance
+  getBalance.mockRejectedValueOnce({ code: 14 })
+  m.id = x.f.soulId
+  m.factory.mockReturnValue(x.f.client)
+  await render()
+  const files = x.files()
+  await selectServiceFile(0, files.reviewText)
+  await selectServiceFile(1, files.packetText)
+  expect(m.factory).not.toHaveBeenCalled()
+
+  await click('查询原服务收款')
+  const original = host.querySelector('[aria-label="已核验原服务收款"]')
+  expect(original?.textContent).toContain('原买方总额 104 · 原收款 101 · 原协议入账 3')
+  expect(original?.textContent).toContain(x.packet.digest)
+  expect(original?.textContent).toContain(x.review.beneficiary)
+  expect(original?.textContent).toContain('确认检查点 100')
+  expect(getBalance).not.toHaveBeenCalled()
+  expect(x.f.client.core.listOwnedObjects).not.toHaveBeenCalled()
+  const historicalReads = readTransaction.mock.calls.length
+
+  await click('查询原服务受款地址当前资金')
+  expect(host.textContent).toContain('当前 Coin 与地址余额暂不可用')
+  expect(host.textContent).toContain('原收款 Coin 当前余额 101')
+  expect(host.querySelector('[aria-label="已核验原服务收款"]')?.textContent).toContain(x.packet.digest)
+  await click('查询原服务受款地址当前资金')
+  expect(host.textContent).toContain('当前 Coin 余额 101 · 地址余额 7 · 币种合计 108')
+  expect(readTransaction).toHaveBeenCalledTimes(historicalReads)
+  expect(getBalance).toHaveBeenLastCalledWith({ owner: x.review.beneficiary, coinType: normalizeStructTag('0x2::sui::SUI') }, expect.anything())
+  expect(m.sign).not.toHaveBeenCalled()
+  expect(localStorage.length).toBe(0)
+})
+
+it('rejects a foreign Soul and a mismatched service packet on the anonymous route before reading the ledger', async () => {
+  const x = await serviceRecoveryCase()
+  const ledger = vi.spyOn(x.f.client.ledgerService, 'getServiceInfo')
+  m.factory.mockReturnValue(x.f.client)
+  m.id = aid(999)
+  await render()
+  const files = x.files()
+  await selectServiceFile(0, files.reviewText)
+  await selectServiceFile(1, files.packetText)
+  await click('查询原服务收款')
+  expect(host.textContent).toContain('原服务审查文件属于另一个 Soul')
+  expect(ledger).not.toHaveBeenCalled()
+
+  m.id = x.f.soulId
+  await render()
+  expect(host.textContent).not.toContain('review.json')
+  await selectServiceFile(0, files.reviewText)
+  await selectServiceFile(1, JSON.stringify({ ...x.packet, digest: adigest(91) }))
+  await click('查询原服务收款')
+  expect(host.textContent).toContain('PAID_SERVICE_RECOVERY_PACKET')
+  expect(ledger).not.toHaveBeenCalled()
+  expect(host.querySelector('[aria-label="已核验原服务收款"]')).toBeNull()
+})
+
+it('keeps the original service proof when stopping a current read and ignores late results after file replacement', async () => {
+  const x = await serviceRecoveryCase()
+  m.id = x.f.soulId
+  m.factory.mockReturnValue(x.f.client)
+  await render()
+  const files = x.files()
+  await selectServiceFile(0, files.reviewText)
+  await selectServiceFile(1, files.packetText)
+  await click('查询原服务收款')
+  const getBalance = x.f.client.stateService.getBalance
+  const currentBalance = getBalance.getMockImplementation()!
+  let finish!: () => void
+  getBalance.mockImplementationOnce(async () => {
+    await new Promise<void>(resolve => { finish = resolve })
+    return currentBalance()
+  })
+  await click('查询原服务受款地址当前资金')
+  await click('停止服务收款查询')
+  expect(host.textContent).toContain('已核验的原服务收款仍可查看')
+  expect(host.querySelector('[aria-label="已核验原服务收款"]')?.textContent).toContain(x.packet.digest)
+  await selectServiceFile(1, files.packetText)
+  await act(async () => { finish(); await new Promise(resolve => setTimeout(resolve, 20)) })
+  expect(host.querySelector('[aria-label="已核验原服务收款"]')).toBeNull()
+  expect(host.querySelector('[aria-label="原服务受款地址当前资金"]')).toBeNull()
+  await click('查询原服务收款')
+  expect(host.querySelector('[aria-label="已核验原服务收款"]')?.textContent).toContain(x.packet.digest)
 })
