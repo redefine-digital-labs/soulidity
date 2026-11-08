@@ -4,7 +4,7 @@ import {deriveDynamicFieldID,fromBase64} from '@mysten/sui/utils'
 import {sha256} from '@noble/hashes/sha2.js'
 import {expect,vi} from 'vitest'
 import {fixture} from './commerce-recovery-current-content'
-import {aid,activityHash} from './activity-transaction-evidence'
+import {activityEvidenceFixture,ActivityFixtureEventsBcs,aid,activityHash} from './activity-transaction-evidence'
 import {publicReadPaidAbiV2Fixture} from './commerce-public-read-paid-abi-v2'
 import {MAINNET_GENESIS_DIGEST} from '../../../web/lib/animacraft/mainnet-chain'
 import {historicalMoveObjectType} from '../../../web/lib/sui/historical-object'
@@ -19,8 +19,8 @@ import {readNativePublicReadPaidV2} from '../../../web/lib/soulidity/commerce/na
 import {readContractCheckedNativePublicReadPaidPreviewV2} from '../../../web/lib/soulidity/commerce/native-public-read-paid-preview-v2'
 
 // Actual pipeline; controlled raw RPC/full simulation witness, not node execution.
-async function contractCheckedPreviewFixture(variant='',buyerOverride?:string){
- const x=await fixture('new',buyerOverride);const {chainIdentifier:unused,...foundation}=x.params.economics.foundation;x.params.economics.foundation=foundation as typeof x.params.economics.foundation;const abi=await publicReadPaidAbiV2Fixture(),client=x.f.client as any
+async function contractCheckedPreviewFixture(variant='',buyerOverride?:string,source?:Awaited<ReturnType<typeof fixture>>){
+ const x=source??await fixture('new',buyerOverride);const {chainIdentifier:unused,...foundation}=x.params.economics.foundation;x.params.economics.foundation=foundation as typeof x.params.economics.foundation;const abi=await publicReadPaidAbiV2Fixture(),client=x.f.client as any
  const normalized=(fn:any)=>{const value=JSON.parse(JSON.stringify(fn).replaceAll(aid(42),x.f.nativeId).replaceAll(aid(44),x.params.economics.foundation.originalPackageId));value.packageId=x.params.target.native.callablePackageId;return value}
  client.core.getMoveFunction=vi.fn(async(r:any)=>({function:normalized([abi.quote,abi.buy,abi.approval].find(fn=>fn.name===r.name))}))
  client.core.simulateTransaction=vi.fn(async(request:any)=>{
@@ -39,8 +39,8 @@ async function contractCheckedPreviewFixture(variant='',buyerOverride?:string){
  return {...x,client,runPreview:()=>readContractCheckedNativePublicReadPaidPreviewV2(x.params)}
 }
 
-async function purchasePreparationFixture(variant='',buyerOverride?:string){
- const x=await contractCheckedPreviewFixture('',buyerOverride),client=x.client,coinCodec=bcs.struct('Coin',{id:bcs.Address,balance:bcs.u64()}),paymentId=aid(8800),gasId=aid(8801)
+async function purchasePreparationFixture(variant='',buyerOverride?:string,source?:Awaited<ReturnType<typeof fixture>>){
+ const x=await contractCheckedPreviewFixture('',buyerOverride,source),client=x.client,coinCodec=bcs.struct('Coin',{id:bcs.Address,balance:bcs.u64()}),paymentId=aid(8800),gasId=aid(8801)
  const coin=(id:string,balance:number,owner=x.buyer)=>x.f.object(id,'0x2::coin::Coin<0x2::sui::SUI>',coinCodec.serialize({id,balance}).toBytes(),{AddressOwner:owner})
  const payment=coin(paymentId,variant==='payment-low'?103:1000,variant==='payment-owner'?aid(999):x.buyer),gasCoin=coin(gasId,variant==='gas-low'?9:100)
  const ref=(row:any)=>({objectId:row.objectId,version:String(row.version),digest:row.digest})
@@ -53,8 +53,8 @@ async function purchasePreparationFixture(variant='',buyerOverride?:string){
  return {...x,input,runPrepare:()=>prepareNewNativePublicReadPaidPurchaseV2(input)}
 }
 
-export async function completePreflightFixture(variant='',buyerOverride?:string){
- const x=await purchasePreparationFixture('',buyerOverride),client=x.client,content=x.params.target.content!.originalPackageId
+export async function completePreflightFixture(variant='',buyerOverride?:string,source?:Awaited<ReturnType<typeof fixture>>){
+ const x=await purchasePreparationFixture('',buyerOverride,source),client=x.client,content=x.params.target.content!.originalPackageId
  client.ledgerService.getServiceInfo=vi.fn(async()=>({response:{chainId:MAINNET_GENESIS_DIGEST}}))
  client.transactionExecutionService={simulateTransaction:vi.fn(async(request:any)=>{
   expect(request.checks).toBe(0);expect(request.doGasSelection).toBe(false)
@@ -100,4 +100,26 @@ export async function completePreflightFixture(variant='',buyerOverride?:string)
   return {response:{transaction:{digest,transaction:{bcs:{value:bytes}},effects:{bcs:{value:effects},transactionDigest:digest,status:{success:true}},events:{bcs:{value:eventBytes}},objects:{objects:pool},signatures:[]},commandOutputs:[]}}
  })}
  return {...x,runComplete:()=>preflightNewNativePublicReadPaidPurchaseV2(x.input)}
+}
+
+export async function installNativePaidSettlementFixture(f: Awaited<ReturnType<typeof completePreflightFixture>>, digest: string) {
+  const cert = await activityEvidenceFixture()
+  const simulate = f.client.transactionExecutionService.simulateTransaction
+  const {response:{transaction:raw}} = await simulate.mock.results[0].value
+  Object.assign(cert.transactionData.V1,bcs.TransactionData.parse(raw.transaction.bcs.value).V1)
+  cert.effectsData.V2 = bcs.TransactionEffects.parse(raw.effects.bcs.value).V2
+  cert.eventsData.data = ActivityFixtureEventsBcs.parse(raw.events.bcs.value).data
+  cert.rehashTransaction()
+  f.client.ledgerService.getCheckpoint.mockResolvedValue({response:{checkpoint:cert.checkpoint}})
+  const live = f.client.ledgerService.getObject.getMockImplementation()!
+  f.client.ledgerService.getObject.mockImplementation(async (request,options) => {
+    if(request.version===undefined)return live(request,options)
+    const object=raw.objects.objects.find(row=>row.objectId===request.objectId&&row.version===request.version)
+    return {response:{object}}
+  })
+  const found = async (request: {digest: string}): Promise<never> => {
+    if (request.digest !== digest) throw {code:'NOT_FOUND'}
+    return {response:{transaction:cert.ledger}} as never
+  }
+  return { raw, found, ledger: cert.ledger }
 }

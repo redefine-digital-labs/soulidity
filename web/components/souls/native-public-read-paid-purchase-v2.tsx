@@ -64,5 +64,5 @@ function SelectedNativePublicReadPaidPurchaseV2({soulId,index,kind,contentScope,
  }catch{mismatch=true}
  const releaseUnavailable=selection.execution&&!selection.execution.isCurrent()?'此发布的内容购买暂不可用。':null
  return <NativePublicReadPaidPreflightV2 client={client} input={selection.input} viewerAddress={wallet.suiWallet?.address??null}
-  activationKey={selection.activationKey} disabledReason={selection.disabledReason||releaseUnavailable||(mismatch?'购买输入与当前内容版本不一致。':null)} hostPreflight={hostPreflight} executeOriginal={selection.execution?executeOriginal:null}/>
+  activationKey={selection.activationKey} releaseJson={releaseJson} sourceKey={sourceKey} disabledReason={selection.disabledReason||releaseUnavailable||(mismatch?'购买输入与当前内容版本不一致。':null)} hostPreflight={hostPreflight} executeOriginal={selection.execution?executeOriginal:null}/>
 }

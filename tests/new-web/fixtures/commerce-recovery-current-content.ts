@@ -84,8 +84,8 @@ export function appendPaidRecord(x:Awaited<ReturnType<typeof fixture>>,options:{
  x.record=record;x.params.recordIndex=index;x.params.kind=record.kind;x.params.requiredScope=BigInt(record.scope)
  return {id,index,record}
 }
-export async function integratedProtectedFixture(expiring=false,appended=false){
- const cryptoFixture=await contentAppendPreparationFixture(),buyer=cryptoFixture.signer.toSuiAddress(),x=await fixture(expiring?'expiry-fresh':'',buyer,aid(7070)),client=x.f.client as any
+export async function integratedProtectedFixture(expiring=false,appended=false,unpaid=false){
+ const cryptoFixture=await contentAppendPreparationFixture(),buyer=cryptoFixture.signer.toSuiAddress(),x=await fixture(unpaid?'new':expiring?'expiry-fresh':'',buyer,aid(7070)),client=x.f.client as any
  if(appended)appendPaidRecord(x)
  const plaintext=new TextEncoder().encode('Actual current Entry and protected ciphertext agree.'),dek=new Uint8Array(32).fill(5),iv=new Uint8Array(12).fill(6)
  const key=await crypto.subtle.importKey('raw',dek,{name:'AES-GCM'},false,['encrypt']),ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plaintext))

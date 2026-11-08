@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { bcs } from '@mysten/sui/bcs'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { toBase64 } from '@mysten/sui/utils'
 import type { Transaction } from '@mysten/sui/transactions'
-import { completePreflightFixture } from './fixtures/commerce-new-paid-preflight'
-import { activityEvidenceFixture, ActivityFixtureEventsBcs, aid } from './fixtures/activity-transaction-evidence'
+import { completePreflightFixture, installNativePaidSettlementFixture } from './fixtures/commerce-new-paid-preflight'
+import { aid } from './fixtures/activity-transaction-evidence'
 import { createNativePublicReadPaidHostPreflightV2 } from '../../web/lib/soulidity/native-public-read-paid-host-v2'
 import { browserNativePublicReadPaidJournalV2, nativePublicReadPaidKeyV2 } from '../../web/lib/soulidity/native-public-read-paid-journal-v2'
 import { executeNativePublicReadPaidOriginalV2 } from '../../web/lib/soulidity/native-public-read-paid-execution-v2'
@@ -110,30 +109,8 @@ it('rejects a different version before presenting the wallet prompt', async () =
   expect(f.sign).not.toHaveBeenCalled();expect(f.submit).not.toHaveBeenCalled()
 })
 
-async function installSettlement(f: Awaited<ReturnType<typeof fixture>>) {
-  const cert = await activityEvidenceFixture()
-  const simulate = f.client.transactionExecutionService.simulateTransaction
-  const {response:{transaction:raw}} = await simulate.mock.results[0].value
-  Object.assign(cert.transactionData.V1,bcs.TransactionData.parse(raw.transaction.bcs.value).V1)
-  cert.effectsData.V2 = bcs.TransactionEffects.parse(raw.effects.bcs.value).V2
-  cert.eventsData.data = ActivityFixtureEventsBcs.parse(raw.events.bcs.value).data
-  cert.rehashTransaction()
-  f.client.ledgerService.getCheckpoint.mockResolvedValue({response:{checkpoint:cert.checkpoint}})
-  const live = f.client.ledgerService.getObject.getMockImplementation()!
-  f.client.ledgerService.getObject.mockImplementation(async (request,options) => {
-    if(request.version===undefined)return live(request,options)
-    const object=raw.objects.objects.find(row=>row.objectId===request.objectId&&row.version===request.version)
-    return {response:{object}}
-  })
-  const found = async (request: {digest: string}): Promise<never> => {
-    if (request.digest !== f.selected.packet.digest) throw {code:'NOT_FOUND'}
-    return {response:{transaction:cert.ledger}} as never
-  }
-  return { raw, found }
-}
-
 it('reconciles the finalized original from the checkpoint and payout and rejects a later missing observation', async () => {
-  const f = await fixture(), {found} = await installSettlement(f)
+  const f = await fixture(), {found} = await installNativePaidSettlementFixture(f, f.selected.packet.digest)
   f.submit.mockImplementationOnce(async () => { f.queries.mockImplementation(found) })
   const result=await f.run()
   expect(result.original).toMatchObject({status:'SUBSCRIPTION_RECORDED',checkpoint:'100',receipt:{
@@ -152,7 +129,7 @@ it('reconciles the finalized original from the checkpoint and payout and rejects
 })
 
 it('reuses a live Entry, then prepares a funded renewal after expiry and recovers the archived signed original', async () => {
-  const f = await fixture(), {raw,found} = await installSettlement(f)
+  const f = await fixture(), {raw,found} = await installNativePaidSettlementFixture(f, f.selected.packet.digest)
   const first = await f.run()
   expect(first.original.status).toBe('MISSING')
   const signed=(await f.read())!

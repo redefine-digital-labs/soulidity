@@ -1,10 +1,13 @@
 'use client'
 
-import React,{useLayoutEffect,useRef,useState} from 'react'
+import React,{useCallback,useLayoutEffect,useRef,useState} from 'react'
 import type {SuiGrpcClient} from '@mysten/sui/grpc'
 import {validateNativePublicReadPaidHostResultV2,type NativePublicReadPaidHostRequestV2,type NativePublicReadPaidHostPreflightV2} from '../../lib/soulidity/commerce/native-public-read-paid-host-preflight-v2'
 import {NativePublicReadPaidHostRecoveryErrorV2,type NativePublicReadPaidRecoveryV2} from '../../lib/soulidity/native-public-read-paid-host-v2'
-import {parsePurchaseRecoveryOriginal} from '../../lib/soulidity/commerce/purchase-recovery-original'
+import {parsePurchaseRecoveryOriginal,queryPurchaseRecoveryOriginal,type PurchaseRecoveryOriginal,type PurchaseRecoveryQuery} from '../../lib/soulidity/commerce/purchase-recovery-original'
+import {paidContentScopeCovers} from '../../lib/soulidity/commerce/paid-content-policy'
+import {nativePublicReadPaidSettlementMatchesV2} from '../../lib/soulidity/native-public-read-paid-journal-v2'
+import {NativePublicPaidContentReaderV2} from '../souls/native-public-paid-content-reader-v2'
 import type {executeNativePublicReadPaidOriginalV2} from '../../lib/soulidity/native-public-read-paid-execution-v2'
 import {parseSoulAccessRecord} from '../../lib/soulidity/soul-access-operation'
 export type NativePublicReadPaidPreflightInputV2=Omit<NativePublicReadPaidHostRequestV2,'qualification'|'getBuyerAddress'>&{
@@ -13,30 +16,44 @@ type Client=SuiGrpcClient|((signal:AbortSignal)=>SuiGrpcClient)
 type ExecuteOriginal=(text:string,signal:AbortSignal)=>ReturnType<typeof executeNativePublicReadPaidOriginalV2>
 type RecoveredFunding = { total: string; coinType: string; paymentId: string; gasIds: string[]; gasBudget: string }
 type Validated=Awaited<ReturnType<typeof validateNativePublicReadPaidHostResultV2>>
+type PaidOriginal=Extract<PurchaseRecoveryOriginal,{kind:'native-public-read-v2'}>['value']
+type PaidHistory=Extract<PurchaseRecoveryQuery,{kind:'native-public-read-v2'}>['history']
+type Settlement={original:PaidOriginal;history:Extract<PaidHistory,{status:'SUBSCRIPTION_RECORDED'}>}
+const originalStatusMessages={
+ MISSING:'本次未查到原结果，请用同一摘要继续查询。',
+ PENDING:'已找到原交易，等待最终确认。',
+ FAILED:'原交易已确认失败。',
+ SUBSCRIPTION_RECORDED:'已核对原订阅和资金。',
+}
 /** Actual unsigned preflight consumer. Main owns current release activation,
  * wallet selection, current reviewed Record/funding and its durable host/lock.
  * No local persistence, direct preflight fallback, wallet signer or submitter. */
-export function NativePublicReadPaidPreflightV2({client,input,viewerAddress,activationKey,disabledReason,hostPreflight,executeOriginal=null}:{
+export function NativePublicReadPaidPreflightV2({client,input,viewerAddress,activationKey,disabledReason,hostPreflight,releaseJson,sourceKey,executeOriginal=null}:{
  client:Client;input:NativePublicReadPaidPreflightInputV2;viewerAddress:string|null;activationKey:string;disabledReason:string|null;hostPreflight:NativePublicReadPaidHostPreflightV2|null;executeOriginal?:ExecuteOriginal|null
+ releaseJson:string;sourceKey:string
 }){
- const scope=JSON.stringify([input,viewerAddress,activationKey,disabledReason],(_k,v)=>typeof v==='bigint'?{bigint:String(v)}:v)
+ const scope=JSON.stringify([input,viewerAddress,activationKey,disabledReason,releaseJson,sourceKey],(_k,v)=>typeof v==='bigint'?{bigint:String(v)}:v)
  const current=useRef({scope,client,hostPreflight,viewerAddress,executeOriginal})
  const serial=useRef(0),active=useRef<AbortController|null>(null)
  const executing=useRef<AbortController|null>(null)
- const [dispatch,setDispatch]=useState({scope,pending:false,message:''})
+ const emptyDispatch=useCallback(()=>({scope,client,executeOriginal,pending:null as 'execute'|'read'|null,message:'',
+  attempted:false,seenOnChain:false,terminal:false,settlement:null as Settlement|null}),[scope,client,executeOriginal])
+ const [dispatch,setDispatch]=useState(emptyDispatch)
+ const outcome=dispatch.scope===scope&&dispatch.client===client&&dispatch.executeOriginal===executeOriginal?dispatch:emptyDispatch()
+ const dispatchClaim=useRef<{scope:string;client:Client;executeOriginal:ExecuteOriginal}|null>(null)
  // React may batch multiple clicks before committing pending/attempted state.
  // Claim the attempt synchronously; stop/error/success never release it.
  const attempt=useRef<{scope:string;client:Client;host:NativePublicReadPaidHostPreflightV2}|null>(null)
- const empty=()=>({scope,client,hostPreflight,pending:false,attempted:false,stopped:false,result:null as Validated|null,error:null as string|null,recovery:null as NativePublicReadPaidRecoveryV2|null,recoveredFunding:null as RecoveredFunding|null})
+ const empty=useCallback(()=>({scope,client,hostPreflight,pending:false,attempted:false,stopped:false,result:null as Validated|null,error:null as string|null,recovery:null as NativePublicReadPaidRecoveryV2|null,recoveredFunding:null as RecoveredFunding|null}),[scope,client,hostPreflight])
  const [state,setState]=useState(empty)
  useLayoutEffect(()=>{
   current.current={scope,client,hostPreflight,viewerAddress,executeOriginal}
   serial.current++;active.current?.abort()
   // Drop old confirmation state before the new wallet or host can act.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  setState(empty());setDispatch({scope,pending:false,message:''})
-  return()=>{serial.current++;active.current?.abort();executing.current?.abort();executing.current=null}
- },[scope,client,hostPreflight,viewerAddress,executeOriginal])
+  setState(empty());setDispatch(emptyDispatch())
+  return()=>{active.current?.abort();executing.current?.abort();executing.current=null}
+ },[scope,client,hostPreflight,viewerAddress,executeOriginal,empty,emptyDispatch])
  const view=state.scope===scope&&state.client===client&&state.hostPreflight===hostPreflight?state:empty()
  const decision=input.reviewed.decision.action
  const eligibility=decision==='REUSE_OWNER'||decision==='REUSE_ENTRY'?'已有内容资格可复用，无需重复购买。':decision!=='PURCHASE_REQUIRED'||!input.reviewed.quote||input.reviewed.purchaseBlockers.length?'当前内容购买条件尚未满足。':null
@@ -83,21 +100,57 @@ export function NativePublicReadPaidPreflightV2({client,input,viewerAddress,acti
    if(valid())setState(s=>valid()&&s.scope===scope&&s.client===client&&s.hostPreflight===host?{...s,pending:false,recovery,recoveredFunding,error:message}:s)
   }
  }
- const executableText=view.result?.text??(view.recovery?.format==='native-public-read-v2'&&view.recovery.durability==='CONFIRMED'?view.recovery.text:null)
- async function dispatchOriginal(){
-  if(!executableText||!executeOriginal||unavailable||executing.current)return
+ const recoveryText=view.recovery?.format==='native-public-read-v2'?view.recovery.text:null
+ const originalText=view.result?.text??recoveryText
+ const originalDigest=view.result?.digest??(recoveryText?view.recovery?.digest:null)
+ const executableText=view.result?.text??(view.recovery?.durability==='CONFIRMED'?recoveryText:null)
+ async function observeOriginal(mode:'execute'|'read'){
+  const text=mode==='execute'?executableText:originalText
+  if(!text||!originalDigest||executing.current||outcome.terminal)return
+  if(current.current.scope!==scope||current.current.client!==client||current.current.executeOriginal!==executeOriginal)return
+  if(mode==='execute'){
+   if(!executeOriginal||unavailable||outcome.seenOnChain||outcome.attempted)return
+   if(dispatchClaim.current?.scope===scope&&dispatchClaim.current.client===client&&dispatchClaim.current.executeOriginal===executeOriginal)return
+   dispatchClaim.current={scope,client,executeOriginal}
+  }
   const request=new AbortController();executing.current=request
-  const valid=()=>!request.signal.aborted&&executing.current===request&&current.current.scope===scope&&current.current.executeOriginal===executeOriginal
-  setDispatch({scope,pending:true,message:''})
+  const valid=()=>!request.signal.aborted&&executing.current===request&&current.current.scope===scope
+   &&current.current.client===client&&current.current.executeOriginal===executeOriginal
+  const started={...outcome,attempted:mode==='execute'||outcome.attempted}
+  setDispatch({...started,pending:mode,message:''})
   try{
-   const result=await executeOriginal(executableText,request.signal)
-   const messages={MISSING:'本次未查到原结果，请先查询原购买记录。',PENDING:'已找到原交易，等待最终确认。',
-    FAILED:'原交易已确认失败。',SUBSCRIPTION_RECORDED:'已核对原订阅和资金。请打开原购买恢复页，检查当前内容交付。'}
-   if(valid())setDispatch({scope,pending:false,message:messages[result.original.status]})
+   const {soulId,buyer}=input.qualification
+   const parsed=await parsePurchaseRecoveryOriginal(text,soulId)
+   if(!valid())return
+   if(parsed.kind!=='native-public-read-v2'||parsed.value.packet.digest!==originalDigest||parsed.value.intent.buyer!==buyer)throw Error('原购买与本次交易摘要或买家不一致。')
+   const original=parsed.value
+   let history:PaidHistory
+   if(mode==='execute'&&executeOriginal){
+    const result=await executeOriginal(text,request.signal)
+    if(result.record.packet.digest!==originalDigest)throw Error('原购买返回了不同的交易摘要。')
+    history=result.original
+   }else{
+    const reader=typeof client==='function'?client(request.signal):client
+    const result=await queryPurchaseRecoveryOriginal({text,soulId,client:reader,signal:request.signal})
+    if(result.kind!=='native-public-read-v2')throw Error('原购买格式不一致。')
+    history=result.history
+   }
+   let settlement:Settlement|null=null
+   if(history.status==='SUBSCRIPTION_RECORDED'){
+    if(!nativePublicReadPaidSettlementMatchesV2({packet:original.packet,plan:{author:buyer}},history))throw Error('原付款回执与本次交易摘要或买家不一致。')
+    settlement={original,history}
+   }
+   if(valid())setDispatch({...started,pending:null,message:originalStatusMessages[history.status],
+    seenOnChain:outcome.seenOnChain||history.status!=='MISSING',terminal:history.status==='FAILED'||settlement!==null,settlement})
   }catch(error){
-   if(valid())setDispatch({scope,pending:false,message:error instanceof Error?error.message:'原购买未能确认，请核对原记录。'})
+   if(valid())setDispatch({...started,pending:null,message:error instanceof Error?error.message:'原购买未能确认，请核对原记录。'})
   }finally{if(executing.current===request)executing.current=null}
  }
+ const settlement=outcome.settlement
+ const purchased=settlement?.original.intent.recordGuard
+ const selection=input.qualification
+ const matchesPurchasedVersion=settlement&&purchased?.index===selection.recordIndex&&purchased.namespace===input.reviewed.namespace
+  &&settlement.original.intent.kind===selection.kind&&paidContentScopeCovers(BigInt(settlement.history.receipt.entry.scope),selection.requiredScope)
  function stop(){serial.current++;active.current?.abort();setState(s=>({...s,pending:false,attempted:true,stopped:true,result:null,error:null,recovery:null,recoveredFunding:null}))}
  return <section aria-label="新增内容购买预检" className="space-y-3 rounded-xl border p-4">
   <h3 className="font-medium">核对新增内容购买</h3>
@@ -125,12 +178,22 @@ export function NativePublicReadPaidPreflightV2({client,input,viewerAddress,acti
    <a download={`purchase-${view.result.digest}.json`} href={`data:application/json;charset=utf-8,${encodeURIComponent(view.result.text)}`}>下载本次未签名原购买 JSON</a>
    <p>原文件与本次所选内容、价格和资金引用已核对。实际购买仍需核对当前发布、权限和最终钱包条件。</p>
   </article>}
-  {executeOriginal&&executableText&&<section aria-label="执行已保存的原购买">
-   <button type="button" disabled={Boolean(unavailable)||dispatch.scope===scope&&(dispatch.pending||Boolean(dispatch.message))} onClick={()=>void dispatchOriginal()}>
+  {originalText&&<section aria-label="原购买执行与结果" className="space-y-2">
+   {executeOriginal&&executableText&&<button type="button"
+    disabled={Boolean(unavailable)||Boolean(outcome.pending)||outcome.attempted||outcome.seenOnChain} onClick={()=>void observeOriginal('execute')}>
     核对并签名发送原购买
-   </button>
-   {dispatch.scope===scope&&(dispatch.pending||dispatch.message)&&<p role="status">{dispatch.pending?'正在核对并继续原购买…':dispatch.message}</p>}
+   </button>}
+   {!outcome.terminal&&<button type="button" disabled={Boolean(outcome.pending)} onClick={()=>void observeOriginal('read')}>查询原购买结果</button>}
+   {(outcome.pending||outcome.message)&&<p role="status">{outcome.pending==='execute'?'正在核对并继续原购买…':outcome.pending==='read'?'正在按原摘要查询…':outcome.message}</p>}
   </section>}
+  {settlement&&<article aria-label="已核验原内容付款" className="space-y-2 break-all">
+   <p>原交易 {settlement.original.packet.digest} · 确认检查点 {settlement.history.checkpoint}</p>
+   {settlement.history.receipt.money&&<p>原总价 {settlement.history.receipt.money.buyerGrossDebit} · 发行方收款 {settlement.history.receipt.money.payout.amount}
+    {' · '}协议入账 {settlement.history.receipt.money.protocolIncome} · SUI Gas {settlement.history.receipt.money.gas.netGasCharge} MIST</p>}
+   {matchesPurchasedVersion?<NativePublicPaidContentReaderV2 soulId={selection.soulId} index={selection.recordIndex} releaseJson={releaseJson}
+     sourceKey={sourceKey} paidRecovery={{original:settlement.original,kind:selection.kind,scope:String(selection.requiredScope),exactRecord:true}}/>
+    :<p>可在原购买恢复页选择该订阅覆盖的当前版本。</p>}
+  </article>}
   <a href={`/souls/${input.qualification.soulId}/purchase/recovery`}>查询本 Soul 的原购买记录</a>
  </section>
 }

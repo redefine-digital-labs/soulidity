@@ -38,13 +38,13 @@ function selectedEconomics(json: string | undefined, target: ReturnType<typeof p
 export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, sourceKey, expectedOwnerSourceKey, ownerAddress, ownerRead = false, paidRead = true, paidPreview, paidRecovery }: {
   soulId: string; index: number; releaseJson: string; sourceKey: string; expectedOwnerSourceKey?: string; ownerAddress?: string; ownerRead?: boolean; paidRead?: boolean
   paidPreview?: { kind: number; scope: string; economicsJson?: string }
-  paidRecovery?: { original: NativePublicReadPaidPreparedOriginalV2; client: SuiGrpcClient; kind: number; scope: string }
+  paidRecovery?: { original: NativePublicReadPaidPreparedOriginalV2; client?: SuiGrpcClient; kind: number; scope: string; exactRecord?: true }
 }) {
   const wallet = useWalletSign(), address = wallet.suiWallet?.address
   const reader = paidRecovery?.client ?? wallet.suiGrpcClient
   const clients = useMemo(() => [reader, wallet.suiGrpcClient], [reader, wallet.suiGrpcClient])
   const session = useCommittedSession(JSON.stringify([soulId, index, releaseJson, sourceKey, expectedOwnerSourceKey, ownerAddress, ownerRead, paidRead, paidPreview,
-    paidRecovery?.original.packet.digest, paidRecovery?.kind, paidRecovery?.scope]), wallet.walletAccount ?? address, clients, wallet.currentWallet)
+    paidRecovery?.original.packet.digest, paidRecovery?.kind, paidRecovery?.scope, paidRecovery?.exactRecord]), wallet.walletAccount ?? address, clients, wallet.currentWallet)
   const isOwner = ownerRead && address === ownerAddress
   const canRead = paidRecovery ? address === paidRecovery.original.intent.buyer : isOwner || paidRead && address !== ownerAddress
   const objectUrl = useRef<string | null>(null)
@@ -92,12 +92,28 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
       if (paidRecovery) {
         const { recoverNativePublicReadPaidContentV2 } = await import('@/lib/soulidity/commerce/native-public-read-paid-recovery-delivery-v2')
         controller.signal.throwIfAborted()
-        const { original, kind, scope } = paidRecovery
+        const { original, kind, scope, exactRecord } = paidRecovery
+        let currentSourceKey = expectedOwnerSourceKey
+        if (exactRecord) {
+          // Payment advances the shared Host reference. Bind the live Record to
+          // the original namespace before using a fresh source key for Seal.
+          const { nativePublicOwnerSourceKeyV2, readNativePublicReadRecordV2 } = await import('@/lib/soulidity/native-public-read-record-v2')
+          controller.signal.throwIfAborted()
+          const live = await readNativePublicReadRecordV2({ client, target, soulId, recordIndex: index, signal: controller.signal })
+          const guard = original.intent.recordGuard
+          if (guard?.index !== index || live.namespace !== guard.namespace || live.hostId !== original.intent.host.objectId
+            || live.record.kind !== kind || live.record.scope !== scope) {
+            throw Error('所选版本已变化。请刷新内容库，或在原购买恢复页选择当前版本。')
+          }
+          currentSourceKey = nativePublicOwnerSourceKeyV2(live, {
+            index, kind, name: live.record.name, version: live.record.version,
+          })
+        }
         const delivery = await recoverNativePublicReadPaidContentV2({
           history: { ...original.context.originalReceiptContext, intent: original.intent, packet: original.packet,
             gas: original.reviewedGas, client, signal: controller.signal },
           delivery: { qualification: { format: 'native-public-read-v2', client, target, soulId, buyer: viewerAddress,
-            recordIndex: index, kind, requiredScope: BigInt(scope), expectedSourceKey: expectedOwnerSourceKey, signal: controller.signal },
+            recordIndex: index, kind, requiredScope: BigInt(scope), expectedSourceKey: currentSourceKey, signal: controller.signal },
             protected: protectedOptions },
         })
         if (delivery.status !== 'ORIGINAL_SUBSCRIPTION_CONTENT_OPENED' || delivery.delivery.status !== 'CONTENT_OPENED') {

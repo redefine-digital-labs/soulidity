@@ -86,7 +86,7 @@ type PaidOriginalObservation = { status: string; checkpoint?: string; receipt?: 
 
 /** Settlement terminates this payment packet. Content is opened separately
  * under current access and Seal, including after a new head is prepared. */
-export function nativePublicReadPaidSettlementMatchesV2(record: NativePublicReadPaidRecordV2, result: PaidOriginalObservation) {
+export function nativePublicReadPaidSettlementMatchesV2(record: { packet: { digest: string }; plan: { author: string } }, result: PaidOriginalObservation) {
  const receipt = result.receipt, digest = record.packet.digest
  return result.status === 'SUBSCRIPTION_RECORDED' && typeof result.checkpoint === 'string'
   && receipt?.checkpoint === result.checkpoint && receipt.transactionDigest === digest
