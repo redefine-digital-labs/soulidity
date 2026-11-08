@@ -6,6 +6,7 @@ import { Transaction } from '@mysten/sui/transactions'
 import { fromBase64 } from '@mysten/sui/utils'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
 import { Modal } from '@/components/ui/modal'
+import { CollectionRecoveryDownload } from './collection-recovery-download'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { useCollectionCommands, type CollectionCommandSubject } from '@/lib/hooks/use-collection-commands'
@@ -111,6 +112,7 @@ function CollectionCommandModal({ collection, open, onClose, action }: Collectio
       {commands.currentObservation && <p className="text-xs text-muted">{commands.currentObservation}</p>}
       {(localError || commands.error) && <p role="alert" className="text-xs text-danger">{localError || commands.error}</p>}
       {backup && <div className="ph-no-capture"><label className="text-xs">Public recovery backup — save this JSON before changing browsers or clearing local storage.</label>
+        <CollectionRecoveryDownload json={backup} filename="collection-listing-recovery.json" />
         <textarea aria-label="Collection recovery backup" readOnly value={backup} rows={5} className="mt-1 w-full rounded border border-border bg-card2 p-2 text-[10px]" /></div>}
       <details className="ph-no-capture"><summary className="text-xs cursor-pointer">Import an existing recovery packet</summary>
         <textarea aria-label="Import collection recovery" value={importText} onChange={event => setImportText(event.target.value)} rows={4}

@@ -6,9 +6,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import Page from '../../web/app/collections/[id]/page'
+import { collectionCommandFixture } from './fixtures/collection-command'
 import { collectionBuyFixture } from './fixtures/collection-buy'
 import { publicMarketFixture, id, deferred } from './fixtures/public-market'
-import type { CollectionDetailDiscoveryResult, CollectionPublicSnapshot } from '@soulidity/sdk'
+import { deriveKioskItemFieldId, KIOSK_ITEM_FIELD_TYPE, KioskItemFieldBcs, SoulPublicCollectionBcs, SoulPublicCollectionRightBcs, SoulPublicKioskBcs,
+  type CollectionDetailDiscoveryResult, type CollectionPublicSnapshot } from '@soulidity/sdk'
 import type { BrowserMarketSoulsPage } from '../../web/lib/soulidity/browser-market-souls'
 const h = vi.hoisted(() => ({ account: null as { address: string } | null, wallet: null as object | null,
   client: { grpc: {} } as { grpc?: object }, config: null as any, configError: null as string | null,
@@ -229,7 +231,7 @@ it('rejects a different Collection record before creating a chain client', async
   expect(purchase.c.id).not.toBe(snapshot.collectionId)
   await render()
   await choosePurchaseRecord(purchase.record)
-  expect(host.textContent).toContain('Choose an original Sui mainnet purchase record for this Collection.')
+  expect(host.textContent).toContain('Choose an original Sui mainnet record for this Collection.')
   expect(find('Query original Collection purchase')).toBeUndefined()
   expect(h.readClient).not.toHaveBeenCalled()
 })
@@ -245,10 +247,69 @@ it('keeps the original receipt when a stopped custody request resolves late', as
   await choosePurchaseRecord(purchase.record)
   await click('Query original Collection purchase')
   expect(host.textContent).toContain('Original purchase verified at checkpoint 42')
-  await click('Stop Collection purchase read')
+  await click('Stop Collection transaction read')
   expect(h.handoff.mock.calls[0][0].signal.aborted).toBe(true)
   await act(async () => pending.resolve({ status: 'CUSTODY_CHANGED', holder: id(1501), kioskId: id(1502), rightId: purchase.right.id }))
   expect(host.textContent).toContain('Original purchase verified at checkpoint 42')
   expect(host.textContent).toContain('Read stopped.')
   expect(host.textContent).not.toContain(id(1501))
+})
+
+
+it.each(['list', 'reprice', 'delist'] as const)('reads the seller’s exact %s and observes its listing without a wallet', async action => {
+  const seller = await collectionCommandFixture(action)
+  const exact = seller.newListing?.id ?? seller.listing.id
+  seller.current.set(exact, seller.rows.get(`${exact}:12`))
+  params = Promise.resolve({ id: seller.c.id })
+  h.config = null; h.configError = 'Release unavailable'
+  h.readClient.mockReturnValue(seller.client)
+  const journalWrite = vi.spyOn(Storage.prototype, 'setItem')
+  await render()
+  await choosePurchaseRecord(seller.record)
+  await click('Query original Collection listing command')
+  const label = { list: 'listing', reprice: 'price change', delist: 'listing cancellation' }[action]
+  expect(host.textContent).toContain(`Original ${label} verified at checkpoint 42`)
+  if (action !== 'list') expect(host.textContent).toContain(`Retired listing ${seller.listing.id}`)
+  if (seller.newListing) {
+    expect(host.textContent).toContain(`Created listing ${seller.newListing.id}`)
+    expect(host.textContent).toContain('Listing price 2.000001 USDC')
+  }
+  expect(host.textContent).toContain(`Exact listing ${exact} · ${action === 'delist' ? 'inactive' : 'active'}`)
+  expect(host.textContent).toContain(`Current holder ${seller.author}`)
+  expect(host.textContent).toContain(`Current Kiosk ${seller.kiosk.id}`)
+  seller.client.ledgerService.batchGetObjects.mockRejectedValueOnce(new Error('Current objects unavailable'))
+  await click('Check current Collection listing')
+  expect(host.textContent).toContain('Current listing and custody could not be verified.')
+  expect(host.textContent).toContain(`Original ${label} verified at checkpoint 42`)
+  expect(host.textContent).not.toContain('Exact listing')
+  expect(seller.client.ledgerService.getTransaction).toHaveBeenCalledOnce()
+  expect(seller.client.core.executeTransaction).not.toHaveBeenCalled()
+  expect(seller.sign).not.toHaveBeenCalled()
+  expect(journalWrite).not.toHaveBeenCalled()
+})
+
+
+it('keeps the exact cancellation and old listing when a later buyer holds the Right', async () => {
+  const seller = await collectionCommandFixture('delist')
+  const holder = id(1900), kiosk = id(1901), item = deriveKioskItemFieldId(kiosk, seller.right.id)
+  const shared = { Shared: { initialSharedVersion: '1' } }
+  const root = { ...seller.c, current_holder: holder, current_holder_kiosk_id: kiosk }
+  const custody = [
+    seller.full(root.id, seller.types.collection, SoulPublicCollectionBcs, root, shared, '14'),
+    seller.full(kiosk, seller.types.kiosk, SoulPublicKioskBcs, { ...seller.kiosk, id: kiosk, owner: holder }, shared, '14'),
+    seller.full(item, KIOSK_ITEM_FIELD_TYPE, KioskItemFieldBcs,
+      { id: item, name: { name: { id: seller.right.id } }, value: seller.right.id }, { ObjectOwner: kiosk }, '14'),
+    seller.full(seller.right.id, seller.types.right, SoulPublicCollectionRightBcs, seller.right, { ObjectOwner: item }, '14'),
+  ]
+  for (const row of custody) seller.current.set(row.objectId, row)
+  seller.current.set(seller.listing.id, seller.rows.get(`${seller.listing.id}:12`))
+  params = Promise.resolve({ id: seller.c.id })
+  h.readClient.mockReturnValue(seller.client)
+  await render()
+  await choosePurchaseRecord(seller.record)
+  await click('Query original Collection listing command')
+  expect(host.textContent).toContain('Original listing cancellation verified at checkpoint 42')
+  expect(host.textContent).toContain(`Exact listing ${seller.listing.id} · inactive`)
+  expect(host.textContent).toContain(`Current holder ${holder}`)
+  expect(host.textContent).toContain(`Current Kiosk ${kiosk}`)
 })

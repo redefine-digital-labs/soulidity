@@ -4,6 +4,7 @@ import { useLayoutEffect, useEffect, useRef, useState } from 'react'
 import { Transaction } from '@mysten/sui/transactions'
 import { fromBase64 } from '@mysten/sui/utils'
 import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import { CollectionRecoveryDownload } from './collection-recovery-download'
 import { Button } from '@/components/ui/button'
 import type { useCollectionBuy } from '@/lib/hooks/use-collection-buy'
 import type { CollectionBuyRecord } from '@/lib/collections/collection-buy-plan'
@@ -83,6 +84,7 @@ export function CollectionPurchasePanel({ purchase, offered, expanded, onExpand 
         <Button variant="outline" disabled={purchase.pending || !importText.trim()} onClick={() => void perform(() => purchase.importRecord(importText))}>Query and import purchase</Button>
       </div></details>
       {backup && <div><label className="block text-xs mb-2" htmlFor="collection-purchase-export">Save this public recovery JSON before switching browsers</label>
+        <CollectionRecoveryDownload json={backup} filename="collection-purchase-recovery.json" />
         <textarea id="collection-purchase-export" readOnly value={backup} className="w-full min-w-0 h-32 rounded-lg border border-border bg-card2 p-2 text-xs font-mono" /></div>}
     </>}
     {(localError || purchase.error) && <p role="alert" className="text-xs text-danger break-words">{localError ?? purchase.error}</p>}

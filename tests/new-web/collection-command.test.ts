@@ -5,7 +5,7 @@ import { SoulPublicCollectionBcs, SoulPublicCollectionRightBcs, SoulPublicMarket
   CollectionKioskRegistrationFieldBcs, CollectionKioskListingFieldBcs, CollectionPublicListingBcs } from '@soulidity/sdk'
 import { parseCollectionCommandPlan, collectionCommandRaw, collectionCommandHash, collectionCommandMarker, type CollectionCommandRequest } from '../../web/lib/collections/collection-command-plan'
 import { prepareCollectionCommandPlan, assertCollectionCommandCurrent } from '../../web/lib/collections/collection-command-state'
-import { parseCollectionCommandRecord, buildCollectionCommandTransaction } from '../../web/lib/collections/collection-command-operation'
+import { parseCollectionCommandRecord, buildCollectionCommandTransaction, queryCollectionCommandOriginal } from '../../web/lib/collections/collection-command-operation'
 import { proveCollectionCommandHistory } from '../../web/lib/collections/collection-command-history'
 import { addressGasWindow, collectionCommandFixture, cid } from './fixtures/collection-command'
 
@@ -32,6 +32,22 @@ describe('Collection command raw plan and exact packet', () => {
     await expect(f.adapter.query({ ...prepared, packet: { ...prepared.packet, phase: 'SIGNED', signature: signed.signature } })).resolves.toMatchObject({
       status: 'SUCCEEDED', checkpoint: '42', receipt: { collectionId: f.c.id, rightId: f.right.id },
     })
+  })
+  it.each([1, 2] as const)('recovers a cancellation without a retained signature from checkpoint contents V%s', async contentsVersion => {
+    const f = await collectionCommandFixture('delist', { contentsVersion })
+    const prepared = { ...f.record, packet: { ...f.record.packet, phase: 'SIGNING' as const, signature: null } }
+    await expect(queryCollectionCommandOriginal({ client: f.client as never, record: prepared })).resolves.toMatchObject({
+      status: 'SUCCEEDED', checkpoint: '42', receipt: { oldListingId: f.listing.id, newListingId: null },
+    })
+    expect(f.sign).not.toHaveBeenCalled()
+  })
+  it('rejects a checkpoint signature that differs from the retained seller signature', async () => {
+    const f = await collectionCommandFixture('delist')
+    if (f.evidence.contentsData.V1) f.evidence.contentsData.V1.user_signatures[1] = [new Uint8Array(97)]
+    else f.evidence.contentsData.V2!.transactions[1].user_signatures = [[new Uint8Array(97), null]]
+    f.evidence.rehashContents()
+    await expect(queryCollectionCommandOriginal({ client: f.client as never, record: f.record })).rejects.toThrow('CHECKPOINT_SIGNATURE')
+    expect(f.client.ledgerService.getObject).not.toHaveBeenCalled()
   })
   it('rejects an original cancellation with a missing SUI accumulator', async () => {
     const f = await collectionCommandFixture('delist', { addressGas: true })

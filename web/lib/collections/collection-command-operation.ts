@@ -2,12 +2,11 @@ import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
 import { fromBase64, toBase64 } from '@mysten/sui/utils'
-import { verifyTransactionSignature } from '@mysten/sui/verify'
 import { profileReadStep, buildListCollectionTx, buildDelistCollectionTx, buildUpdateCollectionListingPriceTx } from '@soulidity/sdk'
-import { readActivityCheckpointEvidence } from '../soulidity/activity-transaction-evidence'
 import { check, id, uint, digest, exact, same, decode, freeze, parseCollectionCommandPlan, collectionCommandRaw,
-  collectionCommandHash, COLLECTION_COMMAND_MAX, type CollectionCommandPlan, type CollectionCommandRecord, type CollectionCommandQuery } from './collection-command-plan'
+  COLLECTION_COMMAND_MAX, type CollectionCommandPlan, type CollectionCommandRecord, type CollectionCommandQuery } from './collection-command-plan'
 import { assertCollectionCommandCurrent, collectionCommandSignal, collectionCommandChain } from './collection-command-state'
+import { readCollectionOriginalEvidence, verifyCollectionOriginalSignature } from './collection-original-evidence'
 import { proveCollectionCommandHistory } from './collection-command-history'
 import { readCollectionGasWindow, setCollectionGasWindow } from './collection-command-gas'
 
@@ -65,6 +64,16 @@ export function parseCollectionCommandRecord(input: unknown): CollectionCommandR
   gas.forEach(row => { id(row.objectId); uint(row.version, true); digest(row.digest); check(!objectIds.has(row.objectId) && !p.absentIds.includes(row.objectId), 'GAS_ALIAS') })
   return freeze(r)
 }
+export async function queryCollectionCommandOriginal({ client, record: input, signal: parent }: {
+  client: SuiGrpcClient; record: CollectionCommandRecord; signal?: AbortSignal
+}): Promise<CollectionCommandQuery> {
+  const record = parseCollectionCommandRecord(input), signal = collectionCommandSignal(parent)
+  const result = await readCollectionOriginalEvidence(client, record, signal)
+  if (result.status !== 'SUCCEEDED') return result
+  const receipt = await proveCollectionCommandHistory({ client, record, effects: result.effects, events: result.events, signal })
+  return { status: 'SUCCEEDED', checkpoint: result.checkpoint, receipt }
+}
+
 export interface CollectionCommandAdapter {
   prepare(plan: CollectionCommandPlan): Promise<CollectionCommandRecord>
   preflight(record: CollectionCommandRecord, signing: boolean): Promise<void>
@@ -109,10 +118,7 @@ export function createCollectionCommandAdapter(params: {
     check(response.transaction?.transaction?.bcs?.value && toBase64(response.transaction.transaction.bcs.value) === r.packet.bytes
       && response.transaction.effects?.status?.success === true, 'SIMULATION_REJECTED')
   }
-  async function verify(r: CollectionCommandRecord) {
-    check(r.packet.signature, 'SIGNATURE_REQUIRED')
-    await profileReadStep(collectionCommandSignal(), () => verifyTransactionSignature(fromBase64(r.packet.bytes), r.packet.signature!, { address: r.plan.author, client }))
-  }
+  const verify = (record: CollectionCommandRecord) => verifyCollectionOriginalSignature(client, record, collectionCommandSignal())
   return {
     async prepare(input) {
       const plan = parseCollectionCommandPlan(input), genesis = await ready(plan, null, true)
@@ -140,35 +146,6 @@ export function createCollectionCommandAdapter(params: {
       await ready(r.plan, r.packet, false); await verify(r); wallet(r.plan)
       await profileReadStep(collectionCommandSignal(), () => client.core.executeTransaction({ transaction: fromBase64(r.packet.bytes), signatures: [r.packet.signature!] }))
     },
-    async query(input) {
-      const r = parseCollectionCommandRecord(input), signal = collectionCommandSignal()
-      const genesis = await collectionCommandChain(client, r.plan.target, signal)
-      const data = Transaction.from(fromBase64(r.packet.bytes)).getData()
-      const { min, max } = readCollectionGasWindow(data, r.packet.expirationEpoch, r.plan.target.chainIdentifier, genesis)
-      let response
-      try { response = (await profileReadStep(signal, () => client.ledgerService.getTransaction({ digest: r.packet.digest,
-        readMask: { paths: ['digest', 'transaction.digest', 'transaction.bcs', 'effects.bcs', 'effects.transaction_digest', 'effects.status', 'events.bcs', 'checkpoint'] },
-      }, { abort: signal }))).response }
-      catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'NOT_FOUND') return { status: 'MISSING' }; throw error }
-      // Status, effects digest and events must remain one response snapshot
-      // across checkpoint/history awaits, never transport-owned aliases.
-      const value = structuredClone(response.transaction)
-      check(value?.digest === r.packet.digest && value.transaction?.digest === r.packet.digest && value.transaction.bcs?.value
-        && toBase64(value.transaction.bcs.value) === r.packet.bytes && value.effects?.transactionDigest === r.packet.digest
-        && value.effects.bcs?.value && value.effects.bcs.value.length > 0 && value.effects.bcs.value.length <= 1024 * 1024, 'TRANSACTION_EVIDENCE')
-      const effects = decode(bcs.TransactionEffects, value.effects.bcs.value), e = effects.V2
-      check(e && e.transactionDigest === r.packet.digest && ['Success', 'Failure'].includes(e.status.$kind)
-        && value.effects.status?.success === (e.status.$kind === 'Success') && BigInt(e.executedEpoch) >= min && BigInt(e.executedEpoch) <= max, 'EFFECTS_STATUS')
-      if (value.checkpoint === undefined) return { status: 'PENDING' }
-      uint(String(value.checkpoint)); const checkpoint = String(value.checkpoint)
-      const evidence = await readActivityCheckpointEvidence({ client, chainIdentifier: r.plan.target.chainIdentifier, checkpoint, signal })
-      const membership = evidence.transactions.filter(row => row.transactionDigest === r.packet.digest)
-      check(membership.length === 1 && membership[0].effectsDigest === collectionCommandHash('TransactionEffects', value.effects.bcs.value)
-        && evidence.epoch === e.executedEpoch, 'CHECKPOINT_MEMBERSHIP')
-      if (e.status.$kind === 'Failure') return { status: 'FAILED', checkpoint }
-      check(value.events?.bcs?.value instanceof Uint8Array, 'RAW_EVENTS_REQUIRED')
-      const receipt = await proveCollectionCommandHistory({ client, record: r, effects, events: value.events.bcs.value, signal })
-      signal.throwIfAborted(); return { status: 'SUCCEEDED', checkpoint, receipt }
-    },
+    query: record => queryCollectionCommandOriginal({ client, record }),
   }
 }

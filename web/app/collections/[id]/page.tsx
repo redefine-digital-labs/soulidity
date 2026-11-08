@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCollectionDetail } from '@/lib/hooks/use-collections'
 import { useCollectionBuy } from '@/lib/hooks/use-collection-buy'
-import { CollectionPurchaseOriginalReadback } from '@/components/collections/collection-purchase-original-readback'
+import { CollectionOriginalReadback } from '@/components/collections/collection-original-readback'
 import { CollectionPurchasePanel } from '@/components/collections/collection-purchase-panel'
 import { useToast } from '@/components/ui/toast'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -23,7 +23,7 @@ export default function CollectionDetailPage({ params }: { params: Promise<{ id:
   const result = useCollectionDetail(id, page)
   return <>
     <div className="max-w-[1100px] mx-auto px-6 pt-8">
-      <CollectionPurchaseOriginalReadback key={id} collectionId={id} />
+      <CollectionOriginalReadback key={id} collectionId={id} />
     </div>
     <CollectionDetailContent key={result.identityKey} routeId={id} result={result} page={page} setPage={setPage} />
   </>

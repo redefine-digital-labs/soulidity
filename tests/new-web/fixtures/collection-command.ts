@@ -32,7 +32,7 @@ export function addressGasEffect(owner: string): NonNullable<ReturnType<typeof b
 /** Controlled ledger, not Move execution or a validator certificate. Full
  * canonical Objects, SDK-built PTBs, Ed25519 signatures and checkpoint hash
  * membership are real; Move behavior is independently tested in Move tests. */
-export async function collectionCommandFixture(action: CollectionCommandRequest['action'] = 'list', options: { feeBps?: number; price?: string; paused?: boolean; markerOptimized?: boolean; addressGas?: boolean } = {}) {
+export async function collectionCommandFixture(action: CollectionCommandRequest['action'] = 'list', options: { feeBps?: number; price?: string; paused?: boolean; markerOptimized?: boolean; addressGas?: boolean; contentsVersion?: 1 | 2 } = {}) {
   const signer = Ed25519Keypair.fromSecretKey(new Uint8Array(32).fill(52)), author = signer.toSuiAddress()
   const target = { originalPackageId: cid(90), callablePackageId: cid(91), callableDigest: '', chainIdentifier: '35834a8a',
     marketConfigId: cid(94), kioskRegistryId: cid(95), personalKioskTypePackageId: cid(96), paymentCoinType: SOUL_PUBLIC_USDC_TYPE }
@@ -114,7 +114,7 @@ export async function collectionCommandFixture(action: CollectionCommandRequest[
     return { schema: 'soulidity.collection-command.v1', plan: structuredClone(plan), packet: { bytes: toBase64(exact),
       digest: TransactionDataBuilder.getDigestFromBytes(exact), expirationEpoch: '10', phase: 'SIGNED', signature: signed.signature } }
   }
-  const record = await packet(), evidence = await activityEvidenceFixture()
+  const record = await packet(), evidence = await activityEvidenceFixture({ contentsVersion: options.contentsVersion })
   evidence.transactionData.V1 = bcs.TransactionData.parse(fromBase64(record.packet.bytes)).V1
   const effects = bcs.TransactionEffects.parse(bcs.TransactionEffects.serialize({ V2: { status: { Success: true }, executedEpoch: '9',
     gasUsed: { computationCost: '1', storageCost: '0', storageRebate: '0', nonRefundableStorageFee: '0' }, transactionDigest: record.packet.digest,
@@ -157,7 +157,10 @@ export async function collectionCommandFixture(action: CollectionCommandRequest[
     ...(action === 'list' ? [] : [event('CollectionListingCancelled', Cancelled.serialize({ listing_id: listing.id, collection_id: c.id, seller: author }).toBytes())]),
     ...(newListing ? [event('CollectionListed', Listed.serialize({ listing_id: newListing.id, collection_id: c.id, right_id: right.id, seller: author, kiosk_id: kiosk.id, price: newListing.price }).toBytes())] : []),
   ] }).toBytes()).data
-  evidence.effectsData.V2 = effects.V2; evidence.summaryData.epoch = '9'; evidence.summaryData.sequence_number = '42'; evidence.rehashTransaction()
+  evidence.effectsData.V2 = effects.V2; evidence.summaryData.epoch = '9'; evidence.summaryData.sequence_number = '42'
+  if (evidence.contentsData.V1) evidence.contentsData.V1.user_signatures[1] = [fromBase64(record.packet.signature!)]
+  else evidence.contentsData.V2!.transactions[1].user_signatures = [[fromBase64(record.packet.signature!), null]]
+  evidence.rehashTransaction()
   client.ledgerService.getCheckpoint.mockImplementation(evidence.client.ledgerService.getCheckpoint)
   client.ledgerService.getTransaction.mockImplementation(async () => ({ response: { transaction: structuredClone(evidence.ledger) } }))
   let address: string | null = author

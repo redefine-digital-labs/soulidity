@@ -89,3 +89,46 @@ it('explicit unsigned cancel, import, close and failures remain visible without 
   await click('Import and query only'); expect(h.commands.importRecord).toHaveBeenCalledWith('{"packet":"exact"}')
   await click('Close'); expect(h.close).toHaveBeenCalledOnce(); expect(h.toast).not.toHaveBeenCalled()
 })
+
+
+it('downloads the same exported JSON without asking the wallet or writing the journal', async () => {
+  const exact = JSON.stringify(f.record)
+  h.commands.records = [f.record]
+  h.commands.exportRecord.mockReturnValue(exact)
+  await render()
+  await click('Export recovery')
+  const createObjectURL = vi.fn((_blob: Blob) => 'blob:collection-recovery')
+  const revokeObjectURL = vi.fn()
+  const create = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+  const revoke = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+  vi.useFakeTimers()
+  try {
+    const clickLink = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.href).toBe('blob:collection-recovery')
+      expect(this.download).toBe('collection-listing-recovery.json')
+    })
+    await click('Download recovery JSON')
+    expect(clickLink).toHaveBeenCalledOnce()
+    vi.runOnlyPendingTimers()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:collection-recovery')
+    vi.useRealTimers()
+    const blob = createObjectURL.mock.calls[0][0]
+    const contents = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(blob)
+    })
+    expect(contents).toBe(exact)
+    expect(h.commands.run).not.toHaveBeenCalled()
+    expect(h.commands.importRecord).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+    if (create) Object.defineProperty(URL, 'createObjectURL', create)
+    else Reflect.deleteProperty(URL, 'createObjectURL')
+    if (revoke) Object.defineProperty(URL, 'revokeObjectURL', revoke)
+    else Reflect.deleteProperty(URL, 'revokeObjectURL')
+  }
+})
