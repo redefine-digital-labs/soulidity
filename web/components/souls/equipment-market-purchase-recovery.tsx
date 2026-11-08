@@ -30,11 +30,15 @@ export function EquipmentPurchaseEvidence({ proof }: { proof: EquipmentMarketPur
       <p>Original delivery · {receipt.assetId} · {custody.itemType}</p>
       <p>Original listing {receipt.listingId} · component source {custody.sourceId}</p>
       <p>Original buyer {custody.originalHolder} received the component at ownership epoch {custody.originalOwnershipEpoch}.</p>
-      <p>Current holder {custody.currentHolder} · ownership epoch {custody.currentOwnershipEpoch}</p>
-      {custody.currentListingId
-        ? <p>Current listing {custody.currentListingId}</p>
-        : <p>Current address owner {custody.currentAddressOwner}</p>}
-      {custody.status === 'SUPERSEDED' && <p>Custody or listing state changed after the original purchase.</p>}
+      {custody.status === 'CURRENT_UNAVAILABLE'
+        ? <p role="status">Current custody could not be verified. Query the same original digest to check again.</p>
+        : <>
+          <p>Current holder {custody.currentHolder} · ownership epoch {custody.currentOwnershipEpoch}</p>
+          {custody.currentListingId
+            ? <p>Current listing {custody.currentListingId}</p>
+            : <p>Current address owner {custody.currentAddressOwner}</p>}
+          {custody.status === 'SUPERSEDED' && <p>Custody or listing state changed after the original purchase.</p>}
+        </>}
     </>}
   </article>
 }

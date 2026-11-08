@@ -123,3 +123,19 @@ it('stops a pending read and rechecks the same original digest on request',async
   expect(m.query.mock.calls.map(([original])=>original.packet.digest)).toEqual([f.record.digest,f.record.digest])
   expect(host.textContent).toContain('Its payment outcome is still unknown.')
 })
+
+it('shows the verified original purchase and delivery while current custody is unavailable', async () => {
+  const proof=componentProof()
+  m.query.mockResolvedValue({
+    ...proof, custody: {status:'CURRENT_UNAVAILABLE', itemType:proof.custody.itemType, sourceId:proof.custody.sourceId,
+      originalHolder:f.actor, originalOwnershipEpoch:'2'},
+  })
+  m.source.viewerAddress=null;m.source.page.listings=[]
+  await render();await selectOriginal(createEquipmentPurchaseOriginal(f.record))
+  await act(async()=>button('Verify imported component purchase').click())
+  expect(host.textContent).toContain('Original checkpoint 20')
+  expect(host.textContent).toContain('Seller received')
+  expect(host.textContent).toContain(`Original buyer ${f.actor}`)
+  expect(host.textContent).toContain('Current custody could not be verified.')
+  expect(host.textContent).not.toContain('Current holder')
+})

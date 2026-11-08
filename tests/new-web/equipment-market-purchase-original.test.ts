@@ -49,7 +49,7 @@ async function custodyFixture(kind: 'base' | 'external', mutateActive?: (value: 
   f.refresh()
   const original = await queryEquipmentMarketOperationEvidence(record, f.client)
   if (original.status !== 'SUCCEEDED') throw Error('Fixture purchase unavailable')
-  const verify = () => readAuthenticatedEquipmentPurchaseCustody(record, original, f.client, new AbortController().signal)
+  const verify = (signal = new AbortController().signal, parent = signal) => readAuthenticatedEquipmentPurchaseCustody(record, original, f.client, signal, parent)
   return { f, verify }
 }
 
@@ -71,4 +71,60 @@ it('requires the full original delivered object, not a projection with the effec
   const { f, verify } = await custodyFixture('external')
   delete f.history.get(f.historyKey(f.item.objectId, 3n)).bcs
   await expect(verify()).rejects.toThrow('BCS_BUDGET')
+})
+
+it.each(['base', 'external'] as const)('keeps original %s delivery when the current component is unavailable', async kind => {
+  const { f, verify } = await custodyFixture(kind)
+  f.objects.delete(f.item.objectId)
+  const custody = await verify()
+  expect(custody).toMatchObject({
+    status: 'CURRENT_UNAVAILABLE', itemType: f.item.objectType, originalHolder: f.record.snapshot.actor,
+  })
+  expect(custody).not.toHaveProperty('currentHolder')
+  expect(custody).not.toHaveProperty('currentAddressOwner')
+})
+
+it('withholds current holder when the live component changes during recheck', async () => {
+  const { f, verify } = await custodyFixture('external')
+  const get = f.get.getMockImplementation()!
+  let currentItemReads = 0
+  f.get.mockImplementation(async request => {
+    if (request.objectId === f.item.objectId && request.version === undefined && ++currentItemReads === 3) {
+      f.laterHolder(emid(808), String(BigInt(f.record.snapshot.ownershipEpoch) + 2n))
+    }
+    return get(request)
+  })
+  const custody = await verify()
+  expect(currentItemReads).toBeGreaterThanOrEqual(3)
+  expect(custody).toMatchObject({ status: 'CURRENT_UNAVAILABLE', originalHolder: f.record.snapshot.actor })
+  expect(custody).not.toHaveProperty('currentHolder')
+})
+
+it('keeps abort distinct from an unavailable current custody observation', async () => {
+  const { f, verify } = await custodyFixture('external')
+  const get = f.get.getMockImplementation()!
+  const controller = new AbortController()
+  f.get.mockImplementation(async request => {
+    if (request.objectId === f.item.objectId && request.version === undefined) {
+      controller.abort(Error('component observation stopped'))
+    }
+    return get(request)
+  })
+  await expect(verify(controller.signal)).rejects.toThrow('component observation stopped')
+})
+
+it('retains proven delivery if the historical read budget expires during the separate current observation', async () => {
+  const { f, verify } = await custodyFixture('external')
+  const get = f.get.getMockImplementation()!
+  const historicalBudget = new AbortController(), parent = new AbortController()
+  f.get.mockImplementation(async request => {
+    if (request.objectId === f.item.objectId && request.version === undefined) {
+      historicalBudget.abort(Error('historical read budget expired'))
+      throw Error('current provider unavailable')
+    }
+    return get(request)
+  })
+  await expect(verify(historicalBudget.signal, parent.signal)).resolves.toMatchObject({
+    status: 'CURRENT_UNAVAILABLE', originalHolder: f.record.snapshot.actor,
+  })
 })

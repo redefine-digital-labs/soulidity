@@ -178,11 +178,13 @@ it('keeps older successful Effects V1 queryable without claiming a funds proof',
   expect(f.client.ledgerService.getCheckpoint).not.toHaveBeenCalled()
 })
 
-it('feeds custody the same checkpoint-bound original effects used for money after a cold import', async () => {
+it.each(['COMPLETE', 'CURRENT_UNAVAILABLE'] as const)('feeds custody the same checkpoint-bound original effects used for money after a cold import (%s)', async status => {
   const f = await fixture('external', '', true), s = f.record.snapshot
-  const custody = { status: 'COMPLETE', itemType: 'OwnedExternalItemV8', sourceId: s.asset.kind === 'external' ? s.asset.productId : '',
-    originalHolder: s.actor, originalOwnershipEpoch: '2', currentHolder: s.actor, currentAddressOwner: s.actor,
-    currentOwnershipEpoch: '2', currentListingId: null } as const
+  const delivered = { itemType: 'OwnedExternalItemV8', sourceId: s.asset.kind === 'external' ? s.asset.productId : '',
+    originalHolder: s.actor, originalOwnershipEpoch: '2' }
+  const custody = status === 'CURRENT_UNAVAILABLE' ? { ...delivered, status }
+    : { ...delivered, status, currentHolder: s.actor, currentAddressOwner: s.actor,
+      currentOwnershipEpoch: '2', currentListingId: null }
   const read = vi.spyOn(readback, 'readAuthenticatedEquipmentPurchaseCustody').mockResolvedValue(custody)
   try {
     const original = JSON.parse(JSON.stringify(createEquipmentPurchaseOriginal(f.record)))

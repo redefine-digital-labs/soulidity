@@ -117,8 +117,9 @@ export async function queryEquipmentMarketPurchaseFunds(
       total_collected: String(BigInt(protocolBefore.total_collected) + fee) }), 'Original component platform credit mismatch')
 
   const gas = original.addressGas ?? await readSuiGasSettlement({ client, packet: record, effects, signal })
-  const custody = options?.proveCustody ? await readAuthenticatedEquipmentPurchaseCustody(record, original, source, signal) : undefined
-  signal.throwIfAborted()
+  const custody = options?.proveCustody ? await readAuthenticatedEquipmentPurchaseCustody(record, original, source, signal, parent) : undefined
+  const resultSignal = custody ? parent : signal
+  resultSignal.throwIfAborted()
   return { status: 'FUNDS_VERIFIED' as const, transactionDigest, checkpoint, coinType, receipt,
     sellerPayoutId: payoutId, protocolTreasuryId: treasuryId, buyerChangeAtomic: changeCoin.balance, gas, ...(custody ? { custody } : {}) }
 }

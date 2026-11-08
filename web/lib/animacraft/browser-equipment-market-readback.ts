@@ -73,27 +73,44 @@ export async function confirmBrowserEquipmentMarketOperation(value:EquipmentMark
 type MarketRowProof = { effects: Effects; receipt: EquipmentMarketOperationReceipt }
 
 export async function confirmAuthenticatedEquipmentMarketRow(r: EquipmentRowView, proof: MarketRowProof, context: ReadbackContext) {
-  return (await readAuthenticatedEquipmentMarketRow(r, proof, context)).status
+  const evidence = await readHistoricalEquipmentMarketRow(r, proof, context)
+  return (await evidence.readCurrent(context)).status
 }
 
 /** The caller has authenticated finality and funds from this exact proof. */
 export async function readAuthenticatedEquipmentPurchaseCustody(
-  r: EquipmentRowView, proof: MarketRowProof, source: SuiGrpcClient, signal: AbortSignal,
+  r: EquipmentRowView, proof: MarketRowProof, source: SuiGrpcClient, originalSignal: AbortSignal, parent = originalSignal,
 ) {
   check(r.action === 'buy' && proof.receipt.action === 'buy', 'Component purchase custody required')
-  const session = createNativeMarketReadbackSession(withPackageObjectIdentity(source, signal), signal)
-  const client = session.client, reads = new EquipmentReadSet(client, true), historyReads = new EquipmentReadSet(client)
-  const result = await readAuthenticatedEquipmentMarketRow(r, proof, { client, signal, reads, historyReads }, source)
-  await reads.verify()
-  await session.verify()
-  return result
+  const historical = createNativeMarketReadbackSession(withPackageObjectIdentity(source, originalSignal), originalSignal)
+  const evidence = await readHistoricalEquipmentMarketRow(r, proof, {
+    client: historical.client, signal: originalSignal, historyReads: new EquipmentReadSet(historical.client),
+  }, source)
+  await historical.verify()
+
+  try {
+    const currentSignal = AbortSignal.any([parent, AbortSignal.timeout(25000)])
+    const current = createNativeMarketReadbackSession(withPackageObjectIdentity(source, currentSignal), currentSignal)
+    const reads = new EquipmentReadSet(current.client, true)
+    const observation = await evidence.readCurrent({ client: current.client, reads, signal: currentSignal })
+    await reads.verify()
+    await current.verify()
+    return { ...evidence.original, ...observation }
+  } catch {
+    parent.throwIfAborted()
+    return { ...evidence.original, status: 'CURRENT_UNAVAILABLE' as const }
+  }
 }
 
-async function readAuthenticatedEquipmentMarketRow(
-  r: EquipmentRowView, proof: MarketRowProof, context: ReadbackContext, purchaseHistory?: SuiGrpcClient,
+async function readHistoricalEquipmentMarketRow(
+  r: EquipmentRowView, proof: MarketRowProof, context: Pick<ReadbackContext, 'client' | 'signal' | 'historyReads'>,
+  purchaseHistory?: SuiGrpcClient,
 ) {
-  const {client,signal,reads,historyReads}=context,s=r.snapshot,target=s.release,pin=target.equipmentMarket!,receipt=proof.receipt
-  const market=(await client.ledgerService.getObject({objectId:pin.callablePackageId})).response.object!.package!
+  const {client,signal,historyReads}=context,s=r.snapshot,target=s.release,pin=target.equipmentMarket!,receipt=proof.receipt
+  const market=(await client.ledgerService.getObject({objectId:pin.callablePackageId})).response.object!
+  check(market.digest===pin.callableDigest&&market.owner?.kind===4
+    &&market.package?.storageId===pin.callablePackageId&&market.package.originalId===pin.originalPackageId
+    &&market.package.version===market.version,'Equipment historical Market pin mismatch')
   const runtime=(await client.ledgerService.getObject({objectId:target.runtime!.callablePackageId})).response.object!
   check(runtime.digest===target.runtime!.callableDigest&&runtime.owner?.kind===4
     &&runtime.package?.storageId===target.runtime!.callablePackageId&&runtime.package.originalId===target.runtime!.originalPackageId
@@ -103,7 +120,7 @@ async function readAuthenticatedEquipmentMarketRow(
     check(origins.length===1,'Equipment historical type origin missing')
     return `${receiveId(origins[0].packageId)}::${module}::${name}`
   }
-  const listingType=`${type(market,'market_v8','EquipmentListingV8')}<${s.target.paymentCoinType}>`
+  const listingType=`${type(market.package!,'market_v8','EquipmentListingV8')}<${s.target.paymentCoinType}>`
   const itemType=type(runtime.package!,'runtime_v8',s.asset.kind==='base'?'OwnedBaseItemV8':'OwnedExternalItemV8')
   const listingRef=nativeMarketSharedOutputReference(proof.effects,receipt.listingId)
   const inputs=Transaction.from(fromBase64(r.bytes)).getData().inputs
@@ -163,43 +180,46 @@ async function readAuthenticatedEquipmentMarketRow(
     check(before.digest===s.reference.digest,'Equipment V1 predecessor digest mismatch')
     new EquipmentReadSet(client).accept(before,s.asset.itemId,itemType,1,r.action==='list'?s.actor:s.listing!.id)
   }
-  const current=await readEquipmentMarketListingSnapshot(client,target,pin,
-    {rootId:s.target.rootId,listingId:receipt.listingId},signal,reads)
-  const currentRaw=(await client.ledgerService.getObject({objectId:receipt.listingId})).response.object!
-  check(currentRaw.version!>=listingRef.version&&currentRaw.owner?.version===listingRef.birth
-    &&(currentRaw.version!==listingRef.version||fingerprint(currentRaw)===fingerprint(historical)),'Equipment listing version regressed')
-  const immutable=(v:typeof post)=>canonical({...v,gross_atomic:undefined,protocol_atomic:undefined,creator_atomic:undefined,
-    source_atomic:undefined,seller_atomic:undefined,quote_commitment:undefined,status:undefined,revision:undefined,terminal_recipient:undefined})
-  check(immutable(current.listing)===immutable(post)&&BigInt(current.listing.revision)>=BigInt(post.revision),
-    'Equipment listing immutable custody changed')
-  const listingChanged=canonical(current.listing)!==canonical(post)
-  check(!listingChanged||post.status===0&&currentRaw.version!>listingRef.version&&BigInt(current.listing.revision)>BigInt(post.revision),
-    'Terminal equipment listing changed or revision did not advance')
-  const custody=await readEquipmentMarketCustodySnapshot(client,target,pin,
-    {rootId:s.target.rootId,itemId:s.asset.itemId,kind:s.asset.kind},signal,reads)
-  const live=custody.asset.item,liveRaw=(await client.ledgerService.getObject({objectId:s.asset.itemId})).response.object!
-  check(liveRaw.version!>=itemRef.version&&(liveRaw.version!==itemRef.version||fingerprint(liveRaw)===fingerprint(itemRaw))
-    &&frozenAsset(live)===s.assetCommitment&&BigInt(live.ownership_epoch)>=BigInt(receipt.ownershipEpoch)
-    &&(live.holder===item.holder||BigInt(live.ownership_epoch)>BigInt(receipt.ownershipEpoch)),
-  'Current equipment identity/ownership epoch changed without proof')
-  // A later terminal listing is also an ownership frontier. In particular,
-  // successful settlement must advance once before any subsequent transfer
-  // (including a later transfer back to the original seller) is possible.
-  if(current.listing.status!==0){
-    const frontier=BigInt(current.listing.custody.ownership_epoch)+(current.listing.status===1?1n:0n)
-    check(BigInt(live.ownership_epoch)>=frontier
-      &&(BigInt(live.ownership_epoch)>frontier||live.holder===current.listing.terminal_recipient),
-    'Current equipment contradicts the terminal listing ownership frontier')
+  const original = { itemType, sourceId: post.custody.source_id,
+    originalHolder: item.holder, originalOwnershipEpoch: item.ownership_epoch }
+  async function readCurrent({ client, reads, signal }: Pick<ReadbackContext, 'client' | 'reads' | 'signal'>) {
+    const current=await readEquipmentMarketListingSnapshot(client,target,pin,
+      {rootId:s.target.rootId,listingId:receipt.listingId},signal,reads)
+    const currentRaw=(await client.ledgerService.getObject({objectId:receipt.listingId})).response.object!
+    check(currentRaw.version!>=listingRef.version&&currentRaw.owner?.version===listingRef.birth
+      &&(currentRaw.version!==listingRef.version||fingerprint(currentRaw)===fingerprint(historical)),'Equipment listing version regressed')
+    const immutable=(v:typeof post)=>canonical({...v,gross_atomic:undefined,protocol_atomic:undefined,creator_atomic:undefined,
+      source_atomic:undefined,seller_atomic:undefined,quote_commitment:undefined,status:undefined,revision:undefined,terminal_recipient:undefined})
+    check(immutable(current.listing)===immutable(post)&&BigInt(current.listing.revision)>=BigInt(post.revision),
+      'Equipment listing immutable custody changed')
+    const listingChanged=canonical(current.listing)!==canonical(post)
+    check(!listingChanged||post.status===0&&currentRaw.version!>listingRef.version&&BigInt(current.listing.revision)>BigInt(post.revision),
+      'Terminal equipment listing changed or revision did not advance')
+    const custody=await readEquipmentMarketCustodySnapshot(client,target,pin,
+      {rootId:s.target.rootId,itemId:s.asset.itemId,kind:s.asset.kind},signal,reads)
+    const live=custody.asset.item,liveRaw=(await client.ledgerService.getObject({objectId:s.asset.itemId})).response.object!
+    check(liveRaw.version!>=itemRef.version&&(liveRaw.version!==itemRef.version||fingerprint(liveRaw)===fingerprint(itemRaw))
+      &&frozenAsset(live)===s.assetCommitment&&BigInt(live.ownership_epoch)>=BigInt(receipt.ownershipEpoch)
+      &&(live.holder===item.holder||BigInt(live.ownership_epoch)>BigInt(receipt.ownershipEpoch)),
+    'Current equipment identity/ownership epoch changed without proof')
+    // A later terminal listing is also an ownership frontier. In particular,
+    // successful settlement must advance once before any subsequent transfer
+    // (including a later transfer back to the original seller) is possible.
+    if(current.listing.status!==0){
+      const frontier=BigInt(current.listing.custody.ownership_epoch)+(current.listing.status===1?1n:0n)
+      check(BigInt(live.ownership_epoch)>=frontier
+        &&(BigInt(live.ownership_epoch)>frontier||live.holder===current.listing.terminal_recipient),
+      'Current equipment contradicts the terminal listing ownership frontier')
+    }
+    const assetChanged=live.holder!==item.holder||live.ownership_epoch!==item.ownership_epoch
+      ||custody.addressOwner!==expectedOwner||live.equip_lock!==null
+    check(!assetChanged||liveRaw.version!>itemRef.version,'Changed equipment requires a later version')
+    return { status: listingChanged || assetChanged ? 'SUPERSEDED' as const : 'COMPLETE' as const,
+      currentHolder: live.holder, currentAddressOwner: custody.addressOwner, currentOwnershipEpoch: live.ownership_epoch,
+      currentListingId: custody.listingId,
+    }
   }
-  const assetChanged=live.holder!==item.holder||live.ownership_epoch!==item.ownership_epoch
-    ||custody.addressOwner!==expectedOwner||live.equip_lock!==null
-  check(!assetChanged||liveRaw.version!>itemRef.version,'Changed equipment requires a later version')
-  return { status: listingChanged || assetChanged ? 'SUPERSEDED' as const : 'COMPLETE' as const,
-    itemType, sourceId: post.custody.source_id,
-    originalHolder: item.holder, originalOwnershipEpoch: item.ownership_epoch,
-    currentHolder: live.holder, currentAddressOwner: custody.addressOwner, currentOwnershipEpoch: live.ownership_epoch,
-    currentListingId: custody.listingId,
-  }
+  return { original, readCurrent }
 }
 
 /** One grouped partial update, not one update per selected instance. Complete
