@@ -7,7 +7,7 @@ import {browserSoulAccessStore,type SoulAccessStore} from './soul-access-store'
 import {createSoulAccessAdapter,parseSoulAccessRecord} from './soul-access-operation'
 import {soulAccessKey} from './soul-access-plan'
 import {browserNativePublicReadPaidJournalV2,nativePublicReadPaidKeyV2,nativePublicReadPaidRecordFromOriginalV2,parseNativePublicReadPaidRecordV2,
- nativePublicReadPaidHeadCanClearV2,nativePublicReadPaidSettlementMatchesV2,queryNativePublicReadPaidRecordV2,discoverNativePublicReadPaidAssetV2,type NativePublicReadPaidJournalV2} from './native-public-read-paid-journal-v2'
+ nativePublicReadPaidHeadCanClearV2,nativePublicReadPaidSettlementMatchesV2,queryNativePublicReadPaidHeadV2,discoverNativePublicReadPaidAssetV2,type NativePublicReadPaidJournalV2} from './native-public-read-paid-journal-v2'
 import {preflightNewNativePublicReadPaidPurchaseV2} from './commerce/native-public-read-paid-preflight-v2'
 import type {NativePublicReadPaidHostPreflightV2,NativePublicReadPaidHostRequestV2} from './commerce/native-public-read-paid-host-preflight-v2'
 import {nativePublicReadPaidReviewIdentityV2} from './commerce/native-public-read-paid-read-v2'
@@ -77,7 +77,7 @@ export function createNativePublicReadPaidHostPreflightV2(options:{legacyStore?:
     if(existing){
      const recovery:NativePublicReadPaidRecoveryV2={format:'native-public-read-v2',text:existing.plan.originalText,digest:existing.packet.digest,soulId:scope.soulId,durability:'CONFIRMED'}
      try{
-      const result=await queryNativePublicReadPaidRecordV2(existing,q.client,q.signal);guard()
+      const result=await queryNativePublicReadPaidHeadV2(existing,q.client,q.signal);guard()
       check(nativePublicReadPaidHeadCanClearV2(existing,result),'ORIGINAL_RECOVERY_REQUIRED')
       const phase=result.status==='FAILED'?'FAILED':nativePublicReadPaidSettlementMatchesV2(existing,result)?'SUCCEEDED':existing.packet.phase
       if(phase!==existing.packet.phase){

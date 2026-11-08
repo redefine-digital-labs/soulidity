@@ -12,11 +12,12 @@ const PAGE_SIZE = 50
 
 /** Authenticate every field against the committed Table count. A direct
  * missing-field response alone cannot distinguish absence from partial RPC data. */
-export async function assertIncomeReceiptAbsent(input: {
-  client: SuiGrpcClient; rootId: string; revision: string; table: { id: string; size: string }
+export async function assertRetirementReceiptAbsent(input: {
+  client: SuiGrpcClient; rootId: string; table: { id: string; size: string }
   requestType: string; receiptType: string; receiptFieldId: string; signal: AbortSignal; errorPrefix: string
+  authenticateKey: (contents: Uint8Array, objectId: string) => Uint8Array
 }) {
-  const { client, rootId, revision, table, requestType, receiptType, receiptFieldId, signal, errorPrefix } = input
+  const { client, rootId, table, requestType, receiptType, receiptFieldId, signal, errorPrefix, authenticateKey } = input
   function check(value: unknown, code: string): asserts value { commerceCheck(value, errorPrefix + '_' + code) }
   const size = BigInt(table.size)
   check(commerceId(table.id) && table.id !== rootId && size <= MAX_INCOME_RETIREMENT_RECEIPTS, 'TABLE_BOUND')
@@ -50,15 +51,9 @@ export async function assertIncomeReceiptAbsent(input: {
         const object = collectionCommandRaw({ objectId: row.objectId, version: String(row.version), digest: row.digest, bcs: toBase64(row.bcs.value) })
         const move = object.data.Move
         check(move && object.owner.ObjectOwner === table.id && historicalMoveObjectType(move.type) === fieldType, 'TABLE_TYPE')
-        const field = decodeCommerce(IncomeReceiptFieldBcs, move.contents), { actor, attempt } = field.name, receipt = field.value
-        const key = IncomeRequestBcs.serialize(field.name).toBytes()
-        check(field.id === row.objectId && field.id === deriveDynamicFieldID(table.id, requestType, key)
-          && commerceId(actor) && attempt.length === 32 && attempt.some(n => n !== 0)
-          && receipt.root === rootId && receipt.actor === actor
-          && toBase64(Uint8Array.from(receipt.attempt)) === toBase64(Uint8Array.from(attempt))
-          && BigInt(receipt.after_revision) === BigInt(receipt.before_revision) + 1n
-          && BigInt(receipt.after_revision) <= BigInt(revision), 'RECEIPT_BINDING')
-        check(field.id !== receiptFieldId, 'RECEIPT_EXISTS')
+        const key = authenticateKey(move.contents, row.objectId)
+        check(row.objectId === deriveDynamicFieldID(table.id, requestType, key), 'RECEIPT_BINDING')
+        check(row.objectId !== receiptFieldId, 'RECEIPT_EXISTS')
       }
     }
     if (!next) {
@@ -73,4 +68,17 @@ export async function assertIncomeReceiptAbsent(input: {
     pageToken = next
   }
   check(false, 'TABLE_INCOMPLETE')
+}
+
+export function assertIncomeReceiptAbsent(input: Omit<Parameters<typeof assertRetirementReceiptAbsent>[0], 'authenticateKey'> & { revision: string }) {
+  const { rootId, revision, errorPrefix } = input
+  return assertRetirementReceiptAbsent({ ...input, authenticateKey(contents, objectId) {
+    const field = decodeCommerce(IncomeReceiptFieldBcs, contents), { actor, attempt } = field.name, receipt = field.value
+    commerceCheck(field.id === objectId && commerceId(actor) && attempt.length === 32 && attempt.some(n => n !== 0)
+      && receipt.root === rootId && receipt.actor === actor
+      && toBase64(Uint8Array.from(receipt.attempt)) === toBase64(Uint8Array.from(attempt))
+      && BigInt(receipt.after_revision) === BigInt(receipt.before_revision) + 1n
+      && BigInt(receipt.after_revision) <= BigInt(revision), errorPrefix + '_RECEIPT_BINDING')
+    return IncomeRequestBcs.serialize(field.name).toBytes()
+  } })
 }

@@ -118,6 +118,7 @@ export function executeNativePublicReadPaidOriginalV2(input: {
       profileReadStep(verifySignal, () => verifyTransactionSignature(bytes, signature, { address: scope.author, client: signatureClient }))
     try {
       await sameHead(); recovery.durability = 'CONFIRMED'
+      if (record.packet.phase === 'RETIRED') return { record, original: await queryNativePublicReadPaidRecordV2(record, client, signal) }
       const before = await query()
       if (before.status !== 'MISSING' || record.packet.phase === 'CANCELLED') return { record, original: before }
       guard()

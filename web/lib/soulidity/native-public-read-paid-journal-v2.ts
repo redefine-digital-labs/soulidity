@@ -2,6 +2,9 @@ import type {SuiGrpcClient} from '@mysten/sui/grpc'
 import {fromBase58,fromBase64,toBase58,toBase64} from '@mysten/sui/utils'
 import {createAsyncPublicMutationStore,publicMutationCanonical,type AsyncPublicMutationStorage,type PublicMutationPacket,type AsyncPublicMutationStore} from '../sui/public-mutation-journal'
 import {parsePurchaseRecoveryOriginal,queryPurchaseRecoveryOriginal} from './commerce/purchase-recovery-original'
+import {captureSameSoulMutationClient} from './same-soul-mutation-client'
+import {validateNativePaidRetirementEvidenceV2,verifyNativePaidRetirementV2,ROOT_NATIVE_PAID_RETIREMENT_SOURCES_V2,
+ type NativePaidRetirementEvidenceV2} from './commerce/native-public-read-paid-retirement-v2'
 import type {SoulAccessAssetScope} from './soul-access-asset-lock'
 
 /** The Root canonical V2 public-operation domain. The raw producer original is
@@ -13,11 +16,12 @@ export interface NativePublicReadPaidRecordV2 {
  schema:'soulidity.native-public-read-paid-operation.v2'
  plan:NativePublicReadPaidPlanV2
  packet:PublicMutationPacket
+ retirement?:NativePaidRetirementEvidenceV2
 }
 export type NativePublicReadPaidJournalV2=AsyncPublicMutationStore<NativePublicReadPaidPlanV2,NativePublicReadPaidRecordV2>
 export type NativePublicReadPaidOriginalReaderV2=Pick<NativePublicReadPaidJournalV2,'read'|'heads'|'history'>
-const phases=['PREPARED','SIGNING','SIGNED','SUCCEEDED','FAILED','CANCELLED']
-const terminals=['SUCCEEDED','FAILED','CANCELLED']
+const phases=['PREPARED','SIGNING','SIGNED','SUCCEEDED','FAILED','CANCELLED','RETIRED']
+const terminals=['SUCCEEDED','FAILED','CANCELLED','RETIRED']
 function check(v:unknown,code:string):asserts v{if(!v)throw Error(`NATIVE_PUBLIC_READ_PAID_JOURNAL_V2_${code}`)}
 function exact(v:unknown,names:string[]):asserts v is Record<string,unknown>{check(v!==null&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join()===names.slice().sort().join(),'FIELDS')}
 function id(value:unknown){return typeof value==='string'&&/^0x[0-9a-f]{64}$/.test(value)}
@@ -29,7 +33,7 @@ export function nativePublicReadPaidKeyV2(scope:SoulAccessAssetScope){
 }
 export async function parseNativePublicReadPaidRecordV2(input:unknown):Promise<NativePublicReadPaidRecordV2>{
  const r=structuredClone(input) as NativePublicReadPaidRecordV2
- exact(r,['schema','plan','packet']);check(r.schema==='soulidity.native-public-read-paid-operation.v2','SCHEMA')
+ exact(r,['schema','plan','packet',...(r?.retirement!==undefined?['retirement']:[])]);check(r.schema==='soulidity.native-public-read-paid-operation.v2','SCHEMA')
  exact(r.plan,['chainIdentifier','soulId','author','originalText']);nativePublicReadPaidKeyV2(r.plan)
  check(typeof r.plan.originalText==='string','ORIGINAL_TEXT')
  exact(r.packet,['bytes','digest','expirationEpoch','phase','signature'])
@@ -37,9 +41,13 @@ export async function parseNativePublicReadPaidRecordV2(input:unknown):Promise<N
  check(r.packet.signature===null||typeof r.packet.signature==='string'&&r.packet.signature.length>0&&r.packet.signature.length<=32768&&toBase64(fromBase64(r.packet.signature))===r.packet.signature,'SIGNATURE')
  check(r.packet.phase!=='SIGNED'||r.packet.signature!==null,'SIGNATURE_REQUIRED')
  check(!['PREPARED','SIGNING','CANCELLED'].includes(r.packet.phase)||r.packet.signature===null,'UNEXPECTED_SIGNATURE')
+ check((r.packet.phase==='RETIRED')===(r.retirement!==undefined),'RETIREMENT_SCOPE')
+ if(r.retirement)validateNativePaidRetirementEvidenceV2(r.retirement,r.packet.expirationEpoch)
  const original=await parsePurchaseRecoveryOriginal(r.plan.originalText,r.plan.soulId)
  check(original.kind==='native-public-read-v2','ORIGINAL_FORMAT')
  const v=original.value,p=v.packet
+ check(!r.retirement||r.retirement.host.objectId===v.intent.host.objectId
+  &&r.retirement.ledger.objectId===v.context.originalReceiptContext.ledgerId,'RETIREMENT_ORIGINAL_SCOPE')
  check(p.phase==='PREPARED'&&p.signature===null,'ORIGINAL_NOT_PREPARED')
  check(v.context.economics.chainIdentifier===r.plan.chainIdentifier&&v.intent.buyer===r.plan.author,'ORIGINAL_SCOPE')
  check(publicMutationCanonical({bytes:p.bytes,digest:p.digest,expirationEpoch:p.expirationEpoch})===publicMutationCanonical({bytes:r.packet.bytes,digest:r.packet.digest,expirationEpoch:r.packet.expirationEpoch}),'ORIGINAL_PACKET_CHANGED')
@@ -80,6 +88,20 @@ export async function queryNativePublicReadPaidRecordV2(input:NativePublicReadPa
  const result=await queryPurchaseRecoveryOriginal({text:record.plan.originalText,soulId:record.plan.soulId,client,signal})
  check(result.kind==='native-public-read-v2','QUERY_FORMAT');return result.history
 }
+// A raw history lookup remains useful for export/recovery. Only this fresh
+// checked observation may release a RETIRED head in a guarded mutation.
+const verifiedRetirements=new WeakMap<object,string>()
+export async function queryNativePublicReadPaidHeadV2(record:NativePublicReadPaidRecordV2,source:SuiGrpcClient,signal:AbortSignal){
+ if(record.packet.phase!=='RETIRED')return queryNativePublicReadPaidRecordV2(record,source,signal)
+ const client=captureSameSoulMutationClient(source,signal),admissions=structuredClone(ROOT_NATIVE_PAID_RETIREMENT_SOURCES_V2)
+ const saved=await parseNativePublicReadPaidRecordV2(record)
+ const original=await parsePurchaseRecoveryOriginal(saved.plan.originalText,saved.plan.soulId)
+ check(original.kind==='native-public-read-v2','ORIGINAL_FORMAT')
+ const result=await verifyNativePaidRetirementV2({original:original.value,client,signal,sources:admissions,saved:saved.retirement,
+  queryOriginal:()=>queryNativePublicReadPaidRecordV2(saved,client,signal)})
+ verifiedRetirements.set(result.observed,publicMutationCanonical(saved))
+ return result.observed
+}
 type PaidOriginalObservation = { status: string; checkpoint?: string; receipt?: {
  transactionDigest: string; checkpoint: string; money?: { transactionDigest: string; buyer: string } | null
 } }
@@ -93,6 +115,11 @@ export function nativePublicReadPaidSettlementMatchesV2(record: { packet: { dige
   && receipt.money?.transactionDigest === digest && receipt.money.buyer === record.plan.author
 }
 export function nativePublicReadPaidHeadCanClearV2(record: NativePublicReadPaidRecordV2, result: PaidOriginalObservation) {
+ if(record.packet.phase==='RETIRED'){
+  const proof=verifiedRetirements.get(result)
+  verifiedRetirements.delete(result)
+  return result.status==='MISSING'&&proof===publicMutationCanonical(record)
+ }
  const settled = nativePublicReadPaidSettlementMatchesV2(record, result)
  if (record.packet.phase === 'SUCCEEDED') check(settled, 'TERMINAL_RESULT_UNCONFIRMED')
  if (record.packet.phase === 'FAILED') check(result.status === 'FAILED', 'TERMINAL_RESULT_UNCONFIRMED')

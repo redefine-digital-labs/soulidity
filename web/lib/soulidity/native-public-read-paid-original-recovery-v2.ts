@@ -3,6 +3,9 @@ import {publicMutationCanonical} from '../sui/public-mutation-journal'
 import {withSoulAccessAssetLock} from './soul-access-asset-lock'
 import {browserNativePublicReadPaidJournalV2,browserNativePublicReadPaidOriginalReaderV2,nativePublicReadPaidKeyV2,parseNativePublicReadPaidRecordV2,
  queryNativePublicReadPaidRecordV2,NATIVE_PUBLIC_READ_PAID_PREFIX_V2,type NativePublicReadPaidJournalV2,type NativePublicReadPaidOriginalReaderV2,type NativePublicReadPaidRecordV2} from './native-public-read-paid-journal-v2'
+import {captureSameSoulMutationClient} from './same-soul-mutation-client'
+import {parsePurchaseRecoveryOriginal} from './commerce/purchase-recovery-original'
+import {verifyNativePaidRetirementV2,ROOT_NATIVE_PAID_RETIREMENT_SOURCES_V2} from './commerce/native-public-read-paid-retirement-v2'
 import {commerceId} from './commerce/economics-read'
 
 export interface NativePublicReadPaidOriginalScopeV2 {chainIdentifier:string;soulId:string;author:string|null}
@@ -66,6 +69,39 @@ export function cancelNativePublicReadPaidOriginalV2(input:{record:NativePublicR
    const retained=await journal.read(key)
    check(retained&&publicMutationCanonical(retained)===publicMutationCanonical(cancelled)&&retained.plan.originalText===expected.plan.originalText,'PERSISTENCE_FAILED')
    signal.throwIfAborted();return {record:retained,original:observed,notOnChainCancellation:true as const,notPermissionToRetryPayment:true as const}
+  })
+ })
+}
+
+/** Explicit local retirement of the selected signing or signed head. A second
+ * digest read runs inside the verifier after the committed table scan. */
+export function retireNativePublicReadPaidOriginalV2(input:{
+ record:NativePublicReadPaidRecordV2;client:SuiGrpcClient;signal:AbortSignal;journal?:NativePublicReadPaidJournalV2
+}){
+ const selected=structuredClone(input.record),signal=AbortSignal.any([input.signal,AbortSignal.timeout(90000)])
+ const client=captureSameSoulMutationClient(input.client,signal),sources=structuredClone(ROOT_NATIVE_PAID_RETIREMENT_SOURCES_V2)
+ const key=nativePublicReadPaidKeyV2(selected.plan),providedJournal=input.journal
+ return withSoulAccessAssetLock(selected.plan,async()=>{
+  signal.throwIfAborted()
+  const expected=await parseNativePublicReadPaidRecordV2(selected),journal=providedJournal??browserNativePublicReadPaidJournalV2()
+  return journal.exclusive(key,async()=>{
+   const sameHead=async()=>check(publicMutationCanonical(await journal.read(key))===publicMutationCanonical(expected),'SELECTED_ORIGINAL_CHANGED')
+   await sameHead();signal.throwIfAborted()
+   check(['SIGNING','SIGNED'].includes(expected.packet.phase),'CANNOT_RETIRE_UNSIGNING_OR_TERMINAL')
+   const original=await parsePurchaseRecoveryOriginal(expected.plan.originalText,expected.plan.soulId)
+   check(original.kind==='native-public-read-v2','ORIGINAL_FORMAT')
+   const queryOriginal=()=>queryNativePublicReadPaidRecordV2(expected,client,signal)
+   check((await queryOriginal()).status==='MISSING','ORIGINAL_RESULT_NOT_MISSING')
+   const {evidence,observed}=await verifyNativePaidRetirementV2({original:original.value,client,signal,sources,queryOriginal})
+   const record=await parseNativePublicReadPaidRecordV2({...expected,packet:{...expected.packet,phase:'RETIRED'},retirement:evidence})
+   await sameHead();signal.throwIfAborted()
+   let failure:unknown,failed=false
+   try{await journal.write(key,record)}catch(error){failed=true;failure=error}
+   const retained=await journal.read(key)
+   if(failed)throw failure
+   check(retained&&publicMutationCanonical(retained)===publicMutationCanonical(record),'PERSISTENCE_FAILED')
+   signal.throwIfAborted()
+   return {record:retained,original:observed}
   })
  })
 }

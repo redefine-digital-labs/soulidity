@@ -9,7 +9,7 @@ import { queryEquipmentOriginalResultV154 } from './management/equipment-origina
 import { queryFormsOriginalOperation } from './management/application-forms-recovery'
 import { parseSoulAccessRecord, createSoulAccessAdapter } from './soul-access-operation'
 import { soulAccessKey } from './soul-access-plan'
-import { parseNativePublicReadPaidRecordV2, nativePublicReadPaidKeyV2, nativePublicReadPaidSettlementMatchesV2, queryNativePublicReadPaidRecordV2 } from './native-public-read-paid-journal-v2'
+import { parseNativePublicReadPaidRecordV2, nativePublicReadPaidKeyV2, nativePublicReadPaidSettlementMatchesV2, nativePublicReadPaidHeadCanClearV2, queryNativePublicReadPaidHeadV2, type NativePublicReadPaidRecordV2 } from './native-public-read-paid-journal-v2'
 import { validateMarketListOperationRecord, marketListOperationKey } from '../animacraft/market-list-operation'
 import { validateMarketBuyOperationRecord, marketBuyOperationKey } from '../animacraft/market-buy-operation'
 import { validateMarketCancelOperationRecord, marketCancelOperationKey } from '../animacraft/market-cancel-operation'
@@ -127,7 +127,9 @@ export async function assertSameSoulForeignHeads(input: {
       && result.settledPaymentDigest === head.digest
     if (['SUCCEEDED', 'FAILED'].includes(head.phase) && result.status !== head.phase
       && !(head.phase === 'SUCCEEDED' && settledPayment)) throw new SameSoulRecoveryRequired(head.key, head.text, 'TERMINAL_RESULT_UNCONFIRMED')
-    const clear = settledPayment || result.status === 'FAILED' || head.phase === 'CANCELLED' && head.signature === null && result.status === 'MISSING'
+    const retiredPayment = head.domain === 'NATIVE_PAID' && head.phase === 'RETIRED'
+    const clear = retiredPayment ? nativePublicReadPaidHeadCanClearV2(head.value as NativePublicReadPaidRecordV2, result)
+      : settledPayment || result.status === 'FAILED' || head.phase === 'CANCELLED' && head.signature === null && result.status === 'MISSING'
       || result.status === 'SUCCEEDED' && result.completeBusinessOutputVerified === true && result.sourceQualification === 'COMPILED_ROOT_MATCHED'
     if (!clear) throw new SameSoulRecoveryRequired(head.key, head.text, 'ORIGINAL_RECOVERY_REQUIRED')
   }
@@ -157,7 +159,8 @@ export function createBrowserSameSoulHeadPort(source: SuiGrpcClient, storage: Sa
     if (head.domain === 'FORMS') return { status: (await queryFormsOriginalOperation({ client, text: head.text, soulId: v.plan.soulId, chainIdentifier: v.plan.target.chainIdentifier, signal })).execution.status }
     if (head.domain === 'LEGACY_ACCESS') return legacy.query(v)
     if (head.domain === 'NATIVE_PAID') {
-      const result = await queryNativePublicReadPaidRecordV2(v, client, signal)
+      const result = await queryNativePublicReadPaidHeadV2(v, client, signal)
+      if (v.packet.phase === 'RETIRED') return result
       return nativePublicReadPaidSettlementMatchesV2(v, result)
         ? { status: result.status, settledPaymentDigest: v.packet.digest }
         : { status: result.status }
