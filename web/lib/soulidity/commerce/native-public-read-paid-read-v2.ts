@@ -45,9 +45,15 @@ export async function readNativePublicReadPaidV2(input: { format: 'native-public
   commerceCheck(link?.upgradedId === content.pin.callablePackageId && link.upgradedVersion === String(content.version), 'PUBLIC_PAID_V2_READ_CONTENT_LINK')
   const type = (origins: Map<string, string>, module: string, name: string) => { const origin = origins.get(`${module}::${name}`)
     commerceCheck(origin, 'PUBLIC_PAID_V2_READ_ORIGIN'); return `${origin}::${module}::${name}` }
-  const observations: Array<{ id: string; type: string; version: string; digest: string }> = []
+  type ObjectRead = Awaited<ReturnType<typeof readCommerceObject>>
+  const observations: Array<{ id: string; type: string; reference: Pick<ObjectRead, 'version' | 'digest'> | null }> = []
+  function observe(id: string, type: string, row: ObjectRead | null) {
+    observations.push({ id, type, reference: row && { version: row.version, digest: row.digest } })
+  }
   async function read(id: string, expected: string) {
-    const row = await readCommerceObject(client, id, expected, signal); observations.push({ id, type: expected, version: row.version, digest: row.digest }); return row
+    const row = await readCommerceObject(client, id, expected, signal)
+    observe(id, expected, row)
+    return row
   }
   async function child(name: string, expected: string) {
     const wrapper = `0x2::dynamic_object_field::Wrapper<${type(native.origins, 'birth', name)}>`, id = deriveDynamicFieldID(view.stateId, wrapper, moveEmptyStructBytes())
@@ -63,10 +69,15 @@ export async function readNativePublicReadPaidV2(input: { format: 'native-public
     && normalizeStructTag(value.controller.operator.name) === type(native.origins, 'birth', 'ContentOperator'), 'PUBLIC_PAID_V2_READ_CONTROLLER')
   const ids = [view.soulId, view.hostId, view.stateId, view.contentId, auth.id, ledger.id, auth.grants.id, ledger.offers.id, ledger.entries.id, ledger.attempts.id]
   commerceCheck(ids.every(commerceId) && new Set(ids).size === ids.length, 'PUBLIC_PAID_V2_READ_ALIASES')
-  async function optional(id: string, expected: string) {
-    try { return await read(id, expected) } catch (error) { signal.throwIfAborted()
+  async function lookupOptional(id: string, expected: string) {
+    try { return await readCommerceObject(client, id, expected, signal) } catch (error) { signal.throwIfAborted()
       if (error && typeof error === 'object' && 'code' in error && error.code === 'NOT_FOUND') return null
       throw error }
+  }
+  async function optional(id: string, expected: string) {
+    const row = await lookupOptional(id, expected)
+    observe(id, expected, row)
+    return row
   }
   const key = { kind, buyer }, keyType = type(content.origins, 'paid_access', 'BuyerKey'), entryId = deriveDynamicFieldID(ledger.entries.id, keyType, PaidContentBuyerKeyBcs.serialize(key).toBytes())
   const entryObject = buyer === view.ownerAddress ? null : await optional(entryId, `0x2::dynamic_field::Field<${keyType},${type(content.origins, 'paid_access', 'Entry')}>`)
@@ -74,8 +85,11 @@ export async function readNativePublicReadPaidV2(input: { format: 'native-public
   commerceCheck(!entryField || entryObject!.owner.ObjectOwner === ledger.entries.id && entryField.id === entryId && entryField.name.kind === kind
     && entryField.name.buyer === buyer && BigInt(entryField.value.revision) <= BigInt(ledger.revision) && BigInt(ledger.entries.size) > 0n, 'PUBLIC_PAID_V2_READ_ENTRY')
   async function recheck() {
-    for (const row of observations) { const current = await readCommerceObject(client, row.id, row.type, signal)
-      commerceCheck(current.version === row.version && current.digest === row.digest, 'PUBLIC_PAID_V2_READ_CHANGED') }
+    for (const { id, type, reference } of observations) {
+      const current = await lookupOptional(id, type)
+      commerceCheck(reference ? current?.version === reference.version && current?.digest === reference.digest : current === null,
+        'PUBLIC_PAID_V2_READ_CHANGED')
+    }
     const latest = await readNativePublicReadRecordV2({ client, target, soulId, recordIndex, signal })
     // Clock advances naturally; every content/custody/Host observation must match.
     commerceCheck(publicMutationCanonical({ ...latest, clockTimestampMs: null }) === publicMutationCanonical({ ...view, clockTimestampMs: null }), 'PUBLIC_PAID_V2_READ_HOST_RECORD_CHANGED')

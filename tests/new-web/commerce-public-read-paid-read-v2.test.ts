@@ -420,6 +420,36 @@ it('reuses an unchanged current per-kind Entry for newly appended compatible con
  expect(after).toMatchObject({status:'NO_NEW_PURCHASE_QUOTE',contractQuote:null,qualification:{recordIndex:added.index,contentName:x.record.name,contentVersion:x.record.version,decision:{action:'REUSE_ENTRY'},entryHash:before.entryHash,quote:null,authReference:before.authReference,ledgerReference:before.ledgerReference}})
  expect(after.qualification.recordReference.objectId).toBe(added.id);expect(after.qualification.recordReference.objectId).not.toBe(before.recordReference.objectId)
 })
+it('rejects a first Entry miss before quoting an appended version that the Entry covers', async () => {
+ const x = await fixture(), added = appendPaidRecord(x)
+ const ledger = x.f.client.ledgerService, get = ledger.getObject.getMockImplementation()!
+ let entryReads = 0
+ ledger.getObject.mockImplementation(async (r: any) => {
+  if (r.objectId === x.entryId && ++entryReads === 1) throw { code: 'NOT_FOUND' }
+  return get(r)
+ })
+ await expect(readContractCheckedNativePublicReadPaidPreviewV2(x.params)).rejects.toThrow('PUBLIC_PAID_V2_READ_CHANGED')
+ expect(entryReads).toBe(2)
+ expect(ledger.getObject.mock.calls.some(([r]) => [x.offerId, x.cfg.id].includes(r.objectId))).toBe(false)
+ expect(await readContractCheckedNativePublicReadPaidPreviewV2(x.params)).toMatchObject({
+  status: 'NO_NEW_PURCHASE_QUOTE', contractQuote: null, qualification: { recordIndex: added.index, decision: { action: 'REUSE_ENTRY' } },
+ })
+})
+
+it('refuses to finalize a blocked decision after the previously absent Offer appears', async () => {
+ const x = await contractCheckedPreviewFixture()
+ const ledger = x.client.ledgerService, get = ledger.getObject.getMockImplementation()!
+ let offerReads = 0
+ ledger.getObject.mockImplementation(async (r: any, opts: any) => {
+  if (r.objectId === x.offerId && ++offerReads === 1) throw { code: 'NOT_FOUND' }
+  return get(r, opts)
+ })
+ await expect(x.runPreview()).rejects.toThrow('PUBLIC_PAID_V2_READ_CHANGED')
+ expect(offerReads).toBe(2)
+ expect(x.client.core.simulateTransaction).not.toHaveBeenCalled()
+ expect(await x.runPreview()).toMatchObject({ status: 'CONTRACT_QUOTE_CHECKED', contractQuote: { contractQuote: { total: '104' } } })
+})
+
 it('opens newly appended compatible Record with real full-object qualification/ABI/Seal/AES and the actual new index',async()=>{
  const x=await integratedProtectedFixture(false,true),params=x.x.params
  const view=await readNativePublicReadOverviewV2(params)
