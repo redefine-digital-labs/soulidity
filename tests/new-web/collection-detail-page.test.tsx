@@ -15,7 +15,7 @@ import type { BrowserMarketSoulsPage } from '../../web/lib/soulidity/browser-mar
 const h = vi.hoisted(() => ({ account: null as { address: string } | null, wallet: null as object | null,
   client: { grpc: {} } as { grpc?: object }, config: null as any, configError: null as string | null,
   rootFactory: vi.fn(), membersFactory: vi.fn(), buy: vi.fn(), toast: vi.fn(), modal: null as any, onBuySuccess: null as (() => void) | null,
-  roots: [] as any[], members: [] as any[], readClient: vi.fn(), handoff: vi.fn(), importRecord: vi.fn() }))
+  roots: [] as any[], members: [] as any[], readClient: vi.fn(), handoff: vi.fn(), importRecord: vi.fn(), settlement: vi.fn() }))
 vi.mock('@mysten/dapp-kit', () => ({ useCurrentAccount: () => h.account, useCurrentWallet: () => ({ currentWallet: h.wallet }), useSuiClient: () => h.client }))
 vi.mock('../../web/lib/soulidity/browser-soul-detail', async original => ({
   ...await original<typeof import('../../web/lib/soulidity/browser-soul-detail')>(),
@@ -36,6 +36,9 @@ vi.mock('../../web/lib/animacraft/native-receive', async original => ({
 }))
 vi.mock('../../web/lib/collections/collection-buy-handoff', () => ({
   readCollectionBuyHandoff: (...args: unknown[]) => h.handoff(...args),
+}))
+vi.mock('../../web/lib/collections/collection-listing-settlement', () => ({
+  readCollectionListingSettlement: (...args: unknown[]) => h.settlement(...args),
 }))
 vi.mock('../../web/components/ui/toast', () => ({ useToast: () => ({ showToast: h.toast }) }))
 vi.mock('../../web/components/collections/collection-listing-modals', () => {
@@ -64,7 +67,7 @@ function setViewer(viewer: string | null) {
 }
 beforeEach(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.stubGlobal('Uint8Array', new TextEncoder().encode('').constructor)
-  vi.clearAllMocks(); h.readClient.mockReset(); h.handoff.mockReset(); f = await publicMarketFixture(); h.account = null; h.wallet = null; h.client = { grpc: {} }
+  vi.clearAllMocks(); h.readClient.mockReset(); h.handoff.mockReset(); h.settlement.mockReset(); f = await publicMarketFixture(); h.account = null; h.wallet = null; h.client = { grpc: {} }
   h.config = structuredClone(f.config); h.configError = null; h.roots = []; h.members = []; h.modal = null
   snapshot = f.collection(500, { currentSupply: '25', maxSupply: null, creatorAddress: id(700), currentHolderAddress: id(701) })
   rows = f.souls(Array.from({ length: 25 }, (_, n) => f.soul(300 + n, { collectionOnChainId: snapshot.collectionId })))
@@ -312,4 +315,45 @@ it('keeps the exact cancellation and old listing when a later buyer holds the Ri
   expect(host.textContent).toContain(`Exact listing ${seller.listing.id} · inactive`)
   expect(host.textContent).toContain(`Current holder ${holder}`)
   expect(host.textContent).toContain(`Current Kiosk ${kiosk}`)
+})
+
+
+it('shows the seller closing receipt independently from current custody and retries it alone', async () => {
+  const seller = await collectionCommandFixture('list')
+  const listingId = seller.newListing!.id
+  seller.current.set(listingId, seller.rows.get(`${listingId}:12`))
+  params = Promise.resolve({ id: seller.c.id })
+  h.config = null; h.configError = 'Release unavailable'
+  h.readClient.mockReturnValue(seller.client)
+  const closingDigest = '5M2WgRWiFucrHwZx4hKjbNEay1haZdFuTyTtAAfD6WSp'
+  h.settlement.mockRejectedValueOnce(new Error('Closure unavailable')).mockResolvedValueOnce({
+    status: 'SOLD', checkpoint: '43', transactionDigest: closingDigest, rightId: seller.right.id,
+    buyer: id(1521), buyerKioskId: id(1522), totalAtomic: '2010002',
+    seller: { owner: seller.author, amount: '2000001' },
+    platform: { owner: id(1523), amount: '10001' }, payoutCoinIds: [id(1524), id(1525)],
+  })
+  const journalWrite = vi.spyOn(Storage.prototype, 'setItem')
+  await render()
+  await choosePurchaseRecord(seller.record)
+  expect(find('Verify how this Collection listing closed')).toBeUndefined()
+  await click('Query original Collection listing command')
+  await click('Verify how this Collection listing closed')
+  expect(host.textContent).toContain('The closing transaction could not be verified.')
+  expect(host.textContent).toContain('Original listing verified at checkpoint 42')
+  expect(host.textContent).toContain(`Current Kiosk ${seller.kiosk.id}`)
+  await click('Verify how this Collection listing closed')
+  expect(h.settlement).toHaveBeenLastCalledWith(expect.objectContaining({
+    plan: expect.objectContaining({ author: seller.author }),
+    receipt: expect.objectContaining({ newListingId: listingId }),
+  }))
+  expect(host.textContent).toContain('Listing sale verified at checkpoint 43')
+  expect(host.textContent).toContain(closingDigest)
+  expect(host.textContent).toContain(`Buyer Kiosk at sale ${id(1522)}`)
+  expect(host.textContent).toContain('Total payment 2.010002 USDC')
+  expect(host.textContent).toContain('Seller received 2.000001 USDC')
+  expect(host.textContent).toContain('Platform received 0.010001 USDC')
+  expect(host.textContent).toContain(`Original payout Coins ${id(1524)}, ${id(1525)}`)
+  expect(seller.client.ledgerService.getTransaction).toHaveBeenCalledOnce()
+  expect(seller.client.core.executeTransaction).not.toHaveBeenCalled()
+  expect(journalWrite).not.toHaveBeenCalled()
 })

@@ -7,6 +7,7 @@ import { createNativeReceiveClient } from '@/lib/animacraft/native-receive'
 import { readCollectionBuyHandoff } from '@/lib/collections/collection-buy-handoff'
 import { parseCollectionBuyRecord, queryCollectionBuyOriginal } from '@/lib/collections/collection-buy-operation'
 import type { CollectionBuyQuery, CollectionBuyRecord } from '@/lib/collections/collection-buy-plan'
+import { readCollectionListingSettlement } from '@/lib/collections/collection-listing-settlement'
 import { readCollectionCommandListing } from '@/lib/collections/collection-command-listing-readback'
 import { parseCollectionCommandRecord, queryCollectionCommandOriginal } from '@/lib/collections/collection-command-operation'
 import type { CollectionCommandQuery, CollectionCommandRecord } from '@/lib/collections/collection-command-plan'
@@ -22,6 +23,7 @@ export function CollectionOriginalReadback({ collectionId }: { collectionId: str
   const [record, setRecord] = useState<OriginalRecord | null>(null)
   const [history, setHistory] = useState<History | null>(null)
   const [current, setCurrent] = useState<Current | null>(null)
+  const [settlement, setSettlement] = useState<Awaited<ReturnType<typeof readCollectionListingSettlement>> | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   useEffect(() => () => operation.current?.abort(), [])
@@ -46,6 +48,7 @@ export function CollectionOriginalReadback({ collectionId }: { collectionId: str
     setRecord(null)
     setHistory(null)
     setCurrent(null)
+    setSettlement(null)
     try {
       if (!file) return
       if (!file.size || file.size > MAX_RECORD_BYTES) throw new Error('Choose a Collection recovery JSON file up to 3 MiB.')
@@ -97,6 +100,22 @@ export function CollectionOriginalReadback({ collectionId }: { collectionId: str
       if (!original) setMessage('The original transaction could not be verified. You can retry the same digest.')
       else if (record.schema === 'soulidity.collection-buy.v1') setMessage('Current custody could not be verified. You can retry this read.')
       else setMessage('Current listing and custody could not be verified. You can retry this read.')
+    } finally {
+      finish(signal)
+    }
+  }
+
+  async function verifyListingSettlement() {
+    const receipt = history?.receipt
+    if (record?.schema !== 'soulidity.collection-command.v1' || !receipt || !('newListingId' in receipt) || !receipt.newListingId) return
+    const signal = begin()
+    setSettlement(null)
+    try {
+      const client = createNativeReceiveClient(signal)
+      const result = await readCollectionListingSettlement({ client, plan: record.plan, receipt, signal })
+      if (!signal.aborted) setSettlement(result)
+    } catch {
+      if (!signal.aborted) setMessage('The closing transaction could not be verified. You can retry this read.')
     } finally {
       finish(signal)
     }
@@ -155,6 +174,23 @@ export function CollectionOriginalReadback({ collectionId }: { collectionId: str
         {listing.oldListingId && <p>Retired listing <code>{listing.oldListingId}</code></p>}
         {listing.newListingId && <p>Created listing <code>{listing.newListingId}</code></p>}
         {listing.priceAtomic !== null && <p>Listing price {formatAtomicAmountForDisplay(listing.priceAtomic)}</p>}
+      </div>}
+      {!busy && listing?.newListingId && <button className="underline" type="button" onClick={() => void verifyListingSettlement()}>
+        Verify how this Collection listing closed
+      </button>}
+      {settlement?.status === 'ACTIVE' && <p>The listing was still active when checked.</p>}
+      {settlement && settlement.status !== 'ACTIVE' && <div className="break-all space-y-1">
+        <p className="font-semibold">{settlement.status === 'SOLD' ? 'Listing sale verified' : 'Listing cancellation verified'} at checkpoint {settlement.checkpoint}</p>
+        <p>Closing transaction <code>{settlement.transactionDigest}</code></p>
+        {settlement.status === 'SOLD' && <>
+          <p>Delivered Right <code>{settlement.rightId}</code></p>
+          <p>Buyer <code>{settlement.buyer}</code></p>
+          <p>Buyer Kiosk at sale <code>{settlement.buyerKioskId}</code></p>
+          <p>Total payment {formatAtomicAmountForDisplay(settlement.totalAtomic)}</p>
+          <p>Seller received {formatAtomicAmountForDisplay(settlement.seller.amount)} · <code>{settlement.seller.owner}</code></p>
+          {settlement.platform && <p>Platform received {formatAtomicAmountForDisplay(settlement.platform.amount)} · <code>{settlement.platform.owner}</code></p>}
+          <p>Original payout Coins <code>{settlement.payoutCoinIds.join(', ')}</code></p>
+        </>}
       </div>}
       {listingRead && <div className="break-all space-y-1">
         <p>Current holder <code>{listingRead.holderAddress}</code></p>
