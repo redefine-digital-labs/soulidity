@@ -10,13 +10,25 @@ const Coin = bcs.struct('Coin', { id: bcs.Address, balance: bcs.u64() })
  * reads legacy mirrors, cached JSON balances or spends a gas input twice.
  * This is an observation, not a reservation: recheck before signature/resend.
  */
-export async function readNativeSaleFunding(input: { client: SuiGrpcClient; buyer: string; coinType: string; total: string;
-  coinIds: string[]; gasCoinIds: string[]; getBuyerAddress: () => string | null; signal: AbortSignal }) {
+type FundingInput = { client: SuiGrpcClient; buyer: string; coinType: string; total: string;
+  coinIds: string[]; gasCoinIds: string[]; getBuyerAddress: () => string | null; signal: AbortSignal }
+
+export async function readNativeSaleFunding(input: FundingInput) {
+  commerceCheck(input.gasCoinIds.length > 0, 'SALE_FUNDING_SCOPE')
+  return readSaleCoins(input)
+}
+
+export async function readNativeSaleGasCoins(input: Omit<FundingInput, 'coinType' | 'gasCoinIds'>) {
+  return (await readSaleCoins({ ...input, coinType: '0x2::sui::SUI', gasCoinIds: [] })).coins
+    .map(({ objectId, version, digest }) => ({ objectId, version, digest }))
+}
+
+async function readSaleCoins(input: FundingInput) {
   const buyer = input.buyer, coinType = normalizeStructTag(input.coinType), ids = [...input.coinIds], gasIds = [...input.gasCoinIds], required = input.total
   const { client } = input, signal = AbortSignal.any([input.signal, AbortSignal.timeout(30000)])
   const guard = () => { signal.throwIfAborted(); commerceCheck(input.getBuyerAddress() === buyer, 'SALE_FUNDING_WALLET_CHANGED') }
   commerceCheck(commerceId(buyer) && /^[1-9][0-9]{0,19}$/.test(required) && BigInt(required) <= 18446744073709551615n
-    && ids.length > 0 && ids.length <= 256 && gasIds.length > 0 && gasIds.length <= 256 && ids.every(commerceId) && gasIds.every(commerceId)
+    && ids.length > 0 && ids.length <= 256 && gasIds.length <= 256 && ids.every(commerceId) && gasIds.every(commerceId)
     && new Set([...ids, ...gasIds]).size === ids.length + gasIds.length, 'SALE_FUNDING_SCOPE')
   guard()
   const chain = await profileReadStep(signal, () => client.core.getChainIdentifier())

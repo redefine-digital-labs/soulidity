@@ -11,6 +11,7 @@ import { readHistoricalMoveObject } from '../../sui/historical-object'
 import { readPinnedMovePackage, type PinnedMovePackage } from '../../sui/pinned-move-package'
 import type { PublicMutationPacket } from '../../sui/public-mutation-journal'
 import { commerceCheck, commerceId, decodeCommerce } from './economics-read'
+import { publicMutationCanonical as canonical } from '../../sui/public-mutation-journal'
 import { NativeOfferBcs } from './economics-bcs'
 import { NativeExclusiveListingFieldBcs } from './native-sale-cancellation'
 import { parseNativeSaleGraphPlan, type NativeSaleGraphPlan } from './native-sale-graph'
@@ -44,10 +45,42 @@ export async function readNativeSaleRelistByDigest(input: {
   const bytes = original?.transaction?.bcs?.value
   commerceCheck(original?.digest === digest && original.transaction?.digest === digest && bytes instanceof Uint8Array
     && bytes.length > 0 && bytes.length <= 135000, 'RELIST_ORIGINAL_BYTES')
-  const raw = bcs.TransactionData.parse(bytes), tx = Transaction.from(bytes).getData()
+  const expiration = bcs.TransactionData.parse(bytes).V1?.expiration.Epoch
+  return readNativeSaleListingHistory({ client, native, plan: { ...plan, seller, sellerAccountId },
+    packet: { bytes: toBase64(bytes), digest, expirationEpoch: String(expiration), phase: 'PREPARED', signature: null }, signal })
+}
+
+export interface NativeSaleListingBinding {
+  soulId: string
+  seller: string
+  sellerAccountId: string
+  sellerKioskId: string
+  registryId: string
+  configId: string
+  policyId: string
+  collectionId: string | null
+  coinType: string
+  shared: NativeSaleGraphPlan['shared']
+  offerId?: string
+  generation?: string
+  ask?: string
+  rootRevision?: string
+  reviewSnapshot?: Pick<ReturnType<typeof NativeOfferBcs.parse>, 'state' | 'creator' | 'royalty' | 'manifest' | 'config_revision' | 'generation'>
+}
+
+/** The first listing can prove its exact Offer before any purchase exists. */
+export async function readNativeSaleListingHistory(input: {
+  client: SuiGrpcClient; native: PinnedMovePackage; plan: NativeSaleListingBinding; packet: PublicMutationPacket; signal: AbortSignal
+}) {
+  const { client } = input, { native, packet, plan } = structuredClone({ native: input.native, packet: input.packet, plan: input.plan })
+  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(30000)])
+  const { digest } = packet, { seller, sellerAccountId } = plan
+  commerceCheck(typeof packet.bytes === 'string' && packet.bytes.length > 0 && packet.bytes.length <= 180000, 'RELIST_PACKET')
+  const bytes = fromBase64(packet.bytes), raw = bcs.TransactionData.parse(bytes), tx = Transaction.from(bytes).getData()
   const expiration = raw.V1?.expiration.Epoch
-  commerceCheck(toBase64(bcs.TransactionData.serialize(raw).toBytes()) === toBase64(bytes)
-    && TransactionDataBuilder.getDigestFromBytes(bytes) === digest && Number.isSafeInteger(expiration), 'RELIST_PACKET')
+  commerceCheck(toBase64(bcs.TransactionData.serialize(raw).toBytes()) === packet.bytes
+    && TransactionDataBuilder.getDigestFromBytes(bytes) === digest && Number.isSafeInteger(expiration)
+    && String(expiration) === packet.expirationEpoch, 'RELIST_PACKET')
   const shared = [plan.registryId, plan.configId, plan.policyId, ...(plan.collectionId ? [plan.collectionId] : []), plan.sellerKioskId]
   const accountIndex = shared.length, call = tx.commands[0]?.MoveCall
   commerceCheck(tx.sender === seller && tx.commands.length === 1 && tx.inputs.length === accountIndex + 4
@@ -68,24 +101,32 @@ export async function readNativeSaleRelistByDigest(input: {
   })
   const root = decodeCommerce(bcs.Address, args[0]), ask = decodeCommerce(bcs.u64(), args[1])
   const rootRevision = decodeCommerce(bcs.u64(), args[2])
-  commerceCheck(root === plan.soulId && BigInt(ask) > 0n && BigInt(rootRevision) > 0n, 'RELIST_TERMS')
-
-  const packet: PublicMutationPacket = { bytes: toBase64(bytes), digest, expirationEpoch: String(expiration), phase: 'PREPARED', signature: null }
+  commerceCheck(root === plan.soulId && BigInt(ask) > 0n && BigInt(rootRevision) > 0n
+    && (plan.ask === undefined || ask === plan.ask) && (plan.rootRevision === undefined || rootRevision === plan.rootRevision), 'RELIST_TERMS')
   const result = await readFinalizedMutation({ client, packet, signal, chainIdentifier: '35834a8a',
     genesisDigest: MAINNET_GENESIS_DIGEST, errorPrefix: 'COMMERCE_RELIST_HISTORY', proveSuccess: async context => {
       const pkg = await readPinnedMovePackage(client, native, signal), origin = pkg.origins.get('market::Offer')
       commerceCheck(origin, 'RELIST_OFFER_ORIGIN')
       const read = (objectId: string, type: string, mode: 'input' | 'created' | 'mutated') =>
         readHistoricalMoveObject({ client, effects: context.effects, transactionDigest: digest, objectId, type, mode, signal })
-      const offerRow = await read(plan.offerId, `${origin}::market::Offer`, 'created')
+      const created = context.effects.V2!.changedObjects.filter(([, change]) => change.idOperation.$kind === 'Created'
+        && change.outputState.ObjectWrite?.[1].$kind === 'Shared')
+      commerceCheck(created.length === 1 && (plan.offerId === undefined || created[0][0] === plan.offerId), 'RELIST_CREATED_OFFER')
+      const offerId = created[0][0], offerRow = await read(offerId, `${origin}::market::Offer`, 'created')
       const offer = decodeCommerce(NativeOfferBcs, offerRow.bytes), cap = offer.purchase
-      const offerShared = plan.shared.find(ref => ref.objectId === plan.offerId)!.initialSharedVersion
-      commerceCheck(offerRow.object.owner.Shared?.initialSharedVersion === offerShared
-        && String(offerRow.reference.version) === offerShared && offer.id === plan.offerId && offer.root === plan.soulId && offer.registry === plan.registryId && offer.config === plan.configId
+      const offerShared = plan.offerId ? plan.shared.find(ref => ref.objectId === plan.offerId)?.initialSharedVersion : String(offerRow.reference.version)
+      commerceCheck(offerShared && offerRow.object.owner.Shared?.initialSharedVersion === offerShared
+        && String(offerRow.reference.version) === offerShared && offer.id === offerId && offer.root === plan.soulId && offer.registry === plan.registryId && offer.config === plan.configId
         && offer.policy === plan.policyId && offer.seller === seller && offer.kiosk === plan.sellerKioskId && offer.collection === plan.collectionId
-        && offer.generation === plan.generation && offer.root_revision === rootRevision && offer.ask === ask
+        && (plan.generation === undefined || offer.generation === plan.generation) && offer.root_revision === rootRevision && offer.ask === ask
         && offer.active && cap && commerceId(cap.id) && cap.item_id === plan.soulId && cap.kiosk_id === plan.sellerKioskId && cap.min_price === '0',
       'RELIST_OFFER')
+      // The call signs the root revision and ask. The contract samples Config
+      // and the remaining Offer fields when it executes the shared-object call.
+      const { state, creator, royalty, manifest, config_revision, generation } = offer
+      const reviewChanged = plan.reviewSnapshot !== undefined
+        && canonical({ state, creator, royalty, manifest: Array.from(manifest), config_revision, generation })
+          !== canonical({ ...plan.reviewSnapshot, manifest: Array.from(plan.reviewSnapshot.manifest) })
       const key = { id: plan.soulId, is_exclusive: true }
       const listingId = deriveDynamicFieldID(plan.sellerKioskId, '0x2::kiosk::Listing', ListingKey.serialize(key).toBytes())
       const listingRow = await read(listingId, '0x2::dynamic_field::Field<0x2::kiosk::Listing,u64>', 'created')
@@ -100,7 +141,7 @@ export async function readNativeSaleRelistByDigest(input: {
         && kiosk.owner === seller && !kiosk.allow_extensions && kiosk.item_count > 0
         && toBase64(kioskIn.bytes) === toBase64(kioskOut.bytes), 'RELIST_KIOSK')
       const gas = await readSuiGasSettlement({ client, packet, effects: context.effects, signal })
-      const expected = [plan.offerId, listingId, plan.sellerKioskId, ...gas.gasCoinIds]
+      const expected = [offerId, listingId, plan.sellerKioskId, ...gas.gasCoinIds]
       const effects = context.effects.V2!
       commerceCheck(new Set([...expected, cap.id, plan.soulId, sellerAccountId]).size === expected.length + 3
         && effects.changedObjects.length === expected.length && new Set(effects.changedObjects.map(([id]) => id)).size === expected.length
@@ -111,7 +152,7 @@ export async function readNativeSaleRelistByDigest(input: {
       function reference(row: typeof offerRow) {
         return { version: String(row.reference.version), digest: row.reference.digest, writer: row.object.previousTransaction }
       }
-      return { offerId: plan.offerId, listingId, purchaseCapId: cap.id, ask, rootRevision, gas,
+      return { offerId, listingId, purchaseCapId: cap.id, ask, rootRevision, gas, reviewChanged,
         offerOutput: reference(offerRow), listingOutput: reference(listingRow),
         sellerKioskInput: { ...reference(kioskIn), initialSharedVersion, objectId: plan.sellerKioskId } }
     } })

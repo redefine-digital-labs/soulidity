@@ -20,17 +20,7 @@ export async function readNativeOfferPreview(input: { client: SuiGrpcClient; eco
   commerceCheck(commerceId(offerId) && commerceId(registryId), 'OFFER_INPUT')
   const income = await readEconomicsIncome({ client, target: economics, signal })
   const pkg = await readPinnedMovePackage(client, native, signal)
-  const link = pkg.linkage.get(economics.foundation.originalPackageId)
-  commerceCheck(link?.upgradedId === economics.foundation.callablePackageId
-    && link.upgradedVersion === income.foundationVersion, 'NATIVE_FOUNDATION_LINK')
-  const role = income.config.roles.roles[3]
-  commerceCheck(role.original === native.originalPackageId && role.callable === native.callablePackageId && role.pinned
-    && role.version === String(pkg.version) && pkg.origins.get('market::MarketAuthority1') === native.originalPackageId
-    && role.marker, 'MARKET_ROLE')
-  const marker = normalizeStructTag(role.marker.name)
-  const parts = marker.split('::'), name = parts[2]
-  commerceCheck(parts.length === 3 && parts[0] === native.callablePackageId && parts[1] === 'market'
-    && /^MarketRevision[1-9][0-9]*$/.test(name) && pkg.origins.get(`market::${name}`) === native.callablePackageId, 'MARKET_REVISION')
+  assertNativeMarketRole(pkg, income)
   const origin = pkg.origins.get('market::Offer'); commerceCheck(origin, 'OFFER_ORIGIN')
   const object = await readCommerceObject(client, offerId, `${origin}::market::Offer`, signal)
   commerceCheck(object.owner.$kind === 'Shared', 'OFFER_OWNER')
@@ -76,4 +66,18 @@ export function nativeSaleQuoteIdentity(preview: Awaited<ReturnType<typeof readN
     collection: collection && { holder: collection.holder, observed: collection.observed, member: collection.member },
     amounts: Object.fromEntries(Object.entries(quote).map(([role, amount]) => [role, String(amount)])),
   })
+}
+
+export function assertNativeMarketRole(pkg: Awaited<ReturnType<typeof readPinnedMovePackage>>, income: Awaited<ReturnType<typeof readEconomicsIncome>>) {
+  const link = pkg.linkage.get(income.target.foundation.originalPackageId)
+  commerceCheck(link?.upgradedId === income.target.foundation.callablePackageId
+    && link.upgradedVersion === income.foundationVersion, 'NATIVE_FOUNDATION_LINK')
+  const role = income.config.roles.roles[3]
+  commerceCheck(role.original === pkg.pin.originalPackageId && role.callable === pkg.pin.callablePackageId && role.pinned
+    && role.version === String(pkg.version) && pkg.origins.get('market::MarketAuthority1') === pkg.pin.originalPackageId
+    && role.marker, 'MARKET_ROLE')
+  const marker = normalizeStructTag(role.marker.name)
+  const parts = marker.split('::'), name = parts[2]
+  commerceCheck(parts.length === 3 && parts[0] === pkg.pin.callablePackageId && parts[1] === 'market'
+    && /^MarketRevision[1-9][0-9]*$/.test(name) && pkg.origins.get(`market::${name}`) === pkg.pin.callablePackageId, 'MARKET_REVISION')
 }

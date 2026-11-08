@@ -12,10 +12,11 @@ import { NativeInitialAuthorizationBcs, NativeInitialConfigurationBcs } from '..
 import { EconomicsConfigBcs, economicsConfigSnapshot, economicsOperationalSnapshotHash, NativeOfferBcs } from '../../../web/lib/soulidity/commerce/economics-bcs'
 import { NativeMarketGatesFieldBcs, NativeMarketRuleFieldBcs, NativeTransferPolicyBcs } from '../../../web/lib/soulidity/commerce/native-sale-conditions'
 import { NativeSaleRegistryBcs, NativeSaleSourceLocationBcs } from '../../../web/lib/soulidity/commerce/native-sale-source-binding'
+import { NativeExclusiveListingFieldBcs } from '../../../web/lib/soulidity/commerce/native-sale-cancellation'
 import { nativeSaleSoulManifest } from '../../../web/lib/soulidity/commerce/native-sale-tree'
 
-export async function nativeSaleCheckoutFixture(buyer: string) {
-  const seller = aid(1200), f = await canonicalNativeWorkbenchFixture(true, 2, true, true, seller)
+export async function nativeSaleCheckoutFixture(buyer: string, seller = aid(1200)) {
+  const f = await canonicalNativeWorkbenchFixture(true, 2, true, true, seller)
   const { root, object, rows, nativeId, standardId } = f, target = f.input.target
   const { native, standard, content, custody } = target
   const state = f.state, offerId = aid(1201), policyId = aid(1202), buyerKiosk = aid(1203), buyerAccountId = aid(1204)
@@ -138,5 +139,14 @@ export async function nativeSaleCheckoutFixture(buyer: string) {
     return { response: { transaction: { digest, transaction: { bcs: { value } }, signatures: [],
       effects: { bcs: { value: raw }, transactionDigest: digest, status: { success: true } } } } }
   }) }
-  return { client, release, soulId: root.id, offerId, buyer, buyerAccountId, payment, gas, terms, updateOffer }
+  const sellerGas = aid(1220)
+  object(sellerGas, '0x2::coin::Coin<' + coinType + '>', coin.serialize({ id: sellerGas, balance: 10000 }).toBytes(), { AddressOwner: seller })
+  function reserveForCancellation() {
+    const name = { id: root.id, is_exclusive: true }
+    const key = bcs.struct('Listing', { id: A, is_exclusive: bcs.bool() })
+    const id = deriveDynamicFieldID(f.kiosk!.id, '0x2::kiosk::Listing', key.serialize(name).toBytes())
+    object(id, '0x2::dynamic_field::Field<0x2::kiosk::Listing,u64>', NativeExclusiveListingFieldBcs.serialize({ id, name, value: 0 }).toBytes(), f.kiosk!.id)
+  }
+  return { client, release, soulId: root.id, offerId, buyer, buyerAccountId, payment, gas, terms, updateOffer,
+    seller, sellerAccountId: f.account!.id, sellerGas, policyId, rows, reserveForCancellation }
 }
