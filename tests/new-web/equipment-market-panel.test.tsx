@@ -65,3 +65,33 @@ it('checks original purchase funds separately from current component readback', 
   expect(settlement.textContent).toContain('Original checkpoint 20')
   expect(host.textContent).toContain('readback: SUPERSEDED')
 })
+
+it('downloads the exact purchase packet without its local signature or sync state', async () => {
+  f = await equipmentMarketOperationFixture({ action: 'buy', kind: 'external' })
+  m.state.record = { ...f.record, phase: 'SIGNED', signature: 'never exported' }
+  const create = vi.fn((_blob: Blob) => 'blob:equipment-original'), revoke = vi.fn()
+  const oldCreate = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+  const oldRevoke = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: create })
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revoke })
+  let downloaded = ''
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloaded = this.download })
+  try {
+    await render()
+    await act(async () => button('Download original component purchase').click())
+    expect(downloaded).toBe(`component-purchase-${f.record.digest}.json`)
+    const blob = create.mock.calls[0]?.[0] as Blob
+    const encoded = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(blob)
+    })
+    const parsed = JSON.parse(encoded)
+    expect(parsed.packet).toEqual({ bytes: f.record.bytes, digest: f.record.digest, expirationEpoch: f.record.expirationEpoch })
+    expect(encoded).not.toContain('never exported')
+    expect(m.state.start).not.toHaveBeenCalled()
+  } finally {
+    click.mockRestore()
+    if (oldCreate) Object.defineProperty(URL, 'createObjectURL', oldCreate); else Reflect.deleteProperty(URL, 'createObjectURL')
+    if (oldRevoke) Object.defineProperty(URL, 'revokeObjectURL', oldRevoke); else Reflect.deleteProperty(URL, 'revokeObjectURL')
+  }
+})

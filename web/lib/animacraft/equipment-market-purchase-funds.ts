@@ -13,12 +13,13 @@ import { validateEquipmentMarketOperationRecord, type EquipmentMarketOperationRe
 import { marketListCanonical as canonical, marketListCheck as check } from './market-list-operation'
 import { EquipmentMarketProtocolTreasuryBcs, EquipmentMarketTreasuryBcs } from './native-equipment-market-bcs'
 import { decodeNativeBcs } from './native-receive'
+import { readAuthenticatedEquipmentPurchaseCustody } from './browser-equipment-market-readback'
 
 const Coin = bcs.struct('Coin', { id: bcs.Address, balance: bcs.u64() })
 
 /** Read original component purchase funds using checkpoint-bound effects and exact historical objects. */
 export async function queryEquipmentMarketPurchaseFunds(
-  value: EquipmentMarketOperationRecord, source: SuiGrpcClient, parent: AbortSignal,
+  value: EquipmentMarketOperationRecord, source: SuiGrpcClient, parent: AbortSignal, options?: { proveCustody: true },
 ) {
   const record = validateEquipmentMarketOperationRecord(value)
   check(record.action === 'buy', 'Saved component purchase required')
@@ -116,9 +117,10 @@ export async function queryEquipmentMarketPurchaseFunds(
       total_collected: String(BigInt(protocolBefore.total_collected) + fee) }), 'Original component platform credit mismatch')
 
   const gas = original.addressGas ?? await readSuiGasSettlement({ client, packet: record, effects, signal })
+  const custody = options?.proveCustody ? await readAuthenticatedEquipmentPurchaseCustody(record, original, source, signal) : undefined
   signal.throwIfAborted()
   return { status: 'FUNDS_VERIFIED' as const, transactionDigest, checkpoint, coinType, receipt,
-    sellerPayoutId: payoutId, protocolTreasuryId: treasuryId, buyerChangeAtomic: changeCoin.balance, gas }
+    sellerPayoutId: payoutId, protocolTreasuryId: treasuryId, buyerChangeAtomic: changeCoin.balance, gas, ...(custody ? { custody } : {}) }
 }
 
 export type EquipmentMarketPurchaseFunds = Awaited<ReturnType<typeof queryEquipmentMarketPurchaseFunds>>

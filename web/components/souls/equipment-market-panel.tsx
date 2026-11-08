@@ -6,6 +6,33 @@ import {useEquipmentMarketActions} from '@/lib/hooks/use-equipment-market-action
 import {equipmentOperationQuote,type EquipmentMarketAction} from '@/lib/animacraft/equipment-market-operation'
 import type {EquipmentMarketReadRequest} from '@/lib/animacraft/equipment-market-operation-snapshot'
 import {equipmentMarketCurrency,formatEquipmentMarketAmount} from '@/lib/animacraft/equipment-market-amount'
+import {createEquipmentPurchaseOriginal} from '@/lib/animacraft/equipment-market-purchase-original'
+import type {EquipmentMarketOperationRecord} from '@/lib/animacraft/equipment-market-operation'
+
+function EquipmentPurchaseExport({ record }: { record: EquipmentMarketOperationRecord }) {
+  const [error, setError] = useState(false)
+  function download() {
+    setError(false)
+    try {
+      const original = createEquipmentPurchaseOriginal(record)
+      const url = URL.createObjectURL(new Blob([JSON.stringify(original)], { type: 'application/json' }))
+      try {
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `component-purchase-${original.packet.digest}.json`
+        link.click()
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 0)
+      }
+    } catch {
+      setError(true)
+    }
+  }
+  return <>
+    <button type="button" onClick={download}>Download original component purchase</button>
+    {error && <p role="alert">Could not export the original component purchase.</p>}
+  </>
+}
 
 function price(value:string,decimals:number){
   try{const n=parseDisplayAmountToAtomic(value,{decimals});return n>=40n&&n<=18446744073709551615n?String(n):undefined}catch{return undefined}
@@ -57,6 +84,7 @@ export function EquipmentMarketPanel({request,identityKey,action='list',blocked=
         <p>Saved gross price: {formatEquipmentMarketAmount(r.priceAtomic,r.snapshot.target.paymentCoinType)}. Recovery uses the saved transaction, not the current price field.</p>
         {r.phase==='SUCCEEDED'&&<p>Transaction recorded; readback: {r.syncStatus??'PENDING'}. Historical success does not prove current ownership.</p>}
         <button type="button" disabled={actions.busy} onClick={()=>act(actions.check)}>Check saved component transaction</button>
+        {r.action==='buy'&&<EquipmentPurchaseExport key={r.digest} record={r}/>}
         {r.action==='buy'&&r.phase==='SUCCEEDED'&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.checkFunds)}>Verify original purchase funds</button>}
         {actions.funds?.status==='FUNDS_VERIFIED'&&<div aria-label="Verified original component settlement">
           <p>Buyer paid {formatEquipmentMarketAmount(actions.funds.receipt.grossAtomic,actions.funds.coinType)}.</p>
@@ -72,6 +100,7 @@ export function EquipmentMarketPanel({request,identityKey,action='list',blocked=
       {actions.history.map(saved=><div key={saved.digest} className="break-all">
         <p>Archived {saved.digest}: {actions.historyResults[saved.digest]??'Not checked'}. Historical result only.</p>
         <button type="button" disabled={actions.busy} onClick={()=>act(()=>actions.checkHistory(saved.digest))}>Check archived component transaction</button>
+        {saved.action==='buy'&&<EquipmentPurchaseExport record={saved}/>}
       </div>)}
     </div>
   </section>

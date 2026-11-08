@@ -3,6 +3,8 @@ import { Inputs, Transaction, TransactionDataBuilder } from '@mysten/sui/transac
 import { fromHex, normalizeStructTag, toBase64 } from '@mysten/sui/utils'
 import { expect, it, vi } from 'vitest'
 import { queryEquipmentMarketPurchaseFunds } from '../../web/lib/animacraft/equipment-market-purchase-funds'
+import * as readback from '../../web/lib/animacraft/browser-equipment-market-readback'
+import { createEquipmentPurchaseOriginal, queryEquipmentPurchaseOriginal } from '../../web/lib/animacraft/equipment-market-purchase-original'
 import { buildEquipmentMarketOperationTransaction, equipmentMarketInputRoles, equipmentOperationQuote } from '../../web/lib/animacraft/equipment-market-operation'
 import { EquipmentMarketProtocolTreasuryBcs, EquipmentMarketTreasuryBcs } from '../../web/lib/animacraft/native-equipment-market-bcs'
 import { activityHash, adigest } from './fixtures/activity-transaction-evidence'
@@ -174,4 +176,22 @@ it('keeps older successful Effects V1 queryable without claiming a funds proof',
   } }).toBytes()
   await expect(f.confirm()).resolves.toEqual({ status: 'LEGACY_EFFECTS', transactionDigest: f.record.digest, checkpoint: '20' })
   expect(f.client.ledgerService.getCheckpoint).not.toHaveBeenCalled()
+})
+
+it('feeds custody the same checkpoint-bound original effects used for money after a cold import', async () => {
+  const f = await fixture('external', '', true), s = f.record.snapshot
+  const custody = { status: 'COMPLETE', itemType: 'OwnedExternalItemV8', sourceId: s.asset.kind === 'external' ? s.asset.productId : '',
+    originalHolder: s.actor, originalOwnershipEpoch: '2', currentHolder: s.actor, currentAddressOwner: s.actor,
+    currentOwnershipEpoch: '2', currentListingId: null } as const
+  const read = vi.spyOn(readback, 'readAuthenticatedEquipmentPurchaseCustody').mockResolvedValue(custody)
+  try {
+    const original = JSON.parse(JSON.stringify(createEquipmentPurchaseOriginal(f.record)))
+    const result = await queryEquipmentPurchaseOriginal(original, s.asset.itemId, f.client, new AbortController().signal)
+    expect(result).toMatchObject({ status: 'FUNDS_VERIFIED', checkpoint: '20', custody, transactionDigest: f.record.digest })
+    expect(read).toHaveBeenCalledOnce()
+    const [record, proof] = read.mock.calls[0]
+    expect(record).toMatchObject({ digest: f.record.digest, phase: 'PREPARED', signature: null })
+    expect(bcs.TransactionEffects.serialize(proof.effects).toBytes()).toEqual(f.ledger.effects.bcs.value)
+    expect(f.client.ledgerService.getCheckpoint).toHaveBeenCalledTimes(1)
+  } finally { read.mockRestore() }
 })

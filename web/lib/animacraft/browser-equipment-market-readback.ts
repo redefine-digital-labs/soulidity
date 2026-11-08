@@ -1,7 +1,7 @@
 import type {SuiGrpcClient} from '@mysten/sui/grpc'
 import {bcs} from '@mysten/sui/bcs'
 import {Transaction} from '@mysten/sui/transactions'
-import {fromBase64,toHex} from '@mysten/sui/utils'
+import {fromBase64,toBase64,toHex} from '@mysten/sui/utils'
 import {createNativeReceiveClient,decodeNativeBcs,receiveId,type NativeReceiveTarget} from './native-receive'
 import {createNativeMarketReadbackSession,nativeMarketSharedOutputReference} from './browser-native-market-readback'
 import {EquipmentReadSet,EquipmentBaseItemBcs,EquipmentExternalItemBcs,EquipmentLoadoutBcs,
@@ -12,6 +12,8 @@ import {validateEquipmentMarketOperationRecord,type EquipmentMarketOperationReco
 import {queryEquipmentMarketOperationEvidence,type EquipmentMarketOperationReceipt} from './equipment-market-operation-evidence'
 import type {SelectedSaleEquipmentPreparation} from './native-selected-equipment-sale'
 import {marketListCheck as check,marketListCanonical as canonical} from './market-list-operation'
+import {readHistoricalMoveObject} from '../sui/historical-object'
+import {withPackageObjectIdentity} from '../sui/package-object-client'
 
 type Effects=ReturnType<typeof bcs.TransactionEffects.parse>
 const hex=(v:number[])=>toHex(new Uint8Array(v))
@@ -68,8 +70,28 @@ export async function confirmBrowserEquipmentMarketOperation(value:EquipmentMark
  * validate the entire saved command graph and complete authenticated receipt set.
  * It owns final readset/session verification; this function never queries or
  * validates a fabricated single-item transaction and never evaluates group plans. */
-export async function confirmAuthenticatedEquipmentMarketRow(r:EquipmentRowView,
-  proof:{effects:Effects;receipt:EquipmentMarketOperationReceipt},context:ReadbackContext):Promise<'COMPLETE'|'SUPERSEDED'>{
+type MarketRowProof = { effects: Effects; receipt: EquipmentMarketOperationReceipt }
+
+export async function confirmAuthenticatedEquipmentMarketRow(r: EquipmentRowView, proof: MarketRowProof, context: ReadbackContext) {
+  return (await readAuthenticatedEquipmentMarketRow(r, proof, context)).status
+}
+
+/** The caller has authenticated finality and funds from this exact proof. */
+export async function readAuthenticatedEquipmentPurchaseCustody(
+  r: EquipmentRowView, proof: MarketRowProof, source: SuiGrpcClient, signal: AbortSignal,
+) {
+  check(r.action === 'buy' && proof.receipt.action === 'buy', 'Component purchase custody required')
+  const session = createNativeMarketReadbackSession(withPackageObjectIdentity(source, signal), signal)
+  const client = session.client, reads = new EquipmentReadSet(client, true), historyReads = new EquipmentReadSet(client)
+  const result = await readAuthenticatedEquipmentMarketRow(r, proof, { client, signal, reads, historyReads }, source)
+  await reads.verify()
+  await session.verify()
+  return result
+}
+
+async function readAuthenticatedEquipmentMarketRow(
+  r: EquipmentRowView, proof: MarketRowProof, context: ReadbackContext, purchaseHistory?: SuiGrpcClient,
+) {
   const {client,signal,reads,historyReads}=context,s=r.snapshot,target=s.release,pin=target.equipmentMarket!,receipt=proof.receipt
   const market=(await client.ledgerService.getObject({objectId:pin.callablePackageId})).response.object!.package!
   const runtime=(await client.ledgerService.getObject({objectId:target.runtime!.callablePackageId})).response.object!
@@ -117,6 +139,24 @@ export async function confirmAuthenticatedEquipmentMarketRow(r:EquipmentRowView,
     ...v,holder:s.seller,ownership_epoch:s.ownershipEpoch,equip_lock:null} as ReturnType<typeof EquipmentBaseItemBcs.parse>).toBytes()))
   check(item.id===s.asset.itemId&&item.version==='8'&&item.holder===receipt.recipient&&item.ownership_epoch===receipt.ownershipEpoch
     &&item.equip_lock===null&&item.transferable&&frozenAsset(item)===s.assetCommitment,'Historical equipment holder/contents mismatch')
+  if (purchaseHistory) {
+    check(itemBytes && historical.contents?.value, 'Original component custody bytes unavailable')
+    const read = (objectId: string, type: string, mode: 'input' | 'mutated') =>
+      readHistoricalMoveObject({ client: purchaseHistory, effects: proof.effects, transactionDigest: r.digest,
+        objectId, type, mode, signal, maxBytes: 256 * 1024 })
+    const [prior, listingOutput, itemOutput] = await Promise.all([
+      read(receipt.listingId, listingType, 'input'),
+      read(receipt.listingId, listingType, 'mutated'),
+      read(s.asset.itemId, itemType, 'mutated'),
+    ])
+    const active = decodeNativeBcs(EquipmentMarketListingBcs, prior.bytes)
+    check(active.status === 0 && active.revision === s.listing?.revision
+      && active.terminal_recipient === `0x${'0'.repeat(64)}`
+      && prior.object.owner.Shared?.initialSharedVersion === String(listingRef.birth)
+      && canonical({ ...active, status: post.status, revision: post.revision, terminal_recipient: post.terminal_recipient }) === canonical(post)
+      && toBase64(listingOutput.bytes) === toBase64(historical.contents.value)
+      && toBase64(itemOutput.bytes) === toBase64(itemBytes), 'Original component listing or delivery mismatch')
+  }
   // Effects V1 does not commit the predecessor digest; fetch it explicitly.
   if(proof.effects.V1&&r.action!=='reprice'){
     const before=(await client.ledgerService.getObject({objectId:s.asset.itemId,version:BigInt(s.reference.version)})).response.object!
@@ -154,7 +194,12 @@ export async function confirmAuthenticatedEquipmentMarketRow(r:EquipmentRowView,
   const assetChanged=live.holder!==item.holder||live.ownership_epoch!==item.ownership_epoch
     ||custody.addressOwner!==expectedOwner||live.equip_lock!==null
   check(!assetChanged||liveRaw.version!>itemRef.version,'Changed equipment requires a later version')
-  return listingChanged||assetChanged?'SUPERSEDED':'COMPLETE'
+  return { status: listingChanged || assetChanged ? 'SUPERSEDED' as const : 'COMPLETE' as const,
+    itemType, sourceId: post.custody.source_id,
+    originalHolder: item.holder, originalOwnershipEpoch: item.ownership_epoch,
+    currentHolder: live.holder, currentAddressOwner: custody.addressOwner, currentOwnershipEpoch: live.ownership_epoch,
+    currentListingId: custody.listingId,
+  }
 }
 
 /** One grouped partial update, not one update per selected instance. Complete
