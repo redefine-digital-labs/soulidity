@@ -1,5 +1,5 @@
 'use client'
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { MakerProductIncomeRecoveryError, validateMakerProductIncomeHostResult, validateMakerProductIncomeHostRecovery } from '../../lib/soulidity/commerce/maker-product-income-host-result'
 import type {MakerProductIncomeHost,MakerProductIncomeHostRequest} from '../../lib/soulidity/maker-product-income-host'
@@ -18,7 +18,10 @@ export function MakerProductIncomePreflight({ client, input, viewerAddress, host
   isActivationCurrent?: (() => boolean) | null
 }) {
   const scope = JSON.stringify([input, viewerAddress, activationKey, disabledReason], (_key, value) => typeof value === 'bigint' ? { bigint: String(value) } : value)
-  const current = useRef({ scope, client, hostPreflight, viewerAddress, isActivationCurrent }); current.current = { scope, client, hostPreflight, viewerAddress, isActivationCurrent }
+  const current = useRef({ scope, client, hostPreflight, viewerAddress, isActivationCurrent })
+  useLayoutEffect(() => {
+    current.current = { scope, client, hostPreflight, viewerAddress, isActivationCurrent }
+  }, [scope, client, hostPreflight, viewerAddress, isActivationCurrent])
   const serial = useRef(0), active = useRef<AbortController | null>(null)
   const attempt = useRef<{ scope: string; client: Client; host: MakerProductIncomeHost; lease: typeof isActivationCurrent } | null>(null)
   const empty = () => ({ scope, client, hostPreflight, isActivationCurrent, pending: false, attempted: false, stopped: false,

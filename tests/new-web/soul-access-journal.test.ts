@@ -92,11 +92,21 @@ it('all changed-deployment writers use the same actual operation lock across sto
   await expect(f.run(b, { store: browserSoulAccessStore() })).rejects.toThrow('BUSY')
   release(); expect((await first).status).toBe('SUCCEEDED'); expect(f.adapter.prepare).toHaveBeenCalledOnce()
 })
-it.each(['chainIdentifier', 'originalPackageId', 'author', 'soulId'])('keeps genuinely separate %s scopes independent', async field => {
+it.each(['chainIdentifier', 'author', 'soulId'])('keeps genuinely separate %s scopes independent', async field => {
   const f = fixture(), p = plan()
   if (field in p.deployment) (p.deployment as any)[field] = 'elsewhere'; else (p as any)[field] = 'elsewhere'
   await f.install(receipt(p, 'old')); expect((await f.run()).status).toBe('SUCCEEDED')
   expect(f.adapter.query.mock.calls.every(([r]) => r.packet.digest !== 'old')).toBe(true)
+})
+it.each([undefined,true])('blocks pending foreign original even on implicit mutation, startNew=%s',async startNew=>{
+  const f=fixture(),p=plan();p.deployment.originalPackageId='legacy-original'
+  await f.install(receipt(p,'old'))
+  await expect(f.run(plan(),{startNew})).rejects.toThrow('OTHER_DEPLOYMENT_RECOVERY_REQUIRED')
+  expect(f.adapter.prepare).not.toHaveBeenCalled();expect(f.adapter.preflight).not.toHaveBeenCalled();expect(f.adapter.sign).not.toHaveBeenCalled();expect(f.adapter.broadcast).not.toHaveBeenCalled()
+})
+it('does not silently omit a malformed legacy head on an implicit mutation',async()=>{
+  const f=fixture();localStorage.setItem('soulidity.soul-access:chain:original:opaque','{}')
+  await expect(f.run(plan(),{startNew:undefined})).rejects.toThrow('OPAQUE_HEAD_KEY');expect(f.adapter.prepare).not.toHaveBeenCalled()
 })
 it('pre-sign cancel can recover one namespace even when another namespace is unresolved', async () => {
   const f = fixture(), p = plan(); p.deployment.callablePackageId = 'earlier'

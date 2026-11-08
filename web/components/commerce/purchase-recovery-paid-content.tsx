@@ -36,6 +36,8 @@ function PaidContentVersions({ original, purchasedScope, releaseJson, client }: 
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   useLayoutEffect(() => {
+    // Clear the old client's content selection before allowing a new read.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOverview(null); setSelected(''); setPending(false); setError(null)
     return () => { active.current?.abort(); active.current = null }
   }, [client])

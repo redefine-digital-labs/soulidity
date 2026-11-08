@@ -1,6 +1,6 @@
 'use client'
 
-import React,{useEffect,useRef,useState} from 'react'
+import React,{useLayoutEffect,useRef,useState} from 'react'
 import type {SuiGrpcClient} from '@mysten/sui/grpc'
 import {normalizeStructTag} from '@mysten/sui/utils'
 import type {readMakerProductIncomeHistory} from '../../lib/soulidity/commerce/maker-product-income-history'
@@ -23,12 +23,19 @@ export function IncomeWithdrawalAddressFunds({original,client,viewerAddress,obse
   if(viewerAddress===receipt.recipient)add(original.receipt.coinType,'原提款收款人')
   if(viewerAddress===receipt.actor)add(SUI,'原操作钱包（SUI）')
  }
- const scope=JSON.stringify([original,viewerAddress,observePayoutCoin],(_k,v)=>typeof v==='bigint'?{bigint:String(v)}:v),current=useRef({scope,client,viewerAddress});current.current={scope,client,viewerAddress}
+ const scope=JSON.stringify([original,viewerAddress,observePayoutCoin],(_k,v)=>typeof v==='bigint'?{bigint:String(v)}:v),current=useRef({scope,client,viewerAddress})
  const serial=useRef(0),active=useRef<AbortController|null>(null)
  const observations=()=>({funds:null as Funds|null,error:null as string|null,payouts:null as Payouts|null,payoutError:null as string|null})
  const empty=()=>({scope,client,coinType:'',pending:false,...observations(),stopped:false})
  const [state,setState]=useState(empty)
- useEffect(()=>{serial.current++;active.current?.abort();setState(empty());return()=>{serial.current++;active.current?.abort()}},[scope,client])
+ useLayoutEffect(()=>{
+  current.current={scope,client,viewerAddress}
+  serial.current++;active.current?.abort()
+  // Revoke the old wallet's selection before the next paint.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  setState(empty())
+  return()=>{serial.current++;active.current?.abort()}
+ },[scope,client,viewerAddress])
  const view=state.scope===scope&&state.client===client?state:empty(),selected=rows.find(r=>r.coinType===view.coinType)
  const valid=(id:number)=>serial.current===id&&current.current.scope===scope&&current.current.client===client&&current.current.viewerAddress===viewerAddress
  function choose(coinType:string){const id=++serial.current;active.current?.abort();setState(s=>valid(id)&&s.scope===scope&&s.client===client?{...s,coinType:rows.some(r=>r.coinType===coinType)?coinType:'',pending:false,...observations(),stopped:false}:s)}

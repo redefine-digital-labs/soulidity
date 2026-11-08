@@ -101,6 +101,7 @@ jobs:
     permissions:
       contents: read
     env:
+      CLAWNEWS_LOAD_ENV_LOCAL: 'false'
       ANIMACRAFT_COMMIT_SHA: ${{ inputs.animacraft_commit_sha || (github.ref == 'refs/heads/codex/commerce-paid-checkout' && '5fb13fa3a45a013c53f05de7da8f9749b0108568') || vars.ANIMACRAFT_COMMIT_SHA }}
       ANIMACRAFT_WORKSPACE: ${{ github.workspace }}/_paired/animacraft
       SUI_RELEASE: mainnet-v1.80.1

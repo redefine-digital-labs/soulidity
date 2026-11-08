@@ -109,7 +109,7 @@ export function parseOriginalSoulEnhancementPlan(input: OriginalSoulEnhancementP
  * remain mandatory caller obligations, not facts established by this builder. */
 export function buildOriginalSoulEnhancementTransaction(input: OriginalSoulEnhancementPlan) {
   const p = parseOriginalSoulEnhancementPlan(input), tx = new Transaction(); tx.setSender(p.actor)
-  const t = p.target, module = t.route === 'MAKER_SOUL' ? 'maker_soul' : 'runtime', purchaseModule = t.route === 'MAKER_SOUL' ? 'maker_soul' : 'issuer'
+  const t = p.target, routeModule = t.route === 'MAKER_SOUL' ? 'maker_soul' : 'runtime', purchaseModule = t.route === 'MAKER_SOUL' ? 'maker_soul' : 'issuer'
   const object = (ref: SharedRef, mutable: boolean) => tx.sharedObjectRef({ ...ref, mutable })
   const soul = tx.objectRef(p.soul), maker = object(p.maker, p.contribution.kind === 'MAKER'), cfg = object(p.config, true), system = object(p.system, false)
   const product = p.contribution.kind === 'PACK' ? object(p.contribution.pack, true) : maker
@@ -133,7 +133,7 @@ export function buildOriginalSoulEnhancementTransaction(input: OriginalSoulEnhan
     ...(p.contribution.kind === 'PACK' ? [tx.pure.u64(p.contribution.version)] : []), tx.pure.u64(p.expectedApplicationRevision),
     tx.pure.vector('u8', hex(p.contribution.policyHash)), purchases, tx.pure.vector('u8', hex(p.attemptHex)), tx.pure.u64(p.feeRevision), tx.pure.u64(p.expiryMs), payment,
     object({ objectId: CLOCK, initialSharedVersion: '1' }, false), system]
-  const returned = call(t.adapter.callablePackageId, module, p.contribution.kind === 'PACK' ? 'enhance_pack' : 'enhance_maker', args, [t.coinType])
+  const returned = call(t.adapter.callablePackageId, routeModule, p.contribution.kind === 'PACK' ? 'enhance_pack' : 'enhance_maker', args, [t.coinType])
   const itemType = `${t.model.originalPackageId}::components::Item`
   const items = p.expectedReturnedItemIds.map(() => call('0x1', 'vector', 'pop_back', [returned], [itemType]))
   call('0x1', 'vector', 'destroy_empty', [returned], [itemType])

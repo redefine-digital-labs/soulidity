@@ -18,6 +18,8 @@ export async function createMutationUiRuntime(input?: any) {
   const client: any = { core: { getChainIdentifier: async () => ({ chainIdentifier: MAINNET_GENESIS_DIGEST }),
     getProtocolConfig: async()=>({protocolConfig:{attributes:data.attributes}}) },
     ledgerService: {
+      getServiceInfo:async()=>({response:{chainId:MAINNET_GENESIS_DIGEST}}),
+      getCheckpoint:async()=>{if(!data.checkpoint)throw Error('Fixture original checkpoint required');return structuredClone(data.checkpoint)},
       getEpoch: async () => ({response:{epoch:{epoch:9n}}}),
       getObject: async ({objectId, version}: any) => ({ response: { object: structuredClone(version === undefined ? rows.get(objectId) : historical.get(data.access ? `${objectId}:${version}` : objectId)) } }),
       batchGetObjects: async ({requests}: any) => ({ response: { objects: requests.map(({objectId}: any) => ({result: rows.has(objectId)

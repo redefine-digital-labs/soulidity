@@ -20,7 +20,7 @@ export function NativePublicReadPaidPreflightV2({client,input,viewerAddress,acti
  client:Client;input:NativePublicReadPaidPreflightInputV2;viewerAddress:string|null;activationKey:string;disabledReason:string|null;hostPreflight:NativePublicReadPaidHostPreflightV2|null;executeOriginal?:ExecuteOriginal|null
 }){
  const scope=JSON.stringify([input,viewerAddress,activationKey,disabledReason],(_k,v)=>typeof v==='bigint'?{bigint:String(v)}:v)
- const current=useRef({scope,client,hostPreflight,viewerAddress,executeOriginal});current.current={scope,client,hostPreflight,viewerAddress,executeOriginal}
+ const current=useRef({scope,client,hostPreflight,viewerAddress,executeOriginal})
  const serial=useRef(0),active=useRef<AbortController|null>(null)
  const executing=useRef<AbortController|null>(null)
  const [dispatch,setDispatch]=useState({scope,pending:false,message:''})
@@ -29,7 +29,14 @@ export function NativePublicReadPaidPreflightV2({client,input,viewerAddress,acti
  const attempt=useRef<{scope:string;client:Client;host:NativePublicReadPaidHostPreflightV2}|null>(null)
  const empty=()=>({scope,client,hostPreflight,pending:false,attempted:false,stopped:false,result:null as Validated|null,error:null as string|null,recovery:null as NativePublicReadPaidRecoveryV2|null,recoveredFunding:null as RecoveredFunding|null})
  const [state,setState]=useState(empty)
- useLayoutEffect(()=>{serial.current++;active.current?.abort();setState(empty());setDispatch({scope,pending:false,message:''});return()=>{serial.current++;active.current?.abort();executing.current?.abort();executing.current=null}},[scope,client,hostPreflight,executeOriginal])
+ useLayoutEffect(()=>{
+  current.current={scope,client,hostPreflight,viewerAddress,executeOriginal}
+  serial.current++;active.current?.abort()
+  // Drop old confirmation state before the new wallet or host can act.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  setState(empty());setDispatch({scope,pending:false,message:''})
+  return()=>{serial.current++;active.current?.abort();executing.current?.abort();executing.current=null}
+ },[scope,client,hostPreflight,viewerAddress,executeOriginal])
  const view=state.scope===scope&&state.client===client&&state.hostPreflight===hostPreflight?state:empty()
  const decision=input.reviewed.decision.action
  const eligibility=decision==='REUSE_OWNER'||decision==='REUSE_ENTRY'?'已有内容资格可复用，无需重复购买。':decision!=='PURCHASE_REQUIRED'||!input.reviewed.quote||input.reviewed.purchaseBlockers.length?'当前内容购买条件尚未满足。':null

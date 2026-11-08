@@ -6,7 +6,7 @@ import {PurchaseRecoveryFunds} from './purchase-recovery-funds'
 import {PurchaseRecoveryMarketHandoff} from './purchase-recovery-market-handoff'
 import {PurchaseRecoverySaleSource} from './purchase-recovery-sale-source'
 import {PurchaseRecoverySaleCustody} from './purchase-recovery-sale-custody'
-import React,{useEffect,useRef,useState} from 'react'
+import React,{useLayoutEffect,useRef,useState} from 'react'
 import type {SuiGrpcClient} from '@mysten/sui/grpc'
 import {SuiGrpcClient as ReadClient} from '@mysten/sui/grpc'
 import {GrpcWebFetchTransport} from '@protobuf-ts/grpcweb-transport'
@@ -19,10 +19,17 @@ type ClientFactory=(signal:AbortSignal)=>SuiGrpcClient
 type View={reader:SuiGrpcClient|null;soulId:string;client:ClientFactory;text:string;name:string;original:PurchaseRecoveryOriginal|null;result:PurchaseRecoveryQuery|null;pending:boolean;error:string|null;stopped:boolean}
 /** Explicit memory-only import; original formats retain their meaning. */
 export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadReleaseJson,createReadOnlyClient=defaultClient}:{soulId:string;nativeReleaseJson?:string;publicReadReleaseJson?:string;createReadOnlyClient?:ClientFactory}){
- const serial=useRef(0),active=useRef<AbortController|null>(null),current=useRef({soulId,client:createReadOnlyClient});current.current={soulId,client:createReadOnlyClient}
+ const serial=useRef(0),active=useRef<AbortController|null>(null),current=useRef({soulId,client:createReadOnlyClient})
  const empty=():View=>({reader:null,soulId,client:createReadOnlyClient,text:'',name:'',original:null,result:null,pending:false,error:null,stopped:false})
  const [state,setState]=useState<View>(empty)
- useEffect(()=>{serial.current++;active.current?.abort();setState(empty());return()=>{serial.current++;active.current?.abort()}},[soulId,createReadOnlyClient])
+ useLayoutEffect(()=>{
+  current.current={soulId,client:createReadOnlyClient}
+  serial.current++;active.current?.abort()
+  // Clear the previous Soul's import before the new Soul can be queried.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  setState(empty())
+  return()=>{serial.current++;active.current?.abort()}
+ },[soulId,createReadOnlyClient])
  const view=state.soulId===soulId&&state.client===createReadOnlyClient?state:empty()
  const valid=(id:number)=>serial.current===id&&current.current.soulId===soulId&&current.current.client===createReadOnlyClient
  async function select(file:File|undefined){

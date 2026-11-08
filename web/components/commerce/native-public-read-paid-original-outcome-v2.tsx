@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { bindNativePublicReadPaidOriginalOutcomeV2 } from '../../lib/soulidity/commerce/native-public-read-paid-original-outcome-v2'
 import { PurchaseRecoveryPaidContent } from './purchase-recovery-paid-content'
@@ -14,7 +14,8 @@ type Bound = Extract<Awaited<ReturnType<typeof bindNativePublicReadPaidOriginalO
  */
 export function NativePublicReadPaidOriginalOutcomeV2({ record, history, client, publicReadReleaseJson }: Request & { client: SuiGrpcClient; publicReadReleaseJson?: string }) {
   const scope = JSON.stringify([record, history], (_key, value) => typeof value === 'bigint' ? { bigint: String(value) } : value)
-  const current = useRef({ scope, client }); current.current = { scope, client }
+  const current = useRef({ scope, client })
+  useLayoutEffect(() => { current.current = { scope, client } }, [scope, client])
   const serial = useRef(0), [state, setState] = useState({ scope, client, bound: null as Bound | null, error: null as string | null })
   useEffect(() => {
     const id = ++serial.current

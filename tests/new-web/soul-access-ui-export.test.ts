@@ -50,7 +50,7 @@ it.each(['grant-issue','grant-revoke-scope','grant-revoke','paid-configure','pai
       id:f.state.current_kiosk_id,profits:'0',owner:f.state.current_owner,item_count:1,allow_extensions:false}).toBytes()}})
   if(purchase)for(const row of f.rows.values())if(row.version===11n && row.owner?.kind===1 && row.owner.address===f.author && row.objectType.includes('::coin::Coin<'))rows.set(row.objectId,structuredClone(row))
   const data={access:true,rows:[...rows],tables:[...tables],historical:[...f.rows],prepared:await f.adapter.prepare(f.plan),signed:f.record,
-    ledger:await f.client.ledgerService.getTransaction(),attributes:(await f.client.core.getProtocolConfig()).protocolConfig.attributes,
+    ledger:await f.client.ledgerService.getTransaction(),checkpoint:await f.client.ledgerService.getCheckpoint(),attributes:(await f.client.core.getProtocolConfig()).protocolConfig.attributes,
     deployment,listingDeployment:{...deployment,marketConfigId:f.deployment.marketConfigId,paymentCoinType:f.deployment.paymentCoinType},request:f.request}
   const runtime=await createMutationUiRuntime(data)
   const before=await runtime.detail()

@@ -1,5 +1,7 @@
 'use client'
 
+import { createBrowserSameSoulMutation } from '../soulidity/browser-same-soul-mutation'
+import { sameSoulMarketReadPort } from '../soulidity/same-soul-mutation-client'
 import {useEffect} from 'react'
 import {useCommittedSession,useSessionState,type SessionLease} from './use-committed-session'
 import { useCurrentAccount, useCurrentWallet, useSignTransaction, useSuiClient } from '@mysten/dapp-kit'
@@ -59,7 +61,7 @@ export function useNativeMarketCancelActions(params: {
     }
   }, [session])
 
-  async function read(listingId = params.listingId ?? undefined, capId = params.kioskCapId ?? undefined,lease:SessionLease|null=session.capture()) {
+  async function read(listingId = params.listingId ?? undefined, capId = params.kioskCapId ?? undefined,lease:SessionLease|null=session.capture(), operationClient?:SuiGrpcClient) {
     const matches=()=>lease?.matches()===true
     if (!matches()) throw new Error('Soul or wallet changed; reopen cancellation')
     if (!releaseConfig) throw configError ?? new Error('Native cancellation configuration unavailable')
@@ -68,7 +70,7 @@ export function useNativeMarketCancelActions(params: {
     try {
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(25000)])
       const value = await profileReadStep(signal, () => readBrowserNativeMarketCancel({ soulId: params.soulId,
-        stateId: params.stateId, listingId, kioskCapId: capId, config: releaseConfig!, signal }))
+        stateId: params.stateId, listingId, kioskCapId: capId, config: releaseConfig!, signal },operationClient?{client:()=>sameSoulMarketReadPort(operationClient)}:{}))
       if (!matches() || value.schema !== 'native-market-cancel-v1' || value.soulId !== params.soulId || value.stateId !== params.stateId) {
         throw new Error('Cancellation state does not match this Soul')
       }
@@ -94,11 +96,11 @@ export function useNativeMarketCancelActions(params: {
     && (!visibleConfirmed || visibleRecord.syncStatus === 'PENDING')
   const canStart = Boolean(account && currentWallet && visibleSnapshot?.owner === address && visibleSnapshot.listed
     && visibleSnapshot.listingActive && visibleSnapshot.release?.writesEnabled && !busy && !loading && !pending)
-  function createAdapter(start = false,lease:SessionLease) {
+  function createAdapter(start = false,lease:SessionLease,operationClient?:SuiGrpcClient) {
     const matches=lease.matches
-      const grpc = (client as unknown as { grpc?: SuiGrpcClient }).grpc
+      const grpc = operationClient??(client as unknown as { grpc?: SuiGrpcClient }).grpc
       if (!grpc) throw new Error('The verified gRPC wallet client is required')
-      return createMarketCancelOperationAdapter({ client:grpc,read:(listingId,capId)=>read(listingId,capId,lease), observed: start ? visibleSnapshot ?? undefined : undefined,
+      return createMarketCancelOperationAdapter({ client:grpc,read:(listingId,capId)=>read(listingId,capId,lease,grpc), observed: start ? visibleSnapshot ?? undefined : undefined,
         getAddress: () => matches() ? address : null,
         sign: transaction => {
           if (!matches() || !account) throw new Error('Wallet or network client changed before signature')
@@ -126,11 +128,16 @@ export function useNativeMarketCancelActions(params: {
     if (!address || !account || !matches() || lease!.isRunning() || (start && !canStart)) return null
     lease!.setRunning(true); setBusy(true); setError(null)
     setConfirmedResult(null)
+    let coordinateAbort:AbortController|undefined
     try {
-      const result = await runMarketCancelOperation({ soulId: params.soulId, owner: address, start, queryOnly, cancelUnsigned, retireExpired,
-        store: browserMarketCancelOperationStore(), adapter: createAdapter(start,lease!),
+      coordinateAbort=new AbortController();lease!.requests.add(coordinateAbort)
+      const grpc=(client as unknown as {grpc?:SuiGrpcClient}).grpc;if(!grpc)throw Error('Verified gRPC client required')
+      const coordinate=createBrowserSameSoulMutation({client:grpc,scopes:[{chainIdentifier:'35834a8a',soulId:params.soulId,author:address}],ownKeys:[marketCancelOperationKey(params.soulId,address)],signal:coordinateAbort.signal,guard:()=>{if(!matches())throw Error('Market wallet/session changed')},recoveryOnly:queryOnly||cancelUnsigned||retireExpired})
+      const operationAdapter=createAdapter(start,lease!,coordinate.client)
+      const result = await coordinate.run(()=>runMarketCancelOperation({ soulId: params.soulId, owner: address, start, queryOnly, cancelUnsigned, retireExpired,
+        store: browserMarketCancelOperationStore(), adapter: operationAdapter,
         onRecord: value => { if (matches()) setRecord(value) },
-      })
+      })).finally(()=>lease!.requests.delete(coordinateAbort!))
       if (!matches()) return null
       readRecovery()
       setRecord(result)
@@ -149,7 +156,7 @@ export function useNativeMarketCancelActions(params: {
         catch { /* Keep the storage/transaction error; never clear unknown bytes. */ }
       }
       return null
-    } finally { lease!.setRunning(false); if (matches()) setBusy(false) }
+    } finally {if(coordinateAbort)lease!.requests.delete(coordinateAbort); lease!.setRunning(false); if (matches()) setBusy(false) }
   }
   async function checkHistory(digest: string): Promise<MarketCancelQueryResult | null> {
     const lease=session.capture(),matches=()=>lease?.matches()===true

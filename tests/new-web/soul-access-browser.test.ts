@@ -69,6 +69,8 @@ async function initialize(session: string, landed: string[] = []) {
     g.client = {
       core: { getChainIdentifier: async () => ({ chainIdentifier: input.genesis }) },
       ledgerService: {
+        getServiceInfo:async()=>({response:{chainId:input.genesis}}),
+        getCheckpoint:async()=>structuredClone(g.historicalSample.checkpoint),
         getTransaction: async ({ digest }: { digest: string }) => {
           const sample = g.samples.find((row: any) => row.signed.packet.digest === digest)
           if (!sample?.ledger || !g.landed.has(digest)) throw Object.assign(Error('not found'), { code: 'NOT_FOUND' })
@@ -131,7 +133,7 @@ beforeAll(async () => {
     const prepared = await fixture.adapter.prepare(fixture.plan)
     expect(prepared.packet.bytes).toBe(fixture.record.packet.bytes)
     samples.push({ prepared, signed: fixture.record,
-      ledger: await fixture.client.ledgerService.getTransaction(), rows: [...fixture.rows.values()] })
+      ledger: await fixture.client.ledgerService.getTransaction(),checkpoint:await fixture.client.ledgerService.getCheckpoint(), rows: [...fixture.rows.values()] })
     if (price === '10001') {
       // Variants use the real builder/local fixture signer. They are valid
       // proposed packets, not claims of chain execution on a new deployment.
@@ -245,7 +247,7 @@ it.each(['callable', 'market'])('two real tabs with different %s keys cannot pre
       return { error, counts: g.counts, distinctKey: g.T.soulAccessKey(sample.prepared.plan) !== g.key,
         newRecord: g.store.read(g.T.soulAccessKey(sample.prepared.plan)), names: locks.held?.map(lock => lock.name) }
     }, { variant }, secondary)
-    expect(other.distinctKey).toBe(true); expect(other.error).toContain('SOUL_ACCESS_STORE_BUSY')
+    expect(other.distinctKey).toBe(true); expect(other.error).toContain('SOUL_ACCESS_ASSET_BUSY')
     expect(other.counts).toMatchObject({ prepare: 0, sign: 0, broadcast: 0 }); expect(other.newRecord).toBeNull()
     expect(other.names.some((name: string) => name.startsWith('soulidity.soul-access-operation:'))).toBe(true)
   } finally { await run(async () => { const g = globalThis as any; g.releasePreflight(); await g.inFlight }) }
