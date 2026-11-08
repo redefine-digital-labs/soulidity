@@ -3,7 +3,7 @@ import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { fromBase64, normalizeStructTag, normalizeSuiAddress, toHex } from '@mysten/sui/utils'
 import { blobIdFromInt } from '@mysten/walrus'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { profileReadStep } from '@soulidity/sdk'
+import { DOWNLOAD_POLICY_PUBLIC, DOWNLOAD_POLICY_OWNER_ONLY, profileReadStep } from '@soulidity/sdk'
 import { MAINNET_GENESIS_DIGEST } from '../animacraft/mainnet-chain'
 import { readPinnedMovePackageOrigins } from '../sui/pinned-move-package'
 import { fetchBrowserContentBytes, validateBrowserContentSealConfig, type BrowserContentSealConfig } from './browser-content-open'
@@ -88,6 +88,7 @@ export async function openCanonicalNativeContent(input: {
     const key = await step(() => crypto.subtle.importKey('raw', new Uint8Array(material!.subarray(0, 32)), { name: 'AES-GCM' }, false, ['decrypt']))
     plaintext = await step(async () => new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(fromBase64(envelope.iv)) }, key, new Uint8Array(ciphertext!))), bytes => bytes.fill(0))
     check(toHex(sha256(plaintext)) === envelope.contentHash, 'PLAINTEXT_HASH'); await verify(); guard()
-    const result = { bytes: plaintext, fileName: envelope.fileName, mimeType: envelope.mimeType }; plaintext = undefined; return result
+    const result = { bytes: plaintext, fileName: envelope.fileName, mimeType: envelope.mimeType,
+      downloadAllowed: record.downloadPolicy === DOWNLOAD_POLICY_PUBLIC || record.downloadPolicy === DOWNLOAD_POLICY_OWNER_ONLY }; plaintext = undefined; return result
   } finally { ciphertext?.fill(0); material?.fill(0); plaintext?.fill(0); wrapped.fill(0) }
 }

@@ -6,7 +6,7 @@ import Page from '../../web/app/souls/[id]/purchase/recovery/page'
 import {purchaseRecoveryFixture} from './fixtures/commerce-purchase-recovery-original'
 import {aid} from './fixtures/activity-transaction-evidence'
 const m=vi.hoisted(()=>({id:'',address:null as string|null,factory:vi.fn(),readCurrent:vi.fn(),openContent:vi.fn(),
- walletClient:{ledgerService:{}} as any,walletConnection:{},sign:vi.fn(),sealConfig:{} as any}))
+ walletClient:{ledgerService:{}} as any,walletConnection:{},sign:vi.fn(),sealConfig:{} as any,incomeRegistry:vi.fn()}))
 vi.mock('../../web/lib/hooks/use-wallet-sign',()=>({useWalletSign:()=>({
  suiWallet:m.address?{address:m.address}:null,walletAccount:m.address,currentWallet:m.walletConnection,
  suiGrpcClient:m.walletClient,getWalletAddress:()=>m.address,signPersonalMessage:m.sign,
@@ -25,12 +25,20 @@ vi.mock('../../web/components/commerce/purchase-recovery-import',async importOri
  const actual=await importOriginal<typeof import('../../web/components/commerce/purchase-recovery-import')>()
  return {...actual,PurchaseRecoveryImport:(props:any)=><actual.PurchaseRecoveryImport {...props} createReadOnlyClient={m.factory}/>}
 })
+vi.mock('../../web/lib/animacraft/native-receive',async importOriginal=>({
+ ...await importOriginal<typeof import('../../web/lib/animacraft/native-receive')>(),
+ createNativeReceiveClient:(signal:AbortSignal)=>m.factory(signal),
+}))
+vi.mock('../../web/lib/soulidity/configured-income-entry',async importOriginal=>{
+ const actual=await importOriginal<typeof import('../../web/lib/soulidity/configured-income-entry')>()
+ return {...actual,createConfiguredIncomeOriginalExecutionRegistry:()=>m.incomeRegistry()??actual.createConfiguredIncomeOriginalExecutionRegistry()}
+})
 vi.mock('../../web/lib/soulidity/native-public-read-paid-original-client-v2',()=>({
  createNativePublicReadPaidOriginalClientV2:(signal:AbortSignal)=>m.factory(signal),
 }))
 let host:HTMLDivElement,root:Root
 const routeParams=new Map<string,Promise<{id:string}>>()
-beforeEach(()=>{localStorage.clear();routeParams.clear();vi.stubGlobal('React',React);vi.stubEnv('NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON',undefined);vi.stubEnv('NEXT_PUBLIC_SOULIDITY_NATIVE_PUBLIC_READ_V2_TARGET_JSON',undefined);m.address=null;m.walletClient={ledgerService:{}};m.sealConfig={};m.readCurrent.mockReset();m.openContent.mockReset();m.sign.mockReset();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);vi.stubGlobal('Uint8Array',structuredClone(new Uint8Array()).constructor);m.factory.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host)})
+beforeEach(()=>{localStorage.clear();routeParams.clear();vi.stubGlobal('React',React);vi.stubEnv('NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON',undefined);vi.stubEnv('NEXT_PUBLIC_SOULIDITY_NATIVE_PUBLIC_READ_V2_TARGET_JSON',undefined);m.address=null;m.walletClient={ledgerService:{}};m.sealConfig={};m.readCurrent.mockReset();m.openContent.mockReset();m.sign.mockReset();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);vi.stubGlobal('Uint8Array',structuredClone(new Uint8Array()).constructor);m.factory.mockReset();m.incomeRegistry.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host)})
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllEnvs();vi.unstubAllGlobals()})
 const render=async()=>{const params=routeParams.get(m.id)??Promise.resolve({id:m.id});routeParams.set(m.id,params);await act(async()=>{root.render(<Suspense fallback="Loading"><Page params={params}/></Suspense>);await new Promise(r=>setTimeout(r,20))});await act(async()=>{await new Promise(r=>setTimeout(r,10))})}
 async function select(text:string){const file={name:'original.json',size:new TextEncoder().encode(text).length,text:async()=>text} as File;await act(async()=>{const input=host.querySelector('input[type=file]')!;Object.defineProperty(input,'files',{configurable:true,value:[file]});input.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,20))})}
@@ -184,12 +192,16 @@ function currentDirectory(x:Awaited<ReturnType<typeof verifiedSaleWithContent>>,
  }
 }
 
-it('opens selected content for the original current buyer after real original money and custody proof on the route',async()=>{
+it.each(['text', 'file'])('opens %s for the original current buyer after original money and custody proof on the route',async mode=>{
  const x=await verifiedSaleWithContent()
  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON',x.release)
  m.readCurrent.mockResolvedValue(currentDirectory(x))
  const bytes=new TextEncoder().encode('verified buyer plaintext')
- m.openContent.mockResolvedValue({bytes,fileName:'memory.md',mimeType:'text/markdown'})
+ const binary = mode === 'file'
+ const create = vi.fn((_blob: Blob) => 'blob:current-owner-file'), revoke = vi.fn()
+ vi.stubGlobal('URL', class extends URL { static createObjectURL = create; static revokeObjectURL = revoke })
+ m.openContent.mockResolvedValue({bytes,fileName:binary?'memory.bin':'memory.md',
+  mimeType:binary?'application/octet-stream':'text/markdown',downloadAllowed:true})
  await render();await select(x.text);await click('查询原购买历史')
  expect(host.querySelector('[aria-label="原买家当前内容"]')).toBeNull()
  await click('核对原资产交接')
@@ -205,11 +217,17 @@ it('opens selected content for the original current buyer after real original mo
   soulId:x.soulId,viewerAddress:x.original.plan.buyer,recordIndex:1,
   expectedRecord:{version:'2',ciphertextHash:'11'.repeat(32)},
  }))
- expect(host.textContent).toContain('verified buyer plaintext')
+ if(binary){
+  const link=host.querySelector('a[download="memory.bin"]')
+  expect(link?.getAttribute('href')).toBe('blob:current-owner-file')
+  expect(create.mock.calls[0][0].type).toBe('application/octet-stream')
+ }else expect(host.textContent).toContain('verified buyer plaintext')
  expect(payload()).toBe(x.text)
  m.address=x.original.plan.seller??aid(99)
  await render()
  expect(host.textContent).not.toContain('verified buyer plaintext')
+ expect(host.querySelector('a[download="memory.bin"]')).toBeNull()
+ if(binary)expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:current-owner-file')
  expect(bytes.every(byte=>byte===0)).toBe(true)
  expect(host.querySelector('[aria-label="已核验原资产交接"]')).not.toBeNull()
  expect(host.querySelector('[aria-label="原买家当前内容"] button')).toBeNull()
@@ -416,6 +434,45 @@ it.each(['file','journal'] as const)('opens a later compatible version from a V2
  expect(Object.entries(localStorage)).toEqual(storageBefore)
 })
 
+it.each([0, 1, 2])('honors verified download policy %i after real Seal/AES recovery for the paid buyer', async downloadPolicy => {
+ const f = await paidRecoveryPage()
+ f.envelope.mimeType = 'application/octet-stream'
+ f.envelope.fileName = 'content.bin'
+ f.x.record.download_policy = downloadPolicy
+ f.x.record.envelope = new TextEncoder().encode(JSON.stringify(f.envelope))
+ f.rewrite()
+ const create = vi.fn((_blob: Blob) => 'blob:recovered-file'), revoke = vi.fn()
+ vi.stubGlobal('URL', class extends URL { static createObjectURL = create; static revokeObjectURL = revoke })
+ await render(); await select(f.originalText); await click('查询原购买历史'); await choosePaidRecoveryVersion(f.qualification.recordIndex)
+ expect(host.querySelector('a[download="content.bin"]')).toBeNull()
+ await click('用原买家钱包打开内容'); await waitForPaidOpen()
+ const opened = host.querySelector('[aria-label="Opened content content.bin"]')
+ expect(opened?.textContent).toContain('已使用原交易产生的订阅资格打开此版本。')
+ if (downloadPolicy === 0) {
+  expect(opened?.querySelector('a[download="content.bin"]')?.getAttribute('href')).toBe('blob:recovered-file')
+  expect(create).toHaveBeenCalledOnce()
+  const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
+   const reader = new FileReader()
+   reader.onerror = () => reject(reader.error)
+   reader.onload = () => resolve(reader.result as ArrayBuffer)
+   reader.readAsArrayBuffer(create.mock.calls[0][0])
+  })
+  expect([...new Uint8Array(bytes)]).toEqual([...f.plaintext])
+ } else {
+  expect(opened?.querySelector('a[download="content.bin"]')).toBeNull()
+  expect(opened?.textContent).toContain('The current record restricts file downloads.')
+  expect(create).not.toHaveBeenCalled()
+ }
+ expect(m.sign).toHaveBeenCalledOnce()
+ expect(f.cryptoFixture.decryptCall).toHaveBeenCalledOnce()
+ expect(payload()).toBe(f.originalText)
+ await click('Close content')
+ expect(host.querySelector('a[download="content.bin"]')).toBeNull()
+ if(downloadPolicy===0)expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:recovered-file')
+ else expect(revoke).not.toHaveBeenCalled()
+ expect(payload()).toBe(f.originalText)
+})
+
 it('a different wallet and expired current Entry cannot obtain plaintext from an otherwise settled original',async()=>{
  const f=await paidRecoveryPage()
  m.address=aid(999)
@@ -451,4 +508,152 @@ it.each(['wallet','file'] as const)('discard late protected content when the %s 
   if(mode==='wallet')expect(host.textContent).toContain('原协议收入（最小单位）：3')
   else expect(host.querySelector('[aria-label="原订阅内容交付"]')).toBeNull()
  }finally{release()}
+})
+
+const cancelPanel = () => host.querySelector<HTMLElement>('[aria-label="原取消挂牌恢复"]')!
+const cancelInput = () => cancelPanel().querySelector('input')!
+const cancelProof = () => cancelPanel().querySelector('[aria-label="原取消证据"]')
+async function setCancellationDigest(digest: string) {
+ await act(async () => {
+  const input = cancelInput()
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, digest)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+ })
+}
+async function nativeCancellationPage() {
+ const { nativeSaleCancellationFixture } = await import('./fixtures/commerce-sale-cancellation')
+ const x = await nativeSaleCancellationFixture()
+ const pin = ({ originalPackageId, callablePackageId, callableDigest }: typeof x.params.native) => ({ originalPackageId, callablePackageId, callableDigest })
+ const native = pin(x.params.native), custody = pin(x.params.custody)
+ const target = { chainIdentifier: '35834a8a', native, custody, standard: native, configId: aid(72), registryId: aid(71) }
+ vi.stubEnv('NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON', JSON.stringify(target))
+ m.id = x.intent.soulId
+ m.factory.mockReturnValue(x.params.client)
+ await render()
+ return x
+}
+
+it('recovers an independent Commerce cancellation by original digest on the actual anonymous route', async () => {
+ const x = await nativeCancellationPage()
+ expect(m.factory).not.toHaveBeenCalled()
+ await setCancellationDigest(x.params.packet.digest)
+ await click('查询原取消交易')
+ expect(cancelProof()?.textContent).toContain('原取消交易、原挂牌退出及 Gas 已核验。')
+ expect(cancelProof()?.textContent).toContain(x.intent.offerId)
+ expect(cancelProof()?.textContent).toContain('原 SUI Gas（MIST）3')
+ expect(cancelProof()?.textContent).toContain('后续挂牌与当前权限由当前状态独立核对。')
+ expect(x.f.client.ledgerService.getTransaction.mock.calls.every(([request]) => (request as { digest: string }).digest === x.params.packet.digest)).toBe(true)
+ expect(localStorage.length).toBe(0)
+ expect(m.sign).not.toHaveBeenCalled()
+})
+
+it('can stop a late cancellation lookup and immediately query the same original digest again', async () => {
+ const x = await nativeCancellationPage(), reader = x.f.client.ledgerService.getTransaction
+ const response = reader.getMockImplementation()!
+ let release!: () => void
+ const stalled = new Promise<void>(resolve => { release = resolve })
+ reader.mockImplementationOnce(async (...args) => { await stalled; return response(...args) })
+ try {
+  await setCancellationDigest(x.params.packet.digest)
+  await click('查询原取消交易')
+  await click('停止取消历史查询')
+  expect(cancelInput().value).toBe(x.params.packet.digest)
+  expect(cancelProof()).toBeNull()
+  await click('查询原取消交易')
+  expect(cancelProof()?.textContent).toContain(x.intent.offerId)
+  m.id = aid(99)
+  await render()
+  await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 15)) })
+  expect(cancelProof()).toBeNull()
+  expect(cancelInput().value).toBe('')
+ } finally { release() }
+})
+
+
+const incomePanel = () => host.querySelector<HTMLElement>('[aria-label="原购买与原提款对账"]')!
+const reconciledIncome = () => incomePanel()?.querySelector('[aria-label="已核验付费入账和提款"]')
+async function selectWithdrawal(text: string) {
+ const file = { name: 'withdrawal.json', size: new TextEncoder().encode(text).length, text: async () => text } as File
+ await act(async () => {
+  const input = incomePanel().querySelector('input')!
+  Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+ })
+}
+async function paidIncomePage(interleaved = false, qualified = true, local = false) {
+ const { paidIncomeReconciliationFixture } = await import('./fixtures/paid-income-ledger-reconciliation')
+ const f = await paidIncomeReconciliationFixture(interleaved)
+ if (qualified) m.incomeRegistry.mockReturnValue({ registry: f.executionRegistry, error: null })
+ m.id = f.review.soulId
+ m.factory.mockReturnValue(f.client)
+ if (local) {
+  const { nativePublicReadPaidKeyV2, nativePublicReadPaidRecordFromOriginalV2 } = await import('../../web/lib/soulidity/native-public-read-paid-journal-v2')
+  const record = await nativePublicReadPaidRecordFromOriginalV2(f.purchaseText, m.id)
+  localStorage.setItem(nativePublicReadPaidKeyV2(record.plan), JSON.stringify(record))
+ }
+ await render()
+ if (local) await click('查询本机原操作历史')
+ else { await select(f.purchaseText); await click('查询原购买历史') }
+ for (let i = 0; i < 40 && !incomePanel(); i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)) })
+ expect(incomePanel()).not.toBeNull()
+ return f
+}
+it.each([false, true])('reconciles original paid income and withdrawal on the real recovery page with interleaving %s', async interleaved => {
+ const f = await paidIncomePage(interleaved, true, interleaved)
+ const storageBefore = Object.entries(localStorage)
+ await selectWithdrawal(f.withdrawalText)
+ expect(f.client.ledgerService.getTransaction).toHaveBeenCalledTimes(1)
+ await click('核对两笔原交易')
+ for (let i = 0; i < 40 && !reconciledIncome(); i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)) })
+ const text = reconciledIncome()?.textContent
+ expect(text, incomePanel().textContent ?? '').toContain('内容受款方 101 · 协议入账 3')
+ expect(text).toContain('提款到账（最小单位）3')
+ expect(text).toContain(f.withdrawal.payoutId)
+ expect(text).toContain(interleaved ? '两笔之间另有入账 5 · 提款 2' : '本次费用可与原提款逐笔对应')
+ expect(text).toContain(interleaved ? '账本余额（最小单位）3' : '账本余额（最小单位）0')
+ expect(f.client.ledgerService.getTransaction.mock.calls.map(([request]) => request.digest)).toEqual([
+  f.review.purchaseDigest, f.review.purchaseDigest, f.review.withdrawalDigest,
+ ])
+ expect(m.sign).not.toHaveBeenCalled()
+ expect(Object.entries(localStorage)).toEqual(storageBefore)
+ expect(payload()).toBe(f.purchaseText)
+})
+it('preserves original paid evidence when withdrawal execution is unqualified and clears it only for a new purchase', async () => {
+ const f = await paidIncomePage(false, false)
+ await selectWithdrawal(f.withdrawalText)
+ await click('核对两笔原交易')
+ for (let i = 0; i < 40 && !incomePanel().textContent?.includes('已查到原提款终局执行'); i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)) })
+ expect(incomePanel().textContent).toContain('已查到原提款终局执行')
+ expect(incomePanel().textContent).toContain(f.review.withdrawalDigest)
+ expect(reconciledIncome()).toBeNull()
+ expect(host.querySelector('[aria-label="原付款历史"]')?.textContent).toContain('原协议收入（最小单位）：3')
+ await selectWithdrawal('{}')
+ expect(incomePanel().textContent).not.toContain('已查到原提款终局执行')
+ expect(payload()).toBe(f.purchaseText)
+ await select('{}')
+ expect(incomePanel()).toBeNull()
+})
+
+it('drops a late reconciliation when the withdrawal file is replaced', async () => {
+ const f = await paidIncomePage()
+ const reads = f.client.ledgerService.getTransaction, read = reads.getMockImplementation()!
+ let release!: () => void
+ const pending = new Promise<void>(resolve => { release = resolve })
+ reads.mockImplementation(async request => {
+  if (request.digest === f.review.withdrawalDigest) await pending
+  return read(request)
+ })
+ try {
+  await selectWithdrawal(f.withdrawalText)
+  await click('核对两笔原交易')
+  for (let i = 0; i < 40 && !reads.mock.calls.some(([request]) => request.digest === f.review.withdrawalDigest); i++) {
+   await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)) })
+  }
+  expect(reads.mock.calls.some(([request]) => request.digest === f.review.withdrawalDigest)).toBe(true)
+  await selectWithdrawal('{}')
+  await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 30)) })
+  expect(reconciledIncome()).toBeNull()
+  expect(incomePanel().textContent).not.toContain(f.review.withdrawalDigest)
+  expect(host.querySelector('[aria-label="原付款历史"]')?.textContent).toContain('原协议收入（最小单位）：3')
+ } finally { release() }
 })

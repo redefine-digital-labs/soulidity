@@ -2,8 +2,9 @@ import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
 import { deriveDynamicFieldID, fromBase64, toBase64, normalizeStructTag } from '@mysten/sui/utils'
-import { SoulPublicKioskBcs } from '@soulidity/sdk'
-import { profileReadStep } from '@soulidity/sdk'
+import { profileReadStep, SoulPublicKioskBcs } from '@soulidity/sdk'
+import { MAINNET_GENESIS_DIGEST } from '../../animacraft/mainnet-chain'
+import { marketListDigest } from '../../animacraft/market-list-operation'
 import { collectionCommandRaw } from '../../collections/collection-command-plan'
 import { historicalMoveObjectType, readHistoricalMoveObject } from '../../sui/historical-object'
 import { readPinnedMovePackage, type PinnedMovePackage } from '../../sui/pinned-move-package'
@@ -33,6 +34,60 @@ export function buildNativeSaleCancellation(input: NativeSaleCancelIntent & { ca
   return tx
 }
 
+function parseCancellationTransaction(bytes: Uint8Array, digest: string, callablePackageId: string) {
+  commerceCheck(bytes.length > 0 && bytes.length <= 135000, 'CANCEL_PACKET_BOUND')
+  const raw = bcs.TransactionData.parse(bytes), tx = Transaction.from(bytes).getData()
+  const expiration = raw.V1?.expiration.Epoch
+  commerceCheck(toBase64(bcs.TransactionData.serialize(raw).toBytes()) === toBase64(bytes)
+    && TransactionDataBuilder.getDigestFromBytes(bytes) === digest && Number.isSafeInteger(expiration), 'CANCEL_PACKET')
+  const call = tx.commands[0]?.MoveCall
+  const offer = tx.inputs[0]?.Object?.SharedObject, kiosk = tx.inputs[1]?.Object?.SharedObject
+  const account = tx.inputs[2]?.Object?.ImmOrOwnedObject, seller = tx.sender
+  commerceCheck(tx.commands.length === 1 && tx.inputs.length === 3 && call && call.package === callablePackageId
+    && call.module === 'market' && call.function === 'cancel' && call.typeArguments.length === 0 && call.arguments.length === 3
+    && call.arguments.every((arg, index) => arg.$kind === 'Input' && arg.Input === index)
+    && offer?.mutable && kiosk?.mutable && account && seller && commerceId(seller), 'CANCEL_GRAPH')
+  return { tx, expirationEpoch: String(expiration),
+    intent: { offerId: offer.objectId, kioskId: kiosk.objectId, accountId: account.objectId, seller } }
+}
+
+function cancellationLedger(source: SuiGrpcClient) {
+  const ledger = source.ledgerService
+  return { ledgerService: { getServiceInfo: ledger.getServiceInfo.bind(ledger), getTransaction: ledger.getTransaction.bind(ledger),
+    getCheckpoint: ledger.getCheckpoint.bind(ledger), getObject: ledger.getObject.bind(ledger) } } as unknown as SuiGrpcClient
+}
+
+/** Recover original bytes by digest using the same explicitly pinned release
+ * required by the full history proof. Pending/failed graph evidence alone
+ * does not identify a Soul: only a verified original Offer and event do. */
+export async function readNativeSaleCancellationByDigest(input: {
+  client: SuiGrpcClient; native: PinnedMovePackage; custody: PinnedMovePackage; soulId: string; digest: string; signal: AbortSignal
+}) {
+  const { soulId, digest } = input
+  commerceCheck(commerceId(soulId) && marketListDigest(digest), 'CANCEL_DIGEST')
+  const client = cancellationLedger(input.client), native = structuredClone(input.native), custody = structuredClone(input.custody)
+  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(30000)])
+  signal.throwIfAborted()
+  const info = await profileReadStep(signal, () => client.ledgerService.getServiceInfo({}, { abort: signal }))
+  commerceCheck(info.response.chainId === MAINNET_GENESIS_DIGEST, 'CANCEL_HISTORY_CHAIN_MISMATCH')
+  let row
+  try {
+    row = (await profileReadStep(signal, () => client.ledgerService.getTransaction({ digest,
+      readMask: { paths: ['digest', 'transaction.digest', 'transaction.bcs'] } }, { abort: signal }))).response.transaction
+  } catch (error) {
+    signal.throwIfAborted()
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'NOT_FOUND') return { status: 'MISSING' as const }
+    throw error
+  }
+  const bytes = row?.transaction?.bcs?.value
+  commerceCheck(row?.digest === digest && row.transaction?.digest === digest && bytes instanceof Uint8Array, 'CANCEL_ORIGINAL_BYTES')
+  const { intent, expirationEpoch } = parseCancellationTransaction(bytes, digest, native.callablePackageId)
+  const result = await readNativeSaleCancellationHistory({ client, native, custody, intent: { ...intent, soulId },
+    packet: { bytes: toBase64(bytes), digest, expirationEpoch, phase: 'PREPARED', signature: null }, signal })
+  commerceCheck(result.status !== 'MISSING', 'CANCEL_HISTORY_CHANGED')
+  return result
+}
+
 /** Finality + exact cancel graph + genuine saved Account reference + original
  * Offer terminal transition + exclusive listing removal + unchanged Kiosk
  * contents/owner + gas. Lock retention is asserted by pinned source execution,
@@ -41,23 +96,16 @@ export function buildNativeSaleCancellation(input: NativeSaleCancelIntent & { ca
 export async function readNativeSaleCancellationHistory(input: { client: SuiGrpcClient; native: PinnedMovePackage;
   custody: PinnedMovePackage; packet: PublicMutationPacket; intent: NativeSaleCancelIntent; signal: AbortSignal }) {
   const packet = structuredClone(input.packet), intent = structuredClone(input.intent), nativePin = structuredClone(input.native), custodyPin = structuredClone(input.custody)
-  const ledger = input.client.ledgerService
-  const client = { ledgerService: { getServiceInfo: ledger.getServiceInfo.bind(ledger), getTransaction: ledger.getTransaction.bind(ledger),
-    getCheckpoint: ledger.getCheckpoint.bind(ledger), getObject: ledger.getObject.bind(ledger) } } as unknown as SuiGrpcClient
+  const client = cancellationLedger(input.client)
   const signal = AbortSignal.any([input.signal, AbortSignal.timeout(30000)])
   buildNativeSaleCancellation({ ...intent, callablePackageId: nativePin.callablePackageId })
   commerceCheck(typeof packet.bytes === 'string' && packet.bytes.length > 0 && packet.bytes.length <= 180000, 'CANCEL_PACKET_BOUND')
-  const bytes = fromBase64(packet.bytes), raw = bcs.TransactionData.parse(bytes), tx = Transaction.from(bytes).getData()
-  commerceCheck(toBase64(bcs.TransactionData.serialize(raw).toBytes()) === packet.bytes && TransactionDataBuilder.getDigestFromBytes(bytes) === packet.digest
-    && tx.sender === intent.seller && Number.isSafeInteger(raw.V1.expiration.Epoch) && String(raw.V1.expiration.Epoch) === packet.expirationEpoch, 'CANCEL_PACKET')
-  const call = tx.commands[0]?.MoveCall
-  commerceCheck(tx.commands.length === 1 && tx.inputs.length === 3 && call && call.package === nativePin.callablePackageId
-    && call.module === 'market' && call.function === 'cancel' && call.typeArguments.length === 0 && call.arguments.length === 3
-    && call.arguments.every((arg, index) => arg.$kind === 'Input' && arg.Input === index)
-    && tx.inputs[0].Object?.SharedObject?.objectId === intent.offerId && tx.inputs[0].Object.SharedObject.mutable
-    && tx.inputs[1].Object?.SharedObject?.objectId === intent.kioskId && tx.inputs[1].Object.SharedObject.mutable
-    && tx.inputs[2].Object?.ImmOrOwnedObject?.objectId === intent.accountId, 'CANCEL_GRAPH')
-  const result = await readFinalizedMutation({ client, packet, chainIdentifier: '35834a8a', genesisDigest: '4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S',
+  const bytes = fromBase64(packet.bytes)
+  const original = parseCancellationTransaction(bytes, packet.digest, nativePin.callablePackageId), tx = original.tx
+  commerceCheck(toBase64(bytes) === packet.bytes && original.expirationEpoch === packet.expirationEpoch, 'CANCEL_PACKET')
+  commerceCheck(original.intent.seller === intent.seller && original.intent.offerId === intent.offerId
+    && original.intent.kioskId === intent.kioskId && original.intent.accountId === intent.accountId, 'CANCEL_GRAPH')
+  const result = await readFinalizedMutation({ client, packet, chainIdentifier: '35834a8a', genesisDigest: MAINNET_GENESIS_DIGEST,
     signal, errorPrefix: 'COMMERCE_CANCEL_HISTORY', proveSuccess: async context => {
       const native = await readPinnedMovePackage(client, nativePin, signal), custody = await readPinnedMovePackage(client, custodyPin, signal)
       const link = native.linkage.get(custodyPin.originalPackageId)

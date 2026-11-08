@@ -14,7 +14,7 @@ async function fixture(){
  const preparation=await f.prepare(),envelope=preparation.envelopes[2].envelope,file=preparation.preparation.manifest.files[2],client=f.params.wallet.client
  const pin={originalPackageId:aid(90),callablePackageId:aid(91),callableDigest:adigest(9)}
  const target={chainIdentifier:'35834a8a',standard:pin,native:{originalPackageId:f.request.target.nativeOriginalPackageId,callablePackageId:f.request.target.nativeCallablePackageId,callableDigest:f.request.release.nativeCallableDigest},content:pin,custody:pin,registryId:f.request.target.registryId,configId:f.request.target.configId}
- const record={kind:3,name:'pet',version:'0',read_mask:'5',scope:'8',deleted:false,purged:false,nonce:fromHex(envelope.nonce),envelope:new TextEncoder().encode(JSON.stringify(envelope)),
+ const record={kind:3,name:'pet',version:'0',read_mask:'5',scope:'8',download_policy:1,deleted:false,purged:false,nonce:fromHex(envelope.nonce),envelope:new TextEncoder().encode(JSON.stringify(envelope)),
  reference:{blob_id:'1',object:aid(45),sha256:fromHex(file.payloadHash),bytes:String(file.payloadByteLength),end_epoch:15}}
  const ref=(objectId:string)=>({objectId,initialSharedVersion:'1',mutable:false as const})
  const snapshot:any={format:'native-public-read-v2',soulId:aid(44),recordIndex:0,contentId:f.request.contentId,record,namespace:envelope.documentId,ownerAddress:f.request.author,accountReference:{objectId:aid(46),version:'10',digest:adigest(3)},hostReference:{digest:adigest(2)},clockTimestampMs:'100',shared:{kiosk:ref(aid(42)),host:ref(aid(43)),clock:ref(aid(6))}}
@@ -24,6 +24,7 @@ async function fixture(){
 }
 it('decrypts actual prepared ciphertext through the exact owner v2 Seal kind and real AES without any payment',async()=>{
  const x=await fixture(),result=await x.run()
+ expect(result.downloadAllowed).toBe(true)
  expect(result.bytes).toEqual(new Uint8Array(await x.f.params.files[2].file.arrayBuffer()));expect(x.f.sign).toHaveBeenCalledOnce();expect(x.interfaceProof).toHaveBeenCalledOnce()
  const kind=bcs.TransactionKind.parse(x.f.decryptCall.mock.calls[0][0].txBytes).ProgrammableTransaction!,call=kind.commands[0].MoveCall!
  expect(call.function).toBe('seal_approve_content_owner_v2');expect(kind.commands).toHaveLength(1)

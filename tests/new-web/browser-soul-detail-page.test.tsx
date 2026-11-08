@@ -83,6 +83,15 @@ async function field(selector: string, value: string) {
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
     input!.dispatchEvent(new Event('input', { bubbles: true })); input!.dispatchEvent(new Event('change', { bubbles: true })) })
 }
+it('links the configured market history entry from the Soul detail', async () => {
+  vi.stubEnv('NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON', 'configured')
+  try {
+    await render()
+    const link = [...host.querySelectorAll('a')].find(anchor => anchor.textContent?.trim() === 'Recover a market transaction')
+    expect(link?.getAttribute('href')).toBe(`/souls/${f.soul!.onChainId}/purchase/recovery`)
+    expect(fetch).not.toHaveBeenCalled()
+  } finally { vi.unstubAllEnvs() }
+})
 it('manual grant uses selected scopes and expiry; no mirror preflight or arbitrary revoke', async () => {
   await render(); await click('Grants')
   await field('input[placeholder="0x…"]', detailId(40))

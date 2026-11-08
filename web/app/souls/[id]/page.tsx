@@ -416,6 +416,12 @@ function Hero({
                 ? 'This chain listing is below the collection floor and cannot be bought through the app.'
                 : 'Trading is currently unavailable for this release. The displayed listing price is an observation, not purchase approval.'}</p>
             )}
+            {process.env.NEXT_PUBLIC_SOULIDITY_NATIVE_WORKBENCH_TARGET_JSON && (
+              <Link href={`/souls/${encodeURIComponent(soul.onChainId)}/purchase/recovery`}
+                className={buttonStyles({ variant: 'outline', size: 'sm' })}>
+                Recover a market transaction
+              </Link>
+            )}
           </div>
         </div>
       </div>

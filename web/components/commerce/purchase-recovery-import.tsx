@@ -1,6 +1,7 @@
 'use client'
 
 import {MARKET_BUY_FUNDS_ORIGINAL} from '../../lib/animacraft/market-buy-funds-original'
+import {PaidIncomeReconciliation} from './paid-income-reconciliation'
 import {PurchaseRecoveryPaidContent} from './purchase-recovery-paid-content'
 import {PurchaseRecoveryFunds} from './purchase-recovery-funds'
 import {PurchaseRecoveryMarketHandoff} from './purchase-recovery-market-handoff'
@@ -94,6 +95,8 @@ export function PurchaseRecoveryImport({soulId,nativeReleaseJson,publicReadRelea
   {legacy&&view.original?.kind==='native-sale-preparation.v1'&&view.reader&&money&&<PurchaseRecoverySaleCustody nativeReleaseJson={nativeReleaseJson} text={view.text} soulId={soulId} record={view.original} original={legacy} client={view.reader}/>}
   {paidOriginal&&paidHistory&&view.reader&&<PurchaseRecoveryPaidContent
     original={paidOriginal} history={paidHistory} releaseJson={publicReadReleaseJson} client={view.reader}/>}
+  {paidHistory?.receipt.money && paidHistory.receipt.money.protocolIncome !== '0' && view.reader &&
+    <PaidIncomeReconciliation soulId={soulId} purchaseText={view.text} client={view.reader}/>}
   <article aria-label="当前交付与余额" className="space-y-2"><h2 className="font-semibold">当前交付与余额</h2>
    <p>{publicReadReleaseJson&&paidHistory
     ? '原付款和当前内容交付分别核对。可在上方选择原订阅覆盖的当前版本。'

@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { bindNativePublicReadPaidOriginalOutcomeV2 } from '../../lib/soulidity/commerce/native-public-read-paid-original-outcome-v2'
 import { PurchaseRecoveryPaidContent } from './purchase-recovery-paid-content'
+import { PaidIncomeReconciliation } from './paid-income-reconciliation'
 import { PurchaseRecoveryFunds } from './purchase-recovery-funds'
 
 type Request = Parameters<typeof bindNativePublicReadPaidOriginalOutcomeV2>[0]
@@ -42,5 +43,7 @@ export function NativePublicReadPaidOriginalOutcomeV2({ record, history, client,
     {bound.original.kind === 'native-public-read-v2' && <PurchaseRecoveryPaidContent original={bound.original.value}
       history={bound.query.history} releaseJson={publicReadReleaseJson} client={client}/>}
     <PurchaseRecoveryFunds original={bound.query} record={bound.original} client={client}/>
+    {bound.money.protocolIncome !== '0' && <PaidIncomeReconciliation soulId={record.plan.soulId}
+      purchaseText={record.plan.originalText} client={client}/>}
   </section>
 }

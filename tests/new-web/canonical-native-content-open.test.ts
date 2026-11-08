@@ -30,7 +30,7 @@ async function fixture() {
   const target = { chainIdentifier: '35834a8a', standard: pin, native: { originalPackageId: f.request.target.nativeOriginalPackageId,
     callablePackageId: f.request.target.nativeCallablePackageId, callableDigest: f.request.release.nativeCallableDigest }, content: pin,
     custody: { originalPackageId: custodyId, callablePackageId: custodyId, callableDigest: pkg.deployment.callableDigest }, registryId: f.request.target.registryId, configId: f.request.target.configId }
-  const record = { index: '0', kind: 0, name: 'soul', version: '0', readMask: '3', deleted: false, purged: false, nonce: envelope.nonce,
+  const record = { index: '0', kind: 0, name: 'soul', version: '0', readMask: '3', downloadPolicy: 1, deleted: false, purged: false, nonce: envelope.nonce,
     envelopeB64: toBase64(new TextEncoder().encode(JSON.stringify(envelope))), sealNamespaceB64: null, blobIdInteger: '1',
     blobObjectId: aid(45), byteLength: String(file.payloadByteLength), ciphertextHash: file.payloadHash, originalEndEpoch: 15 }
   const snapshot: any = { soulId: aid(44), contentId: f.request.contentId, custody: { ownerReadCandidate: true, viewerMatchesOwner: true,
@@ -44,6 +44,7 @@ async function fixture() {
 }
 it('opens real encrypted Native preparation with actual Seal/AES and personal signature; never broadcasts a transaction', async () => {
   const f = await fixture(), result = await f.run()
+  expect(result.downloadAllowed).toBe(true)
   expect(result.bytes).toEqual(new Uint8Array(await f.f.params.files[0].file.arrayBuffer())); expect(f.f.sign).toHaveBeenCalledOnce()
   const tx = bcs.TransactionKind.parse(f.f.decryptCall.mock.calls[0][0].txBytes).ProgrammableTransaction!
   expect(tx.commands).toHaveLength(1)
@@ -51,6 +52,14 @@ it('opens real encrypted Native preparation with actual Seal/AES and personal si
   expect(f.fetcher.mock.calls[0][0]).toContain('/v1/blobs/')
   expect(f.f.unwrapped.every(value => value.every(byte => byte === 0))).toBe(true)
   expect(f.read.mock.calls.length).toBeGreaterThan(3)
+  result.bytes.fill(0)
+})
+it('opens an allowlisted record for its owner without granting a file download', async () => {
+  const f = await fixture()
+  f.record.downloadPolicy = 2
+  const result = await f.run()
+  expect(result.downloadAllowed).toBe(false)
+  expect(result.bytes).toEqual(new Uint8Array(await f.f.params.files[0].file.arrayBuffer()))
   result.bytes.fill(0)
 })
 it.each(['owner', 'deleted', 'namespace', 'abi', 'ciphertext', 'wallet'] as const)('refuses %s before any personal-message prompt', async mode => {

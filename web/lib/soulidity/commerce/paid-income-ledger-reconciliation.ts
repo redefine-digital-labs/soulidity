@@ -27,18 +27,23 @@ function parseCase(raw: unknown) {
   return { soulId, buyer, beneficiary, purchaseDigest, withdrawalDigest, initialSharedVersion, operator, adminId, recipient, amountAtomic, target, economics }
 }
 
-/** Join two original receipts through a shared Config and observe its current
- * ledger. Historical source qualification still governs withdrawal confirmation. */
-export async function reconcilePaidIncomeLedger(input: {
-  review: unknown; purchaseText: string; withdrawalText: string; client: SuiGrpcClient; signal: AbortSignal;
-  executionRegistry?: IncomeExecutionRegistryV1;
-}) {
-  const { client, signal, executionRegistry } = input, review = parseCase(input.review)
-  const purchaseText = input.purchaseText, withdrawalText = input.withdrawalText
-  const original = await parsePurchaseRecoveryOriginal(purchaseText, review.soulId)
+type OriginalFiles = { purchaseText: string; withdrawalText: string }
+type ReconciliationInput = OriginalFiles & {
+  client: SuiGrpcClient; signal: AbortSignal; executionRegistry?: IncomeExecutionRegistryV1
+}
+
+async function parseOriginalFiles({ purchaseText, withdrawalText }: OriginalFiles, soulId: string) {
+  const original = await parsePurchaseRecoveryOriginal(purchaseText, soulId)
   commerceCheck(original.kind === 'native-public-read-v2', 'PAID_INCOME_PURCHASE_FORMAT')
-  const p = original.value
-  const w = incomeWithdrawalRecoveryProps(importIncomeWithdrawalRecoveryRecord(withdrawalText))
+  const withdrawal = incomeWithdrawalRecoveryProps(importIncomeWithdrawalRecoveryRecord(withdrawalText))
+  return { purchase: original.value, withdrawal }
+}
+
+/** Independent acceptance can bind both files to reviewed expectations. */
+export async function reconcilePaidIncomeLedger(input: ReconciliationInput & { review: unknown }) {
+  const review = parseCase(input.review)
+  const originals = await parseOriginalFiles(input, review.soulId)
+  const { purchase: p, withdrawal: w } = originals
   commerceCheck(p.packet.digest === review.purchaseDigest && w.packet.digest === review.withdrawalDigest
     && canonical(p.context.target) === canonical(review.target)
     && canonical(p.context.economics) === canonical(review.economics) && canonical(w.target) === canonical(review.economics)
@@ -46,13 +51,27 @@ export async function reconcilePaidIncomeLedger(input: {
     && p.intent.buyer === review.buyer && p.context.originalQuotedOffer.issuer === review.beneficiary
     && w.intent.actor === review.operator && w.intent.adminId === review.adminId
     && w.intent.recipient === review.recipient && w.intent.amount === review.amountAtomic, 'PAID_INCOME_ORIGINAL_CASE_MISMATCH')
+  return reconcileOriginals(input, originals)
+}
 
+/** Recovery uses both retained files and independently verifies each original
+ * from the ledger. The files cannot install withdrawal source qualification. */
+export async function reconcilePaidIncomeOriginals(input: ReconciliationInput & { soulId: string }) {
+  return reconcileOriginals(input, await parseOriginalFiles(input, input.soulId))
+}
+
+async function reconcileOriginals(
+  { client, signal, executionRegistry }: ReconciliationInput,
+  { purchase: p, withdrawal: w }: Awaited<ReturnType<typeof parseOriginalFiles>>,
+) {
+  const economics = parseIncomeObservationTarget(p.context.economics)
+  commerceCheck(p.packet.digest !== w.packet.digest && canonical(w.target) === canonical(economics), 'PAID_INCOME_ORIGINAL_CONFIG_MISMATCH')
   signal.throwIfAborted()
   const paid = await readNativePublicReadPaidHistoryV2({ ...p.context.originalReceiptContext,
     client, signal, intent: p.intent, packet: p.packet, gas: p.reviewedGas, proveMoney: true })
   if (paid.status !== 'SUBSCRIPTION_RECORDED') return { stage: 'PURCHASE' as const, transactionDigest: p.packet.digest, ...paid }
   const money = paid.receipt.money
-  commerceCheck(money && money.payout.owner === review.beneficiary, 'PAID_INCOME_MONEY_REQUIRED')
+  commerceCheck(money && money.payout.owner === p.context.originalQuotedOffer.issuer, 'PAID_INCOME_MONEY_REQUIRED')
   const purchase = { transactionDigest: p.packet.digest, checkpoint: paid.checkpoint, money }
   if (money.protocolIncome === '0') return { status: 'PURCHASE_WITHOUT_PROTOCOL_FEE' as const, purchase }
 
@@ -66,7 +85,7 @@ export async function reconcilePaidIncomeLedger(input: {
   const purchaseToWithdrawal = relateIncomeLedgerWitness(afterPurchase, beforeWithdrawal)
   // Both are writes of this same Shared object. The exact input version (or a
   // strictly later one) proves dependency order even within one checkpoint.
-  const observed = await readEconomicsIncome({ client, target: review.economics, signal })
+  const observed = await readEconomicsIncome({ client, target: economics, signal })
   const current = incomeLedgerWitness(observed.config, { version: observed.object.version, digest: observed.object.digest },
     observed.initialSharedVersion)
   const withdrawalToCurrent = relateIncomeLedgerWitness(payout.ledger.after, current)

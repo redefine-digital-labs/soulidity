@@ -3,7 +3,7 @@ import type {SuiGrpcClient} from '@mysten/sui/grpc'
 import {fromBase64,toHex} from '@mysten/sui/utils'
 import {blobIdFromInt} from '@mysten/walrus'
 import {sha256} from '@noble/hashes/sha2.js'
-import {profileReadStep} from '@soulidity/sdk'
+import { DOWNLOAD_POLICY_PUBLIC, profileReadStep } from '@soulidity/sdk'
 import {MAINNET_GENESIS_DIGEST} from '../animacraft/mainnet-chain'
 import {parseCanonicalNativeWorkbenchTarget,type CanonicalNativeWorkbenchTarget} from './canonical-native-workbench'
 import {fetchBrowserContentBytes,validateBrowserContentSealConfig,type BrowserContentSealConfig} from './browser-content-open'
@@ -57,6 +57,7 @@ export async function openNativePublicPaidContentV2(input:{client:SuiGrpcClient;
   const key=await step(()=>crypto.subtle.importKey('raw',new Uint8Array(material!.subarray(0,32)),{name:'AES-GCM'},false,['decrypt']))
   plaintext=await step(async()=>new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(fromBase64(envelope.iv))},key,new Uint8Array(ciphertext!))),b=>b.fill(0))
   check(toHex(sha256(plaintext))===envelope.contentHash,'PLAINTEXT_HASH');await verify();guard()
-  const result={bytes:plaintext,fileName:envelope.fileName,mimeType:envelope.mimeType};plaintext=undefined;return result
+  const result={bytes:plaintext,fileName:envelope.fileName,mimeType:envelope.mimeType,
+   downloadAllowed:r.download_policy === DOWNLOAD_POLICY_PUBLIC};plaintext=undefined;return result
  }finally{ciphertext?.fill(0);material?.fill(0);plaintext?.fill(0);wrapped.fill(0)}
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useWalletSign } from '@/lib/hooks/use-wallet-sign'
 import { useCommittedSession, useSessionState } from '@/lib/hooks/use-committed-session'
@@ -15,9 +15,12 @@ import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import type { NativePublicReadPaidPreparedOriginalV2 } from '@/lib/soulidity/commerce/native-public-read-paid-preflight-v2'
 import { openReusableNativePublicReadContentV2 } from '@/lib/soulidity/commerce/native-public-read-paid-delivery-v2'
 import type { PaidRecoveryAccessBasisV2 } from '@/lib/soulidity/commerce/native-public-read-paid-recovery-delivery-v2'
+import { presentVerifiedContent, type ProtectedContentPresentation } from './protected-content-presentation'
 
 type Preview = Awaited<ReturnType<typeof readContractCheckedNativePublicReadPaidPreviewV2>>
 const emptyPreview = { busy: false, result: null as Preview | null, error: null as string | null }
+const emptyContent = { busy: false, text: null as string | null, fileName: '', attachment: null as ProtectedContentPresentation['attachment'],
+  error: null as string | null, accessBasis: null as PaidRecoveryAccessBasisV2 | null }
 const recoveryAccessLabels: Record<PaidRecoveryAccessBasisV2, string> = {
   ORIGINAL_ENTRY: '已使用原交易产生的订阅资格打开此版本。',
   CURRENT_ENTRY: '已使用当前链上生效的订阅资格打开此版本。',
@@ -30,8 +33,8 @@ function selectedEconomics(json: string | undefined, target: ReturnType<typeof p
   catch { return undefined }
 }
 
-/** Plaintext remains in this mounted view only. It is never put in query cache,
- * browser storage, recovery exports or logs. Legal prior copies cannot be revoked. */
+/** Plaintext stays in this mounted view until the user explicitly downloads a
+ * file. The reader does not cache or include plaintext in recovery exports. */
 export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, sourceKey, expectedOwnerSourceKey, ownerAddress, ownerRead = false, paidRead = true, paidPreview, paidRecovery }: {
   soulId: string; index: number; releaseJson: string; sourceKey: string; expectedOwnerSourceKey?: string; ownerAddress?: string; ownerRead?: boolean; paidRead?: boolean
   paidPreview?: { kind: number; scope: string; economicsJson?: string }
@@ -44,20 +47,36 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
     paidRecovery?.original.packet.digest, paidRecovery?.kind, paidRecovery?.scope]), wallet.walletAccount ?? address, clients, wallet.currentWallet)
   const isOwner = ownerRead && address === ownerAddress
   const canRead = paidRecovery ? address === paidRecovery.original.intent.buyer : isOwner || paidRead && address !== ownerAddress
-  const image = useRef<string | null>(null)
+  const objectUrl = useRef<string | null>(null)
   const buffer = useRef<Uint8Array | null>(null), active = useRef<AbortController | null>(null)
   const previewActive = useRef<AbortController | null>(null)
   const [preview, setPreview] = useSessionState(session, emptyPreview)
-  const [state, setState] = useSessionState(session, { busy: false, text: null as string | null, fileName: '', imageUrl: null as string | null, error: null as string | null, accessBasis: null as PaidRecoveryAccessBasisV2 | null })
-  useLayoutEffect(() => () => { previewActive.current?.abort(); previewActive.current = null; active.current?.abort(); active.current = null; buffer.current?.fill(0); buffer.current = null; if (image.current) URL.revokeObjectURL(image.current); image.current = null }, [session])
-  const close = () => { active.current?.abort(); active.current = null; buffer.current?.fill(0); buffer.current = null
-    if (image.current) URL.revokeObjectURL(image.current); image.current = null
-    setState({ busy: false, text: null, imageUrl: null, fileName: '', error: null, accessBasis: null }) }
+  const [state, setState] = useSessionState(session, emptyContent)
+  const clearContent = useCallback(() => {
+    buffer.current?.fill(0)
+    buffer.current = null
+    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current)
+    objectUrl.current = null
+  }, [])
+  useLayoutEffect(() => () => {
+    previewActive.current?.abort()
+    previewActive.current = null
+    active.current?.abort()
+    active.current = null
+    clearContent()
+  }, [session, clearContent])
+  const close = () => {
+    active.current?.abort()
+    active.current = null
+    clearContent()
+    setState(emptyContent)
+  }
   const open = async () => {
     const lease = session.capture()
     if (!canRead || !lease?.matches() || active.current || previewActive.current || !wallet.suiWallet || !wallet.suiGrpcClient) return
     const controller = new AbortController(); active.current = controller; lease.requests.add(controller)
-    buffer.current?.fill(0); buffer.current = null; if (image.current) URL.revokeObjectURL(image.current); image.current = null; setState({ busy: true, text: null, imageUrl: null, fileName: '', error: null, accessBasis: null })
+    clearContent()
+    setState({ ...emptyContent, busy: true })
     let received: Uint8Array | null = null
     try {
       const client = paidRecovery?.client ?? withPackageObjectIdentity(wallet.suiGrpcClient, controller.signal)
@@ -99,17 +118,14 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
         result = delivery.content
       } else result = await openNativePublicPaidContentV2({ ...selected, expectedSourceKey: expectedOwnerSourceKey })
       received = result.bytes
-      if (!lease.matches() || controller.signal.aborted || active.current !== controller) { result.bytes.fill(0); return }
+      if (!lease.matches() || controller.signal.aborted || active.current !== controller || wallet.getWalletAddress() !== viewerAddress) { result.bytes.fill(0); return }
       buffer.current = result.bytes
-      const text = /^(text\/(plain|markdown)|application\/json)(;|$)/.test(result.mimeType) && result.bytes.length <= 1024 * 1024
-        ? new TextDecoder('utf-8', { fatal: true }).decode(result.bytes) : 'Verified content is not supported by this inline viewer.'
-      const imageUrl = /^image\/(png|jpeg|gif|webp)$/.test(result.mimeType) && result.bytes.length <= 20 * 1024 * 1024
-        ? URL.createObjectURL(new Blob([new Uint8Array(result.bytes)], { type: result.mimeType })) : null
-      image.current = imageUrl
-      setState({ busy: false, text: imageUrl ? null : text, imageUrl, fileName: result.fileName, error: null, accessBasis })
+      const presentation = presentVerifiedContent(result, true)
+      objectUrl.current = presentation.attachment?.url ?? null
+      setState({ ...emptyContent, ...presentation, fileName: result.fileName, accessBasis })
     } catch (error) {
-      if (received && buffer.current === received) { received.fill(0); buffer.current = null }
-      if (active.current === controller && lease.matches() && !controller.signal.aborted) setState({ busy: false, text: null, imageUrl: null, fileName: '', accessBasis: null, error:
+      if (received && buffer.current === received) clearContent()
+      if (active.current === controller && lease.matches() && !controller.signal.aborted) setState({ ...emptyContent, error:
         error instanceof Error && error.message.endsWith('_OVERVIEW_CHANGED_REFRESH') ? 'This Soul changed since the library was loaded. Refresh the content library before reading.'
           : error instanceof Error ? error.message : 'Content could not be opened.' })
     } finally { lease.requests.delete(controller); if (active.current === controller) active.current = null }
@@ -165,10 +181,11 @@ export function NativePublicPaidContentReaderV2({ soulId, index, releaseJson, so
     <Button variant="outline" disabled={state.busy || preview.busy || !wallet.suiWallet || !wallet.suiGrpcClient || !canRead} onClick={() => void open()}>{state.busy ? 'Opening protected content…' : paidRecovery ? '用原买家钱包打开内容' : 'Read protected content'}</Button>
     <p className="text-xs text-muted">Requests a wallet message for reading. No transaction or payment is submitted.</p>
     {state.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
-    {(state.text !== null || state.imageUrl) && <section aria-label={`Opened content ${state.fileName}`} className="space-y-2">
+    {(state.text !== null || state.attachment) && <section aria-label={`Opened content ${state.fileName}`} className="space-y-2">
       <div className="flex items-center justify-between gap-2"><span>{state.fileName}</span><Button variant="outline" onClick={close}>Close content</Button></div>
       {state.accessBasis && <p>{recoveryAccessLabels[state.accessBasis]}</p>}
-      {state.imageUrl && <img src={state.imageUrl} alt={state.fileName} className="max-h-[32rem] max-w-full object-contain" />}
+      {state.attachment?.kind === 'image' && <img src={state.attachment.url} alt={state.fileName} className="max-h-[32rem] max-w-full object-contain" />}
+      {state.attachment?.kind === 'download' && <a className="text-accent underline" href={state.attachment.url} download={state.fileName}>Download verified file</a>}
       {state.text !== null && <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-card2 p-3 text-sm">{state.text}</pre>}
     </section>}
   </div>
