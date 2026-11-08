@@ -200,6 +200,7 @@ export async function proveCollectionBuyHistory(params: { client: SuiGrpcClient;
     check(index >= 0, 'HISTORY_PAYOUT'); payouts.splice(index, 1)
   }
   const gas = tx.gasData.payment!
+  const netGas = BigInt(e.gasUsed.computationCost) + BigInt(e.gasUsed.storageCost) - BigInt(e.gasUsed.storageRebate)
   if (gas.length === 0) {
     for (const objectId of collectionAddressGasIds(effects, r.packet.digest, p.author, tx.gasData.budget!)) allowed.add(objectId)
   } else {
@@ -215,8 +216,7 @@ export async function proveCollectionBuyHistory(params: { client: SuiGrpcClient;
         check(after.full.owner.AddressOwner === p.author, 'HISTORY_GAS_OWNER'); finalBalance = BigInt(decode(Coin, after.bytes).balance)
       } else check(c.idOperation.$kind === 'Deleted' && c.outputState.$kind === 'NotExist', 'HISTORY_GAS_MERGE')
     }
-    const charge = BigInt(e.gasUsed.computationCost) + BigInt(e.gasUsed.storageCost) - BigInt(e.gasUsed.storageRebate)
-    check(balance - charge === finalBalance, 'HISTORY_GAS_AMOUNT')
+    check(balance - netGas === finalBalance, 'HISTORY_GAS_AMOUNT')
   }
   check(e.changedObjects.every(([id]) => allowed.has(id)) && e.unchangedConsensusObjects.every(([id]) => reads.has(id)), 'HISTORY_UNEXPECTED_EFFECT')
   const expectedReads = tx.inputs.flatMap(row => row.Object?.SharedObject && !row.Object.SharedObject.mutable ? [row.Object.SharedObject.objectId] : [])
@@ -225,5 +225,7 @@ export async function proveCollectionBuyHistory(params: { client: SuiGrpcClient;
   signal.throwIfAborted()
   return { collectionId: p.request.collectionId, rightId: p.rightId, listingId: p.request.listingId,
     sellerAddress: p.sellerAddress, buyerAddress: p.author, buyerKioskId, buyerKioskCapId,
-    priceAtomic: p.quote.priceAtomic, platformFeeAtomic: p.quote.feeAtomic, totalPaymentAtomic: p.quote.buyerTotalAtomic }
+    priceAtomic: p.quote.priceAtomic, platformFeeAtomic: p.quote.feeAtomic, totalPaymentAtomic: p.quote.buyerTotalAtomic,
+    settlement: { coinType: p.target.paymentCoinType, feeRecipient: p.quote.feeAtomic === '0' ? null : market.fee_recipient,
+      netGasMist: String(netGas) } }
 }

@@ -4,6 +4,7 @@ import { Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
 import { fromBase64, toBase64, toBase58 } from '@mysten/sui/utils'
 import { verifyTransactionSignature } from '@mysten/sui/verify'
 import { profileReadStep, buildBuyCollectionTx } from '@soulidity/sdk'
+import { MAINNET_GENESIS_DIGEST } from '../animacraft/mainnet-chain'
 import { readActivityCheckpointEvidence } from '../soulidity/activity-transaction-evidence'
 import { check, id, uint, digest, exact, same, decode, freeze, parseCollectionBuyPlan, collectionCommandRaw,
   COLLECTION_COMMAND_MAX, type CollectionBuyPlan, type CollectionBuyRecord, type CollectionBuyQuery } from './collection-buy-plan'
@@ -76,6 +77,55 @@ export function parseCollectionBuyRecord(input: unknown): CollectionBuyRecord {
   gas.forEach(row => { id(row.objectId); uint(row.version, true); digest(row.digest); check(!objectIds.has(row.objectId) && !p.absentIds.includes(row.objectId), 'GAS_ALIAS') })
   return freeze(r)
 }
+async function verifyCollectionBuySignature(client: SuiGrpcClient, record: CollectionBuyRecord, signal: AbortSignal) {
+  const { bytes, signature } = record.packet
+  check(signature, 'SIGNATURE_REQUIRED')
+  await profileReadStep(signal, () => verifyTransactionSignature(fromBase64(bytes), signature, { address: record.plan.author, client }))
+}
+
+/** Observe the exact original with its committed signature and checkpoint. */
+export async function queryCollectionBuyOriginal({ client, record: input, signal: parent }: {
+  client: SuiGrpcClient; record: CollectionBuyRecord; signal?: AbortSignal
+}): Promise<CollectionBuyQuery> {
+  const r = parseCollectionBuyRecord(input), signal = collectionCommandSignal(parent)
+  const genesis = await collectionCommandChain(client, r.plan.target, signal)
+  if (r.plan.target.chainIdentifier === '35834a8a') check(genesis === MAINNET_GENESIS_DIGEST, 'WRONG_MAINNET')
+  const data = Transaction.from(fromBase64(r.packet.bytes)).getData()
+  const { min, max } = readCollectionGasWindow(data, r.packet.expirationEpoch, r.plan.target.chainIdentifier, genesis)
+  let response
+  try { response = (await profileReadStep(signal, () => client.ledgerService.getTransaction({ digest: r.packet.digest,
+    readMask: { paths: ['digest', 'transaction.digest', 'transaction.bcs', 'effects.bcs', 'effects.transaction_digest', 'effects.status', 'events.bcs', 'checkpoint'] },
+  }, { abort: signal }))).response }
+  catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'NOT_FOUND') return { status: 'MISSING' }; throw error }
+  // Keep status, effects digest and event bytes from one immutable response
+  // snapshot across checkpoint/history awaits. A transport-owned buffer
+  // must not rebind a previously decoded Success to different effects.
+  const value = structuredClone(response.transaction)
+  check(value?.digest === r.packet.digest && value.transaction?.digest === r.packet.digest && value.transaction.bcs?.value
+    && toBase64(value.transaction.bcs.value) === r.packet.bytes && value.effects?.transactionDigest === r.packet.digest
+    && value.effects.bcs?.value && value.effects.bcs.value.length > 0 && value.effects.bcs.value.length <= 1024 * 1024, 'TRANSACTION_EVIDENCE')
+  const effects = decode(bcs.TransactionEffects, value.effects.bcs.value), e = effects.V2
+  check(e && e.transactionDigest === r.packet.digest && ['Success', 'Failure'].includes(e.status.$kind)
+    && value.effects.status?.success === (e.status.$kind === 'Success') && BigInt(e.executedEpoch) >= min && BigInt(e.executedEpoch) <= max, 'EFFECTS_STATUS')
+  if (value.checkpoint === undefined) return { status: 'PENDING' }
+  uint(String(value.checkpoint)); const checkpoint = String(value.checkpoint)
+  const evidence = await readActivityCheckpointEvidence({ client, chainIdentifier: r.plan.target.chainIdentifier, checkpoint, signal })
+  const membership = evidence.transactions.filter(row => row.transactionDigest === r.packet.digest)
+  check(membership.length === 1 && membership[0].effectsDigest === collectionCommandHash('TransactionEffects', value.effects.bcs.value)
+    && evidence.epoch === e.executedEpoch, 'CHECKPOINT_MEMBERSHIP')
+  const contents = decode(CheckpointSignatures, fromBase64(evidence.contentsBytes))
+  const index = evidence.transactions.findIndex(row => row.transactionDigest === r.packet.digest)
+  const committed = contents.V1 ? contents.V1.user_signatures[index] : contents.V2!.transactions[index].user_signatures.map(row => row[0])
+  const committedDigest = contents.V1 ? contents.V1.transactions[index] : contents.V2!.transactions[index].digest
+  check(toBase58(committedDigest.transaction) === r.packet.digest && committed.length === 1
+    && (r.packet.signature === null || toBase64(committed[0]) === r.packet.signature), 'CHECKPOINT_SIGNATURE')
+  await verifyCollectionBuySignature(client, { ...r, packet: { ...r.packet, signature: toBase64(committed[0]) } }, signal)
+  if (e.status.$kind === 'Failure') return { status: 'FAILED', checkpoint }
+  check(value.events?.bcs?.value instanceof Uint8Array, 'RAW_EVENTS_REQUIRED')
+  const receipt = await proveCollectionBuyHistory({ client, record: r, effects, events: value.events.bcs.value, signal })
+  signal.throwIfAborted(); return { status: 'SUCCEEDED', checkpoint, receipt }
+}
+
 export interface CollectionBuyAdapter {
   prepare(plan: CollectionBuyPlan): Promise<CollectionBuyRecord>
   preflight(record: CollectionBuyRecord, signing: boolean): Promise<void>
@@ -120,10 +170,7 @@ export function createCollectionBuyAdapter(params: {
     check(response.transaction?.transaction?.bcs?.value && toBase64(response.transaction.transaction.bcs.value) === r.packet.bytes
       && response.transaction.effects?.status?.success === true, 'SIMULATION_REJECTED')
   }
-  async function verify(r: CollectionBuyRecord) {
-    check(r.packet.signature, 'SIGNATURE_REQUIRED')
-    await profileReadStep(collectionCommandSignal(), () => verifyTransactionSignature(fromBase64(r.packet.bytes), r.packet.signature!, { address: r.plan.author, client }))
-  }
+  const verify = (record: CollectionBuyRecord) => verifyCollectionBuySignature(client, record, collectionCommandSignal())
   return {
     async prepare(input) {
       const plan = parseCollectionBuyPlan(input), genesis = await ready(plan, null, true)
@@ -151,43 +198,6 @@ export function createCollectionBuyAdapter(params: {
       await ready(r.plan, r.packet, false); await verify(r); wallet(r.plan)
       await profileReadStep(collectionCommandSignal(), () => client.core.executeTransaction({ transaction: fromBase64(r.packet.bytes), signatures: [r.packet.signature!] }))
     },
-    async query(input) {
-      const r = parseCollectionBuyRecord(input), signal = collectionCommandSignal()
-      const genesis = await collectionCommandChain(client, r.plan.target, signal)
-      const data = Transaction.from(fromBase64(r.packet.bytes)).getData()
-      const { min, max } = readCollectionGasWindow(data, r.packet.expirationEpoch, r.plan.target.chainIdentifier, genesis)
-      let response
-      try { response = (await profileReadStep(signal, () => client.ledgerService.getTransaction({ digest: r.packet.digest,
-        readMask: { paths: ['digest', 'transaction.digest', 'transaction.bcs', 'effects.bcs', 'effects.transaction_digest', 'effects.status', 'events.bcs', 'checkpoint'] },
-      }, { abort: signal }))).response }
-      catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'NOT_FOUND') return { status: 'MISSING' }; throw error }
-      // Keep status, effects digest and event bytes from one immutable response
-      // snapshot across checkpoint/history awaits. A transport-owned buffer
-      // must not rebind a previously decoded Success to different effects.
-      const value = structuredClone(response.transaction)
-      check(value?.digest === r.packet.digest && value.transaction?.digest === r.packet.digest && value.transaction.bcs?.value
-        && toBase64(value.transaction.bcs.value) === r.packet.bytes && value.effects?.transactionDigest === r.packet.digest
-        && value.effects.bcs?.value && value.effects.bcs.value.length > 0 && value.effects.bcs.value.length <= 1024 * 1024, 'TRANSACTION_EVIDENCE')
-      const effects = decode(bcs.TransactionEffects, value.effects.bcs.value), e = effects.V2
-      check(e && e.transactionDigest === r.packet.digest && ['Success', 'Failure'].includes(e.status.$kind)
-        && value.effects.status?.success === (e.status.$kind === 'Success') && BigInt(e.executedEpoch) >= min && BigInt(e.executedEpoch) <= max, 'EFFECTS_STATUS')
-      if (value.checkpoint === undefined) return { status: 'PENDING' }
-      uint(String(value.checkpoint)); const checkpoint = String(value.checkpoint)
-      const evidence = await readActivityCheckpointEvidence({ client, chainIdentifier: r.plan.target.chainIdentifier, checkpoint, signal })
-      const membership = evidence.transactions.filter(row => row.transactionDigest === r.packet.digest)
-      check(membership.length === 1 && membership[0].effectsDigest === collectionCommandHash('TransactionEffects', value.effects.bcs.value)
-        && evidence.epoch === e.executedEpoch, 'CHECKPOINT_MEMBERSHIP')
-      const contents = decode(CheckpointSignatures, fromBase64(evidence.contentsBytes))
-      const index = evidence.transactions.findIndex(row => row.transactionDigest === r.packet.digest)
-      const committed = contents.V1 ? contents.V1.user_signatures[index] : contents.V2!.transactions[index].user_signatures.map(row => row[0])
-      const committedDigest = contents.V1 ? contents.V1.transactions[index] : contents.V2!.transactions[index].digest
-      check(toBase58(committedDigest.transaction) === r.packet.digest && committed.length === 1
-        && (r.packet.signature === null || toBase64(committed[0]) === r.packet.signature), 'CHECKPOINT_SIGNATURE')
-      await verify({ ...r, packet: { ...r.packet, signature: toBase64(committed[0]) } })
-      if (e.status.$kind === 'Failure') return { status: 'FAILED', checkpoint }
-      check(value.events?.bcs?.value instanceof Uint8Array, 'RAW_EVENTS_REQUIRED')
-      const receipt = await proveCollectionBuyHistory({ client, record: r, effects, events: value.events.bcs.value, signal })
-      signal.throwIfAborted(); return { status: 'SUCCEEDED', checkpoint, receipt }
-    },
+    query: input => queryCollectionBuyOriginal({ client, record: input }),
   }
 }

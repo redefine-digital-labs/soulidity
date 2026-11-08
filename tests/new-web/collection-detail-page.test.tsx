@@ -6,13 +6,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import Page from '../../web/app/collections/[id]/page'
+import { collectionBuyFixture } from './fixtures/collection-buy'
 import { publicMarketFixture, id, deferred } from './fixtures/public-market'
 import type { CollectionDetailDiscoveryResult, CollectionPublicSnapshot } from '@soulidity/sdk'
 import type { BrowserMarketSoulsPage } from '../../web/lib/soulidity/browser-market-souls'
 const h = vi.hoisted(() => ({ account: null as { address: string } | null, wallet: null as object | null,
   client: { grpc: {} } as { grpc?: object }, config: null as any, configError: null as string | null,
   rootFactory: vi.fn(), membersFactory: vi.fn(), buy: vi.fn(), toast: vi.fn(), modal: null as any, onBuySuccess: null as (() => void) | null,
-  roots: [] as any[], members: [] as any[] }))
+  roots: [] as any[], members: [] as any[], readClient: vi.fn(), handoff: vi.fn(), importRecord: vi.fn() }))
 vi.mock('@mysten/dapp-kit', () => ({ useCurrentAccount: () => h.account, useCurrentWallet: () => ({ currentWallet: h.wallet }), useSuiClient: () => h.client }))
 vi.mock('../../web/lib/soulidity/browser-soul-detail', async original => ({
   ...await original<typeof import('../../web/lib/soulidity/browser-soul-detail')>(),
@@ -25,8 +26,15 @@ vi.mock('../../web/lib/hooks/use-collection-buy', () => ({ useCollectionBuy: (_s
   h.onBuySuccess = onSuccess
   return { records: [], history: [], pending: false, error: null, status: null, currentObservation: null,
     currentAddress: h.account?.address ?? null, targetKey: '{}', identityKey: `buy:${h.account?.address ?? ''}`,
-    prepare: h.buy, run: vi.fn(), importRecord: vi.fn(), exportRecord: vi.fn() }
+    prepare: h.buy, run: vi.fn(), importRecord: h.importRecord, exportRecord: vi.fn() }
 } }))
+vi.mock('../../web/lib/animacraft/native-receive', async original => ({
+  ...await original<typeof import('../../web/lib/animacraft/native-receive')>(),
+  createNativeReceiveClient: (...args: unknown[]) => h.readClient(...args),
+}))
+vi.mock('../../web/lib/collections/collection-buy-handoff', () => ({
+  readCollectionBuyHandoff: (...args: unknown[]) => h.handoff(...args),
+}))
 vi.mock('../../web/components/ui/toast', () => ({ useToast: () => ({ showToast: h.toast }) }))
 vi.mock('../../web/components/collections/collection-listing-modals', () => {
   const modal = (props: any) => { h.modal = props; return <div role="dialog"><button onClick={props.onClose}>Close modal</button></div> }
@@ -54,7 +62,7 @@ function setViewer(viewer: string | null) {
 }
 beforeEach(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.stubGlobal('Uint8Array', new TextEncoder().encode('').constructor)
-  vi.clearAllMocks(); f = await publicMarketFixture(); h.account = null; h.wallet = null; h.client = { grpc: {} }
+  vi.clearAllMocks(); h.readClient.mockReset(); h.handoff.mockReset(); f = await publicMarketFixture(); h.account = null; h.wallet = null; h.client = { grpc: {} }
   h.config = structuredClone(f.config); h.configError = null; h.roots = []; h.members = []; h.modal = null
   snapshot = f.collection(500, { currentSupply: '25', maxSupply: null, creatorAddress: id(700), currentHolderAddress: id(701) })
   rows = f.souls(Array.from({ length: 25 }, (_, n) => f.soul(300 + n, { collectionOnChainId: snapshot.collectionId })))
@@ -169,4 +177,78 @@ it('invalid config has visible retry and performs no chain scan', async () => {
   h.configError = 'Release not configured'; await render()
   expect(host.textContent).toContain('Release not configured'); expect(h.rootFactory).not.toHaveBeenCalled()
   h.configError = null; await render(); expect(host.querySelector('h1')).toBeTruthy()
+})
+
+
+async function choosePurchaseRecord(contents: unknown) {
+  const input = host.querySelector<HTMLInputElement>('input[type=file]')!
+  const json = JSON.stringify(contents)
+  const file = new File([json], 'purchase.json', { type: 'application/json' })
+  Object.defineProperty(file, 'text', { value: async () => json })
+  Object.defineProperty(input, 'files', { value: [file], configurable: true })
+  await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })))
+}
+
+it('reads an exported original with no wallet or current release and retries custody independently', async () => {
+  const purchase = await collectionBuyFixture({ addressGas: true })
+  params = Promise.resolve({ id: purchase.c.id })
+  h.config = null; h.configError = 'Release unavailable'
+  h.readClient.mockReturnValue(purchase.client)
+  h.handoff.mockRejectedValueOnce(new Error('object RPC unavailable')).mockResolvedValueOnce({
+    status: 'CUSTODY_CHANGED', holder: id(1501), kioskId: id(1502), rightId: purchase.right.id,
+  })
+  const journalWrite = vi.spyOn(Storage.prototype, 'setItem')
+  await render()
+  await choosePurchaseRecord(purchase.record)
+  expect(host.textContent).toContain(purchase.record.packet.digest)
+  expect(h.readClient).not.toHaveBeenCalled()
+  await click('Query original Collection purchase')
+  expect(purchase.client.ledgerService.getTransaction).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ digest: purchase.record.packet.digest }), expect.anything(),
+  )
+  expect(host.textContent).toContain('Original purchase verified at checkpoint 42')
+  expect(host.textContent).toContain('Total payment 1.005002 USDC')
+  expect(host.textContent).toContain('Net network gas 1 MIST')
+  expect(host.textContent).toContain('Current custody could not be verified')
+  setViewer(id(1503))
+  await render()
+  expect(host.textContent).toContain('Original purchase verified at checkpoint 42')
+  await click('Check current Collection custody')
+  expect(purchase.client.ledgerService.getTransaction).toHaveBeenCalledOnce()
+  expect(h.handoff).toHaveBeenCalledTimes(2)
+  expect(host.textContent).toContain('Current custody differs from the original delivery')
+  expect(host.textContent).toContain(id(1501))
+  expect(host.textContent).toContain(id(1502))
+  expect(h.importRecord).not.toHaveBeenCalled()
+  expect(journalWrite).not.toHaveBeenCalled()
+  expect(purchase.sign).not.toHaveBeenCalled()
+})
+
+it('rejects a different Collection record before creating a chain client', async () => {
+  const purchase = await collectionBuyFixture()
+  expect(purchase.c.id).not.toBe(snapshot.collectionId)
+  await render()
+  await choosePurchaseRecord(purchase.record)
+  expect(host.textContent).toContain('Choose an original Sui mainnet purchase record for this Collection.')
+  expect(find('Query original Collection purchase')).toBeUndefined()
+  expect(h.readClient).not.toHaveBeenCalled()
+})
+
+
+it('keeps the original receipt when a stopped custody request resolves late', async () => {
+  const purchase = await collectionBuyFixture()
+  params = Promise.resolve({ id: purchase.c.id })
+  h.readClient.mockReturnValue(purchase.client)
+  const pending = deferred<{ status: 'CUSTODY_CHANGED'; holder: string; kioskId: string; rightId: string }>()
+  h.handoff.mockReturnValue(pending.promise)
+  await render()
+  await choosePurchaseRecord(purchase.record)
+  await click('Query original Collection purchase')
+  expect(host.textContent).toContain('Original purchase verified at checkpoint 42')
+  await click('Stop Collection purchase read')
+  expect(h.handoff.mock.calls[0][0].signal.aborted).toBe(true)
+  await act(async () => pending.resolve({ status: 'CUSTODY_CHANGED', holder: id(1501), kioskId: id(1502), rightId: purchase.right.id }))
+  expect(host.textContent).toContain('Original purchase verified at checkpoint 42')
+  expect(host.textContent).toContain('Read stopped.')
+  expect(host.textContent).not.toContain(id(1501))
 })

@@ -23,7 +23,8 @@ export interface CollectionBuyPlan {
 export interface CollectionBuyRecord { schema: 'soulidity.collection-buy.v1'; plan: CollectionBuyPlan; packet: CollectionCommandRecord['packet'] }
 export interface CollectionBuyQuery { status: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'; checkpoint?: string
   receipt?: { collectionId: string; rightId: string; listingId: string; sellerAddress: string; buyerAddress: string;
-    buyerKioskId: string; buyerKioskCapId: string; priceAtomic: string; platformFeeAtomic: string; totalPaymentAtomic: string } }
+    buyerKioskId: string; buyerKioskCapId: string; priceAtomic: string; platformFeeAtomic: string; totalPaymentAtomic: string;
+    settlement?: { coinType: string; feeRecipient: string | null; netGasMist: string } } }
 const A = bcs.Address, Empty = bcs.struct('Empty', { dummy_field: bcs.bool() })
 export const CollectionBuyCoinBcs = bcs.struct('Coin', { id: A, balance: bcs.u64() })
 export const CollectionBuyPolicyBcs = bcs.struct('TransferPolicy', { id: A, balance: bcs.u64(),

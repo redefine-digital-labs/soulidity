@@ -7,7 +7,7 @@ import { collectionCommandHash } from '../../web/lib/collections/collection-comm
 import { parseCollectionBuyPlan, CollectionBuyCoinBcs, CollectionBuyPolicyBcs, CollectionBuyLockBcs, CollectionBuyOwnerMarkerBcs,
   CollectionBuyRuleBoolBcs, collectionBuyRuleIds, collectionBuyOwnerMarker } from '../../web/lib/collections/collection-buy-plan'
 import { prepareCollectionBuyPlan, assertCollectionBuyCurrent } from '../../web/lib/collections/collection-buy-state'
-import { parseCollectionBuyRecord, buildCollectionBuyTransaction, createCollectionBuyAdapter } from '../../web/lib/collections/collection-buy-operation'
+import { parseCollectionBuyRecord, buildCollectionBuyTransaction, createCollectionBuyAdapter, queryCollectionBuyOriginal } from '../../web/lib/collections/collection-buy-operation'
 import { proveCollectionBuyHistory } from '../../web/lib/collections/collection-buy-history'
 import { collectionBuyFixture, cid } from './fixtures/collection-buy'
 import { addressGasWindow } from './fixtures/collection-command'
@@ -43,8 +43,18 @@ describe('Collection buy exact raw plan and canonical history', () => {
     await expect(f.adapter.query({ ...prepared, packet: { ...prepared.packet, phase: 'SIGNED', signature: signed.signature } })).resolves.toMatchObject({
       status: 'SUCCEEDED', checkpoint: '42', receipt: {
         rightId: f.right.id, buyerKioskId: f.buyerKiosk.id, totalPaymentAtomic: '1005002',
+        settlement: { feeRecipient: f.market.fee_recipient, netGasMist: '1' },
       },
     })
+  })
+  it('binds coin-gas original readback to the exact mainnet genesis before reading the digest', async () => {
+    const f = await collectionBuyFixture()
+    const { chainIdentifier } = await f.client.core.getChainIdentifier()
+    const other = fromBase58(chainIdentifier)
+    other[31] ^= 1
+    f.client.core.getChainIdentifier.mockResolvedValue({ chainIdentifier: toBase58(other) })
+    await expect(queryCollectionBuyOriginal({ client: f.client as never, record: f.record })).rejects.toThrow('WRONG_MAINNET')
+    expect(f.client.ledgerService.getTransaction).not.toHaveBeenCalled()
   })
   it('rejects original SUI gas evidence with the wrong debit even when USDC payout reconciles', async () => {
     const f = await collectionBuyFixture({ addressGas: true })
