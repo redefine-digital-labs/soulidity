@@ -6,7 +6,7 @@ import { SoulPublicCollectionBcs, SoulPublicCollectionRightBcs, SoulPublicKioskB
   CollectionKioskRegistryBcs, CollectionKioskListingFieldBcs, deriveKioskItemFieldId, assertKioskItemField } from '@soulidity/sdk'
 import { id, digest, uint, exact, same, freeze, decode, collectionCommandRaw, collectionCommandTypes,
   collectionCommandRegistration, collectionCommandMarker, parseCollectionCommandTarget,
-  COLLECTION_COMMAND_MAX, type CollectionCommandTarget, type CollectionCommandObject, type CollectionCommandRecord,
+  COLLECTION_COMMAND_MAX, type CollectionCommandTarget, type CollectionCommandObject, type CollectionCommandRecord, type CollectionCommandReference,
   type CollectionCommandPlan } from './collection-command-plan'
 
 export { id, digest, uint, exact, same, freeze, decode, collectionCommandRaw, collectionCommandTypes,
@@ -24,7 +24,7 @@ export interface CollectionBuyPlan {
 export interface CollectionBuyRecord { schema: 'soulidity.collection-buy.v1'; plan: CollectionBuyPlan; packet: CollectionCommandRecord['packet']; retirement?: CollectionCommandRecord['retirement'] }
 export interface CollectionBuyQuery { status: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'; checkpoint?: string; checkpointProof?: ActivityCheckpointTransactionRef
   receipt?: { collectionId: string; rightId: string; listingId: string; sellerAddress: string; buyerAddress: string;
-    buyerKioskId: string; buyerKioskCapId: string; priceAtomic: string; platformFeeAtomic: string; totalPaymentAtomic: string;
+    buyerKioskId: string; buyerKioskCapId: string; custodyRootOutput?: CollectionCommandReference; priceAtomic: string; platformFeeAtomic: string; totalPaymentAtomic: string;
     settlement?: { coinType: string; feeRecipient: string | null; netGasMist: string; payouts?: Array<{ coinId: string; owner: string; amount: string }> } } }
 const A = bcs.Address, Empty = bcs.struct('Empty', { dummy_field: bcs.bool() })
 export const CollectionBuyCoinBcs = bcs.struct('Coin', { id: A, balance: bcs.u64() })

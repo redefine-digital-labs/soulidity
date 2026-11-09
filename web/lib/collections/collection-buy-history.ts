@@ -96,7 +96,7 @@ export async function proveCollectionBuyHistory(params: { client: SuiGrpcClient;
       && (!['created', 'mutated'].includes(mode) || full.previousTransaction === r.packet.digest), 'HISTORY_OBJECT_REFERENCE')
     const shared = tx.inputs.find(row => row.Object?.SharedObject?.objectId === objectId)?.Object?.SharedObject
     if (shared) check(full.owner.Shared?.initialSharedVersion === shared.initialSharedVersion, 'HISTORY_SHARED_BIRTH')
-    return { bytes: move.contents, full }
+    return { bytes: move.contents, full, reference: { objectId, version, digest: observed.digest } }
   }
   async function frozenRoot(objectId: string, type: string, expected: string) {
     const value = await object(objectId, type, 'readonly'); check(toBase64(value.bytes) === expected, 'HISTORY_FROZEN_ROOT'); return value
@@ -227,7 +227,7 @@ export async function proveCollectionBuyHistory(params: { client: SuiGrpcClient;
 
   signal.throwIfAborted()
   return { collectionId: p.request.collectionId, rightId: p.rightId, listingId: p.request.listingId,
-    sellerAddress: p.sellerAddress, buyerAddress: p.author, buyerKioskId, buyerKioskCapId,
+    sellerAddress: p.sellerAddress, buyerAddress: p.author, buyerKioskId, buyerKioskCapId, custodyRootOutput: finalRoot.reference,
     priceAtomic: p.quote.priceAtomic, platformFeeAtomic: p.quote.feeAtomic, totalPaymentAtomic: p.quote.buyerTotalAtomic,
     settlement: { coinType: p.target.paymentCoinType, feeRecipient: p.quote.feeAtomic === '0' ? null : market.fee_recipient,
       netGasMist: String(netGas), payouts } }

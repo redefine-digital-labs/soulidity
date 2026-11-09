@@ -5,7 +5,7 @@ import { createNativeReceiveClient } from '../lib/animacraft/native-receive'
 import { createConfiguredIncomeOriginalExecutionRegistry } from '../lib/soulidity/configured-income-entry'
 import { replayCommerceAcceptance } from '../lib/soulidity/commerce/public-acceptance-replay'
 
-const USAGE = 'Usage: tsx web/scripts/verify-commerce-receipt.ts <expected-case.json> <retained-purchase-original.json> [retained-withdrawal-original.json]'
+const USAGE = 'Usage: tsx web/scripts/verify-commerce-receipt.ts <expected-case.json> <retained-purchase-original.json> [retained-withdrawal-original.json | buyer-listing-original.json buyer-cancellation-original.json]'
 
 async function readInput(path: string, limit: number) {
   const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK)
@@ -26,20 +26,26 @@ async function main(args: string[]) {
     process.stdout.write(USAGE + '\n')
     return
   }
-  if (args.length !== 2 && args.length !== 3) throw new Error(USAGE)
-  const [expected, original, withdrawal] = await Promise.all([
+  if (args.length < 2 || args.length > 4) throw new Error(USAGE)
+  const [expected, original, withdrawal, listing, cancellation] = await Promise.all([
     readInput(args[0], 8192), readInput(args[1], 3 * 1024 * 1024), args.length === 3 ? readInput(args[2], 300_000) : undefined,
+    args.length === 4 ? readInput(args[2], 3 * 1024 * 1024) : undefined, args.length === 4 ? readInput(args[3], 3 * 1024 * 1024) : undefined,
   ])
   const decoder = new TextDecoder('utf-8', { fatal: true })
   const signal = AbortSignal.timeout(90_000)
   const report = await replayCommerceAcceptance(JSON.parse(decoder.decode(expected)), {
     client: createNativeReceiveClient(signal), signal, originalText: decoder.decode(original),
+    ...(listing && cancellation ? { collectionFollowUp: { listingText: decoder.decode(listing), cancellationText: decoder.decode(cancellation) } } : {}),
     ...(withdrawal ? { withdrawalText: decoder.decode(withdrawal), executionRegistry: createConfiguredIncomeOriginalExecutionRegistry().registry } : {}),
   })
   process.stdout.write(JSON.stringify({ ...report, originalSha256: createHash('sha256').update(original).digest('hex'),
+    ...(listing && cancellation ? { buyerListingSha256: createHash('sha256').update(listing).digest('hex'),
+      buyerCancellationSha256: createHash('sha256').update(cancellation).digest('hex') } : {}),
     ...(withdrawal ? { withdrawalSha256: createHash('sha256').update(withdrawal).digest('hex') } : {}),
   }, null, 2) + '\n')
-  if (report.status !== 'ORIGINAL_SETTLEMENT_PROVED' || (withdrawal && report.withdrawalEvidence?.status !== 'PAID_INCOME_LEDGER_RECONCILED')) {
+  if (report.status !== 'ORIGINAL_SETTLEMENT_PROVED'
+    || (withdrawal && report.withdrawalEvidence?.status !== 'PAID_INCOME_LEDGER_RECONCILED')
+    || (listing && report.buyerListingEvidence?.status !== 'BUYER_LIST_AND_CANCEL_PROVED')) {
     process.exitCode = 2
   }
 }

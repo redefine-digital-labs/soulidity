@@ -73,7 +73,7 @@ export async function queryCollectionCommandOriginal({ client, record: input, si
   const result = await readCollectionOriginalEvidence(client, record, signal)
   if (result.status !== 'SUCCEEDED') return result
   const receipt = await proveCollectionCommandHistory({ client, record, effects: result.effects, events: result.events, signal })
-  return { status: 'SUCCEEDED', checkpoint: result.checkpoint, receipt }
+  return { status: 'SUCCEEDED', checkpoint: result.checkpoint, checkpointProof: result.checkpointProof, receipt }
 }
 
 export interface CollectionCommandAdapter {

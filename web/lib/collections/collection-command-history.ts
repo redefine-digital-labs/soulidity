@@ -83,7 +83,7 @@ export async function proveCollectionCommandHistory(params: { client: SuiGrpcCli
       && (!['created', 'mutated'].includes(mode) || full.previousTransaction === r.packet.digest), 'HISTORY_OBJECT_REFERENCE')
     const shared = tx.inputs.find(row => row.Object?.SharedObject?.objectId === objectId)?.Object?.SharedObject
     if (shared) check(full.owner.Shared?.initialSharedVersion === shared.initialSharedVersion, 'HISTORY_SHARED_BIRTH')
-    return { bytes: move.contents, full }
+    return { bytes: move.contents, full, reference: { objectId, version, digest: observed.digest } }
   }
   async function frozenRoot(objectId: string, type: string, expected: string) {
     const value = await object(objectId, type, 'readonly'); check(toBase64(value.bytes) === expected, 'HISTORY_FROZEN_ROOT'); return value
@@ -109,8 +109,12 @@ export async function proveCollectionCommandHistory(params: { client: SuiGrpcCli
     const before = await object(p.target.kioskRegistryId, types.registry, 'input'), after = await object(p.target.kioskRegistryId, types.registry, 'mutated')
     check(decode(CollectionKioskRegistryBcs, before.bytes).version === '1' && toBase64(before.bytes) === toBase64(after.bytes), 'HISTORY_REGISTRY_PRESERVATION')
   }
+  let listingInput: typeof root.reference | null = null
+  let createdListing: typeof root.reference | null = null, closedListing: typeof root.reference | null = null
   if (p.oldListingId) {
     const before = await object(p.oldListingId, types.listing, 'input'), after = await object(p.oldListingId, types.listing, 'mutated')
+    listingInput = before.reference
+    closedListing = after.reference
     check(toBase64(before.bytes) === p.expected.listingBcs, 'HISTORY_OLD_LISTING_INPUT')
     const old = decode(CollectionPublicListingBcs, before.bytes), current = decode(CollectionPublicListingBcs, after.bytes)
     check(same(current, { ...old, purchase_cap: null, is_active: false }), 'HISTORY_OLD_LISTING_OUTPUT')
@@ -121,6 +125,7 @@ export async function proveCollectionCommandHistory(params: { client: SuiGrpcCli
   }
   if (newListingId) {
     const after = await object(newListingId, types.listing, 'created'), l = decode(CollectionPublicListingBcs, after.bytes)
+    createdListing = after.reference
     check(after.full.owner.Shared?.initialSharedVersion === e.lamportVersion && l.id === newListingId && l.version === '1'
       && l.collection_id === p.request.collectionId && l.right_id === p.rightId && l.seller === p.author && l.seller_kiosk_id === p.kioskId
       && l.price === p.request.priceAtomic && l.is_active && l.purchase_cap && l.purchase_cap.kiosk_id === p.kioskId
@@ -153,6 +158,7 @@ export async function proveCollectionCommandHistory(params: { client: SuiGrpcCli
   // preservation consequence of the exact approved code, not a claimed new
   // historical version. No unrelated child changes are accepted below.
   const gas = tx.gasData.payment!
+  const charge = BigInt(e.gasUsed.computationCost) + BigInt(e.gasUsed.storageCost) - BigInt(e.gasUsed.storageRebate)
   if (gas.length === 0) {
     for (const objectId of collectionAddressGasIds(effects, r.packet.digest, p.author, tx.gasData.budget!)) allowed.add(objectId)
   } else {
@@ -168,7 +174,6 @@ export async function proveCollectionCommandHistory(params: { client: SuiGrpcCli
         check(after.full.owner.AddressOwner === p.author, 'HISTORY_GAS_OWNER'); finalBalance = BigInt(decode(Coin, after.bytes).balance)
       } else check(c.idOperation.$kind === 'Deleted' && c.outputState.$kind === 'NotExist', 'HISTORY_GAS_MERGE')
     }
-    const charge = BigInt(e.gasUsed.computationCost) + BigInt(e.gasUsed.storageCost) - BigInt(e.gasUsed.storageRebate)
     check(balance - charge === finalBalance, 'HISTORY_GAS_AMOUNT')
   }
   check(e.changedObjects.every(([id]) => allowed.has(id)) && e.unchangedConsensusObjects.every(([id]) => reads.has(id)), 'HISTORY_UNEXPECTED_EFFECT')
@@ -176,5 +181,6 @@ export async function proveCollectionCommandHistory(params: { client: SuiGrpcCli
   check(expectedReads.length === reads.size && expectedReads.every(id => reads.has(id)), 'HISTORY_READ_SET')
   signal.throwIfAborted()
   return { collectionId: p.request.collectionId, rightId: p.rightId, oldListingId: p.oldListingId,
-    newListingId, priceAtomic: p.request.priceAtomic }
+    newListingId, priceAtomic: p.request.priceAtomic,
+    history: { collectionInput: root.reference, listingInput, createdListing, closedListing, netGasMist: String(charge) } }
 }

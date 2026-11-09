@@ -1,3 +1,4 @@
+import type { ActivityCheckpointTransactionRef } from '../soulidity/activity-transaction-evidence'
 import type { CollectionRetirement } from './collection-expiry-recovery'
 import { bcs, TypeTagSerializer } from '@mysten/sui/bcs'
 import { deriveDynamicFieldID, fromBase64, normalizeStructTag, toBase58, toBase64, toHex } from '@mysten/sui/utils'
@@ -20,7 +21,8 @@ export interface CollectionCommandTarget {
 }
 export interface CollectionCommandRequest { action: 'list' | 'reprice' | 'delist'; collectionId: string; priceAtomic: string | null }
 /** Full canonical objects, not SQL IDs or contents relabelled with a digest. */
-export interface CollectionCommandObject { objectId: string; version: string; digest: string; bcs: string }
+export interface CollectionCommandReference { objectId: string; version: string; digest: string }
+export interface CollectionCommandObject extends CollectionCommandReference { bcs: string }
 export interface CollectionCommandPlan {
   schema: 'soulidity.collection-command-plan.v1'; target: CollectionCommandTarget; request: CollectionCommandRequest
   author: string; rightId: string; kioskId: string; kioskCapId: string; oldListingId: string | null
@@ -35,8 +37,10 @@ export interface CollectionCommandRecord {
     phase: 'PREPARED' | 'SIGNING' | 'SIGNED' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'RETIRED'; signature: string | null }
 }
 export interface CollectionCommandQuery {
-  status: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'; checkpoint?: string
-  receipt?: { collectionId: string; rightId: string; oldListingId: string | null; newListingId: string | null; priceAtomic: string | null }
+  status: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'; checkpoint?: string; checkpointProof?: ActivityCheckpointTransactionRef
+  receipt?: { collectionId: string; rightId: string; oldListingId: string | null; newListingId: string | null; priceAtomic: string | null
+    history?: { collectionInput: CollectionCommandReference; listingInput: CollectionCommandReference | null
+      createdListing: CollectionCommandReference | null; closedListing: CollectionCommandReference | null; netGasMist: string } }
 }
 export function parseCollectionCommandTarget(input: unknown): CollectionCommandTarget {
   const d = structuredClone(input) as CollectionCommandTarget
