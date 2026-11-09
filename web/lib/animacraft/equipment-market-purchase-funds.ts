@@ -1,10 +1,9 @@
 import { bcs } from '@mysten/sui/bcs'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { Transaction } from '@mysten/sui/transactions'
-import { fromBase64, toBase58, toHex } from '@mysten/sui/utils'
-import { blake2b } from '@noble/hashes/blake2.js'
+import { fromBase64, toHex } from '@mysten/sui/utils'
 import { profileReadStep } from '@soulidity/sdk'
-import { readActivityCheckpointEvidence } from '../soulidity/activity-transaction-evidence'
+import { assertListingEffectsCheckpoint } from './listing-operation-evidence'
 import { readHistoricalMoveObject } from '../sui/historical-object'
 import { readPinnedMovePackage } from '../sui/pinned-move-package'
 import { readSuiGasSettlement } from '../sui/gas-settlement'
@@ -38,13 +37,8 @@ export async function queryEquipmentMarketPurchaseFunds(
   const e = effects.V2
   if (!e) return { status: 'LEGACY_EFFECTS' as const, transactionDigest, checkpoint }
 
-  if (!original.addressGas) {
-    const membership = await readActivityCheckpointEvidence({ client, chainIdentifier: '35834a8a', checkpoint, signal })
-    const effectBytes = bcs.TransactionEffects.serialize(effects).toBytes()
-    const hash = toBase58(blake2b(new Uint8Array([...new TextEncoder().encode('TransactionEffects::'), ...effectBytes]), { dkLen: 32 }))
-    check(membership.epoch === e.executedEpoch && membership.transactions.some(row =>
-      row.transactionDigest === transactionDigest && row.effectsDigest === hash), 'Component purchase effects missing from original checkpoint')
-  }
+  const checkpointProof = original.checkpointProof ?? await assertListingEffectsCheckpoint(
+    { client, effects, checkpoint, transactionDigest, signal }, 'Component purchase effects missing from original checkpoint')
   const gasAccumulatorIds = new Set(original.addressGas?.accumulatorIds ?? [])
   check(e.changedObjects.length <= 4096 && new Set(e.changedObjects.map(([id]) => id)).size === e.changedObjects.length
     && e.changedObjects.every(([id, row]) => !row.outputState.AccumulatorWriteV1 || gasAccumulatorIds.has(id)), 'Unexpected component purchase money effects')
@@ -120,7 +114,7 @@ export async function queryEquipmentMarketPurchaseFunds(
   const custody = options?.proveCustody ? await readAuthenticatedEquipmentPurchaseCustody(record, original, source, signal, parent) : undefined
   const resultSignal = custody ? parent : signal
   resultSignal.throwIfAborted()
-  return { status: 'FUNDS_VERIFIED' as const, transactionDigest, checkpoint, coinType, receipt,
+  return { status: 'FUNDS_VERIFIED' as const, transactionDigest, checkpoint, checkpointProof, coinType, receipt,
     sellerPayoutId: payoutId, protocolTreasuryId: treasuryId, buyerChangeAtomic: changeCoin.balance, gas, ...(custody ? { custody } : {}) }
 }
 

@@ -24,7 +24,7 @@ const shared = { Shared: { initialSharedVersion: '1' } }
 /** Controlled ledger with real full Object/transaction/effects/checkpoint BCS,
  * real SDK-built PTBs and signatures. This fixture does not execute the VM. */
 export async function collectionBuyFixture(options: { newKiosk?: boolean; feeBps?: number; price?: string;
-  paymentBalances?: string[]; gasBalances?: string[]; addressGas?: boolean; boundedGas?: boolean; sellerLocked?: boolean; feeRecipientSeller?: boolean } = {}) {
+  paymentBalances?: string[]; gasBalances?: string[]; addressGas?: boolean; boundedGas?: boolean; sellerLocked?: boolean; feeRecipientSeller?: boolean; feeRecipientBuyer?: boolean } = {}) {
   const f = await collectionCommandFixture('delist'), { current, rows, objects } = f
   const signer = Ed25519Keypair.fromSecretKey(new Uint8Array(32).fill(53)), author = signer.toSuiAddress()
   const target = { ...f.target, kioskPackageId: cid(1001), collectionTransferPolicyId: cid(1002) }, types = collectionBuyTypes(target)
@@ -39,7 +39,8 @@ export async function collectionBuyFixture(options: { newKiosk?: boolean; feeBps
     return row
   }
   const c = { ...f.c }, right = { ...f.right }, sellerKiosk = { ...f.kiosk }, listing = { ...f.listing, price: options.price ?? '1000001' }
-  const registry = { ...f.registry }, market = { ...f.market, platform_fee_bps: options.feeBps ?? 50, fee_recipient: options.feeRecipientSeller ? f.author : f.market.fee_recipient }
+  const feeRecipient = options.feeRecipientBuyer ? author : options.feeRecipientSeller ? f.author : f.market.fee_recipient
+  const registry = { ...f.registry }, market = { ...f.market, platform_fee_bps: options.feeBps ?? 50, fee_recipient: feeRecipient }
   const buyerKiosk = { id: cid(options.newKiosk ? 1201 : 1101), profits: '0', owner: author, item_count: 0, allow_extensions: true }
   const cap = { id: cid(options.newKiosk ? 1202 : 1102), cap: { id: cid(options.newKiosk ? 1203 : 1103), for: buyerKiosk.id } }
   const regId = collectionCommandRegistration(target, author), reg = { id: regId, name: { owner: author }, value: { version: '1', kiosk_id: buyerKiosk.id, kiosk_cap_id: cap.id } }

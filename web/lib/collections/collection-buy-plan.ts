@@ -1,3 +1,4 @@
+import type { ActivityCheckpointTransactionRef } from '../soulidity/activity-transaction-evidence'
 import { bcs, TypeTagSerializer } from '@mysten/sui/bcs'
 import { deriveDynamicFieldID, normalizeStructTag, toBase64 } from '@mysten/sui/utils'
 import { SoulPublicCollectionBcs, SoulPublicCollectionRightBcs, SoulPublicKioskBcs, SoulPublicMarketConfigBcs,
@@ -21,10 +22,10 @@ export interface CollectionBuyPlan {
   quote: CollectionCommandPlan['quote']
 }
 export interface CollectionBuyRecord { schema: 'soulidity.collection-buy.v1'; plan: CollectionBuyPlan; packet: CollectionCommandRecord['packet']; retirement?: CollectionCommandRecord['retirement'] }
-export interface CollectionBuyQuery { status: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'; checkpoint?: string
+export interface CollectionBuyQuery { status: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'; checkpoint?: string; checkpointProof?: ActivityCheckpointTransactionRef
   receipt?: { collectionId: string; rightId: string; listingId: string; sellerAddress: string; buyerAddress: string;
     buyerKioskId: string; buyerKioskCapId: string; priceAtomic: string; platformFeeAtomic: string; totalPaymentAtomic: string;
-    settlement?: { coinType: string; feeRecipient: string | null; netGasMist: string } } }
+    settlement?: { coinType: string; feeRecipient: string | null; netGasMist: string; payouts?: Array<{ coinId: string; owner: string; amount: string }> } } }
 const A = bcs.Address, Empty = bcs.struct('Empty', { dummy_field: bcs.bool() })
 export const CollectionBuyCoinBcs = bcs.struct('Coin', { id: A, balance: bcs.u64() })
 export const CollectionBuyPolicyBcs = bcs.struct('TransferPolicy', { id: A, balance: bcs.u64(),

@@ -37,6 +37,7 @@ export interface EquipmentMarketOperationReceipt {
 }
 export type EquipmentMarketOperationEvidence={status:'MISSING'|'PENDING'|'FAILED'}|{
   status:'SUCCEEDED';checkpoint:string;receipt:EquipmentMarketOperationReceipt;effects:ReturnType<typeof bcs.TransactionEffects.parse>
+  checkpointProof?:Extract<ListingPacketEvidence,{status:'SUCCEEDED'}>['checkpointProof']
   addressGas?:ReturnType<typeof proveEquipmentAddressGas>
 }
 
@@ -63,7 +64,7 @@ export async function queryEquipmentMarketOperationEvidence(value:EquipmentMarke
   }
   return {status:'SUCCEEDED',checkpoint:proof.checkpoint,effects:proof.effects,
     receipt:decodeAuthenticatedEquipmentMarketReceipt(r,proof.events.data),
-    ...(executionWindow.addressGas?{addressGas:proveEquipmentAddressGas(r,proof.effects)}:{})}
+    ...(executionWindow.addressGas?{addressGas:proveEquipmentAddressGas(r,proof.effects),checkpointProof:proof.checkpointProof}:{})}
 }
 
 /** Decode a row only AFTER its complete command graph and historical Market /

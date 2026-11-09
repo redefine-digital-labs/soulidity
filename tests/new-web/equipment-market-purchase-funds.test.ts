@@ -13,6 +13,7 @@ import { buildEquipmentMarketOperationTransaction, equipmentMarketInputRoles, eq
 import { EquipmentMarketListingBcs, EquipmentMarketProtocolTreasuryBcs, EquipmentMarketTreasuryBcs } from '../../web/lib/animacraft/native-equipment-market-bcs'
 import { createEquipmentMarketOperationAdapter } from '../../web/lib/animacraft/equipment-market-operation-adapter'
 import { MAINNET_GENESIS_DIGEST } from '../../web/lib/animacraft/mainnet-chain'
+import { replayCommerceAcceptance } from '../../web/lib/soulidity/commerce/public-acceptance-replay'
 import { activityEvidenceFixture, activityHash, adigest } from './fixtures/activity-transaction-evidence'
 import { equipmentAddressGasEffect, equipmentAddressGasWindow, equipmentMarketEvidenceFixture, linkEquipmentOriginalCheckpoint } from './fixtures/equipment-market-evidence'
 import { emid } from './fixtures/equipment-market-operation'
@@ -306,6 +307,25 @@ it.each(['base','external'] as const)('reconstructs a %s purchase from the selle
       custody: { status: 'CURRENT_UNAVAILABLE', itemType: expect.stringContaining(kind === 'base' ? 'OwnedBaseItemV8' : 'OwnedExternalItemV8'),
         originalHolder: snapshot.actor, originalOwnershipEpoch: '1',
         sourceId: snapshot.asset.kind === 'base' ? snapshot.asset.baseRegistryId : snapshot.asset.productId } } })
+})
+
+it('replays original component custody and treasury settlement with a separate gas rebate', async () => {
+  const f = await fixture('external', 'address gas rebate', true, 'list')
+  const record = f.record, snapshot = record.snapshot
+  const expected = { schema: 'soulidity.commerce.public-acceptance-case.v1', assetType: 'INDEPENDENT_COMPONENT',
+    originalDigest: record.digest, buyer: snapshot.actor, counterparty: snapshot.seller, itemId: snapshot.asset.itemId,
+    listingId: f.listingId, coinType: normalizeStructTag(snapshot.target.paymentCoinType), totalAtomic: record.priceAtomic }
+  const input = { originalText: JSON.stringify(createEquipmentPurchaseOriginal(record)), client: f.client, signal: new AbortController().signal }
+  await expect(replayCommerceAcceptance(expected, input)).resolves.toMatchObject({
+    status: 'ORIGINAL_SETTLEMENT_PROVED', checkpoint: { sequence: '20', digest: expect.any(String), effectsDigest: expect.any(String) },
+    settlement: { buyerGrossDebitAtomic: '10001', buyerNetBusinessDebitAtomic: '10001', netGasMist: '-2',
+      payouts: [{ coinId: f.payoutId, owner: snapshot.seller, amount: '9751' }],
+      protocolCredit: { kind: 'LEDGER', amountAtomic: '250', objectId: snapshot.protocolTreasuryId } },
+    laneEvidence: { custody: { originalHolder: snapshot.actor, status: 'CURRENT_UNAVAILABLE' } },
+  })
+  expect(f.client.ledgerService.getCheckpoint.mock.calls.filter(([request]) =>
+    request.checkpointId.sequenceNumber === 20n)).toHaveLength(1)
+  await expect(replayCommerceAcceptance({ ...expected, totalAtomic: '10002' }, input)).rejects.toThrow('ACCEPTANCE_ORIGINAL_MISMATCH')
 })
 
 it('rejects the wrong seller payout even from a valid opening listing and committed close', async () => {

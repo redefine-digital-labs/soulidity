@@ -189,15 +189,18 @@ export async function proveCollectionBuyHistory(params: { client: SuiGrpcClient;
     else removed(coinId)
   }
   check(paymentBefore - BigInt(p.quote.buyerTotalAtomic) === paymentAfter, 'HISTORY_PAYMENT_AMOUNT')
-  const payouts = [{ owner: p.sellerAddress, amount: p.quote.priceAtomic },
+  const expectedPayouts = [{ owner: p.sellerAddress, amount: p.quote.priceAtomic },
     ...(BigInt(p.quote.feeAtomic) > 0n ? [{ owner: market.fee_recipient, amount: p.quote.feeAtomic }] : [])]
   const gasIds = new Set(tx.gasData.payment!.map(row => row.objectId))
   const payoutIds = e.changedObjects.filter(([id, c]) => !allowed.has(id) && !gasIds.has(id) && c.idOperation.$kind === 'Created' && c.outputState.ObjectWrite?.[1].AddressOwner)
-  check(payoutIds.length === payouts.length, 'HISTORY_PAYOUT_COUNT')
+  check(payoutIds.length === expectedPayouts.length, 'HISTORY_PAYOUT_COUNT')
+  const payouts: Array<{ coinId: string; owner: string; amount: string }> = []
   for (const [coinId] of payoutIds) {
     const coin = await object(coinId, types.coin, 'created'), amount = decode(Coin, coin.bytes).balance
-    const index = payouts.findIndex(row => row.owner === coin.full.owner.AddressOwner && row.amount === amount)
-    check(index >= 0, 'HISTORY_PAYOUT'); payouts.splice(index, 1)
+    const index = expectedPayouts.findIndex(row => row.owner === coin.full.owner.AddressOwner && row.amount === amount)
+    check(index >= 0, 'HISTORY_PAYOUT')
+    const [matched] = expectedPayouts.splice(index, 1)
+    payouts.push({ coinId, ...matched })
   }
   const gas = tx.gasData.payment!
   const netGas = BigInt(e.gasUsed.computationCost) + BigInt(e.gasUsed.storageCost) - BigInt(e.gasUsed.storageRebate)
@@ -227,5 +230,5 @@ export async function proveCollectionBuyHistory(params: { client: SuiGrpcClient;
     sellerAddress: p.sellerAddress, buyerAddress: p.author, buyerKioskId, buyerKioskCapId,
     priceAtomic: p.quote.priceAtomic, platformFeeAtomic: p.quote.feeAtomic, totalPaymentAtomic: p.quote.buyerTotalAtomic,
     settlement: { coinType: p.target.paymentCoinType, feeRecipient: p.quote.feeAtomic === '0' ? null : market.fee_recipient,
-      netGasMist: String(netGas) } }
+      netGasMist: String(netGas), payouts } }
 }

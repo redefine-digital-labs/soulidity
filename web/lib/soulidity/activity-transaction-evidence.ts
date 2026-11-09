@@ -17,6 +17,12 @@ interface ActivityTrust {
   readonly trust: 'TRUSTED_LEDGER_CANONICAL_EVIDENCE'
   readonly notAuthorization: true
 }
+export interface ActivityCheckpointTransactionRef {
+  checkpoint: string
+  digest: string
+  effectsDigest: string
+}
+
 export interface ActivityCheckpointEvidence extends ActivityTrust {
   readonly chainIdentifier: string
   readonly checkpoint: string

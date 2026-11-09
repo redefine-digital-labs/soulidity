@@ -62,5 +62,6 @@ export async function readCollectionOriginalEvidence(client: SuiGrpcClient, r: O
   if (e.status.$kind === 'Failure') return { status: 'FAILED' as const, checkpoint }
   check(value.events?.bcs?.value instanceof Uint8Array, 'RAW_EVENTS_REQUIRED')
   signal.throwIfAborted()
-  return { status: 'SUCCEEDED' as const, checkpoint, effects, events: value.events.bcs.value }
+  return { status: 'SUCCEEDED' as const, checkpoint, effects, events: value.events.bcs.value,
+    checkpointProof: { checkpoint, digest: evidence.digest, effectsDigest: membership[0].effectsDigest } }
 }

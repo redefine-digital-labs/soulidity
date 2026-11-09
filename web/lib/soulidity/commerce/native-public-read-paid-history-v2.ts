@@ -49,7 +49,7 @@ export async function readNativePublicReadPaidHistoryV2(input: Omit<Parameters<t
       const registryIdentity=proveRegistryIdentity?await proveNativePublicReadPaidRegistryIdentityV2({...saved,client,signal,effects:context.effects}):null
       const effectsInventory = reconcileNativePublicReadPaidEffectsV2({ transactionDigest: saved.packet.digest, effects: context.effects, receipt, money, registryIdentity, paidPointer, offerHistory, kioskCustody, authorizationHistory, soulHistory, modulePointerHistory, linkHistory })
       return { ...receipt, registryIdentity, requiresOriginalRegistryIdentityProof:registryIdentity===null, linkHistory, requiresOriginalLinkObjectHistoryProof: linkHistory === null, effectsInventory, modulePointerHistory, requiresOriginalModulePointerHistoryProof: modulePointerHistory === null, soulHistory, requiresOriginalSoulHistoryProof: soulHistory === null, authorizationHistory, requiresOriginalAuthorizationHistoryProof: authorizationHistory === null, kioskCustody, requiresOriginalKioskItemLockProof: kioskCustody === null, offerHistory, requiresOriginalOfferProof: offerHistory === null, paidPointer, requiresOriginalPaidPointerProof: paidPointer === null, proof: 'native-public-read-v2-finalized-host-entry-receipt-events-only' as const,
-        checkpoint: context.checkpoint, requiresOriginalFinalityAndEvents: false as const, notMoneySettlementProof: money === null, money, change, payment }
+        checkpoint: context.checkpoint, checkpointProof: context.checkpointProof, requiresOriginalFinalityAndEvents: false as const, notMoneySettlementProof: money === null, money, change, payment }
     } })
   return result.status === 'SUCCEEDED' ? { ...result, status: 'SUBSCRIPTION_RECORDED' as const } : result
 }

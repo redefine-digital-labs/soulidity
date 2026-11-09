@@ -3,12 +3,12 @@ import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { toBase58, toBase64 } from '@mysten/sui/utils'
 import { blake2b } from '@noble/hashes/blake2.js'
 import { profileReadStep } from '@soulidity/sdk'
-import { readActivityCheckpointEvidence } from '../soulidity/activity-transaction-evidence'
+import { readActivityCheckpointEvidence, type ActivityCheckpointTransactionRef } from '../soulidity/activity-transaction-evidence'
 import { readEpochExpiry } from './epoch-expiry'
 import type { EpochCheckpoint } from './epoch-checkpoint'
 import type { PublicMutationPacket } from './public-mutation-journal'
 export interface FinalizedMutationContext {
- effects: ReturnType<typeof bcs.TransactionEffects.parse>; events: Uint8Array; checkpoint: string; signal: AbortSignal
+ effects: ReturnType<typeof bcs.TransactionEffects.parse>; events: Uint8Array; checkpoint: string; checkpointProof: ActivityCheckpointTransactionRef; signal: AbortSignal
 }
 function typedHash(domain: string, bytes: Uint8Array) {
   const prefix = new TextEncoder().encode(`${domain}::`), input = new Uint8Array(prefix.length + bytes.length)
@@ -79,7 +79,7 @@ export async function readFinalizedMutation<T>(params: {
     events = new Uint8Array(rawEvents)
   }
   const receipt = await profileReadStep(signal, () => proveSuccess({ effects,
-    events: new Uint8Array(events), checkpoint, signal }))
+    events: new Uint8Array(events), checkpoint, checkpointProof: { checkpoint, digest: evidence.digest, effectsDigest: matches[0].effectsDigest }, signal }))
   signal.throwIfAborted()
   return { status: 'SUCCEEDED', checkpoint, receipt }
 }

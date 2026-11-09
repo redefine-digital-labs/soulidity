@@ -83,7 +83,7 @@ export async function readNativeSaleFinalized(input: {
       const cleanup = proveSaleCleanup ? await proveNativeSaleCleanupTree({ client, plan, effects, events: evidence.events,
         transactionDigest, checkpoint, native, standard, content: context.target.content!, signal }) : null
       const effectsReconciliation = reconcileNativeSaleEffects({ transactionDigest, soulId: plan.soulId, effects, money, listingExit, custody, cleanup })
-      return { money, listingExit, custody, cleanup, effectsReconciliation, notCompleteSaleProof: true as const,
+      return { money, listingExit, custody, cleanup, effectsReconciliation, checkpointProof: evidence.checkpointProof, notCompleteSaleProof: true as const,
         notDeliveryProof: true as const, notCurrentAuthority: true as const }
     },
   })
