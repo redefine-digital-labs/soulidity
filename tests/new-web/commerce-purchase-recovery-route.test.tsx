@@ -8,13 +8,14 @@ import { nativeSaleLifecycleWireFixture } from './fixtures/commerce-native-sale-
 import { browserNativeSaleCheckoutJournal, nativeSaleCheckoutKey } from '../../web/lib/soulidity/native-sale-checkout-journal'
 import {purchaseRecoveryFixture} from './fixtures/commerce-purchase-recovery-original'
 import {aid,adigest} from './fixtures/activity-transaction-evidence'
-import {normalizeStructTag} from '@mysten/sui/utils'
+import {bcs} from '@mysten/sui/bcs'
+import {deriveDynamicFieldID,normalizeStructTag,toBase64} from '@mysten/sui/utils'
 import {serviceRecoveryCase} from './fixtures/commerce-paid-content-receipt'
 const m=vi.hoisted(()=>({id:'',address:null as string|null,factory:vi.fn(),readCurrent:vi.fn(),openContent:vi.fn(),
- walletClient:{ledgerService:{}} as any,walletConnection:{},sign:vi.fn(),sealConfig:{} as any,incomeRegistry:vi.fn()}))
+ walletClient:{ledgerService:{}} as any,walletConnection:{},sign:vi.fn(),signTransaction:vi.fn(),sealConfig:{} as any,incomeRegistry:vi.fn()}))
 vi.mock('../../web/lib/hooks/use-wallet-sign',()=>({useWalletSign:()=>({
  suiWallet:m.address?{address:m.address}:null,walletAccount:m.address,currentWallet:m.walletConnection,
- suiGrpcClient:m.walletClient,getWalletAddress:()=>m.address,signPersonalMessage:m.sign,
+ suiGrpcClient:m.walletClient,getWalletAddress:()=>m.address,signPersonalMessage:m.sign,signTransaction:m.signTransaction,
 })}))
 vi.mock('../../web/lib/sui/package-object-client',async importOriginal=>{
  const actual=await importOriginal<typeof import('../../web/lib/sui/package-object-client')>()
@@ -422,8 +423,8 @@ it.each([false,true])('uses the same cold checkout receipt to verify funds, orig
  } finally { release() }
 })
 
-async function paidRecoveryPage() {
- const {coherentRecovery}=await import('./fixtures/commerce-paid-original-current'),f=await coherentRecovery(true)
+async function paidRecoveryPage(appended:boolean|number=true, guard?:'match'|'mismatch') {
+ const {coherentRecovery}=await import('./fixtures/commerce-paid-original-current'),f=await coherentRecovery(appended,guard)
  m.id=f.x.f.root.id;m.address=f.x.buyer;m.factory.mockReturnValue(f.client)
  m.walletClient=f.cryptoFixture.client;m.sealConfig=f.cryptoFixture.params.sealConfig;m.sign.mockImplementation(f.cryptoFixture.sign)
  vi.stubGlobal('fetch',f.fetcher)
@@ -435,9 +436,12 @@ async function choosePaidRecoveryVersion(index:number) {
  const picker=host.querySelector<HTMLSelectElement>('[aria-label="原订阅适用版本"]')!
  expect(Array.from(picker.options).filter(option=>option.value).map(option=>Number(option.value))).toContain(index)
  await act(async()=>{picker.value=String(index);picker.dispatchEvent(new Event('change',{bubbles:true}))})
+ await waitForPaidReader()
+ return picker
+}
+async function waitForPaidReader() {
  for(let i=0;i<50&&!paidOpen();i++)await act(async()=>{await new Promise(resolve=>setTimeout(resolve,25))})
  expect(paidOpen(),host.textContent??'').toBeDefined()
- return picker
 }
 async function waitForPaidOpen() {
  for(let i=0;i<50&&host.textContent?.includes('Opening protected content…');i++){
@@ -473,6 +477,95 @@ it.each(['file','journal'] as const)('opens a later compatible version from a V2
  expect(f.fetcher).toHaveBeenCalledOnce()
  expect(payload()).toBe(f.originalText)
  expect(Object.entries(localStorage)).toEqual(storageBefore)
+})
+
+async function choosePaidRecordIndex(index:number){
+ const input=host.querySelector<HTMLInputElement>('[aria-label="原订阅内容交付"] input[inputmode="numeric"]')!
+ const setValue=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!
+ await act(async()=>{setValue.call(input,String(index));input.dispatchEvent(new Event('input',{bubbles:true}))})
+ expect(input.value).toBe(String(index))
+ await click('核对指定版本索引')
+}
+
+it('opens an exact compatible record beyond the first page without browsing or creating a payment',async()=>{
+ const f=await paidRecoveryPage(25)
+ expect(f.qualification.recordIndex).toBeGreaterThan(24)
+ const submit=vi.fn()
+ f.client.core.executeTransaction=submit
+ m.walletClient.core.executeTransaction=submit
+ m.signTransaction.mockClear()
+ const before=Object.entries(localStorage)
+ await render();await select(f.originalText);await click('查询原购买历史')
+ const prior=f.client.ledgerService.getObject.mock.calls.length
+ await choosePaidRecordIndex(f.qualification.recordIndex)
+ expect(host.textContent).toContain(`已核对索引 ${f.qualification.recordIndex}`)
+ expect(host.querySelector('[aria-label="原订阅适用版本"]')).toBeNull()
+ const first=deriveDynamicFieldID(f.x.f.library.records.id,'u64',bcs.u64().serialize(0).toBytes())
+ expect(f.client.ledgerService.getObject.mock.calls.slice(prior).some(([request])=>request.objectId===first)).toBe(false)
+ await waitForPaidReader();await click('用原买家钱包打开内容');await waitForPaidOpen()
+ expect(paidPlaintext()?.textContent).toContain(new TextDecoder().decode(f.plaintext))
+ expect(paidPlaintext()?.textContent).toContain('已使用原交易产生的订阅资格打开此版本。')
+ const kind=bcs.TransactionKind.parse(f.cryptoFixture.decryptCall.mock.calls[0][0].txBytes).ProgrammableTransaction!
+ const call=kind.commands[0].MoveCall!
+ expect(call.function).toBe('seal_approve_content_paid_v2')
+ expect(kind.commands).toHaveLength(1)
+ expect(kind.inputs[call.arguments[3].Input!].Pure!.bytes).toBe(toBase64(bcs.u64().serialize(f.qualification.recordIndex).toBytes()))
+ expect(m.sign).toHaveBeenCalledOnce();expect(m.signTransaction).not.toHaveBeenCalled();expect(submit).not.toHaveBeenCalled()
+ expect(Object.entries(localStorage)).toEqual(before)
+ expect(payload()).toBe(f.originalText)
+})
+
+it.each(['match','mismatch'] as const)('requires the original paid namespace on the original-record shortcut (%s)',async guard=>{
+ const f=await paidRecoveryPage(false,guard)
+ await render();await select(f.originalText);await click('查询原购买历史');await click('核对原购买版本')
+ if(guard==='mismatch'){
+  expect(host.textContent).toContain('此索引与原购买的内容 namespace 不一致')
+  expect(paidOpen()).toBeUndefined()
+  expect(m.sign).not.toHaveBeenCalled()
+ }else{
+  expect(host.textContent).toContain('已核对索引 0')
+  await waitForPaidReader();await click('用原买家钱包打开内容');await waitForPaidOpen()
+  expect(paidPlaintext()?.textContent).toContain(new TextDecoder().decode(f.plaintext))
+  expect(m.sign).toHaveBeenCalledOnce()
+ }
+ expect(payload()).toBe(f.originalText)
+})
+
+it('applies the original kind and scope restrictions to direct index lookup before any Seal request',async()=>{
+ const f=await paidRecoveryPage()
+ const {appendPaidRecord}=await import('./fixtures/commerce-recovery-current-content')
+ const wide=appendPaidRecord(f.x,{scope:'2'}),otherKind=appendPaidRecord(f.x,{kind:41,scope:'1'})
+ await render();await select(f.originalText);await click('查询原购买历史')
+ for(const index of [wide.index,otherKind.index]){
+  await choosePaidRecordIndex(index)
+  expect(host.textContent).toContain('此版本不在原订阅的内容类型、范围或付费读取策略内')
+  expect(paidOpen()).toBeUndefined()
+ }
+ expect(m.sign).not.toHaveBeenCalled()
+ expect(f.fetcher).not.toHaveBeenCalled()
+ expect(payload()).toBe(f.originalText)
+})
+
+it('retries the requested recovery page after a transient lookup failure',async()=>{
+ const f=await paidRecoveryPage(25)
+ const pageTwoRecord=deriveDynamicFieldID(f.x.f.library.records.id,'u64',bcs.u64().serialize(25).toBytes())
+ const read=f.client.ledgerService.getObject.getMockImplementation()!
+ let fail=true
+ f.client.ledgerService.getObject.mockImplementation((request, options)=>{
+  if(fail&&request.objectId===pageTwoRecord){fail=false;throw Error('TRANSIENT_RECORD_LOOKUP')}
+  return read(request,options)
+ })
+ await render();await select(f.originalText);await click('查询原购买历史')
+ await click('查找原订阅覆盖的当前版本')
+ await click('下一页版本')
+ expect(host.textContent).toContain('TRANSIENT_RECORD_LOOKUP')
+ expect(payload()).toBe(f.originalText)
+ await click('查找原订阅覆盖的当前版本')
+ const picker=host.querySelector<HTMLSelectElement>('[aria-label="原订阅适用版本"]')!
+ expect(Array.from(picker.options).filter(option=>option.value).map(option=>Number(option.value)))
+  .toContain(f.qualification.recordIndex)
+ expect(Array.from(picker.options).map(option=>option.value)).not.toContain('0')
+ expect(m.sign).not.toHaveBeenCalled()
 })
 
 it.each([0, 1, 2])('honors verified download policy %i after real Seal/AES recovery for the paid buyer', async downloadPolicy => {

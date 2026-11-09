@@ -8,14 +8,15 @@ import {recoverNativePublicReadPaidContentV2} from '../../../web/lib/soulidity/c
 import {openNativePublicPaidContentV2} from '../../../web/lib/soulidity/native-public-paid-content-open-v2'
 import {NativeInitialPaidBcs} from '../../../web/lib/soulidity/native-initial-children'
 
-export async function coherentRecovery(appended=false){
+export async function coherentRecovery(appended:boolean|number=false,guard:'match'|'mismatch'|undefined=undefined){
  const protectedFixture=await integratedProtectedFixture(false,appended),x=protectedFixture.x,t=x.params.target
  const ids:Record<number,string>={40:t.native.originalPackageId,41:t.native.callablePackageId,42:t.content!.originalPackageId,43:t.content!.callablePackageId,
   44:x.params.economics.foundation.originalPackageId,45:x.params.economics.foundation.callablePackageId,46:t.standard.originalPackageId,47:t.standard.callablePackageId,
   70:x.owner,72:x.f.root.id,73:x.host.state.id,74:x.ledger.id,75:x.cfg.id,76:x.cfg.recipient,77:x.cfg.income.requests.id,78:t.registryId,80:x.f.kiosk!.id,
   81:aid(8801),82:aid(8802),83:x.ledger.offers.id,84:x.ledger.entries.id,85:x.ledger.attempts.id,86:aid(8806),90:x.f.library.id,94:x.host.id}
  if(new Set(Object.values(ids)).size!==Object.values(ids).length)throw Error('FIXTURE_ID_ALIAS')
- const h=await publicReadPurchaseFixture('money',x.buyer,x.record.kind,{ids,state:x.host.state,hostBirth:'5',kioskBirth:'5'}),p=h.params
+ const recordGuard=guard?{index:0,namespace:guard==='match'?protectedFixture.envelope.documentId:'abcd'}:undefined
+ const h=await publicReadPurchaseFixture('money',x.buyer,x.record.kind,{ids,state:x.host.state,hostBirth:'5',kioskBirth:'5',recordGuard}),p=h.params
  p.native=t.native as typeof p.native;p.content=t.content! as typeof p.content;p.foundation=x.params.economics.foundation
  const historyGet=p.client.ledgerService.getObject.bind(p.client.ledgerService),currentGet=x.f.client.ledgerService.getObject.getMockImplementation()!
  // Keep each shared ID/version byte-identical to the original after state.
