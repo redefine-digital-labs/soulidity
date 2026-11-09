@@ -3,7 +3,7 @@ import {Transaction,TransactionDataBuilder} from '@mysten/sui/transactions'
 import {fromBase64,toBase64} from '@mysten/sui/utils'
 import {verifyTransactionSignature} from '@mysten/sui/verify'
 import {buildEquipmentMarketOperationTransaction,equipmentMarketInputRoles,equipmentMarketOperationKey,
-  validateEquipmentMarketOperationRecord,equipmentOperationQuote,type EquipmentMarketOperationRecord,
+  validateEquipmentMarketOperationRecord,equipmentOperationQuote,equipmentRetirementInputs,type EquipmentMarketOperationRecord,
   type EquipmentMarketOperationSnapshot,type EquipmentMarketAction} from '../../web/lib/animacraft/equipment-market-operation'
 import {browserEquipmentMarketOperationStore,runEquipmentMarketOperation,queryEquipmentMarketHistory,readBrowserEquipmentMarketJournals} from '../../web/lib/animacraft/equipment-market-operation-store'
 import {browserMarketListOperationStore,marketListOperationKey} from '../../web/lib/animacraft/market-list-operation'
@@ -61,7 +61,9 @@ function adapter(record:EquipmentMarketOperationRecord){
     preflight:vi.fn(async()=>{}),sign:vi.fn(async(r:EquipmentMarketOperationRecord)=>listSigner.signTransaction(fromBase64(r.bytes))),
     verifySignature:vi.fn(async(r:EquipmentMarketOperationRecord)=>{await verifyTransactionSignature(fromBase64(r.bytes),r.signature!,{address:r.snapshot.actor})}),
     broadcast:vi.fn(async(_r:EquipmentMarketOperationRecord)=>{}),sync:vi.fn(async():Promise<'COMPLETE'>=> 'COMPLETE'),
-    expiryCheckpoint:vi.fn(async()=>marketCancelCheckpointFixture().evidence)}
+    verifyRetirement:vi.fn(async record=>({priorPhase:record.retirement?.priorPhase??record.phase as 'SIGNING'|'SIGNED',
+      checkpoint:marketCancelCheckpointFixture().evidence,
+      witness:{kind:'OWNED' as const,objectId:equipmentRetirementInputs(record).refs[0].objectId}}))}
 }
 afterEach(()=>vi.unstubAllGlobals())
 it('discovers saved item scopes after reload without chain inventory and excludes other wallets and archives',async()=>{
@@ -162,4 +164,27 @@ it('rejects journal scope substitution and malformed or misnamed archives',async
   b.values.set(`${f.key}:retired:wrong`,JSON.stringify({...f.record,phase:'RETIRED',
     retirement:{priorPhase:'SIGNING',checkpoint:marketCancelCheckpointFixture().evidence}}))
   expect(()=>b.store.history(f.key)).toThrow('digest mismatch')
+})
+
+
+it('requalifies a legacy checkpoint-only archive before a different component transaction can be signed', async () => {
+  const f = await fixture(), b = browser(), a = adapter(f.record), params = { ...f, store: b.store, adapter: a }
+  const checkpoint = marketCancelCheckpointFixture().evidence
+  const old = { ...f.record, phase: 'RETIRED' as const, retirement: { priorPhase: 'SIGNING' as const, checkpoint } }
+  b.store.archive(f.key, old); b.store.write(f.key, old)
+  a.verifyRetirement.mockRejectedValueOnce(Error('Witness unavailable'))
+  await expect(runEquipmentMarketOperation({ ...params, start: true })).rejects.toThrow('Witness unavailable')
+  expect(b.store.read(f.key)).toEqual(old)
+  expect(a.prepare).not.toHaveBeenCalled()
+  expect(a.sign).not.toHaveBeenCalled()
+  const tx = Transaction.from(fromBase64(f.record.bytes))
+  tx.setExpiration({ Epoch: '11' })
+  const bytes = await tx.build()
+  a.prepare.mockResolvedValue({ ...f.record, bytes: toBase64(bytes), digest: TransactionDataBuilder.getDigestFromBytes(bytes), expirationEpoch: '11' })
+  const candidate = checkpoint.digest
+  await expect(runEquipmentMarketOperation({ ...params, start: true, conflictDigest: candidate, expectedDigest: old.digest }))
+    .resolves.toMatchObject({ phase: 'SIGNED', expirationEpoch: '11' })
+  expect(a.verifyRetirement).toHaveBeenLastCalledWith(old, candidate)
+  expect(b.store.history(f.key)).toEqual([old])
+  expect(a.sign).toHaveBeenCalledOnce()
 })

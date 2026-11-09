@@ -6,6 +6,7 @@ import {useEquipmentMarketActions} from '@/lib/hooks/use-equipment-market-action
 import {equipmentOperationQuote,type EquipmentMarketAction} from '@/lib/animacraft/equipment-market-operation'
 import type {EquipmentMarketReadRequest} from '@/lib/animacraft/equipment-market-operation-snapshot'
 import {equipmentMarketCurrency,formatEquipmentMarketAmount} from '@/lib/animacraft/equipment-market-amount'
+import {marketListDigest} from '@/lib/animacraft/market-list-operation'
 import {createEquipmentListingOriginal} from '@/lib/animacraft/equipment-market-listing-original'
 import {createEquipmentPurchaseOriginal} from '@/lib/animacraft/equipment-market-purchase-original'
 import {EquipmentPurchaseEvidence} from './equipment-market-purchase-recovery'
@@ -46,15 +47,20 @@ export function EquipmentMarketPanel({request,identityKey,action='list',blocked=
   request:EquipmentMarketReadRequest;identityKey:string;action?:EquipmentMarketAction;blocked?:boolean
 }){
   const [amount,setAmount]=useState(''),[coin,setCoin]=useState<string|null>(null),currency=equipmentMarketCurrency(coin),priceAtomic=price(amount,currency.decimals)
+  const [conflictInput,setConflictInput]=useState<{digest:string;value:string}|null>(null)
   const actions=useEquipmentMarketActions({request,identityKey,action,priceAtomic})
   const s=actions.snapshot,r=actions.record,editable=action==='list'||action==='reprice'
   if(s&&s.target.paymentCoinType!==coin){setCoin(s.target.paymentCoinType);setAmount('')}
+  const unresolved=r?.phase==='SIGNING'||r?.phase==='SIGNED'
+  const legacyRetired=r?.phase==='RETIRED'&&!r.retirement?.witness
+  const conflictDigest=(unresolved||legacyRetired)&&conflictInput&&conflictInput.digest===r?.digest?conflictInput.value.trim():''
+  const invalidConflict=Boolean(conflictDigest&&!marketListDigest(conflictDigest))
   const gross=editable?priceAtomic:s?.listing?.priceAtomic
   let quote:ReturnType<typeof equipmentOperationQuote>|null=null
   try{if(s&&gross)quote=equipmentOperationQuote(s,gross)}catch{/* Incomplete review cannot sign. */}
   const exact=Boolean(s&&s.actor===request.actor&&s.asset.itemId===request.itemId&&s.asset.kind===request.kind
     &&s.target.rootId===request.rootId&&s.listing?.id===request.listingId)
-  const canStart=exact&&coin===s?.target.paymentCoinType&&Boolean(quote)&&actions.canStart&&!actions.busy&&!actions.pending&&!blocked
+  const canStart=exact&&coin===s?.target.paymentCoinType&&Boolean(quote)&&actions.canStart&&!actions.busy&&!actions.pending&&!blocked&&!(legacyRetired&&invalidConflict)
   const act=(work:()=>Promise<unknown>)=>{void work().catch(()=>{})}
   return <section aria-label="Selected component sale" className="space-y-3 rounded-xl border border-border p-4 text-sm">
     <h3>{labels[action]}</h3>
@@ -77,7 +83,7 @@ export function EquipmentMarketPanel({request,identityKey,action='list',blocked=
     </div>}
     <div className="flex flex-wrap gap-3">
       <button type="button" disabled={actions.busy||actions.loading} onClick={()=>act(actions.refresh)}>Refresh selected component</button>
-      <button type="button" disabled={!canStart} onClick={()=>{if(canStart)act(actions.start)}}>Sign · {labels[action]}</button>
+      <button type="button" disabled={!canStart} onClick={()=>{if(canStart)act(()=>legacyRetired&&conflictDigest?actions.start(conflictDigest):actions.start())}}>Sign · {labels[action]}</button>
     </div>
     {blocked&&<p>Finish or recover the pending equipment change before starting another action.</p>}
     <div aria-label="Component transaction recovery" className="space-y-2 border-t border-border pt-3">
@@ -92,7 +98,16 @@ export function EquipmentMarketPanel({request,identityKey,action='list',blocked=
         {actions.funds&&<EquipmentPurchaseEvidence proof={actions.funds}/>}
         {['PREPARED','SIGNING','SIGNED'].includes(r.phase)&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.resume)}>Resume saved component transaction</button>}
         {r.phase==='PREPARED'&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.cancelUnsigned)}>Discard unsigned component transaction</button>}
-        {['SIGNING','SIGNED'].includes(r.phase)&&<button type="button" disabled={actions.busy} onClick={()=>act(actions.retireExpired)}>Check expiry and archive component transaction</button>}
+        {(unresolved||legacyRetired)&&<label className="block">Conflicting transaction digest (optional)
+          <input className="block w-full rounded border border-border bg-card p-2" value={conflictDigest} disabled={actions.busy}
+            onChange={event=>setConflictInput({digest:r.digest,value:event.currentTarget.value})}/>
+        </label>}
+        {unresolved&&<button type="button" disabled={actions.busy||invalidConflict}
+          onClick={()=>act(()=>conflictDigest?actions.retireExpired(conflictDigest):actions.retireExpired())}>Check expiry and archive component transaction</button>}
+        {legacyRetired&&<p>Starting a new action rechecks expiry evidence for this earlier archive.</p>}
+        {r.retirement?.witness&&<p className="break-all">Expiry evidence retained · checkpoint {r.retirement.checkpoint.sequenceNumber}
+          {r.retirement.witness.conflict?<>{' · '}conflicting transaction {r.retirement.witness.conflict.digest}</>
+            :<>{' · '}{r.retirement.witness.kind==='LISTING'?'listing revision':'exact input'} {r.retirement.witness.objectId}</>}</p>}
       </>}
       {actions.history.map(saved=><div key={saved.digest} className="break-all">
         <p>Archived {saved.digest}: {actions.historyResults[saved.digest]??'Not checked'}. Historical result only.</p>

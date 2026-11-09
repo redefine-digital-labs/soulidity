@@ -10,6 +10,7 @@ import {readNativeReceiveTarget} from './native-receive'
 import {validateListingTransactionBytes} from './listing-transaction-validation'
 import {validateMarketCancelCheckpoint} from './market-cancel-checkpoint'
 import {EquipmentMarketQuoteCommitmentBcs} from './native-equipment-market-bcs'
+import {equipmentMarketGasPacket} from './equipment-market-gas'
 import {MAINNET_GENESIS_DIGEST} from './mainnet-chain'
 import type {EquipmentMarketOperationSnapshot,EquipmentMarketOperationRecord} from './equipment-market-operation-types'
 export type {EquipmentMarketOperationSnapshot,EquipmentMarketOperationRecord,EquipmentMarketAction} from './equipment-market-operation-types'
@@ -185,6 +186,11 @@ export function equipmentMarketInputRoles(r:Pick<EquipmentMarketOperationRecord,
 export function equipmentMarketReservedAssets(s:EquipmentMarketOperationSnapshot){
   return [s.asset.itemId,...(s.removal?[s.removal.soulId,s.removal.stateId,s.removal.equipment!.plan.scope.equipmentId]:[])]
 }
+export function equipmentRetirementInputs(r:EquipmentMarketOperationRecord){
+  const gas = equipmentMarketGasPacket(r).gas.payment ?? []
+  return { gas: gas.length > 0, refs: gas.length > 0 ? gas
+    : r.action === 'list' ? [r.snapshot.reference] : r.paymentCoins }
+}
 export function validateEquipmentMarketOperationRecord(value:unknown):EquipmentMarketOperationRecord{
   const r=structuredClone(value) as EquipmentMarketOperationRecord
   check(r&&r.schema===1&&r.kind==='equipment-market'&&['list','buy','reprice','cancel','recover'].includes(r.action),
@@ -231,6 +237,21 @@ export function validateEquipmentMarketOperationRecord(value:unknown):EquipmentM
   for(const ref of [...r.paymentCoins,...(r.action==='list'?[s.reference]:[])]){
     const actual=inputs.find(i=>i.Object?.ImmOrOwnedObject?.objectId===ref.objectId)?.Object?.ImmOrOwnedObject
     check(actual?.version===ref.version&&actual.digest===ref.digest,'Equipment owned reference changed')
+  }
+  if(r.retirement){
+    const w=r.retirement.witness
+    exact(r.retirement,w===undefined?['priorPhase','checkpoint']:['priorPhase','checkpoint','witness'])
+    if(w!==undefined){
+      exact(w,w?.conflict===undefined?['kind','objectId']:['kind','objectId','conflict'])
+      const {refs}=equipmentRetirementInputs(r)
+      check(refs.length ? w.kind==='OWNED'&&refs.some(ref=>ref.objectId===w.objectId)
+        : w.kind==='LISTING'&&s.listing?.id===w.objectId,'Invalid component retirement witness scope')
+      if(w.conflict!==undefined){
+        exact(w.conflict,['digest','checkpoint'])
+        check(digest(w.conflict.digest)&&w.conflict.digest!==r.digest&&uint(w.conflict.checkpoint)
+          &&BigInt(w.conflict.checkpoint)<=BigInt(r.retirement.checkpoint.sequenceNumber),'Invalid component retirement conflict')
+      }
+    }
   }
   return r
 }

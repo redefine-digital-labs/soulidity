@@ -1,7 +1,7 @@
 import { bcs, TypeTagSerializer } from '@mysten/sui/bcs'
 import { Inputs, Transaction, TransactionDataBuilder } from '@mysten/sui/transactions'
-import { fromHex, normalizeStructTag, toBase64 } from '@mysten/sui/utils'
-import { expect, it, vi } from 'vitest'
+import { fromBase64, fromHex, normalizeStructTag, toBase64 } from '@mysten/sui/utils'
+import { afterEach, expect, it, vi } from 'vitest'
 import { UnaryCall } from '@protobuf-ts/runtime-rpc'
 import { createEquipmentListingOriginal } from '../../web/lib/animacraft/equipment-market-listing-original'
 import { queryEquipmentSellerSettlement } from '../../web/lib/animacraft/equipment-market-seller-settlement'
@@ -11,7 +11,9 @@ import * as readback from '../../web/lib/animacraft/browser-equipment-market-rea
 import { createEquipmentPurchaseOriginal, queryEquipmentPurchaseOriginal } from '../../web/lib/animacraft/equipment-market-purchase-original'
 import { buildEquipmentMarketOperationTransaction, equipmentMarketInputRoles, equipmentOperationQuote } from '../../web/lib/animacraft/equipment-market-operation'
 import { EquipmentMarketListingBcs, EquipmentMarketProtocolTreasuryBcs, EquipmentMarketTreasuryBcs } from '../../web/lib/animacraft/native-equipment-market-bcs'
-import { activityHash, adigest } from './fixtures/activity-transaction-evidence'
+import { createEquipmentMarketOperationAdapter } from '../../web/lib/animacraft/equipment-market-operation-adapter'
+import { MAINNET_GENESIS_DIGEST } from '../../web/lib/animacraft/mainnet-chain'
+import { activityEvidenceFixture, activityHash, adigest } from './fixtures/activity-transaction-evidence'
 import { equipmentAddressGasEffect, equipmentAddressGasWindow, equipmentMarketEvidenceFixture, linkEquipmentOriginalCheckpoint } from './fixtures/equipment-market-evidence'
 import { emid } from './fixtures/equipment-market-operation'
 
@@ -328,4 +330,105 @@ it.each([
   const result = await queryEquipmentSellerSettlement(createEquipmentListingOriginal(f.seller!.record), f.client, new AbortController().signal)
   expect(result).toEqual({ status, transactionDigest: f.seller!.record.digest, listingId: f.listingId,
     openingCheckpoint: '19', closingDigest: f.record.digest, closingCheckpoint: '20', holder: f.record.snapshot.seller })
+})
+
+
+afterEach(() => vi.unstubAllGlobals())
+
+async function retirementFixture(action: 'buy' | 'cancel' | 'recover') {
+  const f = await fixture('base', '', true, 'list', action)
+  const record = { ...f.record, phase: 'SIGNING' as const }
+  const expiry = await activityEvidenceFixture()
+  expiry.summaryData.epoch = '11'
+  expiry.summaryData.sequence_number = '812'
+  expiry.rehashSummary()
+  expiry.checkpoint.signature = { epoch: 11n, signature: new Uint8Array(48).fill(1), bitmap: new Uint8Array([1]) }
+  const getCheckpoint = f.client.ledgerService.getCheckpoint.getMockImplementation()!
+  f.client.ledgerService.getCheckpoint.mockImplementation(async request =>
+    request.checkpointId?.oneofKind === undefined || request.checkpointId.sequenceNumber === 812n
+      ? { response: { checkpoint: expiry.checkpoint } } : getCheckpoint(request))
+  f.client.ledgerService.getTransaction.mockRejectedValue({ code: 'NOT_FOUND' })
+  const sign = vi.fn(), sync = vi.fn(), getAddress = vi.fn(() => null)
+  const adapter = createEquipmentMarketOperationAdapter({ client: f.client, read: vi.fn(), sign, sync, getAddress })
+  function observe(row: { objectId: string; version: bigint; digest: string; bcs: { value: Uint8Array } }) {
+    const fetch = vi.fn(async (_url, request: RequestInit) => {
+      expect(JSON.parse(String(request.body)).variables).toMatchObject({ coin: row.objectId, digest: record.digest })
+      return new Response(JSON.stringify({ data: { chainIdentifier: MAINNET_GENESIS_DIGEST, checkpoint: {
+        sequenceNumber: 812, epoch: { epochId: 11 }, digest: expiry.checkpoint.digest,
+        query: { transaction: null, object: { address: row.objectId, version: Number(row.version), digest: row.digest,
+          objectBcs: toBase64(row.bcs.value) } },
+      } } }))
+    })
+    vi.stubGlobal('fetch', fetch)
+    return fetch
+  }
+  return { ...f, record, expiry, sign, sync, getAddress, adapter, observe }
+}
+
+it('retires an address-gas component purchase using its exact USDC input and rejects a changed saved witness', async () => {
+  const f = await retirementFixture('buy')
+  const objectId = f.record.paymentCoins[0].objectId
+  const fetch = f.observe(f.rows.get(objectId + ':5'))
+  const proof = await f.adapter.verifyRetirement(f.record)
+  expect(proof).toMatchObject({ priorPhase: 'SIGNING', checkpoint: { sequenceNumber: '812', epoch: '11' },
+    witness: { kind: 'OWNED', objectId } })
+  const retired = { ...f.record, phase: 'RETIRED' as const, retirement: proof }
+  await expect(f.adapter.verifyRetirement(retired)).resolves.toEqual(proof)
+  expect(JSON.parse(String(fetch.mock.calls[1][1].body)).variables.checkpoint).toBe(812)
+  f.observe(f.rows.get(objectId + ':6'))
+  await expect(f.adapter.verifyRetirement(retired)).rejects.toThrow('input version or digest changed')
+  expect(f.sign).not.toHaveBeenCalled()
+  expect(f.sync).not.toHaveBeenCalled()
+})
+
+it('uses the unchanged shared listing revision for address-gas cancellation and rechecks the original digest', async () => {
+  const f = await retirementFixture('cancel')
+  const objectId = f.record.snapshot.listing!.id
+  f.observe(f.rows.get(objectId + ':5'))
+  const proof = await f.adapter.verifyRetirement(f.record)
+  expect(proof.witness).toEqual({ kind: 'LISTING', objectId })
+  f.client.ledgerService.getTransaction.mockResolvedValue({ response: { transaction: f.ledger } })
+  await expect(f.adapter.verifyRetirement(f.record)).rejects.toThrow('appeared during expiry verification')
+  expect(f.sign).not.toHaveBeenCalled()
+})
+
+it('authenticates the exact closing revision for legacy shared-only recovery with or without the index', async () => {
+  const f = await retirementFixture('recover')
+  const objectId = f.record.snapshot.listing!.id
+  const history = await activityEvidenceFixture({ empty: true })
+  const alternative = Transaction.from(fromBase64(f.record.bytes))
+  alternative.setExpiration({ ValidDuring: { ...equipmentAddressGasWindow, nonce: 78 } })
+  history.summaryData.sequence_number = '800'
+  history.summaryData.epoch = '9'
+  history.transactionData.V1 = bcs.TransactionData.parse(await alternative.build()).V1
+  history.rehashTransaction()
+  const digest = history.ledger.digest as string
+  const input = f.rows.get(objectId + ':5'), output = f.rows.get(objectId + ':6')
+  const raw = bcs.Object.parse(output.bcs.value)
+  raw.previousTransaction = digest
+  output.bcs.value = bcs.Object.serialize(raw).toBytes()
+  output.digest = activityHash('Object', output.bcs.value)
+  output.previousTransaction = digest
+  const before = bcs.Object.parse(input.bcs.value)
+  Object.assign(history.effectsData.V2!, { executedEpoch: '9', lamportVersion: '6', gasObjectIndex: null,
+    changedObjects: [[objectId, { inputState: { Exist: [['5', input.digest], before.owner] },
+      outputState: { ObjectWrite: [output.digest, raw.owner] }, idOperation: { None: true } }]] })
+  history.rehashEffects()
+  const getCheckpoint = f.client.ledgerService.getCheckpoint.getMockImplementation()!
+  f.client.ledgerService.getCheckpoint.mockImplementation(async request => request.checkpointId?.sequenceNumber === 800n
+    ? { response: { checkpoint: history.checkpoint } } : getCheckpoint(request))
+  f.client.ledgerService.getTransaction.mockImplementation(async request => {
+    if (request.digest === digest) return { response: { transaction: history.ledger } }
+    throw { code: 'NOT_FOUND' }
+  })
+  const index = f.observe(output)
+  const proof = await f.adapter.verifyRetirement(f.record)
+  expect(proof.witness).toEqual({ kind: 'LISTING', objectId, conflict: { digest, checkpoint: '800' } })
+  index.mockRejectedValue(Error('INDEX_UNAVAILABLE'))
+  await expect(f.adapter.verifyRetirement(f.record, digest)).resolves.toEqual(proof)
+  await expect(f.adapter.verifyRetirement({ ...f.record, phase: 'RETIRED', retirement: proof })).resolves.toEqual(proof)
+  await expect(f.adapter.verifyRetirement({ ...f.record, phase: 'RETIRED',
+    retirement: { ...proof, witness: { ...proof.witness!, conflict: { digest, checkpoint: '799' } } } }))
+    .rejects.toThrow('Saved component retirement witness changed')
+  expect(f.sign).not.toHaveBeenCalled()
 })

@@ -1,11 +1,15 @@
 import {marketListCheck as check,marketListCanonical as canonical,marketListDigest} from './market-list-operation'
 import {equipmentMarketOperationKey,validateEquipmentMarketOperationRecord,equipmentMarketReservedAssets,
   type EquipmentMarketOperationRecord} from './equipment-market-operation'
+import type {EquipmentRetirementWitness} from './equipment-market-operation-types'
 import {runListingLifecycle,type ListingLifecycleStore,type ListingLifecycleAdapter,type ListingQueryResult} from './listing-operation-lifecycle'
 import {withListingWalletLock,assertListingSelectionAvailable} from './listing-operation-scope'
 
 export type EquipmentMarketOperationStore=ListingLifecycleStore<EquipmentMarketOperationRecord>
-export type EquipmentMarketOperationAdapter=ListingLifecycleAdapter<EquipmentMarketOperationRecord>
+export type EquipmentMarketOperationAdapter=ListingLifecycleAdapter<EquipmentMarketOperationRecord>&{
+  verifyRetirement(record:EquipmentMarketOperationRecord,conflictDigest?:string):
+    Promise<NonNullable<EquipmentMarketOperationRecord['retirement']>&{witness:EquipmentRetirementWitness}>
+}
 const maxSize=250000
 /** Discover only this wallet's existing journals, never inventory or new intent.
  * A malformed matching entry is reported rather than silently losing recovery. */
@@ -70,7 +74,8 @@ export function browserEquipmentMarketOperationStore():EquipmentMarketOperationS
  * cannot be replaced by a different intent after navigation or a reload. */
 export function runEquipmentMarketOperation(params:{itemId:string;actor:string;start?:boolean;
   store:EquipmentMarketOperationStore;adapter:EquipmentMarketOperationAdapter;queryOnly?:boolean;
-  cancelUnsigned?:boolean;retireExpired?:boolean;onRecord?:(record:EquipmentMarketOperationRecord)=>void}){
+  cancelUnsigned?:boolean;retireExpired?:boolean;conflictDigest?:string;expectedDigest?:string;onRecord?:(record:EquipmentMarketOperationRecord)=>void}){
+  check(typeof params.adapter.verifyRetirement==='function','Equipment retirement verifier required')
   const {itemId,actor}=params,key=equipmentMarketOperationKey(itemId,actor)
   return runListingLifecycle({...params,key,validate:validateEquipmentMarketOperationRecord,
     assertScope:record=>{scoped(record,key)}})

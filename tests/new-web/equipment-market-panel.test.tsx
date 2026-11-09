@@ -3,6 +3,7 @@ import React,{act} from 'react'
 import {createRoot,type Root} from 'react-dom/client'
 import {beforeEach,afterEach,expect,it,vi} from 'vitest'
 import {EquipmentMarketPanel} from '../../web/components/souls/equipment-market-panel'
+import {adigest} from './fixtures/activity-transaction-evidence'
 import {equipmentMarketOperationFixture,emid} from './fixtures/equipment-market-operation'
 const m=vi.hoisted(()=>({params:null as any,state:null as any}))
 vi.mock('../../web/lib/hooks/use-equipment-market-actions',()=>({useEquipmentMarketActions:(params:any)=>{m.params=params;return m.state}}))
@@ -96,4 +97,20 @@ it.each(['buy','list','reprice'] as const)('downloads the exact %s packet withou
     if (oldCreate) Object.defineProperty(URL, 'createObjectURL', oldCreate); else Reflect.deleteProperty(URL, 'createObjectURL')
     if (oldRevoke) Object.defineProperty(URL, 'revokeObjectURL', oldRevoke); else Reflect.deleteProperty(URL, 'revokeObjectURL')
   }
+})
+
+
+it('binds a manual conflicting digest to the saved component packet without resuming it',async()=>{
+  m.state.record={...f.record,phase:'SIGNED'};m.state.pending=true
+  await render()
+  const input=[...host.querySelectorAll('label')].find(label=>label.textContent?.includes('Conflicting transaction digest'))!.querySelector('input')!
+  const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!
+  await act(async()=>{set.call(input,'invalid');input.dispatchEvent(new Event('input',{bubbles:true}))})
+  expect(button('Check expiry and archive component transaction').disabled).toBe(true)
+  const digest=adigest(72)
+  await act(async()=>{set.call(input,digest);input.dispatchEvent(new Event('input',{bubbles:true}))})
+  await act(async()=>button('Check expiry and archive component transaction').click())
+  expect(m.state.retireExpired).toHaveBeenCalledExactlyOnceWith(digest)
+  expect(m.state.resume).not.toHaveBeenCalled()
+  expect(m.state.start).not.toHaveBeenCalled()
 })

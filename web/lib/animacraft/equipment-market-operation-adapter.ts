@@ -4,7 +4,7 @@ import {fromBase64,toBase64} from '@mysten/sui/utils'
 import {verifyTransactionSignature} from '@mysten/sui/verify'
 import {MAINNET_GENESIS_DIGEST} from './mainnet-chain'
 import {marketListCheck as check,marketListCanonical as canonical} from './market-list-operation'
-import {validateMarketCancelCheckpoint} from './market-cancel-checkpoint'
+import {verifyEquipmentMarketRetirement} from './equipment-market-retirement'
 import {selectMarketPaymentCoins,recheckMarketPaymentCoins} from './market-payment-coins'
 import {validateEquipmentMarketSnapshot,validateEquipmentMarketOperationRecord,buildEquipmentMarketOperationTransaction,
   type EquipmentMarketOperationSnapshot,type EquipmentMarketOperationRecord,type EquipmentMarketAction} from './equipment-market-operation'
@@ -33,10 +33,10 @@ export function equipmentMarketWritable(s:EquipmentMarketOperationSnapshot,actio
  * prevents preparation, never ledger-only recovery of an already saved packet. */
 export function createEquipmentMarketOperationAdapter(params:{client:SuiGrpcClient;
   read:(request:EquipmentMarketReadRequest,signal:AbortSignal)=>Promise<EquipmentMarketOperationSnapshot>;
-  observed?:EquipmentMarketOperationSnapshot;action?:EquipmentMarketAction;priceAtomic?:string;
+  signal?:AbortSignal;observed?:EquipmentMarketOperationSnapshot;action?:EquipmentMarketAction;priceAtomic?:string;
   getAddress:()=>string|null;sign:(tx:Transaction)=>Promise<{bytes:string;signature:string}>;
   sync:(record:EquipmentMarketOperationRecord)=>Promise<'COMPLETE'|'SUPERSEDED'>}):EquipmentMarketOperationAdapter{
-  const {client,read,getAddress,sign,sync,action,priceAtomic}=params
+  const {client,read,getAddress,sign,sync,action,priceAtomic,signal:parent}=params
   const observed=params.observed?validateEquipmentMarketSnapshot(params.observed):undefined
   async function chain(){
     const {response}=await bounded(abort=>client.ledgerService.getServiceInfo({},{abort,timeout:TIMEOUT_MS}))
@@ -117,15 +117,10 @@ export function createEquipmentMarketOperationAdapter(params:{client:SuiGrpcClie
     },
     async query(value){return (await queryEquipmentMarketOperationEvidence(value,client)).status},
     async sync(value){return bounded(()=>sync(validateEquipmentMarketOperationRecord(value)))},
-    async expiryCheckpoint(value){
-      const r=validateEquipmentMarketOperationRecord(value);await chain()
-      const {response}=await bounded(abort=>client.ledgerService.getCheckpoint({checkpointId:{oneofKind:undefined},
-        readMask:{paths:['sequence_number','digest','summary','signature']}},{abort,timeout:TIMEOUT_MS}))
-      const c=response.checkpoint,s=c?.summary
-      check(c&&s?.bcs?.value&&c.digest===s.digest&&typeof s.epoch==='bigint'&&typeof s.sequenceNumber==='bigint'
-        &&c.sequenceNumber===s.sequenceNumber&&c.signature?.epoch===s.epoch&&c.signature.signature?.length===48&&c.signature.bitmap?.length,
-      'Executed equipment checkpoint evidence unavailable or inconsistent')
-      return validateMarketCancelCheckpoint({bytes:toBase64(s.bcs.value),digest:c.digest,epoch:String(s.epoch),sequenceNumber:String(s.sequenceNumber)},r.expirationEpoch)
+    verifyRetirement(record,conflictDigest){
+      const signal=AbortSignal.any([AbortSignal.timeout(90000),...(parent?[parent]:[])])
+      return verifyEquipmentMarketRetirement({client,record,signal,conflictDigest,
+        queryOriginal:async()=>(await queryEquipmentMarketOperationEvidence(record,client)).status})
     },
   }
 }

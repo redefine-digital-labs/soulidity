@@ -83,11 +83,11 @@ export function useEquipmentMarketActions(params:{request:EquipmentMarketReadReq
     &&BigInt(priceAtomic)>=40n&&BigInt(priceAtomic)<=18446744073709551615n
   const canStart=Boolean(activeActor&&account&&currentWallet&&visibleSnapshot&&equipmentMarketWritable(visibleSnapshot,action,address)
     &&validPrice&&!busy&&!loading&&!pending)
-  function adapter(start=false,lease:SessionLease) {
+  function adapter(start=false,lease:SessionLease,signal?:AbortSignal) {
     const matches=lease.matches
     const grpc=(client as unknown as {grpc?:SuiGrpcClient}).grpc
     if(!grpc)throw new Error('The verified gRPC wallet client is required')
-    return createEquipmentMarketOperationAdapter({client:grpc,read:(input,signal)=>read(input,signal,lease),observed:start?visibleSnapshot??undefined:undefined,action,priceAtomic,
+    return createEquipmentMarketOperationAdapter({client:grpc,signal,read:(input,signal)=>read(input,signal,lease),observed:start?visibleSnapshot??undefined:undefined,action,priceAtomic,
       getAddress:()=>matches()&&activeActor?address:null,
       sign:transaction=>{if(!matches()||!account||!activeActor)throw new Error('Wallet changed before equipment signature')
         return Promise.resolve(signTransaction({transaction,account,chain:'sui:mainnet'})).then(result=>{
@@ -103,13 +103,15 @@ export function useEquipmentMarketActions(params:{request:EquipmentMarketReadReq
         }finally{lease!.requests.delete(controller)}
       }})
   }
-  async function run(start=false,queryOnly=false,cancelUnsigned=false,retireExpired=false){
+  async function run(start=false,queryOnly=false,cancelUnsigned=false,retireExpired=false,conflictDigest?:string){
     const lease=session.capture(),matches=()=>lease?.matches()===true
     if(!request||!activeActor||!account||!currentWallet||!matches()||lease!.isRunning()||start&&!canStart)return null
+    const controller=new AbortController();lease!.requests.add(controller)
     lease!.setRunning(true);setBusy(true);setError(null)
     try{
       const result=await runEquipmentMarketOperation({itemId:request.itemId,actor:request.actor,start,queryOnly,cancelUnsigned,retireExpired,
-        store:browserEquipmentMarketOperationStore(),adapter:adapter(start,lease!),onRecord:value=>{if(matches()){setRecord(value)}}})
+        store:browserEquipmentMarketOperationStore(),adapter:adapter(start,lease!,controller.signal),
+        ...(retireExpired||conflictDigest?{expectedDigest:visibleRecord?.digest,conflictDigest}:{}),onRecord:value=>{if(matches()){setRecord(value)}}})
       if(!matches())return null
       readRecovery();setRecord(result)
       if(result.phase==='RETIRED'&&retireExpired){setSnapshot(null);setLoading(Boolean(request&&request.actor===address));setRefreshIndex(n=>n+1)}
@@ -120,7 +122,7 @@ export function useEquipmentMarketActions(params:{request:EquipmentMarketReadReq
       }
       return result
     }catch(cause){if(matches()){setError(message(cause));try{readRecovery()}catch{/* Preserve original uncertainty. */}}return null}
-    finally{lease!.setRunning(false);if(matches())setBusy(false)}
+    finally{lease!.requests.delete(controller);lease!.setRunning(false);if(matches())setBusy(false)}
   }
   async function checkHistory(digest:string):Promise<HistoryResult|null>{
     const lease=session.capture(),matches=()=>lease?.matches()===true
@@ -146,8 +148,8 @@ export function useEquipmentMarketActions(params:{request:EquipmentMarketReadReq
   }
   return {snapshot:visibleSnapshot,record:visibleRecord,history:visibleHistory,historyResults,
     error,loading,busy,pending,canStart,checkHistory,checkFunds,funds:funds?.transactionDigest===visibleRecord?.digest?funds:null,
-    start:()=>run(true),resume:()=>run(),check:()=>run(false,true),
-    cancelUnsigned:()=>run(false,false,true),retireExpired:()=>run(false,false,false,true),
+    start:(digest?:string)=>run(true,false,false,false,digest),resume:()=>run(),check:()=>run(false,true),
+    cancelUnsigned:()=>run(false,false,true),retireExpired:(digest?:string)=>run(false,false,false,true,digest),
     refresh:async()=>{if(matches()){setError(null);setSnapshot(null);setLoading(Boolean(request&&request.actor===address));setRefreshIndex(n=>n+1)}}}
 }
 function message(cause:unknown){return cause instanceof Error?cause.message:cause===undefined?'':'Equipment result is unknown. Query the saved transaction before retrying.'}

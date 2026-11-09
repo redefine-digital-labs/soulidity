@@ -24,7 +24,13 @@ export interface EquipmentMarketOperationSnapshot {
   removal:SelectedSaleEquipmentPreparation|null
   available:{list:boolean;buy:boolean;reprice:boolean;cancel:boolean;recover:boolean}
 }
+export interface EquipmentRetirementWitness {
+  kind: 'OWNED' | 'LISTING'
+  objectId: string
+  conflict?: { digest: string; checkpoint: string }
+}
 export interface EquipmentMarketOperationRecord extends ListingLifecycleRecord {
+  retirement?: NonNullable<ListingLifecycleRecord['retirement']> & { witness?: EquipmentRetirementWitness }
   schema:1;kind:'equipment-market';action:EquipmentMarketAction
   snapshot:EquipmentMarketOperationSnapshot
   /** Exact intended gross price; existing quote for buy/cancel/recover. */
