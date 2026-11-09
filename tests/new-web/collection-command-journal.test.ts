@@ -1,8 +1,14 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { collectionCommandTestDom, type CollectionCommandTestDom } from './fixtures/collection-command-dom'
+import { Transaction } from '@mysten/sui/transactions'
+import { CollectionPersonalKioskCapBcs } from '@soulidity/sdk'
 import { bcs } from '@mysten/sui/bcs'
 import { fromBase64, toBase64 } from '@mysten/sui/utils'
-import { collectionCommandFixture, cid } from './fixtures/collection-command'
+import { activityEvidenceFixture, activityGenesis } from './fixtures/activity-transaction-evidence'
+import { collectionBuyFixture } from './fixtures/collection-buy'
+import { browserCollectionBuyStore, collectionBuyKey, prepareCollectionBuy, runCollectionBuy } from '../../web/lib/collections/collection-buy-journal'
+import { prepareCollectionCommandPlan } from '../../web/lib/collections/collection-command-state'
+import { addressGasWindow, collectionCommandFixture, cid } from './fixtures/collection-command'
 import { browserCollectionCommandStore, collectionCommandKey, prepareCollectionCommand, runCollectionCommand, importCollectionCommand } from '../../web/lib/collections/collection-command-journal'
 import { collectionCommandHash, parseCollectionCommandPlan, type CollectionCommandRecord, type CollectionCommandQuery } from '../../web/lib/collections/collection-command-plan'
 import type { CollectionCommandAdapter } from '../../web/lib/collections/collection-command-operation'
@@ -138,4 +144,110 @@ it('unknown schema/corrupt local heads fail closed instead of disappearing from 
   expect(() => f.store.discover(f.c.id)).toThrow('RECORD_SCHEMA')
   await expect(prepareCollectionCommand(f)).rejects.toThrow('RECORD_SCHEMA')
   expect(window.localStorage.getItem(f.key)).toContain('future.v99')
+})
+
+
+async function expiryCheckpoint(client: Awaited<ReturnType<typeof collectionCommandFixture>>['client'],
+  candidate?: Awaited<ReturnType<typeof activityEvidenceFixture>>) {
+  const expiry = await activityEvidenceFixture()
+  expiry.summaryData.epoch = '11'
+  expiry.summaryData.sequence_number = '812'
+  expiry.rehashSummary()
+  expiry.checkpoint.signature = { epoch: 11n, signature: new Uint8Array(48).fill(1), bitmap: new Uint8Array([1]) }
+  const read = client.ledgerService.getCheckpoint.getMockImplementation()!
+  client.ledgerService.getCheckpoint.mockImplementation(async request => {
+    const id = request.checkpointId
+    if (id?.oneofKind === undefined || id.sequenceNumber === 812n) return { response: { checkpoint: expiry.checkpoint } }
+    if (candidate && id.sequenceNumber === 800n) return { response: { checkpoint: candidate.checkpoint } }
+    return read(request)
+  })
+  return expiry
+}
+
+it('retires an address-gas Collection purchase only after proving the exact payment Coin and archives before replacement', async () => {
+  const f = await collectionBuyFixture({ addressGas: true, newKiosk: true })
+  const store = browserCollectionBuyStore(), key = collectionBuyKey(f.plan)
+  await store.exclusive(key, async () => store.write(key, f.record, true))
+  const expiry = await expiryCheckpoint(f.client), coinId = f.plan.paymentCoinIds[0], row = f.current.get(coinId)
+  const index = vi.fn(async (_url, request: RequestInit) => {
+    expect(JSON.parse(String(request.body)).variables).toMatchObject({ coin: coinId, digest: f.record.packet.digest })
+    return new Response(JSON.stringify({ data: { chainIdentifier: activityGenesis, checkpoint: {
+      sequenceNumber: 812, epoch: { epochId: 11 }, digest: expiry.checkpoint.digest,
+      query: { transaction: null, object: { address: coinId, version: 11, digest: row.digest, objectBcs: toBase64(row.bcs.value) } },
+    } } }))
+  })
+  vi.stubGlobal('fetch', index)
+  const retire = () => runCollectionBuy({ ...f, store, mode: 'retire' })
+  // The first exact lookup misses, the original is found again after the witness.
+  f.client.ledgerService.getTransaction.mockRejectedValueOnce({ code: 'NOT_FOUND' })
+  await expect(retire()).rejects.toThrow('RETIREMENT_ORIGINAL_FOUND')
+  expect(store.read(key)).toEqual(f.record)
+  f.client.ledgerService.getTransaction.mockRejectedValue({ code: 'NOT_FOUND' })
+  const { record } = await retire()
+  expect(record).toMatchObject({ packet: { ...f.record.packet, phase: 'RETIRED' },
+    retirement: { checkpoint: { epoch: '11', sequenceNumber: '812' }, objectId: coinId } })
+  expect(store.read(key)).toEqual(record)
+  const readIndex = index.getMockImplementation()!
+  index.mockRejectedValueOnce(Error('INDEX_UNAVAILABLE'))
+  await expect(prepareCollectionBuy({ ...f, store })).rejects.toThrow('INDEX_UNAVAILABLE')
+  expect(store.read(key)).toEqual(record)
+  expect(store.history(key)).toEqual([])
+  index.mockImplementation(readIndex)
+  f.client.ledgerService.getEpoch.mockResolvedValue({ response: { epoch: { epoch: 11n } } })
+  const next = await prepareCollectionBuy({ ...f, store })
+  expect(next.packet).toMatchObject({ phase: 'PREPARED', signature: null, expirationEpoch: '12' })
+  expect(next.packet.digest).not.toBe(record.packet.digest)
+  expect(store.history(key)).toEqual([record])
+  await expect(runCollectionBuy({ record, store, adapter: f.adapter, mode: 'query' })).resolves.toMatchObject({ status: 'MISSING', record })
+  expect(f.sign).not.toHaveBeenCalled()
+  expect(f.client.core.executeTransaction).not.toHaveBeenCalled()
+})
+
+it('uses an exact conflicting Personal Kiosk Cap spend to retire an address-gas Collection seller original', async () => {
+  const f = await collectionCommandFixture('reprice', { addressGas: true })
+  const store = browserCollectionCommandStore(), key = collectionCommandKey(f.plan)
+  const cap = f.rows.get(f.cap.id + ':11'), spend = await activityEvidenceFixture({ empty: true })
+  const tx = new Transaction()
+  tx.setSender(f.author); tx.setGasOwner(f.author); tx.setGasPrice(1); tx.setGasBudget(1000); tx.setGasPayment([])
+  tx.setExpiration({ ValidDuring: addressGasWindow })
+  tx.moveCall({ target: `${cid(811)}::test::use_cap`, arguments: [tx.objectRef({ objectId: cap.objectId, version: '11', digest: cap.digest })] })
+  spend.summaryData.epoch = '9'
+  spend.summaryData.sequence_number = '800'
+  Object.assign(spend.transactionData.V1, bcs.TransactionData.parse(await tx.build()).V1)
+  spend.rehashTransaction()
+  const candidate = spend.ledger.digest as string
+  const raw = bcs.Object.parse(cap.bcs.value), next = f.full(cap.objectId, cap.objectType, CollectionPersonalKioskCapBcs,
+    f.cap, raw.owner, '12', candidate)
+  Object.assign(spend.effectsData.V2!, { executedEpoch: '9', lamportVersion: '12', gasObjectIndex: null,
+    changedObjects: [[cap.objectId, { inputState: { Exist: [['11', cap.digest], raw.owner] },
+      outputState: { ObjectWrite: [next.digest, raw.owner] }, idOperation: { None: true } }]] })
+  spend.rehashEffects()
+  await expiryCheckpoint(f.client, spend)
+  const readCandidate = async ({ digest }: { digest: string }) => {
+    if (digest === candidate) return { response: { transaction: structuredClone(spend.ledger) } }
+    throw { code: 'NOT_FOUND' }
+  }
+  f.client.ledgerService.getTransaction.mockImplementation(readCandidate)
+  const fetch = vi.fn().mockRejectedValue(Error('INDEX_UNAVAILABLE'))
+  vi.stubGlobal('fetch', fetch)
+  await store.exclusive(key, async () => store.write(key, f.record, true))
+  const retire = (conflictDigest: string) => runCollectionCommand({ ...f, store, mode: 'retire', conflictDigest })
+  await expect(retire(f.record.packet.digest)).rejects.toThrow('RETIREMENT_CONFLICT_DIGEST')
+  expect(store.read(key)).toEqual(f.record)
+  const { record } = await retire(candidate)
+  expect(record).toMatchObject({ packet: { ...f.record.packet, phase: 'RETIRED' }, retirement: {
+    objectId: cap.objectId, conflict: { digest: candidate, checkpoint: '800' },
+  } })
+  expect(fetch).not.toHaveBeenCalled()
+
+  f.current.set(cap.objectId, next)
+  const plan = await prepareCollectionCommandPlan(f.params)
+  f.client.ledgerService.getEpoch.mockResolvedValue({ response: { epoch: { epoch: 11n } } })
+  const prepared = await prepareCollectionCommand({ plan, store, adapter: f.adapter })
+  expect(prepared.packet).toMatchObject({ phase: 'PREPARED', signature: null, expirationEpoch: '12' })
+  expect(prepared.packet.digest).not.toBe(record.packet.digest)
+  expect(store.history(key)).toEqual([record])
+  await expect(runCollectionCommand({ record, store, adapter: f.adapter, mode: 'query' })).resolves.toMatchObject({ status: 'MISSING', record })
+  expect(f.sign).not.toHaveBeenCalled()
+  expect(f.client.core.executeTransaction).not.toHaveBeenCalled()
 })

@@ -55,6 +55,7 @@ export function useCollectionBuy(subject: CollectionCommandSubject, onSuccess: (
       : result.status === 'FAILED' ? 'The original transaction failed on chain. Receipt retained.'
         : result.status === 'PENDING' ? 'Final checkpoint pending. Query this same purchase.'
           : record.packet.phase === 'CANCELLED' ? 'Cancelled before this journal requested a signature. Bytes retained.'
+            : record.packet.phase === 'RETIRED' ? 'Expiry evidence retained. A new request will recheck the evidence before replacing the original.'
             : 'No finalized result found. This does not prove failure; recover this same purchase.' })
   }
   async function observeCurrent(record: CollectionBuyRecord, result: CollectionBuyQuery, signal: AbortSignal, guard: () => void) {
@@ -104,12 +105,12 @@ export function useCollectionBuy(subject: CollectionCommandSubject, onSuccess: (
     check(subject.listingObjectOnChainId, 'NO_VERIFIED_LISTING')
     const plan = await prepareCollectionBuyPlan({ client: grpc!, target: getCollectionBuyTarget(), author: account!.address,
       request: { collectionId: subject.onChainId, listingId: subject.listingObjectOnChainId }, signal })
-    guard(); const record = await prepareCollectionBuy({ plan, store: browserCollectionBuyStore(), adapter: adapter(guard) })
+    guard(); const record = await prepareCollectionBuy({ plan, store: browserCollectionBuyStore(), adapter: adapter(guard), signal })
     guard(); publish({ status: 'Exact purchase saved. Review the full USDC quote and SUI gas budget before signing.' }); return record
   })
-  const run = (record: CollectionBuyRecord, mode: 'query' | 'resume' | 'cancel-unsigned') => exclusive(async (signal, guard) => {
+  const run = (record: CollectionBuyRecord, mode: 'query' | 'resume' | 'cancel-unsigned' | 'retire', conflictDigest?: string) => exclusive(async (signal, guard) => {
     check(record.plan.request.collectionId === subject.onChainId, 'SELECTED_COLLECTION_CHANGED')
-    const result = await runCollectionBuy({ record, store: browserCollectionBuyStore(), adapter: adapter(guard), mode })
+    const result = await runCollectionBuy({ record, store: browserCollectionBuyStore(), adapter: adapter(guard), mode, conflictDigest, signal })
     guard(); report(result.record, result); await observeCurrent(result.record, result, signal, guard)
     guard(); if (result.status === 'SUCCEEDED' && (record.packet.phase !== 'SUCCEEDED' || mode === 'resume')) onSuccess()
     return result

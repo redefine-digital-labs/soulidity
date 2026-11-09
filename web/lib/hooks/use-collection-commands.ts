@@ -60,6 +60,7 @@ export function useCollectionCommands(subject: CollectionCommandSubject | null, 
       : result.status === 'FAILED' ? 'The original transaction failed on chain. Receipt retained.'
         : result.status === 'PENDING' ? 'Final checkpoint pending. Query this same request.'
           : record.packet.phase === 'CANCELLED' ? 'Cancelled before this journal requested a signature. Bytes retained.'
+            : record.packet.phase === 'RETIRED' ? 'Expiry evidence retained. A new request will recheck the evidence before replacing the original.'
             : 'No finalized result found. This does not prove failure; recover the same request.')
     if (result.status === 'SUCCEEDED') onSuccess()
   }
@@ -109,12 +110,12 @@ export function useCollectionCommands(subject: CollectionCommandSubject | null, 
   const prepare = (request: Omit<CollectionCommandRequest, 'collectionId'>) => exclusive(async (signal, guard) => {
     const plan = await prepareCollectionCommandPlan({ client: grpc, target: getCollectionCommandTarget(), author: account!.address,
       request: { ...request, collectionId: subject!.onChainId }, listingObjectOnChainId: subject!.listingObjectOnChainId, signal })
-    guard(); const record = await prepareCollectionCommand({ plan, store: browserCollectionCommandStore(), adapter: adapter(guard) })
+    guard(); const record = await prepareCollectionCommand({ plan, store: browserCollectionCommandStore(), adapter: adapter(guard), signal })
     guard(); setStatus('Prepared exact transaction saved. Review price and SUI gas budget before signing.'); return record
   })
-  const run = (record: CollectionCommandRecord, mode: 'query' | 'resume' | 'cancel-unsigned') => exclusive(async (signal, guard) => {
+  const run = (record: CollectionCommandRecord, mode: 'query' | 'resume' | 'cancel-unsigned' | 'retire', conflictDigest?: string) => exclusive(async (signal, guard) => {
     check(record.plan.request.collectionId === subject!.onChainId, 'SELECTED_COLLECTION_CHANGED')
-    const result = await runCollectionCommand({ record, store: browserCollectionCommandStore(), adapter: adapter(guard), mode })
+    const result = await runCollectionCommand({ record, store: browserCollectionCommandStore(), adapter: adapter(guard), mode, conflictDigest, signal })
     guard(); report(result.record, result); await observeCurrent(result.record, result, signal, guard); return result
   }, mode === 'resume')
   const exportRecord = (record: CollectionCommandRecord) => JSON.stringify(parseCollectionCommandRecord(record), null, 2)

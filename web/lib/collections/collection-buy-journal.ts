@@ -6,7 +6,7 @@ function check(value: unknown, code: string): asserts value { if (!value) throw 
 
 export const COLLECTION_BUY_CHANGED = 'soulidity:collection-buy-changed'
 const PREFIX = 'soulidity.collection-buy:'
-const terminal = (r: CollectionBuyRecord) => ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(r.packet.phase)
+const terminal = (r: CollectionBuyRecord) => ['SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED'].includes(r.packet.phase)
 export function collectionBuyKey(p: CollectionBuyPlan) {
   return `${PREFIX}${p.target.chainIdentifier}:${p.request.collectionId}:${p.author}`
 }
@@ -52,10 +52,11 @@ export function browserCollectionBuyStore(): CollectionBuyStore {
       if (!old) check(imported || record.packet.phase === 'PREPARED' && record.packet.signature === null, 'JOURNAL_INITIAL_PHASE')
       else if (frozen(old) === frozen(record) && !(old.packet.phase === 'CANCELLED' && record.packet.phase === 'PREPARED' && !imported)) {
         const transitions: Record<CollectionBuyRecord['packet']['phase'], string[]> = {
-          PREPARED: ['PREPARED', 'SIGNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'], SIGNING: ['SIGNING', 'SIGNED', 'SUCCEEDED', 'FAILED'],
-          SIGNED: ['SIGNED', 'SUCCEEDED', 'FAILED'], SUCCEEDED: ['SUCCEEDED'], FAILED: ['FAILED'], CANCELLED: ['CANCELLED', 'SUCCEEDED', 'FAILED'],
+          PREPARED: ['PREPARED', 'SIGNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'], SIGNING: ['SIGNING', 'SIGNED', 'SUCCEEDED', 'FAILED', 'RETIRED'],
+          SIGNED: ['SIGNED', 'SUCCEEDED', 'FAILED', 'RETIRED'], SUCCEEDED: ['SUCCEEDED'], FAILED: ['FAILED'], CANCELLED: ['CANCELLED', 'SUCCEEDED', 'FAILED'], RETIRED: ['RETIRED'],
         }
         check(transitions[old.packet.phase].includes(record.packet.phase) && (old.packet.signature === null || old.packet.signature === record.packet.signature), 'JOURNAL_TRANSITION')
+        check(!old.retirement || same(old.retirement, record.retirement), 'RETIREMENT_CHANGED')
         check(old.packet.signature !== null || record.packet.signature === null || old.packet.phase === 'SIGNING' && record.packet.phase === 'SIGNED', 'JOURNAL_SIGNATURE')
       } else {
         check(terminal(old) && !imported && record.packet.phase === 'PREPARED' && record.packet.signature === null, 'JOURNAL_RECOVERY_REQUIRED')
@@ -96,25 +97,32 @@ function saved(store: CollectionBuyStore, key: string, record: CollectionBuyReco
   const value = parseCollectionBuyRecord(record); store.write(key, value, imported)
   check(same(store.read(key), value), 'JOURNAL_READBACK_FAILED'); return value
 }
-export async function prepareCollectionBuy(params: { plan: CollectionBuyPlan; store: CollectionBuyStore; adapter: CollectionBuyAdapter }) {
+export async function prepareCollectionBuy(params: { plan: CollectionBuyPlan; store: CollectionBuyStore; adapter: CollectionBuyAdapter; signal?: AbortSignal }) {
   const plan = parseCollectionBuyPlan(params.plan), { store, adapter } = params, key = collectionBuyKey(plan)
   return store.exclusive(key, async () => {
     let previous = store.read(key)
     if (previous) {
       const query = await observed(adapter, previous)
-      if (query.status === 'SUCCEEDED' || query.status === 'FAILED') previous = saved(store, key, { ...previous, packet: { ...previous.packet, phase: query.status } })
-      check(terminal(previous) && (previous.packet.phase === 'CANCELLED' ? query.status === 'MISSING' : query.status === previous.packet.phase), 'RECOVERY_REQUIRED')
+      if (previous.packet.phase === 'RETIRED') {
+        check(query.status === 'MISSING' && adapter.verifyExpiry, 'RETIREMENT_RECHECK_REQUIRED')
+        check(same(await adapter.verifyExpiry(previous, undefined, params.signal), previous.retirement), 'RETIREMENT_CHANGED')
+      } else {
+        if (query.status === 'SUCCEEDED' || query.status === 'FAILED') previous = saved(store, key, { ...previous, packet: { ...previous.packet, phase: query.status } })
+        check(terminal(previous) && (previous.packet.phase === 'CANCELLED' ? query.status === 'MISSING' : query.status === previous.packet.phase), 'RECOVERY_REQUIRED')
+      }
     }
+    params.signal?.throwIfAborted()
     const record = parseCollectionBuyRecord(await adapter.prepare(plan))
+    params.signal?.throwIfAborted()
     check(same(record.plan, plan) && record.packet.phase === 'PREPARED' && record.packet.signature === null, 'PREPARATION_CHANGED')
     return saved(store, key, record)
   })
 }
 /** Only an explicit resume enters signing/broadcast. Cold discovery is query
- * only. An unknown SIGNING/SIGNED request remains the same packet forever. */
+ * only. Expiry recovery archives the same packet after proving non-execution. */
 export async function runCollectionBuy(params: {
   record: CollectionBuyRecord; store: CollectionBuyStore; adapter: CollectionBuyAdapter
-  mode: 'query' | 'resume' | 'cancel-unsigned'
+  mode: 'query' | 'resume' | 'cancel-unsigned' | 'retire'; conflictDigest?: string; signal?: AbortSignal
 }): Promise<CollectionBuyQuery & { record: CollectionBuyRecord }> {
   const selected = parseCollectionBuyRecord(params.record), { store, adapter, mode } = params, key = collectionBuyKey(selected.plan)
   return store.exclusive(key, async () => {
@@ -130,8 +138,17 @@ export async function runCollectionBuy(params: {
     check(record && frozen(record) === frozen(selected), 'SELECTED_PACKET_CHANGED')
     const save = (next: CollectionBuyRecord) => { record = saved(store, key, next) }
     const query = await observed(adapter, record)
+    if (record.packet.phase === 'RETIRED') return { ...query, record }
     if (query.status === 'SUCCEEDED' || query.status === 'FAILED') save({ ...record, packet: { ...record.packet, phase: query.status } })
     if (mode === 'query' || terminal(record) || query.status === 'PENDING') return { ...query, record }
+    if (mode === 'retire') {
+      check(same(record, selected) && ['SIGNING', 'SIGNED'].includes(record.packet.phase) && adapter.verifyExpiry,
+        'RETIREMENT_EXACT_HEAD_REQUIRED')
+      const retirement = await adapter.verifyExpiry(record, params.conflictDigest, params.signal)
+      params.signal?.throwIfAborted()
+      save({ ...record, packet: { ...record.packet, phase: 'RETIRED' }, retirement })
+      return { ...query, record }
+    }
     if (mode === 'cancel-unsigned') {
       check(record.packet.phase === 'PREPARED' && record.packet.signature === null && query.status === 'MISSING', 'CANNOT_CANCEL_UNKNOWN_SIGNATURE')
       save({ ...record, packet: { ...record.packet, phase: 'CANCELLED' } }); return { ...query, record }
@@ -158,7 +175,12 @@ export async function importCollectionBuy(params: { input: unknown; collectionId
   const query = await observed(adapter, r), key = collectionBuyKey(r.plan)
   return store.exclusive(key, async () => {
     const prior = store.read(key)
-    if (prior) { check(frozen(prior) === frozen(r) && same(prior.packet, r.packet), 'IMPORT_CONFLICT'); return prior }
+    if (prior) { check(same(prior, r), 'IMPORT_CONFLICT'); return prior }
+    if (r.packet.phase === 'RETIRED') {
+      check(query.status === 'MISSING' && adapter.verifyExpiry, 'RETIREMENT_RECHECK_REQUIRED')
+      check(same(await adapter.verifyExpiry(r), r.retirement), 'RETIREMENT_CHANGED')
+      return saved(store, key, r, true)
+    }
     const record = query.status === 'SUCCEEDED' || query.status === 'FAILED' ? { ...r, packet: { ...r.packet, phase: query.status } } : r
     return saved(store, key, record, true)
   })

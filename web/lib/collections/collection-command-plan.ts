@@ -1,3 +1,4 @@
+import type { CollectionRetirement } from './collection-expiry-recovery'
 import { bcs, TypeTagSerializer } from '@mysten/sui/bcs'
 import { deriveDynamicFieldID, fromBase64, normalizeStructTag, toBase58, toBase64, toHex } from '@mysten/sui/utils'
 import { blake2b } from '@noble/hashes/blake2.js'
@@ -29,9 +30,9 @@ export interface CollectionCommandPlan {
   quote: { priceAtomic: string; feeBps: number; feeAtomic: string; buyerTotalAtomic: string; sellerReceivesAtomic: string }
 }
 export interface CollectionCommandRecord {
-  schema: 'soulidity.collection-command.v1'; plan: CollectionCommandPlan
+  schema: 'soulidity.collection-command.v1'; plan: CollectionCommandPlan; retirement?: CollectionRetirement
   packet: { bytes: string; digest: string; expirationEpoch: string;
-    phase: 'PREPARED' | 'SIGNING' | 'SIGNED' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED'; signature: string | null }
+    phase: 'PREPARED' | 'SIGNING' | 'SIGNED' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'RETIRED'; signature: string | null }
 }
 export interface CollectionCommandQuery {
   status: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'; checkpoint?: string

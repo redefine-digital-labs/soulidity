@@ -9,6 +9,7 @@ import { assertCollectionBuyCurrent } from './collection-buy-state'
 import { collectionCommandSignal, collectionCommandChain } from './collection-command-state'
 import { readCollectionOriginalEvidence, verifyCollectionOriginalSignature } from './collection-original-evidence'
 import { proveCollectionBuyHistory } from './collection-buy-history'
+import { validateCollectionRetirement, verifyCollectionExpiry } from './collection-expiry-recovery'
 import { readCollectionGasWindow, setCollectionGasWindow } from './collection-command-gas'
 
 export function buildCollectionBuyTransaction(input: CollectionBuyPlan) {
@@ -31,10 +32,10 @@ export function buildCollectionBuyTransaction(input: CollectionBuyPlan) {
 }
 export function parseCollectionBuyRecord(input: unknown): CollectionBuyRecord {
   const r = structuredClone(input) as CollectionBuyRecord
-  exact(r, ['schema', 'plan', 'packet']); check(r.schema === 'soulidity.collection-buy.v1', 'RECORD_SCHEMA')
+  exact(r, ['schema', 'plan', 'packet', ...(r?.retirement === undefined ? [] : ['retirement'])]); check(r.schema === 'soulidity.collection-buy.v1', 'RECORD_SCHEMA')
   r.plan = parseCollectionBuyPlan(r.plan); const p = r.plan, packet = r.packet
   exact(packet, ['bytes', 'digest', 'expirationEpoch', 'phase', 'signature']); uint(packet.expirationEpoch); digest(packet.digest)
-  check(['PREPARED', 'SIGNING', 'SIGNED', 'SUCCEEDED', 'FAILED', 'CANCELLED'].includes(packet.phase), 'PHASE_INVALID')
+  check(['PREPARED', 'SIGNING', 'SIGNED', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED'].includes(packet.phase), 'PHASE_INVALID')
   check(packet.signature === null || typeof packet.signature === 'string' && packet.signature.length > 0
     && packet.signature.length <= 32768 && toBase64(fromBase64(packet.signature)) === packet.signature, 'SIGNATURE_INVALID')
   check(packet.phase !== 'SIGNED' || packet.signature !== null, 'SIGNATURE_REQUIRED')
@@ -65,6 +66,7 @@ export function parseCollectionBuyRecord(input: unknown): CollectionBuyRecord {
   const gas = data.gasData.payment
   check(gas && new Set(gas.map(row => row.objectId)).size === gas.length, 'GAS_REQUIRED')
   gas.forEach(row => { id(row.objectId); uint(row.version, true); digest(row.digest); check(!objectIds.has(row.objectId) && !p.absentIds.includes(row.objectId), 'GAS_ALIAS') })
+  validateCollectionRetirement(r)
   return freeze(r)
 }
 /** Observe the exact original with its committed signature and checkpoint. */
@@ -85,6 +87,7 @@ export interface CollectionBuyAdapter {
   verifySignature(record: CollectionBuyRecord): Promise<void>
   broadcast(record: CollectionBuyRecord): Promise<void>
   query(record: CollectionBuyRecord): Promise<CollectionBuyQuery>
+  verifyExpiry?(record: CollectionBuyRecord, conflictDigest?: string, signal?: AbortSignal): ReturnType<typeof verifyCollectionExpiry>
 }
 export function createCollectionBuyAdapter(params: {
   client: SuiGrpcClient; getAddress: () => string | null; sign: (tx: Transaction) => Promise<{ bytes: string; signature: string }>
@@ -151,5 +154,10 @@ export function createCollectionBuyAdapter(params: {
       await profileReadStep(collectionCommandSignal(), () => client.core.executeTransaction({ transaction: fromBase64(r.packet.bytes), signatures: [r.packet.signature!] }))
     },
     query: input => queryCollectionBuyOriginal({ client, record: input }),
+    verifyExpiry(input, conflictDigest, parent) {
+      const record = parseCollectionBuyRecord(input), signal = collectionCommandSignal(parent)
+      return verifyCollectionExpiry({ client, record, conflictDigest, signal,
+        queryOriginal: () => queryCollectionBuyOriginal({ client, record, signal }) })
+    },
   }
 }

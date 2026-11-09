@@ -1,11 +1,11 @@
 import { bcs } from '@mysten/sui/bcs'
 import { TransactionDataBuilder } from '@mysten/sui/transactions'
-import { fromBase64 } from '@mysten/sui/utils'
+import { fromBase64, normalizeStructTag } from '@mysten/sui/utils'
 import type { SuiGrpcClient } from '@mysten/sui/grpc'
 import { MAINNET_GENESIS_DIGEST } from '../../animacraft/mainnet-chain'
 import { marketListDigest } from '../../animacraft/market-list-operation'
 import { readHistoricalParentTransaction } from '../../sui/historical-parent-lineage'
-import { readHistoricalSpentSuiCoin } from '../../sui/historical-object'
+import { readHistoricalSpentAddressObject } from '../../sui/historical-object'
 import type { EpochCheckpoint } from '../../sui/epoch-checkpoint'
 import type { PublicMutationPacket } from '../../sui/public-mutation-journal'
 import { commerceCheck as check, commerceId, decodeCommerce } from './economics-read'
@@ -18,6 +18,7 @@ export interface ExplicitGasConflict {
   checkpoint: string
   coinId: string
 }
+const SUI_COIN = normalizeStructTag('0x2::coin::Coin<0x2::sui::SUI>')
 const Coin = bcs.struct('Coin', { id: bcs.Address, balance: bcs.u64() })
 const sameRef = (a: Ref, b: Ref) => a.objectId === b.objectId && String(a.version) === String(b.version) && a.digest === b.digest
 
@@ -45,7 +46,7 @@ export async function verifyExplicitGasConflict(input: {
 }) {
   const { client, packet, author, checkpoint, digest, signal, prefix, saved } = input
   const gasRefs = readOriginalSuiGasReferences(packet, author, prefix)
-  return proveExplicitGasConflict({ client, signal, originalDigest: packet.digest, author, gasRefs,
+  return proveExplicitInputConflict({ client, signal, originalDigest: packet.digest, author, originalRefs: gasRefs,
     maxCheckpoint: checkpoint.sequenceNumber, candidate: digest, saved, prefix })
 }
 
@@ -55,15 +56,15 @@ function consumedInput(transaction: Transaction, ref: Ref) {
   if (!input || String(input[0][0]) !== String(ref.version) || input[0][1] !== ref.digest
     || !input[1].AddressOwner || BigInt(e.lamportVersion) <= BigInt(ref.version)) return false
   if (!(change.idOperation.$kind === 'None' && change.outputState.$kind === 'ObjectWrite'
-    || change.idOperation.$kind === 'Deleted' && change.outputState.$kind === 'NotExist')) return false
+    || ['None', 'Deleted'].includes(change.idOperation.$kind) && change.outputState.$kind === 'NotExist')) return false
   return transaction.refs.some(row => sameRef(row, ref))
 }
 
-export async function proveExplicitGasConflict(input: {
-  client: SuiGrpcClient; signal: AbortSignal; originalDigest: string; author: string; maxCheckpoint: string; gasRefs: Ref[]
-  candidate: string | Pointer; saved?: ExplicitGasConflict; prefix?: string
+export async function proveExplicitInputConflict(input: {
+  client: SuiGrpcClient; signal: AbortSignal; originalDigest: string; author: string; maxCheckpoint: string; originalRefs: Ref[]
+  candidate: string | Pointer; saved?: ExplicitGasConflict; prefix?: string; ownedTypes?: ReadonlyMap<string, string>
 }) {
-  const { client, signal, originalDigest, author, maxCheckpoint, gasRefs, candidate, saved, prefix = 'NATIVE_SALE' } = input
+  const { client, signal, originalDigest, author, maxCheckpoint, originalRefs, candidate, saved, ownedTypes, prefix = 'NATIVE_SALE' } = input
   const read = async (digest: string, checkpoint: string): Promise<Transaction> => {
     check(marketListDigest(digest) && digest !== originalDigest, prefix + '_CONFLICT_DIGEST')
     const transaction = await readHistoricalParentTransaction({ client, signal, transactionDigest: digest,
@@ -71,13 +72,18 @@ export async function proveExplicitGasConflict(input: {
     const { gasData } = bcs.TransactionData.parse(transaction.transactionBytes).V1
     return { ...transaction, refs: [...gasData.payment, ...transaction.ownedInputs] }
   }
-  const readInput = (tx: Transaction, objectId: string) =>
-    readHistoricalSpentSuiCoin({ client, signal, effects: tx.effects, transactionDigest: tx.transactionDigest, objectId })
+  const readInput = (tx: Transaction, objectId: string) => {
+    const type = ownedTypes ? ownedTypes.get(objectId) : SUI_COIN
+    check(type, prefix + '_CONFLICT_TYPE')
+    return readHistoricalSpentAddressObject({ client, signal, effects: tx.effects, transactionDigest: tx.transactionDigest,
+      objectId, type, maxBytes: ownedTypes ? 4096 : 128 })
+  }
   const certify = async (tx: Transaction, ref: Ref, coin?: Awaited<ReturnType<typeof readInput>>) => {
     check(consumedInput(tx, ref), prefix + '_CONFLICT_INPUT')
     const source = coin ?? await readInput(tx, ref.objectId)
     check(String(source.reference.version) === String(ref.version) && source.reference.digest === ref.digest
-      && source.object.owner.AddressOwner === author && decodeCommerce(Coin, source.bytes).id === ref.objectId, prefix + '_CONFLICT_COIN')
+      && source.object.owner.AddressOwner === author
+      && (ownedTypes || decodeCommerce(Coin, source.bytes).id === ref.objectId), prefix + '_CONFLICT_COIN')
     const evidence = { digest: tx.transactionDigest, checkpoint: tx.checkpoint, coinId: ref.objectId }
     check(!saved || saved.digest === evidence.digest && saved.checkpoint === evidence.checkpoint && saved.coinId === evidence.coinId,
       prefix + '_CONFLICT_STORED')
@@ -86,12 +92,12 @@ export async function proveExplicitGasConflict(input: {
 
   if (typeof candidate === 'string') {
     const tx = await read(candidate, maxCheckpoint)
-    const ref = gasRefs.find(ref => (!saved || ref.objectId === saved.coinId) && consumedInput(tx, ref))
+    const ref = originalRefs.find(ref => (!saved || ref.objectId === saved.coinId) && consumedInput(tx, ref))
     check(ref, prefix + '_CONFLICT_INPUT')
     return certify(tx, ref)
   }
 
-  const primary = gasRefs[0]
+  const primary = originalRefs[0]
   let pointer = candidate, upperCheckpoint = maxCheckpoint
   for (let hop = 0; hop < 8; hop++) {
     signal.throwIfAborted()
@@ -106,5 +112,5 @@ export async function proveExplicitGasConflict(input: {
     pointer = { version: predecessor.version, digest: predecessor.digest, writer: coin.object.previousTransaction }
     upperCheckpoint = tx.checkpoint
   }
-  throw Error('COMMERCE_NATIVE_SALE_CONFLICT_HISTORY_BOUND')
+  throw Error('COMMERCE_' + prefix + '_CONFLICT_HISTORY_BOUND')
 }

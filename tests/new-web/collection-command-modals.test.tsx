@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeAll, afterAll, beforeEach, afterEach, it, expect, vi } from 'vitest'
 import { ListCollectionModal, EditCollectionPriceModal, DelistCollectionModal } from '../../web/components/collections/collection-listing-modals'
+import { adigest } from './fixtures/activity-transaction-evidence'
 import { collectionCommandFixture } from './fixtures/collection-command'
 
 const h = vi.hoisted(() => ({ commands: {} as any, toast: vi.fn(), close: vi.fn() }))
@@ -131,4 +132,17 @@ it('downloads the same exported JSON without asking the wallet or writing the jo
     if (revoke) Object.defineProperty(URL, 'revokeObjectURL', revoke)
     else Reflect.deleteProperty(URL, 'revokeObjectURL')
   }
+})
+
+
+it('passes an explicit conflicting digest from the seller form without resuming the saved transaction', async () => {
+  h.commands.records = [f.record]; await render()
+  const input = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Conflicting transaction digest'))!.querySelector('input')!
+  const digest = adigest(90)
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, digest)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await click('Check expiry and retire original')
+  expect(h.commands.run).toHaveBeenCalledExactlyOnceWith(f.record, 'retire', digest)
 })

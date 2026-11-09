@@ -4,6 +4,7 @@ import { useLayoutEffect, useEffect, useRef, useState } from 'react'
 import { Transaction } from '@mysten/sui/transactions'
 import { fromBase64 } from '@mysten/sui/utils'
 import { formatAtomicAmountForDisplay } from '@soulidity/sdk'
+import { CollectionExpiryControl, CollectionExpiryEvidence } from './collection-expiry-control'
 import { CollectionRecoveryDownload } from './collection-recovery-download'
 import { Button } from '@/components/ui/button'
 import type { useCollectionBuy } from '@/lib/hooks/use-collection-buy'
@@ -32,9 +33,9 @@ export function CollectionPurchasePanel({ purchase, offered, expanded, onExpand 
     setLocalError(null)
     try { await work() } catch (cause) { if (matches()) setLocalError(cause instanceof Error ? cause.message : 'Purchase recovery unavailable') }
   }
-  const unresolved = purchase.records.filter(r => !['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(r.packet.phase) && r.plan.author === purchase.currentAddress)
+  const unresolved = purchase.records.filter(r => !['SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED'].includes(r.packet.phase) && r.plan.author === purchase.currentAddress)
   const recordView = (record: CollectionBuyRecord, archived = false) => {
-    const p = record.plan, q = p.quote, terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(record.packet.phase)
+    const p = record.plan, q = p.quote, terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED'].includes(record.packet.phase)
     const owner = p.author === purchase.currentAddress, release = publicMutationCanonical(p.target) === purchase.targetKey
     return <div key={`${record.packet.digest}:${archived}`} className="min-w-0 rounded-lg border border-border bg-card2 p-3 space-y-2">
       <p className="text-xs font-semibold">Purchase · {record.packet.phase}{archived ? ' · retained receipt' : ''}</p>
@@ -48,7 +49,11 @@ export function CollectionPurchasePanel({ purchase, offered, expanded, onExpand 
       </div>
       <p className="text-[11px] text-muted">This saved quote and transaction are fixed. Gas budget is a cap, not the final gas charge. A lost response does not authorize another payment.</p>
       {!owner && !terminal && <p className="text-xs text-muted break-all">Connect purchasing wallet {p.author} to resume. Query and backup remain available.</p>}
-      {!release && !terminal && <p className="text-xs text-muted">Release configuration changed. This purchase is query-only and will not be rebuilt.</p>}
+      {!release && !terminal && <p className="text-xs text-muted">Release configuration changed. Use the saved bytes to query the original or verify expiry.</p>}
+      {record.retirement && <CollectionExpiryEvidence retirement={record.retirement}/>}
+      {!archived && ['SIGNING', 'SIGNED'].includes(record.packet.phase) &&
+        <CollectionExpiryControl key={record.packet.digest} pending={purchase.pending}
+          onRetire={digest => void perform(() => purchase.run(record, 'retire', digest))}/>}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={purchase.pending} onClick={() => void perform(() => purchase.run(record, 'query'))}>Query purchase</Button>
         {!archived && !terminal && <Button variant="gold" disabled={purchase.pending || !owner || !release}

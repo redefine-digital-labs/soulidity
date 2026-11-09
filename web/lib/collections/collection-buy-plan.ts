@@ -20,7 +20,7 @@ export interface CollectionBuyPlan {
   expected: { collectionBcs: string; rightBcs: string; listingBcs: string; marketBcs: string; policyBcs: string }
   quote: CollectionCommandPlan['quote']
 }
-export interface CollectionBuyRecord { schema: 'soulidity.collection-buy.v1'; plan: CollectionBuyPlan; packet: CollectionCommandRecord['packet'] }
+export interface CollectionBuyRecord { schema: 'soulidity.collection-buy.v1'; plan: CollectionBuyPlan; packet: CollectionCommandRecord['packet']; retirement?: CollectionCommandRecord['retirement'] }
 export interface CollectionBuyQuery { status: 'MISSING' | 'PENDING' | 'SUCCEEDED' | 'FAILED'; checkpoint?: string
   receipt?: { collectionId: string; rightId: string; listingId: string; sellerAddress: string; buyerAddress: string;
     buyerKioskId: string; buyerKioskCapId: string; priceAtomic: string; platformFeeAtomic: string; totalPaymentAtomic: string;

@@ -6,6 +6,7 @@ import { Transaction } from '@mysten/sui/transactions'
 import { fromBase64 } from '@mysten/sui/utils'
 import { formatAtomicAmountForDisplay, parseDisplayAmountToAtomic } from '@soulidity/sdk'
 import { Modal } from '@/components/ui/modal'
+import { CollectionExpiryControl, CollectionExpiryEvidence } from './collection-expiry-control'
 import { CollectionRecoveryDownload } from './collection-recovery-download'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
@@ -42,21 +43,21 @@ function CollectionCommandModal({ collection, open, onClose, action }: Collectio
     catch (cause) { priceError = cause instanceof Error ? cause.message : 'Invalid price' }
   }
   const samePrice = action === 'reprice' && priceAtomic !== null && priceAtomic === collection.listedPriceAtomic
-  const relevant = commands.records.filter(record => !['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(record.packet.phase)
+  const relevant = commands.records.filter(record => !['SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED'].includes(record.packet.phase)
     && record.plan.author === commands.currentAddress)
   async function perform(work: () => Promise<unknown>) {
     setLocalError(null)
     try { await work() } catch (cause) { setLocalError(cause instanceof Error ? cause.message : 'Collection command failed') }
   }
-  async function run(record: CollectionCommandRecord, mode: 'query' | 'resume' | 'cancel-unsigned') {
+  async function run(record: CollectionCommandRecord, mode: 'query' | 'resume' | 'cancel-unsigned' | 'retire', conflictDigest?: string) {
     await perform(async () => {
-      const result = await commands.run(record, mode)
+      const result = mode === 'retire' ? await commands.run(record, mode, conflictDigest) : await commands.run(record, mode)
       if (result.status === 'SUCCEEDED' && mode === 'resume') showToast(`Collection ${record.plan.request.action} confirmed on chain`, 'success')
     })
   }
   const recordView = (record: CollectionCommandRecord, archived = false) => {
     const p = record.plan, q = p.quote, currentWallet = p.author === commands.currentAddress
-    const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(record.packet.phase)
+    const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'RETIRED'].includes(record.packet.phase)
     const sameRelease = JSON.stringify(p.target) === commands.targetKey
     return <div key={`${record.packet.digest}:${archived}`} className="rounded-lg border border-border bg-card2/60 p-3 space-y-2">
       <p className="text-xs font-semibold">{p.request.action} · {record.packet.phase}{archived ? ' · retained receipt' : ''}</p>
@@ -71,9 +72,13 @@ function CollectionCommandModal({ collection, open, onClose, action }: Collectio
       <p className="text-[11px] text-muted">The wallet signs these saved bytes. The budget is a cap, not the final gas charge.</p>
       {p.request.action === 'reprice' && <p className="text-[11px] text-muted">One transaction closes the old Listing and creates a new Listing at the approved price.</p>}
       {!currentWallet && !terminal && <p className="text-xs text-muted break-all">Connect the preparing wallet {p.author} to resume. Query and backup remain available.</p>}
-      {!sameRelease && !terminal && <p className="text-xs text-muted">Release configuration changed. This request is query-only; it will not be rebuilt.</p>}
+      {!sameRelease && !terminal && <p className="text-xs text-muted">Release configuration changed. Use the saved bytes to query the original or verify expiry.</p>}
+      {record.retirement && <CollectionExpiryEvidence retirement={record.retirement}/>}
+      {!archived && ['SIGNING', 'SIGNED'].includes(record.packet.phase) &&
+        <CollectionExpiryControl key={record.packet.digest} pending={commands.pending}
+          onRetire={digest => void run(record, 'retire', digest)}/>}
       <div className="flex flex-wrap gap-2">
-        {!archived && <Button variant="outline" disabled={commands.pending} onClick={() => void run(record, 'query')}>Query result</Button>}
+        <Button variant="outline" disabled={commands.pending} onClick={() => void run(record, 'query')}>Query result</Button>
         {!archived && !terminal && <Button variant={p.request.action === 'delist' ? 'danger' : 'gold'}
           disabled={commands.pending || !currentWallet || !sameRelease} onClick={() => void run(record, 'resume')}>
           {record.packet.phase === 'PREPARED' ? 'Sign and submit' : 'Resume same request'}
