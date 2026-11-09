@@ -4,6 +4,7 @@ import { replayCommerceAcceptance } from '../../web/lib/soulidity/commerce/publi
 import { collectionBuyFixture, installCollectionBuyAfterFixture } from './fixtures/collection-buy'
 import { completePreflightFixture, installNativePaidSettlementFixture } from './fixtures/commerce-new-paid-preflight'
 import { nativeSaleLifecycleWireFixture } from './fixtures/commerce-native-sale-lifecycle-wire'
+import { paidIncomeReconciliationFixture } from './fixtures/paid-income-ledger-reconciliation'
 
 const schema = 'soulidity.commerce.public-acceptance-case.v1'
 const signal = () => new AbortController().signal
@@ -73,5 +74,79 @@ it('binds the paid record guard before any transaction lookup and reports only t
       protocolCredit: { kind: 'LEDGER', amountAtomic: '3', objectId: intent.config.objectId } },
     laneEvidence: { kind: intent.kind, originalPlatformLedger: { before: expect.any(Object), after: expect.any(Object) } },
     walletStepsOutstanding: expect.arrayContaining(['Buyer opens the expected content version with Seal', 'Same-kind Entry reuse without a second payment']),
+  })
+})
+
+async function paidWithdrawalCase(interleaved = false) {
+  const recordGuard = { namespace: '616263', index: 3 }
+  const fixture = await paidIncomeReconciliationFixture(interleaved, recordGuard)
+  const { review, client, purchaseText, withdrawalText, executionRegistry } = fixture
+  const purchase = { schema, assetType: 'PAID_CONTENT', originalDigest: review.purchaseDigest, buyer: review.buyer,
+    counterparty: review.beneficiary, soulId: review.soulId, coinType: review.economics.coinType, totalAtomic: '104',
+    namespace: recordGuard.namespace, recordIndex: recordGuard.index }
+  const expected = { ...purchase, withdrawal: { originalDigest: review.withdrawalDigest, operator: review.operator,
+    adminId: review.adminId, recipient: review.recipient, amountAtomic: review.amountAtomic } }
+  const input = { originalText: purchaseText, withdrawalText, executionRegistry, client: client as never, signal: signal() }
+  return { fixture, expected, purchase, input }
+}
+
+it.each([false, true])('joins each original once and distinguishes isolated and pooled income (%s)', async interleaved => {
+  const { fixture: f, expected, input } = await paidWithdrawalCase(interleaved)
+  const result = await replayCommerceAcceptance(expected, input)
+  expect(result).toMatchObject({ status: 'ORIGINAL_SETTLEMENT_PROVED',
+    withdrawalEvidence: { status: 'PAID_INCOME_LEDGER_RECONCILED', isolatedFeeCase: !interleaved,
+      purchaseToWithdrawal: { kind: interleaved ? 'INTERVENING_CONFIG_WRITES' : 'SAME_CONFIG_REFERENCE' },
+      withdrawalToCurrent: { kind: 'SAME_CONFIG_REFERENCE' },
+      withdrawal: { transactionDigest: f.review.withdrawalDigest, paymentCoinId: f.withdrawal.payoutId,
+        checkpointProof: { checkpoint: '101', digest: f.withdrawal.f.checkpoint.digest, effectsDigest: f.withdrawal.f.ledger.effects.digest },
+        operator: f.review.operator, adminInput: { objectId: f.review.adminId }, recipient: f.review.recipient,
+        amountAtomic: f.review.amountAtomic, gas: { netGasCharge: '3' } },
+      current: { digest: f.current.digest, balance: interleaved ? '3' : '0' },
+    } })
+  expect(result.walletStepsOutstanding).not.toContain('Authorized income withdrawal and wallet proceeds')
+  expect(result.walletStepsOutstanding).toContain('Buyer opens the expected content version with Seal')
+  expect(f.client.ledgerService.getTransaction.mock.calls.map(([request]) => request.digest))
+    .toEqual([f.review.purchaseDigest, f.review.withdrawalDigest])
+  expect(result.withdrawalEvidence).not.toHaveProperty('purchase')
+})
+
+it('rejects unmatched withdrawal expectations or files before reading either original', async () => {
+  const { fixture: f, purchase, expected, input } = await paidWithdrawalCase()
+  await expect(replayCommerceAcceptance({ ...expected, withdrawal: { ...expected.withdrawal, recipient: expected.buyer } }, input))
+    .rejects.toThrow('ACCEPTANCE_WITHDRAWAL_ORIGINAL_MISMATCH')
+  await expect(replayCommerceAcceptance(purchase, input)).rejects.toThrow('ACCEPTANCE_WITHDRAWAL_FILE_PAIR')
+  await expect(replayCommerceAcceptance(expected, { ...input, withdrawalText: undefined })).rejects.toThrow('ACCEPTANCE_WITHDRAWAL_FILE_PAIR')
+  expect(f.client.ledgerService.getTransaction).not.toHaveBeenCalled()
+})
+
+it('keeps the proven purchase and raw withdrawal finality while approved source qualification is missing', async () => {
+  const { fixture: f, expected, input } = await paidWithdrawalCase()
+  const result = await replayCommerceAcceptance(expected, { ...input, executionRegistry: undefined })
+  expect(result).toMatchObject({ status: 'ORIGINAL_SETTLEMENT_PROVED',
+    withdrawalEvidence: { status: 'FINALIZED_EXECUTION', transactionDigest: f.review.withdrawalDigest,
+      checkpointProof: { checkpoint: '101', digest: f.withdrawal.f.checkpoint.digest, effectsDigest: f.withdrawal.f.ledger.effects.digest } } })
+  expect(result.withdrawalEvidence).not.toHaveProperty('withdrawal')
+  expect(result.walletStepsOutstanding).toContain('Authorized income withdrawal and wallet proceeds')
+})
+
+it('keeps both original payouts when the current Config regresses and rejects the stale purchase-only view', async () => {
+  const { fixture: f, expected, purchase, input } = await paidWithdrawalCase()
+  const read = f.client.ledgerService.getObject.getMockImplementation()!
+  f.client.ledgerService.getObject.mockImplementation((request, options) =>
+    request.objectId === f.purchaseConfig.objectId && request.version === undefined
+      ? Promise.resolve({ response: { object: f.purchaseConfig } }) : read(request, options))
+  const result = await replayCommerceAcceptance(expected, input)
+  expect(result).toMatchObject({ status: 'ORIGINAL_SETTLEMENT_PROVED',
+    withdrawalEvidence: { status: 'PAID_INCOME_CURRENT_UNVERIFIED', reason: 'CONFIG_REFERENCE_CONFLICT',
+      withdrawal: { paymentCoinId: f.withdrawal.payoutId } } })
+  expect(result.withdrawalEvidence).not.toHaveProperty('current')
+  expect(result.walletStepsOutstanding).toContain('Authorized income withdrawal and wallet proceeds')
+
+  f.client.ledgerService.getObject.mockImplementation((request, options) =>
+    request.objectId === f.purchaseConfig.objectId && request.version === undefined
+      ? read({ ...request, version: 9n }, options) : read(request, options))
+  await expect(replayCommerceAcceptance(purchase, { ...input, withdrawalText: undefined })).resolves.toMatchObject({
+    status: 'ORIGINAL_SETTLEMENT_PROVED',
+    laneEvidence: { currentIncome: { status: 'PAID_INCOME_CURRENT_UNVERIFIED', reason: 'CONFIG_REFERENCE_CONFLICT' } },
   })
 })

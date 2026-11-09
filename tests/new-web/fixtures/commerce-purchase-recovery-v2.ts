@@ -31,7 +31,7 @@ import { proveNativePublicReadPaidMoneyV2 } from '../../../web/lib/soulidity/com
 import { proveNativePublicReadPaidReceiptV2 } from '../../../web/lib/soulidity/commerce/native-public-read-paid-receipt-v2'
 
 // Controlled original SDK packet/full BCS corpus, copied from the existing receipt fixture. No executed node/mainnet claim.
-export async function publicReadPurchaseFixture(variant = '', buyerOverride?:string,kindOverride=1, coherent:{ids?:Record<number,string>;state?:any;hostBirth?:string;kioskBirth?:string;foundationRevenue?:boolean}={}) {
+export async function publicReadPurchaseFixture(variant = '', buyerOverride?:string,kindOverride=1, coherent:{ids?:Record<number,string>;state?:any;hostBirth?:string;kioskBirth?:string;foundationRevenue?:boolean;recordGuard?:NativePublicReadPaidPurchaseV2['recordGuard']}={}) {
   const aid=(n:number)=>coherent.ids?.[n]??fixtureAid(n)
   const h = await batchHistoryFixture(0), n = await activityEvidenceFixture(), c = await activityEvidenceFixture(), f = await activityEvidenceFixture(), standard = await activityEvidenceFixture()
   const pin = (x: typeof n, original: number, callable: number, names: string[]) => {
@@ -59,6 +59,7 @@ export async function publicReadPurchaseFixture(variant = '', buyerOverride?:str
   const intent: NativePublicReadPaidPurchaseV2 = { format: 'native-public-read-v2', buyer, nativeCallablePackageId: aid(41), coinType: '0x2::sui::SUI', registry: shared(78), config: shared(75), kiosk: shared(80), host: shared(94), kind: kindOverride,
     quote: { hash: quote.hash, total: quote.total }, entryHash: previousEntry ? variant === 'renew-hash' ? new Uint8Array(32) : sha256(PaidContentEntryBcs.serialize(previousEntry).toBytes()) : null,
     feeRevision: '8', quoteExpiryMs: '2000', attempt: new Uint8Array(32).fill(1), paymentCoin: { objectId: aid(81), version: '9', digest: adigest(81), balance: '1000' } }
+  if (coherent.recordGuard) intent.recordGuard = coherent.recordGuard
   const money = variant.startsWith('money'), Coin = bcs.struct('Coin', { id: bcs.Address, balance: bcs.u64() })
   const funding = money ? h.base.object(aid(81), 9, '0x2::coin::Coin<0x2::sui::SUI>', Coin.serialize({ id: aid(81), balance: 1000 }).toBytes(), { AddressOwner: buyer }, adigest(1)) : null
   const gasInput = money ? h.base.object(aid(82), 9, '0x2::coin::Coin<0x2::sui::SUI>', Coin.serialize({ id: aid(82), balance: 2000 }).toBytes(), { AddressOwner: buyer }, adigest(1)) : null

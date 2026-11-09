@@ -54,7 +54,7 @@ async function confirmPurchase({ client, signal }: IncomeRead, p: Awaited<Return
   const money = paid.receipt.money
   commerceCheck(money && money.payout.owner === p.context.originalQuotedOffer.issuer, 'PAID_INCOME_MONEY_REQUIRED')
   return { status: 'PAID_INCOME_PURCHASE_CONFIRMED' as const, economics,
-    purchase: { transactionDigest: p.packet.digest, checkpoint: paid.checkpoint, money } }
+    purchase: { transactionDigest: p.packet.digest, checkpoint: paid.checkpoint, checkpointProof: paid.receipt.checkpointProof, money } }
 }
 
 /** Prove the original credit without a withdrawal file or a current release selection. */
@@ -104,7 +104,20 @@ async function confirmOriginals(
   commerceCheck(p.packet.digest !== w.packet.digest && canonical(w.target) === canonical(economics), 'PAID_INCOME_ORIGINAL_CONFIG_MISMATCH')
   const original = await confirmPurchase({ client, signal }, p)
   if (original.status !== 'PAID_INCOME_PURCHASE_CONFIRMED') return original
-  const { purchase } = original, { money } = purchase
+  return confirmPaidIncomeWithdrawalAfterPurchase({ client, signal, executionRegistry, confirmed: original, withdrawal: w })
+}
+
+/** Continue an already verified purchase with its exact retained withdrawal. */
+export async function confirmPaidIncomeWithdrawalAfterPurchase({
+  client, signal, executionRegistry, confirmed, withdrawal: w,
+}: IncomeRead & {
+  confirmed: ConfirmedPaidIncomePurchase
+  withdrawal: ReturnType<typeof incomeWithdrawalRecoveryProps>
+  executionRegistry?: IncomeExecutionRegistryV1
+}) {
+  const { economics, purchase } = confirmed, { money } = purchase
+  commerceCheck(purchase.transactionDigest !== w.packet.digest && canonical(w.target) === canonical(economics),
+    'PAID_INCOME_ORIGINAL_CONFIG_MISMATCH')
   if (money.protocolIncome === '0') return { status: 'PURCHASE_WITHOUT_PROTOCOL_FEE' as const, purchase }
 
   const withdrawn = await readIncomeWithdrawalHistory({ ...w, client, signal, executionRegistry })
@@ -123,6 +136,7 @@ async function confirmOriginals(
   return { status: 'PAID_INCOME_ORIGINALS_CONFIRMED' as const, economics, evidence: { purchase, coinType: money.coinType,
     withdrawal: { transactionDigest: w.packet.digest, checkpoint: withdrawn.checkpoint, operator: payout.receipt.actor,
       recipient: payout.receipt.recipient, amountAtomic: payout.receipt.amount, paymentCoinId: payout.paymentCoinId,
+      checkpointProof: payout.checkpointProof, adminInput: payout.inputAdmin,
       ledger: payout.ledger, gas: payout.gas },
     purchaseToWithdrawal, isolatedFeeCase } }
 }

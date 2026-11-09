@@ -5,9 +5,13 @@ import { parseEquipmentPurchaseOriginal } from '../../animacraft/equipment-marke
 import { readCollectionBuyHandoff } from '../../collections/collection-buy-handoff'
 import { parseCollectionBuyRecord, queryCollectionBuyOriginal } from '../../collections/collection-buy-operation'
 import type { ActivityCheckpointTransactionRef } from '../activity-transaction-evidence'
+import { publicMutationCanonical as canonical } from '../../sui/public-mutation-journal'
 import { commerceCheck, commerceId, readEconomicsIncome } from './economics-read'
-import { readNativePublicReadPaidHistoryV2 } from './native-public-read-paid-history-v2'
 import { readNativeSaleFinalized } from './native-sale-finalized'
+import type { IncomeExecutionRegistryV1 } from './income-execution-source-v1'
+import { importIncomeWithdrawalRecoveryRecord, incomeWithdrawalRecoveryProps } from './income-withdrawal-recovery-record'
+import { confirmPaidIncomePurchase, confirmPaidIncomeWithdrawalAfterPurchase, readCurrentPaidIncomeAfterPurchase, readCurrentPaidIncomeLedger,
+  type ConfirmedPaidIncomePurchase } from './paid-income-ledger-reconciliation'
 import { parsePurchaseRecoveryOriginal } from './purchase-recovery-original'
 
 const CASE_SCHEMA = 'soulidity.commerce.public-acceptance-case.v1'
@@ -22,10 +26,18 @@ const CASE_FIELDS = {
 
 type CaseFields = typeof CASE_FIELDS
 type AssetType = keyof CaseFields
+type WithdrawalExpectation = {
+  originalDigest: string
+  operator: string
+  adminId: string
+  recipient: string
+  amountAtomic: string
+}
+
 type Expected = {
   [K in AssetType]: { assetType: K } & {
     [F in CaseFields[K][number]]: F extends 'recordIndex' ? number : string
-  }
+  } & (K extends 'PAID_CONTENT' ? { withdrawal?: WithdrawalExpectation } : {})
 }[AssetType] & {
   schema: typeof CASE_SCHEMA
   originalDigest: string
@@ -47,30 +59,64 @@ type OriginalResult = { status: 'MISSING' | 'PENDING' | 'FAILED' | 'LEGACY_EFFEC
     netGasMist: string
   }
   laneEvidence: object
+  withdrawalEvidence?: WithdrawalEvidence
 }
-type ReplayInput = { client: SuiGrpcClient; signal: AbortSignal; originalText: string }
+type ReplayInput = {
+  client: SuiGrpcClient
+  signal: AbortSignal
+  originalText: string
+  withdrawalText?: string
+  executionRegistry?: IncomeExecutionRegistryV1
+}
+type WithdrawalResult = Awaited<ReturnType<typeof confirmPaidIncomeWithdrawalAfterPurchase>>
+type WithdrawalEvidence =
+  | { status: 'PURCHASE_NOT_PROVED' | 'PURCHASE_WITHOUT_PROTOCOL_FEE' | 'MISSING' | 'PENDING' | 'FAILED' | 'FINALIZED_EXECUTION'
+      transactionDigest: string; checkpoint?: string; checkpointProof?: ActivityCheckpointTransactionRef; qualificationStatus?: string }
+  | Awaited<ReturnType<typeof observeWithdrawalLedger>>
+
+const WITHDRAWAL_WALLET_STEP = 'Authorized income withdrawal and wallet proceeds'
 
 const WALLET_STEPS = {
   SOUL: ['Seller listing, cancel and relist receipts', 'Buyer reopens the original Soul content', 'Former holder access denial', 'Recovery case'],
   COLLECTION_RIGHT: ['Seller listing, cancel and relist receipts', 'Buyer can use the Right and former holder is denied', 'Recovery case'],
   INDEPENDENT_COMPONENT: ['Seller listing, cancel and relist receipts', 'Buyer can use the component and former holder is denied', 'Recovery case'],
   PAID_CONTENT: ['Buyer opens the expected content version with Seal', 'Same-kind Entry reuse without a second payment',
-    'Authorized income withdrawal and wallet proceeds', 'Recovery case'],
+    WITHDRAWAL_WALLET_STEP, 'Recovery case'],
 } satisfies Record<AssetType, string[]>
+
+function isDigest(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 44 && isValidTransactionDigest(value)
+}
+
+function isPositiveAtomic(value: unknown): value is string {
+  return typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) < (1n << 64n)
+}
+
+function assertWithdrawalExpectation(value: unknown): asserts value is WithdrawalExpectation {
+  commerceCheck(value && typeof value === 'object' && !Array.isArray(value), 'ACCEPTANCE_WITHDRAWAL_FIELDS')
+  const row = value as WithdrawalExpectation
+  const keys = ['originalDigest', 'operator', 'adminId', 'recipient', 'amountAtomic']
+  commerceCheck(Object.keys(row).length === keys.length && keys.every(key => Object.hasOwn(row, key)), 'ACCEPTANCE_WITHDRAWAL_FIELDS')
+  commerceCheck(isDigest(row.originalDigest) && commerceId(row.operator) && commerceId(row.adminId)
+    && commerceId(row.recipient) && isPositiveAtomic(row.amountAtomic), 'ACCEPTANCE_WITHDRAWAL_EXPECTATION')
+}
 
 function parseExpected(input: unknown): Expected {
   commerceCheck(input && typeof input === 'object' && !Array.isArray(input), 'ACCEPTANCE_CASE_FIELDS')
   const row = structuredClone(input) as Expected
   commerceCheck(row.schema === CASE_SCHEMA && Object.hasOwn(CASE_FIELDS, row.assetType), 'ACCEPTANCE_CASE_SCHEMA')
   const fields = ['schema', 'assetType', 'originalDigest', 'buyer', 'counterparty', 'coinType', 'totalAtomic', ...CASE_FIELDS[row.assetType]]
+  if (row.assetType === 'PAID_CONTENT' && Object.hasOwn(row, 'withdrawal')) {
+    assertWithdrawalExpectation(row.withdrawal)
+    commerceCheck(row.withdrawal.originalDigest !== row.originalDigest, 'ACCEPTANCE_WITHDRAWAL_DIGEST')
+    fields.push('withdrawal')
+  }
   commerceCheck(Object.keys(row).length === fields.length && fields.every(key => Object.hasOwn(row, key)), 'ACCEPTANCE_CASE_FIELDS')
-  commerceCheck(typeof row.originalDigest === 'string' && row.originalDigest.length <= 44
-    && isValidTransactionDigest(row.originalDigest), 'ACCEPTANCE_CASE_DIGEST')
+  commerceCheck(isDigest(row.originalDigest), 'ACCEPTANCE_CASE_DIGEST')
   commerceCheck(commerceId(row.buyer) && commerceId(row.counterparty) && row.buyer !== row.counterparty, 'ACCEPTANCE_CASE_WALLETS')
   commerceCheck(typeof row.coinType === 'string' && row.coinType.length <= 2048 && row.coinType === normalizeStructTag(row.coinType),
     'ACCEPTANCE_CASE_COIN')
-  commerceCheck(typeof row.totalAtomic === 'string' && /^[1-9][0-9]{0,19}$/.test(row.totalAtomic)
-    && BigInt(row.totalAtomic) < (1n << 64n), 'ACCEPTANCE_CASE_TOTAL')
+  commerceCheck(isPositiveAtomic(row.totalAtomic), 'ACCEPTANCE_CASE_TOTAL')
   for (const key of CASE_FIELDS[row.assetType]) {
     if (key === 'namespace' || key === 'recordIndex') continue
     commerceCheck(commerceId((row as unknown as Record<string, string>)[key]), 'ACCEPTANCE_CASE_ASSET_ID')
@@ -167,33 +213,80 @@ async function component(e: Extract<Expected, { assetType: 'INDEPENDENT_COMPONEN
     laneEvidence: { creatorAtomic: receipt.creatorAtomic, sourceAtomic: receipt.sourceAtomic, custody } }
 }
 
+function bindWithdrawal(expected: WithdrawalExpectation, text: string, target: ConfirmedPaidIncomePurchase['economics']) {
+  const original = incomeWithdrawalRecoveryProps(importIncomeWithdrawalRecoveryRecord(text))
+  const { target: withdrawalTarget, packet, intent } = original
+  commerceCheck(canonical(withdrawalTarget) === canonical(target) && packet.digest === expected.originalDigest
+    && intent.actor === expected.operator && intent.adminId === expected.adminId && intent.recipient === expected.recipient
+    && intent.amount === expected.amountAtomic, 'ACCEPTANCE_WITHDRAWAL_ORIGINAL_MISMATCH')
+  return original
+}
+
+function withdrawalObservation(result: Exclude<WithdrawalResult, { status: 'PAID_INCOME_ORIGINALS_CONFIRMED' }>,
+  transactionDigest: string): WithdrawalEvidence {
+  const { status } = result
+  const report = { status, transactionDigest, ...('checkpoint' in result ? { checkpoint: result.checkpoint } : {}) }
+  return status === 'FINALIZED_EXECUTION'
+    ? { ...report, checkpointProof: result.checkpointProof, qualificationStatus: result.qualification.status }
+    : report
+}
+
+async function observeWithdrawalLedger(input: Parameters<typeof readCurrentPaidIncomeLedger>[0]) {
+  const observed = await readCurrentPaidIncomeLedger(input)
+  const { coinType, isolatedFeeCase, purchaseToWithdrawal, withdrawal } = observed
+  const evidence = { coinType, isolatedFeeCase, purchaseToWithdrawal, withdrawal }
+  return observed.status === 'PAID_INCOME_LEDGER_RECONCILED'
+    ? { ...evidence, status: observed.status, current: observed.current, withdrawalToCurrent: observed.withdrawalToCurrent }
+    : { ...evidence, status: observed.status, reason: observed.reason }
+}
+
 async function paidContent(e: Extract<Expected, { assetType: 'PAID_CONTENT' }>, input: ReplayInput): Promise<OriginalResult> {
   const { client, signal, originalText } = input
   const original = await parsePurchaseRecoveryOriginal(originalText, e.soulId)
   commerceCheck(original.kind === 'native-public-read-v2', 'ACCEPTANCE_PAID_ORIGINAL')
-  const { intent, packet, reviewedGas, context } = original.value
+  const { intent, packet, context } = original.value
   bind(e, packet.digest, intent.buyer, intent.coinType, intent.quote.total)
   commerceCheck(context.originalQuotedOffer.issuer === e.counterparty && intent.recordGuard?.index === e.recordIndex
     && intent.recordGuard.namespace === e.namespace, 'ACCEPTANCE_PAID_RECORD_MISMATCH')
-  const result = await readNativePublicReadPaidHistoryV2({ ...context.originalReceiptContext, intent, packet, gas: reviewedGas,
-    client, signal, proveMoney: true })
-  if (result.status !== 'SUBSCRIPTION_RECORDED') return result
-  const { money } = result.receipt
-  commerceCheck(money?.payout.owner === e.counterparty, 'ACCEPTANCE_PAID_RECEIPT')
-  return { status: 'PROVED', checkpointProof: result.receipt.checkpointProof,
+  const withdrawal = e.withdrawal && input.withdrawalText !== undefined
+    ? bindWithdrawal(e.withdrawal, input.withdrawalText, context.economics)
+    : undefined
+  const confirmed = await confirmPaidIncomePurchase({ purchaseText: originalText, soulId: e.soulId, client, signal })
+  if (confirmed.status !== 'PAID_INCOME_PURCHASE_CONFIRMED') return confirmed
+  const { money, checkpointProof } = confirmed.purchase
+  commerceCheck(money.payout.owner === e.counterparty, 'ACCEPTANCE_PAID_RECEIPT')
+  const paidEvidence = { kind: intent.kind, originalPlatformLedger: money.platformLedger }
+  const purchaseResult = {
+    status: 'PROVED' as const, checkpointProof,
     settlement: settlement(e, [money.payout],
       { kind: 'LEDGER', amountAtomic: money.protocolIncome, objectId: context.economics.configId }, money.gas.netGasCharge),
-    laneEvidence: { kind: intent.kind, originalPlatformLedger: money.platformLedger,
-      currentIncome: await currentIncome(input, context.economics) } }
+    laneEvidence: paidEvidence,
+  }
+  if (!withdrawal) {
+    const observed = await readCurrentPaidIncomeAfterPurchase({ client, signal, confirmed })
+    const currentIncome = observed.status === 'PAID_INCOME_PURCHASE_LEDGER_OBSERVED'
+      ? { status: observed.status, current: observed.current, purchaseToCurrent: observed.purchaseToCurrent }
+      : { status: observed.status, reason: observed.reason }
+    return { ...purchaseResult, laneEvidence: { ...paidEvidence, currentIncome } }
+  }
+  const reconciliation = await confirmPaidIncomeWithdrawalAfterPurchase({
+    client, signal, confirmed, withdrawal, executionRegistry: input.executionRegistry,
+  })
+  if (reconciliation.status !== 'PAID_INCOME_ORIGINALS_CONFIRMED') {
+    return { ...purchaseResult, withdrawalEvidence: withdrawalObservation(reconciliation, withdrawal.packet.digest) }
+  }
+  return { ...purchaseResult, withdrawalEvidence: await observeWithdrawalLedger({ client, signal, confirmed: reconciliation }) }
 }
 
 /** Select the same original and wallet pair before projecting public ledger
  * evidence. The original supplies the historical pins, not release admission. */
 export async function replayCommerceAcceptance(expected: unknown, input: ReplayInput) {
   const e = parseExpected(expected)
+  const withdrawalExpected = e.assetType === 'PAID_CONTENT' ? e.withdrawal : undefined
+  commerceCheck(Boolean(withdrawalExpected) === (input.withdrawalText !== undefined), 'ACCEPTANCE_WITHDRAWAL_FILE_PAIR')
   const { client } = input
   const signal = AbortSignal.any([input.signal, AbortSignal.timeout(90_000)])
-  const read = { client, signal, originalText: input.originalText }
+  const read = { ...input, signal }
   let result: OriginalResult
   switch (e.assetType) {
     case 'SOUL': result = await soul(e, read); break
@@ -204,10 +297,15 @@ export async function replayCommerceAcceptance(expected: unknown, input: ReplayI
   signal.throwIfAborted()
   const report = { schema: REPORT_SCHEMA, chainIdentifier: MAINNET, expected: e,
     counterpartyRole: e.assetType === 'PAID_CONTENT' ? 'BENEFICIARY' : 'SELLER',
-    walletStepsOutstanding: WALLET_STEPS[e.assetType] }
-  if (result.status !== 'PROVED') return { ...report, status: result.status, checkpoint: result.checkpoint }
+    walletStepsOutstanding: WALLET_STEPS[e.assetType].filter(step =>
+      step !== WITHDRAWAL_WALLET_STEP || result.status !== 'PROVED' || result.withdrawalEvidence?.status !== 'PAID_INCOME_LEDGER_RECONCILED') }
+  if (result.status !== 'PROVED') {
+    const withdrawalEvidence = withdrawalExpected && { status: 'PURCHASE_NOT_PROVED' as const,
+      transactionDigest: withdrawalExpected.originalDigest }
+    return { ...report, status: result.status, checkpoint: result.checkpoint, withdrawalEvidence }
+  }
   return { ...report, status: 'ORIGINAL_SETTLEMENT_PROVED' as const,
     checkpoint: { sequence: result.checkpointProof.checkpoint, digest: result.checkpointProof.digest,
       effectsDigest: result.checkpointProof.effectsDigest },
-    settlement: result.settlement, laneEvidence: result.laneEvidence }
+    settlement: result.settlement, laneEvidence: result.laneEvidence, withdrawalEvidence: result.withdrawalEvidence }
 }

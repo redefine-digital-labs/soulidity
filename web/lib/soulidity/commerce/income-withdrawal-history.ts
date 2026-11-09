@@ -19,12 +19,12 @@ export async function readIncomeWithdrawalHistory(input:{client:SuiGrpcClient;ta
  const result=await readFinalizedMutation({client,packet:saved.packet,chainIdentifier:saved.target.chainIdentifier,genesisDigest:MAINNET_GENESIS_DIGEST,signal,errorPrefix:'COMMERCE_WITHDRAW_HISTORY',proveSuccess:async context=>{
   const executionContext={kind:'HISTORICAL_FINALIZED' as const,genesisDigest:MAINNET_GENESIS_DIGEST,transactionBytes:saved.packet.bytes,transactionDigest:saved.packet.digest,effects:context.effects,checkpoint:context.checkpoint}
   const frame=await observeFoundationIncomeExecutionV1({client,signal,reader,registry,context:executionContext,target:saved.target})
-  if(frame.status!=='QUALIFIED_EVENT_FRAME'||!isQualifiedHistoricalEventFrameV1(frame)) return {kind:'UNQUALIFIED_INCOME_EXECUTION' as const,qualification:frame,original:incomeOriginalExecutionFacts(executionContext,context.events)}
+  if(frame.status!=='QUALIFIED_EVENT_FRAME'||!isQualifiedHistoricalEventFrameV1(frame)) return {kind:'UNQUALIFIED_INCOME_EXECUTION' as const,qualification:frame,original:incomeOriginalExecutionFacts(executionContext,context.events),checkpointProof:context.checkpointProof}
   const proof=await proveIncomeWithdrawalEffects({...saved,client,signal,effects:context.effects,events:context.events,executionFrame:frame,executionCheckpoint:context.checkpoint})
-  return {...proof,kind:'QUALIFIED_INCOME_WITHDRAWAL' as const,proof:'withdrawal-finalized-ledger-payment-gas' as const,requiresOriginalFinalityAndCheckpoint:false as const}
+  return {...proof,checkpointProof:context.checkpointProof,kind:'QUALIFIED_INCOME_WITHDRAWAL' as const,proof:'withdrawal-finalized-ledger-payment-gas' as const,requiresOriginalFinalityAndCheckpoint:false as const}
  }})
  if(result.status!=='SUCCEEDED') return result
  if(result.receipt.kind==='UNQUALIFIED_INCOME_EXECUTION') return {status:'FINALIZED_EXECUTION' as const,checkpoint:result.checkpoint,
-  qualification:result.receipt.qualification,original:result.receipt.original,completeBusinessOutputVerified:false as const}
+  qualification:result.receipt.qualification,original:result.receipt.original,checkpointProof:result.receipt.checkpointProof,completeBusinessOutputVerified:false as const}
  return {...result,status:'WITHDRAWAL_EVIDENCE_CONFIRMED' as const,receipt:result.receipt}
 }

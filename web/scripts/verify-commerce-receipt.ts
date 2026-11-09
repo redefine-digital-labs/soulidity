@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { createNativeReceiveClient } from '../lib/animacraft/native-receive'
+import { createConfiguredIncomeOriginalExecutionRegistry } from '../lib/soulidity/configured-income-entry'
 import { replayCommerceAcceptance } from '../lib/soulidity/commerce/public-acceptance-replay'
 
-const USAGE = 'Usage: tsx web/scripts/verify-commerce-receipt.ts <expected-case.json> <retained-purchase-original.json>'
+const USAGE = 'Usage: tsx web/scripts/verify-commerce-receipt.ts <expected-case.json> <retained-purchase-original.json> [retained-withdrawal-original.json]'
 
 async function readInput(path: string, limit: number) {
   const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK)
@@ -25,15 +26,22 @@ async function main(args: string[]) {
     process.stdout.write(USAGE + '\n')
     return
   }
-  if (args.length !== 2) throw new Error(USAGE)
-  const [expected, original] = await Promise.all([readInput(args[0], 8192), readInput(args[1], 3 * 1024 * 1024)])
+  if (args.length !== 2 && args.length !== 3) throw new Error(USAGE)
+  const [expected, original, withdrawal] = await Promise.all([
+    readInput(args[0], 8192), readInput(args[1], 3 * 1024 * 1024), args.length === 3 ? readInput(args[2], 300_000) : undefined,
+  ])
   const decoder = new TextDecoder('utf-8', { fatal: true })
   const signal = AbortSignal.timeout(90_000)
   const report = await replayCommerceAcceptance(JSON.parse(decoder.decode(expected)), {
     client: createNativeReceiveClient(signal), signal, originalText: decoder.decode(original),
+    ...(withdrawal ? { withdrawalText: decoder.decode(withdrawal), executionRegistry: createConfiguredIncomeOriginalExecutionRegistry().registry } : {}),
   })
-  process.stdout.write(JSON.stringify({ ...report, originalSha256: createHash('sha256').update(original).digest('hex') }, null, 2) + '\n')
-  if (report.status !== 'ORIGINAL_SETTLEMENT_PROVED') process.exitCode = 2
+  process.stdout.write(JSON.stringify({ ...report, originalSha256: createHash('sha256').update(original).digest('hex'),
+    ...(withdrawal ? { withdrawalSha256: createHash('sha256').update(withdrawal).digest('hex') } : {}),
+  }, null, 2) + '\n')
+  if (report.status !== 'ORIGINAL_SETTLEMENT_PROVED' || (withdrawal && report.withdrawalEvidence?.status !== 'PAID_INCOME_LEDGER_RECONCILED')) {
+    process.exitCode = 2
+  }
 }
 
 main(process.argv.slice(2)).catch(error => {

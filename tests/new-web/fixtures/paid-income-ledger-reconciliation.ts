@@ -9,8 +9,8 @@ import { attachControlledIncomeProtocol, controlledFoundationIncomeQualification
 import { incomeRecoveryImportFixture } from './income-withdrawal-recovery-import'
 
 
-export async function paidIncomeReconciliationFixture(interleaved = false) {
-  const purchase = await purchaseRecoveryFixture('v2', 'money', { foundationRevenue: true })
+export async function paidIncomeReconciliationFixture(interleaved = false, recordGuard?: { index: number; namespace: string }) {
+  const purchase = await purchaseRecoveryFixture('v2', 'money', { foundationRevenue: true, recordGuard })
   const original = purchase.original
   if (!('format' in original) || !purchase.history || !purchase.foundationObject) throw Error('V2 fixture required')
   const { economics, target, originalQuotedOffer } = original.context
